@@ -541,6 +541,25 @@ The server serves `web/index.html` and exposes:
   catalog drifts from the engine's.
 - `GET /templates/catalog` — the presets, zone kinds and built-in templates, read
   from `viralclipper` rather than duplicated in the page.
+- `GET /scrap` — the scrap page (`web/scrap.html`): expand a link or an account
+  feed into a list of downloadable videos, pick one, and hand it to the
+  clipper. `POST /scrap` runs the search; `GET /scrap/thumb?i=N` serves the
+  thumbnail of the N-th row of the last search. The thumbnail is **proxied**
+  rather than hot-linked, because Instagram and YouTube serve from CDNs whose
+  signed URLs expire and whose responses the page's CSP would block anyway
+  (`img-src 'self'`).
+
+Two notes on the scrap page, both learned the hard way:
+
+- On **Chrome/Edge 127+** the cookie picker cannot work at all: the browser
+  seals every cookie with App-Bound Encryption (`v20`) and yt-dlp cannot read
+  them. Export the cookies to a `cookies.txt` and point the *"Ou um arquivo
+  cookies.txt"* field at it. That field takes precedence over the picker.
+- **Instagram profile URLs do not work**, in the panel or on the command line:
+  the extractor is disabled upstream (`InstagramUserIE._WORKING = False` in
+  yt-dlp, whose `sharedData` parser no longer matches the current page).
+  Single post, reel and video URLs do work. The profile mode works for YouTube
+  and TikTok.
 
 It listens on `127.0.0.1` only, so it is not reachable from outside the
 machine. The UI degrades gracefully when the server is off: it shows the

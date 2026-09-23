@@ -40,6 +40,12 @@ web/1.jfif
 web/2.jpg
 web/3.jpg
 
+# Cache of scrap thumbnails: third-party video frames downloaded so the result
+# cards can show them. Rebuilt on demand, and not ours to redistribute -- so it
+# stays out of the repo. Lives under web/ rather than output/ on purpose: the
+# output tree is the clip library and must not collect other people's frames.
+web/thumbs/
+
 # Scratch: one-off debug scripts, preset previews and sample transcripts kept
 # next to the repo while tuning. Not part of the tool.
 _scratch/

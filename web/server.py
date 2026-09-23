@@ -13,12 +13,14 @@ Endpoints:
 
 from __future__ import annotations
 
+import html
 import json
 import threading
 import webbrowser
 from http import server as http_server
 from pathlib import Path
-from urllib.parse import urlparse, unquote
+from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.request import Request, urlopen
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = Path(__file__).resolve().parent
@@ -39,7 +41,7 @@ PORT = 7755
 # Shared state. The HTTP handler runs on one thread; runs happen on a worker
 # thread, so access goes through the lock.
 _lock = threading.Lock()
-_state: dict = {"jobs": [], "clips": []}
+_state: dict = {"jobs": [], "clips": [], "scrap": []}
 
 
 class CollectingLogger(util.Logger):
@@ -336,6 +338,10 @@ def _scrap_results(payload: dict) -> tuple[list[dict], str]:
     for index, entry in enumerate(entries, start=1):
         if not isinstance(entry, dict):
             continue
+        # ``image`` is the largest still the extractor exposes. Instagram flat
+        # entries have no ``thumbnail`` key; YouTube shorts do. Accept both
+        # rather than picking one site's spelling.
+        thumb = str(entry.get("thumbnail") or entry.get("image") or "").strip()
         results.append(
             {
                 "index": index,
@@ -347,6 +353,12 @@ def _scrap_results(payload: dict) -> tuple[list[dict], str]:
                 # Flat extraction may not carry a duration (live, some
                 # Instagram shapes). The UI shows what it has rather than a 0.
                 "view_count": _as_int(entry.get("view_count")),
+                "thumb": thumb,
+                # The cookie flags that made THIS search work, carried per item
+                # so the thumbnail fetch can repeat the same authenticated
+                # request. Without them a private feed lists fine and every
+                # image comes back empty.
+                "_ytdlp_args": list(config.extra_ytdlp_args),
             }
         )
     return results, title
@@ -363,6 +375,95 @@ def _as_int(value) -> int | None:
     try:
         return int(value)
     except (TypeError, ValueError):
+        return None
+
+
+def esc(text: object) -> str:
+    """Escape text for an HTML attribute or text node.
+
+    The panel builds cards as HTML strings (there is no template engine and no
+    build step), so every value that reaches the DOM has to pass through here.
+    Titles and uploader names are attacker-controlled: a caption containing a
+    double quote would otherwise close the ``data-item`` attribute and let the
+    rest of the string become markup.
+    """
+    return html.escape(str(text if text is not None else ""), quote=True)
+
+
+#: Thumbnail bytes are proxied, not hot-linked: Instagram and YouTube serve
+#: from CDNs that send no permissive CORS headers, and their signed URLs expire
+#: in hours. Caching the bytes on disk is also what makes the card survive a
+#: refresh.
+_THUMB_DIR_NAME = "thumbs"
+_THUMB_MAX_BYTES = 6 * 1024 * 1024
+
+
+def _thumb_dir() -> Path:
+    """Where thumbnail bytes are cached, under the server's own directory.
+
+    Deliberately NOT under ``output/``: that directory is the pipeline's
+    deliverable folder, and a cache of other people's video frames does not
+    belong in the same tree as the user's rendered clips.
+    """
+    path = WEB_DIR / _THUMB_DIR_NAME
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _fetch_thumb_bytes(item: dict) -> bytes | None:
+    """Resolve a thumbnail URL for one scrap result and return its bytes.
+
+    Instagram flat entries carry no image at all, so this asks yt-dlp for the
+    single-video metadata, which does. The call is the expensive part of a
+    search: ``_scrap_thumb`` is what keeps it off the critical path.
+    """
+    url = str(item.get("url") or item.get("webpage_url") or "").strip()
+    if not url:
+        return None
+    config = config_mod.ClipConfig(url=url)
+    args = item.get("_ytdlp_args")
+    if isinstance(args, list):
+        config.extra_ytdlp_args = [str(a) for a in args]
+    config.cache_dir = _thumb_dir().parent / "cache"
+    meta = download_mod.fetch_metadata(url, config)
+    thumb = str(meta.get("thumbnail") or "").strip()
+    if not thumb:
+        thumbs = meta.get("thumbnails")
+        if isinstance(thumbs, list) and thumbs:
+            last = thumbs[-1]
+            if isinstance(last, dict):
+                thumb = str(last.get("url") or "").strip()
+    if not thumb:
+        return None
+    request = Request(thumb, headers={"User-Agent": "Mozilla/5.0", "Accept": "image/*"})
+    with urlopen(request, timeout=20) as response:  # noqa: S310 - url comes from yt-dlp
+        return response.read(_THUMB_MAX_BYTES)
+
+
+def _scrap_thumb(item: dict) -> str | None:
+    """Return the served path of one item's thumbnail, or None.
+
+    Never raises. A thumbnail is decoration: a private post, an expired CDN
+    signature or a slow host must leave the row intact and just without an
+    image. Letting this bubble would turn a working list into "a busca falhou".
+    """
+    try:
+        media_id = str(item.get("id") or "").strip()
+        if not media_id:
+            return None
+        safe = "".join(ch for ch in media_id if ch.isalnum() or ch in "-_")[:64]
+        if not safe:
+            return None
+        target = _thumb_dir() / f"{safe}.jpg"
+        if not target.is_file():
+            blob = _fetch_thumb_bytes(item)
+            if not blob:
+                return None
+            tmp = target.with_suffix(".jpg.part")
+            tmp.write_bytes(blob)
+            tmp.replace(target)
+        return f"/thumb/{quote(target.name)}"
+    except Exception:  # noqa: BLE001 - decoration must never break the list
         return None
 
 
@@ -470,6 +571,29 @@ class Handler(http_server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "ViralClipper/1.0"
 
+    # Thumbnails are served from /thumb/, i.e. from this same origin, instead of
+    # being hot-linked from Instagram's CDN. That is what keeps the policy tight:
+    # no `img-src https:` wildcard, and no per-CDN allowlist that would silently
+    # blank every image the day a host changes. `'unsafe-inline'` is required
+    # because each page is a single file with its markup, style and script inline.
+    CSP = (
+        "default-src 'self'; "
+        "img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "script-src 'self' 'unsafe-inline'; "
+        "connect-src 'self'; "
+        "media-src 'self' blob:"
+    )
+
+    def end_headers(self) -> None:
+        # Set on every response, JSON included: a policy applied only on the
+        # HTML paths is one that a future route quietly escapes.
+        self.send_header("Content-Security-Policy", self.CSP)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        super().end_headers()
+
     def _send_json(self, payload: dict, code: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
@@ -529,6 +653,38 @@ class Handler(http_server.BaseHTTPRequestHandler):
                 self._send_file(page.read_bytes(), "text/html; charset=utf-8")
             else:
                 self._send_json({"error": "scrap.html missing"}, 404)
+            return
+        if path == "/scrap/thumb":
+            # The <img> tag hits this directly: a GET, not the POST above.
+            # Both exist because only the caller knows which it needs — the
+            # page uses the GET from the tag and lets the server do the work,
+            # while the POST is there for a caller that already holds the item
+            # dict and wants the resolved path back.
+            query = parse_qs(urlparse(self.path).query)
+            index = (query.get("i") or [""])[0]
+            try:
+                position = int(index)
+            except (TypeError, ValueError):
+                self._send_json({"error": "bad index"}, 400)
+                return
+            self._send_thumb_at(position, (query.get("s") or [""])[0])
+            return
+        if path.startswith("/thumb/"):
+            # Cached thumbnail bytes. The name is validated against the cache
+            # directory itself rather than pattern-matched: ``..\..\`` and an
+            # absolute path both resolve outside the folder, and the resolved
+            # path is what decides.
+            name = unquote(path[len("/thumb/"):])
+            candidate = (_thumb_dir() / name).resolve()
+            try:
+                candidate.relative_to(_thumb_dir().resolve())
+            except ValueError:
+                self._send_json({"error": "not found"}, 404)
+                return
+            if candidate.is_file():
+                self._send_file(candidate.read_bytes(), "image/jpeg")
+            else:
+                self._send_json({"error": "not found"}, 404)
             return
         if path == "/templates/catalog":
             # The zone kinds and caption presets the wizard offers, read from
@@ -591,6 +747,9 @@ class Handler(http_server.BaseHTTPRequestHandler):
         if path == "/scrap":
             self._handle_scrap(payload)
             return
+        if path == "/scrap/thumb":
+            self._handle_thumb(payload)
+            return
         if path == "/transcript/normalize":
             self._handle_normalize(payload)
             return
@@ -604,6 +763,47 @@ class Handler(http_server.BaseHTTPRequestHandler):
             return
         result = _run_job(options, plan_only)
         self._send_json(result)
+
+    def _handle_thumb(self, payload: dict) -> None:
+        """Resolve one result's thumbnail after the list is already on screen.
+
+        Two reasons this is a separate call rather than part of ``/scrap``:
+        Instagram flat entries carry no image, so every thumbnail costs a full
+        per-video metadata extraction — on a 100-item profile that would turn a
+        fast list into a minute of waiting. And the failures are per item: one
+        private post must not blank the other 99 rows.
+        """
+        item = payload.get("item")
+        if not isinstance(item, dict):
+            self._send_json({"error": "item is required"}, 400)
+            return
+        self._send_json({"thumb": _scrap_thumb(item)})
+
+    def _send_thumb_at(self, position: int, _stamp: str) -> None:
+        """Serve the thumbnail of the ``position``-th item of the last search.
+
+        Keyed by position rather than by id so the page can put the URL straight
+        into an ``<img src>`` without first knowing the id — and so the server,
+        not the page, decides what "the item at row 3" currently means. ``_stamp``
+        is only a cache-buster and is deliberately unused: the page bumps it to
+        force a refetch when a new search reuses the same row numbers.
+        """
+        with _lock:
+            last = list(_state.get("scrap") or [])
+        if not 0 <= position < len(last):
+            self._send_json({"error": "not found"}, 404)
+            return
+        served = _scrap_thumb(last[position])
+        if not served:
+            # 404, not an empty image: the page watches for the error event and
+            # falls back to the placeholder, which is the honest outcome.
+            self._send_json({"error": "no thumbnail"}, 404)
+            return
+        candidate = _thumb_dir() / Path(served).name
+        if not candidate.is_file():
+            self._send_json({"error": "no thumbnail"}, 404)
+            return
+        self._send_file(candidate.read_bytes(), "image/jpeg")
 
     def _handle_scrap(self, payload: dict) -> None:
         """Answer the ViceScrap search box.
@@ -624,6 +824,13 @@ class Handler(http_server.BaseHTTPRequestHandler):
             self._send_json({"error": f"{exc!r}"}, 400)
             return
         self._send_json({"title": title, "count": len(results), "results": results})
+        # Kept so /scrap/thumb can serve the k-th row by index. The page holds
+        # the same list, but re-deriving it there means sending every item back
+        # through the API, and the URL has to be buildable from the row alone.
+        # ``_ytdlp_args`` travels with it because the thumbnail fetch has to
+        # repeat the same authenticated request the search made.
+        with _lock:
+            _state["scrap"] = results
 
     def _handle_normalize(self, payload: dict) -> None:
         """Clean a pasted transcript and return it minute-aligned."""

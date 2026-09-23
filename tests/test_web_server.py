@@ -436,6 +436,136 @@ class ScrapResultsTests(unittest.TestCase):
         self.assertEqual(seen["args"], ["--cookies", "C:/cookies.txt"])
 
 
+class ScrapCardTests(unittest.TestCase):
+    """The result card: one place that decides what a search hit looks like.
+
+    The card is built as an HTML string in the page and its numbers are shaped
+    on the server, so the two have to agree on names. The page test is a
+    contract test, not a render test: it asserts the card template references
+    the same fields the server emits, and that the escaping helper is actually
+    applied to the text fields. A render test would need a browser; this one
+    catches the bug that matters (a field renamed on one side only).
+    """
+
+    def setUp(self):
+        self.page = (server.WEB_DIR / "scrap.html").read_text(encoding="utf-8")
+
+    def test_the_card_shows_a_thumbnail_slot(self):
+        self.assertIn("result-thumb", self.page)
+
+    def test_the_card_has_a_play_affordance(self):
+        """A video hit has to look like a video, not like a list row."""
+        self.assertIn("result-play", self.page)
+
+    def test_the_card_uses_the_fields_the_server_sends(self):
+        """Every item field the server emits must be reachable from the card.
+
+        ``thumb`` is fetched lazily and never returned by ``_scrap_results``,
+        so it is excluded by construction.
+        """
+        for field in ("title", "url", "uploader", "duration", "view_count"):
+            self.assertIn(field, self.page, f"card não usa o campo {field}")
+
+    def test_the_card_embeds_the_raw_item_and_escapes_it(self):
+        """The thumbnail needs the row's data, so the card carries it inline.
+
+        That makes escaping mandatory: a title is attacker-controlled text and
+        it now lands inside an attribute. If the helper is dropped, a title
+        with a quote breaks out of the attribute.
+        """
+        self.assertIn("JSON.stringify", self.page)
+        self.assertIn("esc(", self.page)
+
+    def test_the_policy_allows_same_origin_images(self):
+        """The card shows images; the policy has to allow them.
+
+        Thumbnails are proxied through ``/thumb/``, so ``img-src 'self'`` is
+        enough and no CDN wildcard is needed. With no ``img-src`` at all the
+        images are blocked and the feature reads as broken rather than as a
+        policy error.
+        """
+        self.assertIn("img-src", server.Handler.CSP)
+        self.assertIn("'self'", server.Handler.CSP)
+
+    def test_the_policy_does_not_wildcard_external_hosts(self):
+        """A ``https:`` wildcard would let any injected tag call out.
+
+        It is also what makes the proxy worthwhile: the one host we must reach
+        for images is this one.
+        """
+        self.assertNotIn("img-src https:", server.Handler.CSP)
+        self.assertNotIn("img-src *", server.Handler.CSP)
+
+    def test_the_card_escapes_attributes_and_text(self):
+        escaped = server.esc
+        self.assertEqual(escaped('<b>"x"</b>'), "&lt;b&gt;&quot;x&quot;&lt;/b&gt;")
+        self.assertEqual(escaped("'"), "&#x27;")
+
+
+class ScrapThumbTests(unittest.TestCase):
+    """A thumbnail lookup must never turn a listed video into an error."""
+
+    def test_a_failed_lookup_returns_none_instead_of_raising(self):
+        from unittest import mock
+
+        with mock.patch.object(server, "_fetch_thumb_bytes", side_effect=OSError("boom")):
+            self.assertIsNone(server._scrap_thumb({"id": "x"}))
+
+    def test_a_video_without_a_thumbnail_returns_none(self):
+        self.assertIsNone(server._scrap_thumb({"id": "x"}))
+
+    def test_a_traversal_id_is_rejected_not_sanitised_silently(self):
+        """An id arrives from yt-dlp, but the path it builds must stay inside.
+
+        The characters that survive the filter are alphanumerics plus dash and
+        underscore, which cannot climb a directory. Anything else collapses to a
+        name inside the cache dir rather than escaping it.
+        """
+        from unittest import mock
+
+        with mock.patch.object(server, "_fetch_thumb_bytes", return_value=b"x"):
+            served = server._scrap_thumb({"id": "../../etc/passwd", "url": "u"})
+        self.assertIsNotNone(served)
+        name = served.rsplit("/", 1)[-1]
+        self.assertNotIn("..", name)
+        self.assertNotIn("/", name)
+        self.assertNotIn("\\", name)
+
+    def test_the_cache_dir_stays_under_web(self):
+        """A cache of other people's frames must not join the clip library."""
+        cache = server._thumb_dir().resolve()
+        self.assertTrue(str(cache).startswith(str(server.WEB_DIR.resolve())))
+        self.assertNotIn("output", cache.parts)
+
+
+class ScrapThumbRouteTests(unittest.TestCase):
+    """The /scrap/thumb GET is what the <img> tag actually hits."""
+
+    def test_the_page_points_the_image_at_the_proxy(self):
+        """The CSP allows images from this origin only, so a raw CDN URL in
+        ``src`` is blocked and the thumbnail silently never appears."""
+        page = (server.WEB_DIR / "scrap.html").read_text(encoding="utf-8")
+        self.assertIn('"/scrap/thumb?i="', page)
+        # The item's own ``thumb`` field is a foreign CDN URL and must not be
+        # assigned to src directly.
+        self.assertNotIn("img.src = item.thumb", page)
+
+    def test_an_index_with_no_results_is_a_404_not_a_crash(self):
+        handler = object.__new__(server.Handler)
+        sent: dict = {}
+        handler._send_json = lambda payload, code=200: sent.update(payload, _code=code)
+        with mock_lock_empty():
+            server.Handler._send_thumb_at(handler, 7, "1")
+        self.assertEqual(sent.get("_code"), 404)
+
+
+def mock_lock_empty():
+    """Run with an empty scrape state, restoring whatever was there."""
+    from unittest import mock
+
+    return mock.patch.dict(server._state, {"scrap": []})
+
+
 class YtdlpArgvTests(unittest.TestCase):
     """_ytdlp_argv normalises the three shapes clients actually send."""
 

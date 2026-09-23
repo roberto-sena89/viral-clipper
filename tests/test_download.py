@@ -58,6 +58,25 @@ class ExplainFailureTests(unittest.TestCase):
         message = download.explain_failure("ERROR: Unsupported URL: https://x/y")
         self.assertIn("single video URL", message)
 
+    def test_dpapi_failure_points_at_a_cookie_file_not_the_browser_flag(self):
+        """Chrome 127+ App-Bound Encryption has no fix inside yt-dlp.
+
+        The flag the user already passed is the thing that failed, so the hint
+        must not tell them to pass it again. The only workaround is a
+        ``cookies.txt`` file, which yt-dlp reads directly.
+        """
+        message = download.explain_failure(
+            "ERROR: Failed to decrypt with DPAPI. See "
+            "https://github.com/yt-dlp/yt-dlp/issues/10927 for more info"
+        )
+        self.assertIn("cookies.txt", message)
+        self.assertIn("--cookies", message)
+        self.assertNotIn("--cookies-from-browser", message)
+
+    def test_locked_cookie_database_suggests_closing_the_browser(self):
+        message = download.explain_failure("ERROR: Could not copy Chrome cookie database")
+        self.assertIn("cookies.txt", message)
+
     def test_unknown_error_keeps_the_cause_and_the_url(self):
         message = download.explain_failure(
             "ERROR: something entirely new", "https://youtu.be/x"

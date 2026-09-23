@@ -86,6 +86,24 @@ _HINTS: tuple[tuple[str, str], ...] = (
         "--download-mode full to download the whole video at once.",
     ),
     ("unable to download webpage", "Could not reach the site. Check the connection."),
+    (
+        # Chrome 127+ seals cookie values with App-Bound Encryption (the v20
+        # prefix). The master key in Local State still unwraps, which is why the
+        # message says DPAPI, but the per-cookie layer is bound to the browser
+        # process and cannot be opened from outside it. Telling the user to
+        # retry with the --cookies-from-browser flag they already passed is a
+        # dead end, so point at the file-based escape hatch instead.
+        "failed to decrypt with dpapi",
+        "Esse navegador usa App-Bound Encryption (Chrome/Edge 127+) e o yt-dlp "
+        "não consegue ler os cookies dele. Exporte os cookies para um arquivo "
+        "cookies.txt e passe --cookies /caminho/cookies.txt.",
+    ),
+    (
+        "could not copy chrome cookie database",
+        "O navegador está aberto e travando o banco de cookies. Feche-o e "
+        "repita, ou exporte os cookies para um arquivo cookies.txt e passe "
+        "--cookies /caminho/cookies.txt.",
+    ),
 )
 
 

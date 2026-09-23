@@ -52,6 +52,9 @@ download_mode: "sections"  # sections | full
 max_height: 1080
 cookies_from_browser: null  # chrome | firefox | edge | ...
 extra_ytdlp_args: []        # list of extra yt-dlp args
+# Idioma pedido ao YouTube. Com "pt" os titulos vem em pt-BR, inclusive os de
+# videos cujo original e em ingles (o YouTube traduz). "" desliga.
+metadata_language: "pt"
 
 # rendering
 vertical: true

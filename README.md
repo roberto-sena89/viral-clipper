@@ -144,6 +144,7 @@ in: a window's score must not change when its neighbours do.
 | `--model` | small | faster-whisper checkpoint; steps down if it will not load |
 | `--language` | auto | force a language, e.g. `pt` |
 | `--download-mode` | sections | `sections` downloads only the chosen ranges |
+| `--metadata-language` | `pt` | language yt-dlp asks the site for; this is what keeps titles in pt-BR. Empty leaves the site's default |
 | `--layout` | focus | `focus`, `center`, `blur` or `fit` |
 | `--caption-style` | karaoke | `karaoke`, `block` or `none` |
 | `--caption-preset` | karaoke | one of the 21 presets below; `--caption-preset X` overrides `--caption-style` |
@@ -164,6 +165,29 @@ in: a window's score must not change when its neighbours do.
 | `--variant-layouts` | off | comma-separated layouts; re-renders each clip once per layout |
 | `--list-templates` | — | print the built-in templates and exit |
 | `--describe-template` | — | print a template's resolved pixel bands and exit |
+
+### Títulos em pt-BR
+
+O YouTube localiza **tudo** o que devolve para o idioma do pedido. O mesmo
+vídeo aparece como `LULA PERDEU CONTROLE do GOVERNO e MESSIAS e RODRIGUES estão
+em GUERRA ABERTA` quando o pedido é em português e como `LULA HAS LOST CONTROL
+OF THE GOVERNMENT and MESSIAS and RODRIGUES ARE IN AN OPEN WAR` quando não é —
+e um vídeo de origem inglesa (`I Built A City To Save Kids From Illegal Labor`)
+volta já traduzido (`Eu Construí Uma Cidade Pra Salvar Crianças do Trabalho
+Infantil Ilegal`).
+
+Como o título é o que o relatório, a listagem de arquivos e a página de scrap
+mostram, o idioma é fixado uma vez e vale para toda chamada ao yt-dlp:
+`--metadata-language pt` (o default) vira `--extractor-args youtube:lang=pt`
+em cada invocação. Use `--metadata-language ""` (ou `metadata_language = ""`
+no config) para deixar o padrão do site, e um `youtube:lang=...` passado em
+`--ytdlp-arg` vence o default.
+
+Uma armadilha embutida aqui: o yt-dlp **não** mescla dois `--extractor-args` do
+mesmo extractor — o último substitui o primeiro. Passar o idioma como uma
+segunda flag ao lado do `youtube:player_client=...` do usuário apagava o
+idioma e os títulos voltavam em inglês, sem erro nenhum. Por isso a linguagem é
+dobrada numa flag única, junto das outras chaves do usuário.
 
 ### Caption presets
 

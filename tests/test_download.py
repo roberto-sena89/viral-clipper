@@ -226,6 +226,136 @@ class BaseArgsTests(unittest.TestCase):
         self.assertIn("--no-check-certificate", args)
 
 
+class MetadataLanguageTests(unittest.TestCase):
+    """The request language is what keeps titles in pt-BR.
+
+    YouTube localizes every field to the language of the request, so the same
+    video comes back as "LULA HAS LOST CONTROL OF THE GOVERNMENT" without this
+    and as "LULA PERDEU CONTROLE do GOVERNO" with it.
+    """
+
+    @staticmethod
+    def _extractor_args(args: list[str]) -> list[str]:
+        """Every ``--extractor-args`` value in an argv list, in both spellings."""
+        values = []
+        for index, arg in enumerate(args):
+            if arg.startswith("--extractor-args="):
+                values.append(arg.split("=", 1)[1])
+            elif arg == "--extractor-args":
+                values.append(args[index + 1])
+        return values
+
+    def test_the_language_is_pt_by_default(self):
+        args = download._base_args(make_config())
+        self.assertEqual(self._extractor_args(args), ["youtube:lang=pt"])
+
+    def test_a_configured_language_replaces_the_default(self):
+        args = download._base_args(make_config(metadata_language="es"))
+        self.assertEqual(self._extractor_args(args), ["youtube:lang=es"])
+
+    def test_an_empty_language_leaves_ytdlp_alone(self):
+        args = download._base_args(make_config(metadata_language=""))
+        self.assertEqual(self._extractor_args(args), [])
+
+    def test_a_language_the_user_pinned_wins(self):
+        """An explicit ``youtube:lang=`` is an instruction, not a default."""
+        args = download._base_args(
+            make_config(extra_ytdlp_args=["--extractor-args", "youtube:lang=en"])
+        )
+        self.assertEqual(self._extractor_args(args), ["youtube:lang=en"])
+
+    def test_the_equals_spelling_is_understood_too(self):
+        args = download._base_args(
+            make_config(extra_ytdlp_args=["--extractor-args=youtube:lang=en"])
+        )
+        self.assertEqual(self._extractor_args(args), ["youtube:lang=en"])
+
+    def test_a_second_youtube_flag_would_erase_the_first(self):
+        """One flag only: yt-dlp keeps the last and drops the earlier one.
+
+        Passing the language as its own flag next to the user's
+        ``player_client`` silently switched the titles back to English, because
+        the second flag for the same extractor replaces the first.
+        """
+        args = download._base_args(
+            make_config(extra_ytdlp_args=["--extractor-args", "youtube:player_client=web"])
+        )
+        self.assertEqual(self._extractor_args(args), ["youtube:lang=pt;player_client=web"])
+        self.assertEqual(args.count("--extractor-args"), 1)
+
+    def test_the_users_own_keys_survive_the_merge(self):
+        args = download._base_args(
+            make_config(
+                extra_ytdlp_args=[
+                    "--extractor-args",
+                    "youtube:player_client=web;youtube_include_dash_manifest=False",
+                ]
+            )
+        )
+        self.assertEqual(
+            self._extractor_args(args),
+            ["youtube:lang=pt;player_client=web;youtube_include_dash_manifest=False"],
+        )
+
+    def test_the_same_key_twice_is_kept(self):
+        """Repeating a key with another value is how yt-dlp takes two clients."""
+        args = download._base_args(
+            make_config(
+                extra_ytdlp_args=["--extractor-args", "youtube:player_client=web;player_client=tv"]
+            )
+        )
+        self.assertEqual(
+            self._extractor_args(args), ["youtube:lang=pt;player_client=web;player_client=tv"]
+        )
+
+    def test_an_identical_repeat_is_dropped(self):
+        args = download._base_args(
+            make_config(
+                extra_ytdlp_args=[
+                    "--extractor-args",
+                    "youtube:player_client=web",
+                    "--extractor-args",
+                    "youtube:player_client=web",
+                ]
+            )
+        )
+        self.assertEqual(self._extractor_args(args), ["youtube:lang=pt;player_client=web"])
+
+    def test_another_extractor_is_left_untouched(self):
+        args = download._base_args(
+            make_config(extra_ytdlp_args=["--extractor-args", "instagram:api=graphql"])
+        )
+        self.assertIn("instagram:api=graphql", self._extractor_args(args))
+        self.assertIn("youtube:lang=pt", self._extractor_args(args))
+
+    def test_plain_flags_keep_their_place(self):
+        config = make_config(
+            extra_ytdlp_args=[
+                "--cookies",
+                "c.txt",
+                "--extractor-args",
+                "youtube:player_client=web",
+            ]
+        )
+        args = download._base_args(config)
+        # The merged flag goes last, so the caller's flags stay next to their own
+        # values.
+        self.assertEqual(args[args.index("--cookies") + 1], "c.txt")
+        self.assertEqual(self._extractor_args(args), ["youtube:lang=pt;player_client=web"])
+
+    def test_a_separator_in_the_language_is_refused(self):
+        """The code is spliced into ``youtube:lang=<code>``."""
+        for hostile in ("pt;player_client=web", "pt:en", "pt en", "pt=1"):
+            with self.subTest(language=hostile):
+                with self.assertRaises(ValueError):
+                    make_config(metadata_language=hostile).validate()
+
+    def test_a_plain_code_survives_validation(self):
+        config = make_config(metadata_language="  pt  ")
+        config.validate()
+        self.assertEqual(config.metadata_language, "pt")
+
+
 class VisibleDownloadFailureTests(unittest.TestCase):
     """A failing download must report what yt-dlp said, not a bare exit code."""
 

@@ -84,6 +84,15 @@ class ClipConfig:
     max_height: int = 1080
     cookies_from_browser: str | None = None
     extra_ytdlp_args: list[str] = field(default_factory=list)
+    # Language every yt-dlp metadata call asks the site for. YouTube localizes
+    # everything it returns: the same video is listed as "LULA HAS LOST CONTROL
+    # OF THE GOVERNMENT" by default and as "LULA PERDEU CONTROLE do GOVERNO"
+    # with "pt", and an English original ("I Built A City...") comes back
+    # already in Portuguese. Titles are what the report, the file listing and
+    # the web panel show, so the choice is made here once and applied to every
+    # call. Use "" to leave the site's own default alone. Codes are the ones
+    # yt-dlp accepts ("pt", "en", "es"); "pt-BR" is rejected by yt-dlp itself.
+    metadata_language: str = "pt"
 
     # --- rendering -------------------------------------------------------
     vertical: bool = True
@@ -176,6 +185,16 @@ class ClipConfig:
             raise ValueError("engine must be hybrid, audio or transcript")
         if self.download_mode not in {"sections", "full"}:
             raise ValueError("download_mode must be sections or full")
+        # The code is spliced into ``youtube:lang=<code>``, so a separator would
+        # let a config file (or the web panel) smuggle in another extractor
+        # argument.
+        language = "" if self.metadata_language is None else str(self.metadata_language).strip()
+        if any(separator in language for separator in (";", ":", "=", " ")):
+            raise ValueError(
+                "metadata_language must be a bare language code such as pt or en "
+                "(empty asks for no language at all)"
+            )
+        self.metadata_language = language
         if self.layout not in {"center", "blur", "fit", "focus"}:
             raise ValueError("layout must be center, blur, fit or focus")
         if self.caption_style not in {"karaoke", "block", "none"}:

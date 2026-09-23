@@ -144,11 +144,93 @@ def explain_failure(output: str, url: str = "") -> str:
     return f"yt-dlp failed{target}: {cause}"
 
 
+#: yt-dlp keeps only the LAST ``--extractor-args`` of a given extractor: a
+#: second flag for ``youtube`` REPLACES the first instead of merging with it.
+#: That is why the metadata language is folded into the caller's own flag
+#: instead of being appended as one more flag of its own.
+_EXTRACTOR_ARGS = "--extractor-args"
+
+
+def _extractor_arg_values(argv: list[str]) -> list[str]:
+    """Every value passed through ``--extractor-args``, in either spelling."""
+    values: list[str] = []
+    for index, arg in enumerate(argv):
+        if arg.startswith(f"{_EXTRACTOR_ARGS}="):
+            values.append(arg.split("=", 1)[1])
+        elif arg == _EXTRACTOR_ARGS and index + 1 < len(argv):
+            values.append(argv[index + 1])
+    return values
+
+
+def _pins_metadata_language(argv: list[str]) -> bool:
+    """True when the caller already chose the YouTube metadata language.
+
+    An explicit ``youtube:lang=...`` in ``--ytdlp-arg`` is an instruction, not
+    something to be overridden by the default, so the default steps aside.
+    """
+    for value in _extractor_arg_values(argv):
+        key, _, rest = value.partition(":")
+        if key != "youtube":
+            continue
+        for part in rest.split(";"):
+            if part.split("=", 1)[0].strip() == "lang":
+                return True
+    return False
+
+
+def _extra_ytdlp_args(config: ClipConfig) -> list[str]:
+    """The extra yt-dlp words, with the metadata language folded in.
+
+    YouTube localizes every metadata field to the language of the request: the
+    same video is listed as "LULA HAS LOST CONTROL OF THE GOVERNMENT" with the
+    default request and as "LULA PERDEU CONTROLE do GOVERNO" with ``pt``. Since
+    titles are what the report, the file listing and the web panel show, the
+    language is set on every call.
+
+    Two flags cannot express that (see :data:`_EXTRACTOR_ARGS`), so the caller's
+    youtube arguments are collected and re-emitted as a single flag with the
+    language first. Duplicates of the same ``key=value`` are dropped, while the
+    same key with different values is kept — that is how yt-dlp takes more than
+    one ``player_client``.
+    """
+    argv = [str(word) for word in config.extra_ytdlp_args]
+    language = str(getattr(config, "metadata_language", "") or "").strip()
+    if not language or _pins_metadata_language(argv):
+        return argv
+
+    rebuilt: list[str] = []
+    youtube: list[str] = []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        value: str | None = None
+        consumed = 1
+        if arg.startswith(f"{_EXTRACTOR_ARGS}="):
+            value = arg.split("=", 1)[1]
+        elif arg == _EXTRACTOR_ARGS and index + 1 < len(argv):
+            value = argv[index + 1]
+            consumed = 2
+        if value is None or not value.startswith("youtube:"):
+            rebuilt.append(arg)
+            index += 1
+            continue
+        for part in value.partition(":")[2].split(";"):
+            stripped = part.strip()
+            if stripped and stripped.split("=", 1)[0].strip() != "lang":
+                if stripped not in youtube:
+                    youtube.append(stripped)
+        index += consumed
+
+    merged = ["lang=" + language] + youtube
+    rebuilt += [_EXTRACTOR_ARGS, "youtube:" + ";".join(merged)]
+    return rebuilt
+
+
 def _base_args(config: ClipConfig) -> list[str]:
     args = ["--no-playlist", "--no-warnings", "--retries", "5", "--fragment-retries", "5"]
     if config.cookies_from_browser:
         args += ["--cookies-from-browser", config.cookies_from_browser]
-    args += list(config.extra_ytdlp_args)
+    args += _extra_ytdlp_args(config)
     return args
 
 
@@ -272,6 +354,48 @@ def download_section(
             "mp4",
             "--download-sections",
             section,
+            "-o",
+            _template(destination),
+            url,
+        ),
+        url,
+        logger,
+    )
+    return _resolve_downloaded(destination)
+
+
+def download_media(
+    url: str,
+    destination: str | Path,
+    config: ClipConfig,
+    logger: Logger | None = None,
+) -> Path:
+    """Download one media item whole, at the configured height.
+
+    The difference from :func:`download_full` is the filter. A carousel post is
+    a *set* of images and videos sharing one shortcode, so yt-dlp enumerates
+    every entry of that post; requesting the plain video filter on it downloads
+    nothing at all. Falling back through every shape (video, then audio+video,
+    then best) is what makes one code path work for a reel, a video post and a
+    photo carousel.
+
+    Audio is merged into mp4 rather than kept separate: the destination is a
+    personal archive of the profile, and one playable file per post is the
+    point. ``-S`` orders the format selection so the merge is deterministic
+    instead of whatever the site happened to list first.
+    """
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    height = max(240, config.max_height)
+    _run_visible(
+        _ytdlp(
+            *_base_args(config),
+            "-f",
+            f"bv*[height<={height}]+ba/b[height<={height}]/b",
+            "-S",
+            "res,vcodec:h264,acodec:aac",
+            "--merge-output-format",
+            "mp4",
             "-o",
             _template(destination),
             url,

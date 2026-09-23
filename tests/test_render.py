@@ -250,6 +250,27 @@ class CaptionPresetTests(unittest.TestCase):
                 )
                 self.assertIn(color, path.read_text(encoding="utf-8"))
 
+    def test_article_presets_use_their_documented_faces_and_colors(self):
+        cases = (
+            ("roboto-bold", "Roboto", "&H00FFE500"),
+            ("inter-bold", "Inter", "&H0000FFCC"),
+            ("montserrat-bold", "Montserrat", "&H0000D7FF"),
+            ("helvetica-classic", "Helvetica", "&H0000FFFF"),
+            ("merriweather-black", "Merriweather", "&H0000D7FF"),
+        )
+        for name, font, color in cases:
+            with self.subTest(preset=name):
+                style = render.caption_presets.resolve(make_config(caption_preset=name))
+                self.assertEqual(style.font, font)
+                self.assertEqual(style.highlight_color, color)
+
+    def test_every_preset_has_a_name_and_description(self):
+        for name, preset in render.caption_presets.PRESETS.items():
+            with self.subTest(preset=name):
+                self.assertEqual(preset.name, name)
+                self.assertTrue(preset.description)
+                self.assertGreaterEqual(preset.font_size, 20)
+
     def test_candy_inverts_text_over_a_light_box(self):
         style = render.caption_presets.resolve(make_config(caption_preset="candy"))
         self.assertEqual(style.primary_color, "&H00141414")

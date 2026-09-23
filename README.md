@@ -146,12 +146,24 @@ in: a window's score must not change when its neighbours do.
 | `--download-mode` | sections | `sections` downloads only the chosen ranges |
 | `--layout` | focus | `focus`, `center`, `blur` or `fit` |
 | `--caption-style` | karaoke | `karaoke`, `block` or `none` |
-| `--caption-preset` | karaoke | `karaoke`, `bold-box`, `minimal`, `neon`, `block-dark`, `mono` |
+| `--caption-preset` | karaoke | one of the 21 presets below; `--caption-preset X` overrides `--caption-style` |
 | `--font-size` | preset | empty means "use the preset's size"; a value overrides only that |
 | `--caption-margin` | 640 | caption bottom margin in px; 640 clears the TikTok UI zone |
 | `--highlight-color` | `&H0000FFFF` | karaoke/headline color, ASS format `&HAABBGGRR` |
 | `--headline` | auto | burned opening headline; defaults to the clip's first words |
 | `--headline-seconds` | 0 (off) | how long the hook title stays at the top; 0 = captions only |
+| `--progress-bar` | off | draw the watched-progress bar at the top of the frame |
+| `--sidecar-captions` | off | write an `.srt` instead of burning captions |
+| `--jump-cut` | off | remove silences inside the clip |
+| `--threads` | 2 | ffmpeg thread limit per encode |
+| `--workers` | 2 | clips rendered in parallel |
+| `--cache-dir` | auto | transcript and rank cache directory |
+| `--plan-only` | off | score and report without rendering |
+| `--template` | off | a composition name (`split-card`) or a path to a `.toml`/`.yaml` |
+| `--variant-presets` | off | comma-separated presets; re-renders each clip once per preset |
+| `--variant-layouts` | off | comma-separated layouts; re-renders each clip once per layout |
+| `--list-templates` | — | print the built-in templates and exit |
+| `--describe-template` | — | print a template's resolved pixel bands and exit |
 
 ### Caption presets
 
@@ -159,6 +171,9 @@ One flag, one finished look. `--caption-preset NAME` picks the font, size,
 color, box and karaoke highlight together; any manual flag (`--font-size`,
 `--caption-margin`, `--highlight-color`, `--words-per-line`, `--uppercase` /
 `--no-uppercase`) overrides only that piece.
+
+21 presets ship. `--caption-preset` validates against the real list, so a typo
+prints the choices instead of rendering something unexpected.
 
 | Preset | Look | When it wins |
 | --- | --- | --- |
@@ -168,16 +183,122 @@ color, box and karaoke highlight together; any manual flag (`--font-size`,
 | `neon` | green neon highlight, deep shadow | dark, cinematic footage |
 | `block-dark` | opaque dark bar | bright highlights right under the text |
 | `mono` | monospaced, green highlight | tech and developer channels |
+| `fire` | orange highlight | energy and urgency |
+| `magenta-pop` | magenta highlight | pop and irreverent |
+| `cyan-pop` | electric cyan highlight | modern and cool |
+| `lime-hit` | acid-lime highlight | young, high-contrast |
+| `blood` | blood-red highlight, thick outline | drama and shock |
+| `gold-box` | gold highlight on dark box | authority and premium |
+| `candy` | white box, dark text, pink highlight | sweet and bright |
+| `violet-vibe` | violet highlight, deep shadow | creative and nocturnal |
+| `ice-blue` | ice-blue highlight on thin dark box | clean and technical |
+| `sunset` | warm orange highlight | heat without shouting |
+| `bubble` | night-blue box, yellow highlight | talk and podcast |
+| `ultra-impact` | giant Impact, thick outline | maximum impact |
+| `slim` | narrow face, cyan highlight | compact and informative |
+| `cobalt` | dark box, cyan highlight | sharp corporate |
+| `pop-box` | yellow box, dark text, red highlight | maximally loud |
+| `roboto-bold` | Roboto, cyan highlight | the YouTube/shorts standard |
+| `inter-bold` | Inter, lime highlight | top readability on small screens |
+| `poppins-bold` | geometric Poppins, magenta highlight | friendly and round |
+| `montserrat-bold` | Montserrat, gold highlight | the TikTok look |
+| `dm-sans` | DM Sans, orange highlight | Swiss minimalism |
+| `cabin-bold` | open Cabin, light cyan highlight | friendly explainers |
+| `verdana-bold` | giant x-height Verdana, yellow highlight | tiny screens and accessibility |
+| `trebuchet-bold` | clean humanist Trebuchet, red highlight | warm readability |
+| `tahoma-bold` | narrow Tahoma, cyan highlight | maximum words per line |
+| `calibri-bold` | modern Calibri, lime highlight | office and tutorials |
+| `franklin-bold` | condensed Franklin Gothic, fire highlight | classic news density |
+| `segoe-black` | native Segoe UI, violet highlight | modern Windows feel |
+| `helvetica-classic` | the cinema yellow | the classic film look |
+| `merriweather-black` | editorial screen serif, gold highlight | slow-paced documentaries |
+| `arvo-bold` | slab serif for the big screen, yellow highlight | interviews and keynotes |
+
+Windows system faces render out of the box; Roboto, Inter, Poppins,
+Montserrat, DM Sans, Cabin, Helvetica, Merriweather and Arvo are free on
+Google Fonts — install them or libass falls back to a system face and the
+preview in the UI will not match the burn.
+| `slim` | small, no box | dense footage where text competes |
+| `ultra-impact` | Impact, two words per line, oversized | loud, aggressive edits |
+| `fire` / `blood` | warm orange / deep red | high-energy hooks |
+| `candy` / `pop-box` / `bubble` | light or magenta boxes, dark text | playful, lifestyle content |
+| `cobalt` / `ice-blue` / `violet-vibe` | cool corporate blues and violet | business, finance, tutorials |
+| `cyan-pop` / `lime-hit` / `magenta-pop` | saturated neon accents | gaming, music, night footage |
+| `gold-box` | dark text on a gold plate | premium and money topics |
+| `sunset` | warm cream on coral | travel and slow content |
+
+<details>
+<summary>Full list</summary>
+
+`block-dark`, `blood`, `bold-box`, `bubble`, `candy`, `cobalt`, `cyan-pop`,
+`fire`, `gold-box`, `ice-blue`, `karaoke`, `lime-hit`, `magenta-pop`, `minimal`,
+`mono`, `neon`, `pop-box`, `slim`, `sunset`, `ultra-impact`, `violet-vibe`.
+
+</details>
 
 Pick one and keep it — a fixed caption look is what makes a channel's clips
 recognisable in the feed.
-| `--progress-bar` | off | draw the watched-progress bar at the top of the frame |
-| `--sidecar-captions` | off | write an `.srt` instead of burning captions |
-| `--jump-cut` | off | remove silences inside the clip |
-| `--threads` | 2 | ffmpeg thread limit per encode |
-| `--workers` | 2 | clips rendered in parallel |
-| `--cache-dir` | auto | transcript and rank cache directory |
-| `--plan-only` | off | score and report without rendering |
+
+### Templates
+
+A preset answers "how do the captions look". A **template** answers "what does
+the whole frame look like". A template is a stack of horizontal **zones** whose
+height fractions sum to 1.0:
+
+| Zone kind | Draws |
+| --- | --- |
+| `video` | the clip itself, cropped or fitted into its band |
+| `frame` | a still **extracted from the clip** (`frame_at` seconds in) |
+| `image` | a still from your own file (`source`), for a logo or channel card |
+| `solid` | a flat colour band |
+| `captions` | the caption band (positioned by libass; carries fraction 0) |
+
+Built-ins ship with the tool:
+
+```bash
+python -m viralclipper --list-templates
+python -m viralclipper --describe-template split-card
+```
+
+```toml
+name = "meu-canal"
+caption_preset = "neon"
+
+[[zones]]
+kind = "video"
+fraction = 0.62
+
+[[zones]]
+kind = "frame"
+fraction = 0.38
+margin_left = 0.03
+margin_right = 0.03
+corner_radius = 0.035
+```
+
+```bash
+python -m viralclipper "URL" --template ./templates/meu-canal.toml
+```
+
+The `frame` zone is why a branded split layout needs no asset files: the still
+is grabbed from the clip itself. If the grab or the image is missing the render
+degrades to the video instead of failing.
+
+**Variations.** One analysis pass, many deliverables — the whole point of
+templating:
+
+```bash
+python -m viralclipper "URL" --template split-card \
+  --variant-presets neon,fire,minimal --variant-layouts focus,blur
+```
+
+That is 3 x 2 = **6 renders per clip**, each named
+`..._<stem>__neon-focus_000010.mp4`. Nothing is re-downloaded and nothing is
+re-scored: the section download happens once per window and only the encode
+repeats.
+
+A browser wizard for building templates (with a live 9:16 preview) is served at
+`http://127.0.0.1:7755/templates` when the web UI is running.
 | `--keep-temp` | off | keep the intermediate files |
 
 Run `python -m viralclipper --help` for the full list.
@@ -397,10 +518,23 @@ The server serves `web/index.html` and exposes:
   lines, or `{"error": ...}`.
 - `GET /status` — current queue and generated clips.
 - `GET /clips/<relpath>` — serves a rendered clip from `output/`.
+- `GET /templates` — the template wizard (`web/templates.html`), a 7-step
+  editor with a live 9:16 preview that writes a `.toml` and the matching
+  command. The preview recomputes the zone geometry with the same rules as
+  `template.plan_bands`, and `tests/test_web_server.py` fails if the page's
+  catalog drifts from the engine's.
+- `GET /templates/catalog` — the presets, zone kinds and built-in templates, read
+  from `viralclipper` rather than duplicated in the page.
 
 It listens on `127.0.0.1` only, so it is not reachable from outside the
 machine. The UI degrades gracefully when the server is off: it shows the
 equivalent CLI command in the log box instead of erroring.
+
+If port 7755 is taken, pass `--port`:
+
+```powershell
+python web/server.py --port 7756
+```
 
 ## Tests
 
@@ -408,7 +542,7 @@ equivalent CLI command in the log box instead of erroring.
 python -m unittest discover -s tests -t .
 ```
 
-331 tests, offline and fast (no ffmpeg, no yt-dlp, no whisper model). The
+506 tests, offline and fast (no ffmpeg, no yt-dlp, no whisper model). The
 rendering, download and ranker paths are exercised through injected fakes, so
 the suite never needs a network.
 

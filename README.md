@@ -597,6 +597,30 @@ Two notes on the scrap page, both learned the hard way:
   Single post, reel and video URLs do work. The profile mode works for YouTube
   and TikTok.
 
+### Seleção em lote
+
+Cada resultado tem um checkbox, e a barra acima da lista tem **Selecionar
+todos** (que vira *Limpar seleção* quando tudo está marcado) e **Baixar
+selecionados**, com um contador do tipo `3 de 20 selecionado(s)`. O botão de
+baixar nasce desabilitado: sem seleção não há o que baixar, e o botão diz isso
+antes do clique.
+
+`POST /scrap/download` recebe `{items: [{url, id, title}], collection,
+cookies_file}` — a lista que já está na tela, uma URL por item, e não um
+catálogo. É por isso que funciona igual em YouTube, TikTok e Instagram, sem
+depender de sessão; o `/scrap/archive` continua sendo o caminho do catálogo do
+Instagram. Marcar para baixar é estado separado de **Usar** (que escolhe *um*
+vídeo para cortar), e o card mostra os dois com cores diferentes.
+
+O destino é `output/downloads/<título da lista>/` — uma pasta por busca, para
+duas buscas não misturarem arquivos. Cada arquivo é nomeado
+`<id> - <título>.mp4`: o id vem primeiro porque é o que uma segunda execução
+reconhece, o título depois para a pasta ser legível. Um arquivo já em disco é
+**pulado**, então repetir o download tenta só o que faltou — a mesma promessa do
+arquivamento, com a mesma resumibilidade vinda do sistema de arquivos. Uma
+falha custa aquele item, nunca o lote: o resumo volta com `baixados`, `ja tinha`
+e `falhas`, e a lista de erros item por item.
+
 It listens on `127.0.0.1` only, so it is not reachable from outside the
 machine. The UI degrades gracefully when the server is off: it shows the
 equivalent CLI command in the log box instead of erroring.

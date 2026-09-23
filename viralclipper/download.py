@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from . import util
@@ -530,13 +531,170 @@ def _resolve_downloaded(destination: Path) -> Path:
     candidates = [
         path
         for path in destination.parent.glob(f"{stem}.*")
-        if path.suffix.lower() not in {".part", ".ytdl", ".json", ".temp"}
+        if path.suffix.lower() not in _NOT_MEDIA_SUFFIXES
     ]
     if not candidates:
         raise ClipperError(
             f"yt-dlp did not produce a file matching {destination.parent / (stem + '.*')}"
         )
     return max(candidates, key=lambda path: path.stat().st_size)
+
+
+#: Suffixes yt-dlp leaves behind that are not the media itself. A file named
+#: like a download but ending in one of these is a leftover, not a result.
+_NOT_MEDIA_SUFFIXES = {".part", ".ytdl", ".json", ".temp"}
+
+#: Characters that are unsafe in a filename on Windows. A video title is
+#: attacker-controlled text that ends up in a path, so this is correctness
+#: rather than cosmetics.
+_UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+@dataclasses.dataclass(frozen=True)
+class MediaTarget:
+    """One video of a selection: where it lives, and what to call the file.
+
+    ``media_id`` is what makes the download resumable — a file whose name starts
+    with it is the same video — so it is worth carrying even when the title is
+    unknown.
+    """
+
+    url: str
+    media_id: str = ""
+    title: str = ""
+
+
+@dataclasses.dataclass
+class DownloadSummary:
+    """What one selection download did."""
+
+    total: int = 0
+    downloaded: int = 0
+    skipped: int = 0
+    failed: int = 0
+    root: Path | None = None
+    errors: list[tuple[str, str]] = dataclasses.field(default_factory=list)
+
+    def lines(self) -> list[str]:
+        """The report as plain text, the shape the log panel already shows."""
+        lines = [
+            f"Selecao: {self.total} item(ns)",
+            f"  baixados : {self.downloaded}",
+            f"  ja tinha : {self.skipped}",
+            f"  falhas   : {self.failed}",
+        ]
+        if self.root is not None:
+            lines.append(f"  destino  : {self.root}")
+        for name, error in self.errors[:10]:
+            lines.append(f"    ! {name}: {error}")
+        if len(self.errors) > 10:
+            lines.append(f"    ... e mais {len(self.errors) - 10} falha(s)")
+        return lines
+
+
+def _safe_stem(text: str) -> str:
+    """A filename fragment: safe characters only, and never a bare ``.``."""
+    cleaned = _UNSAFE_FILENAME.sub("", str(text or "")).strip().strip(".")
+    return cleaned[:80]
+
+
+def media_stem(target: MediaTarget) -> str:
+    """Filename stem for one target: the id first, then the readable title.
+
+    The id leads because that is what a second run recognises; the title follows
+    so the folder reads like a human wrote it. Either one alone is enough, and
+    the last resort is a generic name rather than an empty one.
+    """
+    ident = _safe_stem(target.media_id)
+    slug = util.slugify(target.title, fallback="", max_length=48) if target.title else ""
+    if ident and slug:
+        return f"{ident} - {slug}"
+    return ident or slug or "video"
+
+
+def _already_downloaded(root: Path, target: MediaTarget) -> Path | None:
+    """The file of ``target`` left by an earlier run, when it is on disk.
+
+    The id is the anchor: a title can be edited upstream, an id cannot, and a
+    file named after the id is the same video. The pattern is ``<id> -`` and not
+    ``<id>`` so that an id which happens to be a prefix of another is not
+    mistaken for it. Without an id only the stem is left to match on.
+    """
+    if not root.is_dir():
+        return None
+    patterns: list[str] = []
+    ident = _safe_stem(target.media_id)
+    if ident:
+        patterns += [f"{ident} - *", f"{ident}.*"]
+    patterns.append(f"{media_stem(target)}.*")
+    for pattern in patterns:
+        for candidate in sorted(root.glob(pattern)):
+            if candidate.is_file() and candidate.suffix.lower() not in _NOT_MEDIA_SUFFIXES:
+                return candidate
+    return None
+
+
+def download_many(
+    targets: Iterable[MediaTarget],
+    destination: str | Path,
+    config: ClipConfig,
+    logger: Logger | None = None,
+    downloader: Callable[..., Path] | None = None,
+    overwrite: bool = False,
+) -> DownloadSummary:
+    """Download every target into one folder, resumable and failure-isolated.
+
+    The unit of work is the selection the user marked, not a catalogue: one
+    private or deleted video costs that item and never the batch, and a file
+    already on disk is skipped so repeating the download continues where the
+    previous one stopped. Order is preserved — the list is the order the user
+    saw on screen.
+
+    ``downloader`` is injected so the loop can be tested without a network,
+    exactly like :func:`viralclipper.archive.archive_profile`; production passes
+    :func:`download_media`.
+    """
+    fetch = downloader or download_media
+    root = Path(destination)
+    items = list(targets)
+    summary = DownloadSummary(total=len(items), root=root)
+    if not items:
+        return summary
+    root.mkdir(parents=True, exist_ok=True)
+
+    for position, target in enumerate(items, start=1):
+        url = str(target.url or "").strip()
+        if not url:
+            summary.failed += 1
+            summary.errors.append((media_stem(target), "sem URL"))
+            continue
+
+        existing = None if overwrite else _already_downloaded(root, target)
+        if existing is not None:
+            summary.skipped += 1
+            if logger:
+                logger.info(f"[{position}/{summary.total}] ja existe: {existing.name}")
+            continue
+
+        stem = media_stem(target)
+        if logger:
+            logger.step(f"[{position}/{summary.total}] {stem}")
+        try:
+            fetch(url, root / stem, config, logger)
+        except ClipperError as exc:
+            summary.failed += 1
+            summary.errors.append((stem, str(exc)))
+            if logger:
+                logger.warn(f"falhou: {stem}: {exc}")
+        except Exception as exc:  # noqa: BLE001 - one item must not stop the batch
+            summary.failed += 1
+            summary.errors.append((stem, repr(exc)))
+            if logger:
+                logger.warn(f"falhou: {stem}: {exc!r}")
+        else:
+            summary.downloaded += 1
+
+    return summary
 
 
 def resolve_origin(

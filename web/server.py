@@ -403,6 +403,26 @@ def esc(text: object) -> str:
 _THUMB_DIR_NAME = "thumbs"
 _THUMB_MAX_BYTES = 6 * 1024 * 1024
 
+#: Teto de itens numa selecao para download. A lista na tela tem no maximo 100
+#: itens (o limite da busca), entao o teto existe para uma requisicao forjada
+#: nao transformar o servidor num downloader de mil URLs de uma vez so.
+_MAX_SELECTED_DOWNLOADS = 200
+
+
+def _relative_to_repo(path: Path | None) -> str:
+    """A path as the UI shows it: inside the repo when it fits, absolute when not.
+
+    ``relative_to`` raises for a folder outside the project (a symlinked output
+    directory, an absolute ``--output``). Showing that path is still better than
+    failing the whole response, so the absolute form is the fallback.
+    """
+    if path is None:
+        return ""
+    try:
+        return str(path.relative_to(REPO_ROOT)).replace("\\", "/")
+    except ValueError:
+        return str(path).replace("\\", "/")
+
 
 def _thumb_dir() -> Path:
     """Where thumbnail bytes are cached, under the server's own directory.
@@ -756,6 +776,12 @@ class Handler(http_server.BaseHTTPRequestHandler):
         if path == "/scrap/thumb":
             self._handle_thumb(payload)
             return
+        if path == "/scrap/archive":
+            self._handle_archive(payload)
+            return
+        if path == "/scrap/download":
+            self._handle_selected_download(payload)
+            return
         if path == "/transcript/normalize":
             self._handle_normalize(payload)
             return
@@ -837,6 +863,173 @@ class Handler(http_server.BaseHTTPRequestHandler):
         # repeat the same authenticated request the search made.
         with _lock:
             _state["scrap"] = results
+
+    def _handle_archive(self, payload: dict) -> None:
+        """Baixa o catalogo de um perfil para ``reels/`` e ``posts/``.
+
+        Diferente de ``/scrap`` (que so lista metadados) e de ``/run`` (que
+        analisa UM video e produz clipes): aqui o produto e um arquivo da conta
+        inteira. Roda sincrono como o ``/scrap``, e nao na fila do ``/run``,
+        porque o resultado que importa e quantos arquivos foram escritos e onde.
+        """
+        from viralclipper import archive as archive_mod
+        from viralclipper import ig_profile as ig_profile_mod
+
+        profile = str(payload.get("profile") or "").strip()
+        cookies_file = str(payload.get("cookies_file") or "").strip()
+        if not profile:
+            self._send_json({"error": "informe o perfil"}, 400)
+            return
+        if not cookies_file:
+            self._send_json(
+                {"error": "Informe o arquivo cookies.txt: o Instagram só devolve "
+                          "o catálogo para uma sessão autenticada."},
+                400,
+            )
+            return
+
+        only = str(payload.get("only") or "").strip()
+        kinds = [part.strip() for part in only.split(",") if part.strip()]
+        valid = {ig_profile_mod.REELS_DIR, ig_profile_mod.POSTS_DIR}
+        unknown = [k for k in kinds if k.lower() not in valid]
+        if unknown:
+            self._send_json(
+                {"error": f"only aceita {', '.join(sorted(valid))}"}, 400
+            )
+            return
+
+        try:
+            limit = int(payload.get("max_items") or 0) or None
+        except (TypeError, ValueError):
+            limit = None
+
+        logger = CollectingLogger()
+        root = (REPO_ROOT / "output" / "instagram").resolve()
+        try:
+            listing = ig_profile_mod.list_profile(profile, cookies_file, logger)
+        except ClipperError as exc:
+            self._send_json({"error": str(exc), "log_lines": logger.lines}, 400)
+            return
+        except Exception as exc:  # noqa: BLE001 - surface anything to the UI
+            self._send_json({"error": f"{exc!r}", "log_lines": logger.lines}, 400)
+            return
+
+        chosen = archive_mod.select_items(listing, kinds=kinds, limit=limit)
+        if not chosen:
+            self._send_json(
+                {"error": "o filtro não deixou nenhum item para baixar",
+                 "log_lines": logger.lines},
+                400,
+            )
+            return
+
+        # One folder per account, so archiving two profiles never mixes files.
+        destination = root / archive_mod.safe_slug(
+            listing.username, fallback="perfil", limit=40
+        )
+        try:
+            config = _options_to_config(
+                {"url": "", "output": str(destination),
+                 "cookies_file": cookies_file}
+            )
+            summary = archive_mod.archive_profile(
+                ig_profile_mod.ProfileListing(
+                    username=listing.username, title=listing.title,
+                    items=chosen, pages=listing.pages,
+                ),
+                destination, config, logger,
+            )
+        except ClipperError as exc:
+            self._send_json({"error": str(exc), "log_lines": logger.lines}, 400)
+            return
+        except Exception as exc:  # noqa: BLE001 - surface anything to the UI
+            self._send_json({"error": f"{exc!r}", "log_lines": logger.lines}, 400)
+            return
+
+        self._send_json(
+            {
+                "username": summary.username,
+                "downloaded": summary.downloaded,
+                "skipped": summary.skipped,
+                "failed": summary.failed,
+                "photos": summary.photos,
+                "reels": summary.reels,
+                "posts": summary.posts,
+                "root": str(summary.root.relative_to(REPO_ROOT)).replace("\\", "/")
+                        if summary.root else "",
+                "lines": summary.lines(),
+                "errors": [{"item": name, "error": error} for name, error in summary.errors],
+                "log_lines": logger.lines,
+            }
+        )
+
+    def _handle_selected_download(self, payload: dict) -> None:
+        """Baixa exatamente os itens marcados na lista de resultados.
+
+        Diferente de ``/scrap/archive`` (que le o catalogo de um perfil do
+        Instagram a partir de cookies), aqui a lista ja esta na tela e o que
+        chega e a selecao do usuario: cada URL e baixada por si, sem depender de
+        sessao nem de o site ter um catalogo paginado. Serve para YouTube,
+        TikTok e Instagram igualmente.
+
+        Roda sincrono, como ``/scrap`` e ``/scrap/archive``: o resultado que
+        importa e quantos arquivos foram escritos e onde.
+        """
+        raw_items = payload.get("items")
+        if not isinstance(raw_items, list) or not raw_items:
+            self._send_json({"error": "nenhum item selecionado"}, 400)
+            return
+
+        targets: list[download_mod.MediaTarget] = []
+        for raw in raw_items[:_MAX_SELECTED_DOWNLOADS]:
+            if not isinstance(raw, dict):
+                continue
+            url = str(raw.get("url") or "").strip()
+            if not url:
+                continue
+            targets.append(
+                download_mod.MediaTarget(
+                    url=url,
+                    media_id=str(raw.get("id") or ""),
+                    title=str(raw.get("title") or ""),
+                )
+            )
+        if not targets:
+            self._send_json({"error": "nenhum item selecionado tem URL"}, 400)
+            return
+
+        # Uma pasta por busca, para duas buscas nao misturarem arquivos. O nome
+        # vem do titulo da lista ("ANCAPSU - Vídeos"), que e o que o usuario ve.
+        collection = str(payload.get("collection") or "").strip()
+        slug = util.slugify(collection, fallback="selecionados", max_length=40)
+        root = (REPO_ROOT / "output" / "downloads" / slug).resolve()
+
+        cookies_file = str(payload.get("cookies_file") or "").strip()
+        logger = CollectingLogger()
+        try:
+            config = _options_to_config(
+                {"url": "", "output": str(root), "cookies_file": cookies_file}
+            )
+            summary = download_mod.download_many(targets, root, config, logger)
+        except ClipperError as exc:
+            self._send_json({"error": str(exc), "log_lines": logger.lines}, 400)
+            return
+        except Exception as exc:  # noqa: BLE001 - surface anything to the UI
+            self._send_json({"error": f"{exc!r}", "log_lines": logger.lines}, 400)
+            return
+
+        self._send_json(
+            {
+                "total": summary.total,
+                "downloaded": summary.downloaded,
+                "skipped": summary.skipped,
+                "failed": summary.failed,
+                "root": _relative_to_repo(summary.root),
+                "lines": summary.lines(),
+                "errors": [{"item": name, "error": error} for name, error in summary.errors],
+                "log_lines": logger.lines,
+            }
+        )
 
     def _handle_normalize(self, payload: dict) -> None:
         """Clean a pasted transcript and return it minute-aligned."""

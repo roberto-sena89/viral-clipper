@@ -148,6 +148,156 @@ class ExtractJsonObjectTests(unittest.TestCase):
             download._extract_json_object('{"a": 1', "u")
 
 
+class MediaStemTests(unittest.TestCase):
+    """The filename of a downloaded selection: id first, then the title."""
+
+    def test_the_id_leads_and_the_title_follows(self):
+        target = download.MediaTarget("u", "JQj-uE9eX7k", "LULA PERDEU CONTROLE do GOVERNO")
+        self.assertEqual(
+            download.media_stem(target), "JQj-uE9eX7k - lula_perdeu_controle_do_governo"
+        )
+
+    def test_an_id_alone_is_enough(self):
+        self.assertEqual(download.media_stem(download.MediaTarget("u", "abc")), "abc")
+
+    def test_a_title_alone_is_enough(self):
+        # slugify keeps Unicode letters, so an accented title stays accented:
+        # the file name is what the user will read in Explorer.
+        target = download.MediaTarget("u", title="Só o título")
+        self.assertEqual(download.media_stem(target), "só_o_título")
+
+    def test_neither_gives_a_generic_name(self):
+        self.assertEqual(download.media_stem(download.MediaTarget("u")), "video")
+
+    def test_unsafe_characters_never_reach_the_filename(self):
+        """A title is attacker-controlled text that ends up in a path."""
+        stem = download.media_stem(download.MediaTarget("u", 'a<>:"/\\|?*b', "ok"))
+        self.assertEqual(stem, "ab - ok")
+        for forbidden in '<>:"/\\|?*':
+            self.assertNotIn(forbidden, stem)
+
+
+class DownloadManyTests(unittest.TestCase):
+    """A batch download owes three things: order, skipping and isolation."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="vc_many_"))
+        self.calls: list[tuple[str, str]] = []
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _fetcher(self, *, fail_on: tuple[str, ...] = (), explode_on: tuple[str, ...] = ()):
+        def fetch(url, destination, config, logger=None):
+            self.calls.append((url, Path(destination).name))
+            if url in fail_on:
+                raise ClipperError(f"nao deu: {url}")
+            if url in explode_on:
+                raise ValueError(f"inesperado: {url}")
+            Path(destination).parent.mkdir(parents=True, exist_ok=True)
+            written = Path(f"{destination}.mp4")
+            written.write_bytes(b"x")
+            return written
+        return fetch
+
+    def test_every_target_is_fetched_in_the_order_of_the_list(self):
+        targets = [download.MediaTarget(f"https://x/{n}", f"id{n}") for n in (1, 2, 3)]
+        summary = download.download_many(
+            targets, self.tmp, make_config(), downloader=self._fetcher()
+        )
+        self.assertEqual((summary.total, summary.downloaded), (3, 3))
+        self.assertEqual(
+            [url for url, _ in self.calls], ["https://x/1", "https://x/2", "https://x/3"]
+        )
+
+    def test_the_file_is_named_after_the_id_and_the_title(self):
+        target = download.MediaTarget("https://x/1", "id1", "Titulo Um")
+        download.download_many([target], self.tmp, make_config(), downloader=self._fetcher())
+        self.assertTrue((self.tmp / "id1 - titulo_um.mp4").is_file())
+
+    def test_a_file_already_on_disk_is_skipped(self):
+        """Repeating the download must continue, not start over."""
+        (self.tmp / "id1 - titulo_um.mp4").write_bytes(b"antigo")
+        target = download.MediaTarget("https://x/1", "id1", "Titulo Um")
+        summary = download.download_many(
+            [target], self.tmp, make_config(), downloader=self._fetcher()
+        )
+        self.assertEqual((summary.skipped, summary.downloaded, self.calls), (1, 0, []))
+
+    def test_a_title_renamed_upstream_is_still_the_same_video(self):
+        """The id is the anchor: the slug may change, the id cannot."""
+        (self.tmp / "id1 - titulo_antigo.mp4").write_bytes(b"x")
+        target = download.MediaTarget("https://x/1", "id1", "Titulo NOVO")
+        summary = download.download_many(
+            [target], self.tmp, make_config(), downloader=self._fetcher()
+        )
+        self.assertEqual(summary.skipped, 1)
+
+    def test_a_similar_id_is_not_mistaken_for_the_same_one(self):
+        (self.tmp / "id10 - outro.mp4").write_bytes(b"x")
+        target = download.MediaTarget("https://x/1", "id1", "Titulo")
+        summary = download.download_many(
+            [target], self.tmp, make_config(), downloader=self._fetcher()
+        )
+        self.assertEqual((summary.skipped, summary.downloaded), (0, 1))
+
+    def test_overwrite_fetches_again(self):
+        (self.tmp / "id1 - titulo.mp4").write_bytes(b"antigo")
+        target = download.MediaTarget("https://x/1", "id1", "Titulo")
+        summary = download.download_many(
+            [target], self.tmp, make_config(), downloader=self._fetcher(), overwrite=True
+        )
+        self.assertEqual((summary.skipped, summary.downloaded), (0, 1))
+
+    def test_the_leftover_of_a_killed_download_is_not_the_media(self):
+        """A ``.part`` file is not a finished download, so it is not a skip."""
+        (self.tmp / "id1 - titulo.mp4.part").write_bytes(b"x")
+        target = download.MediaTarget("https://x/1", "id1", "Titulo")
+        summary = download.download_many(
+            [target], self.tmp, make_config(), downloader=self._fetcher()
+        )
+        self.assertEqual((summary.skipped, summary.downloaded), (0, 1))
+
+    def test_one_failure_does_not_stop_the_batch(self):
+        targets = [download.MediaTarget(f"https://x/{n}", f"id{n}") for n in (1, 2, 3)]
+        summary = download.download_many(
+            targets, self.tmp, make_config(), downloader=self._fetcher(fail_on=("https://x/2",))
+        )
+        self.assertEqual((summary.downloaded, summary.failed), (2, 1))
+        self.assertEqual(summary.errors[0][0], "id2")
+        self.assertIn("nao deu", summary.errors[0][1])
+
+    def test_an_unexpected_error_is_isolated_too(self):
+        targets = [download.MediaTarget(f"https://x/{n}", f"id{n}") for n in (1, 2)]
+        summary = download.download_many(
+            targets, self.tmp, make_config(), downloader=self._fetcher(explode_on=("https://x/1",))
+        )
+        self.assertEqual((summary.downloaded, summary.failed), (1, 1))
+        self.assertIn("ValueError", summary.errors[0][1])
+
+    def test_a_target_without_a_url_fails_without_a_call(self):
+        summary = download.download_many(
+            [download.MediaTarget("  ", "id1")], self.tmp, make_config(), downloader=self._fetcher()
+        )
+        self.assertEqual((summary.failed, self.calls), (1, []))
+        self.assertEqual(summary.errors[0][1], "sem URL")
+
+    def test_an_empty_selection_touches_nothing(self):
+        summary = download.download_many([], self.tmp, make_config(), downloader=self._fetcher())
+        self.assertEqual((summary.total, summary.downloaded), (0, 0))
+        self.assertEqual(self.calls, [])
+
+    def test_the_report_reads_like_the_other_summaries(self):
+        target = download.MediaTarget("https://x/1", "id1", "Titulo")
+        summary = download.download_many(
+            [target], self.tmp, make_config(), downloader=self._fetcher(fail_on=("https://x/1",))
+        )
+        lines = summary.lines()
+        self.assertIn("Selecao: 1 item(ns)", lines)
+        self.assertTrue(any("falhas   : 1" in line for line in lines))
+        self.assertTrue(any(str(self.tmp) in line for line in lines))
+
+
 class ResolveOriginTests(unittest.TestCase):
     """The renderer seeks into the file it is handed, so this has to be right."""
 

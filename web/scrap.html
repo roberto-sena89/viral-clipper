@@ -310,7 +310,9 @@ input::placeholder { color: var(--text-muted); }
    dado que o titulo nao da, entao ela vem primeiro na leitura. */
 .result {
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr) auto;
+  /* A coluna do checkbox vem antes da thumbnail: marcar para baixar e uma acao
+     de lista, e a lista se le da esquerda para a direita. */
+  grid-template-columns: 22px 96px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: start;
   padding: 10px;
@@ -325,6 +327,17 @@ input::placeholder { color: var(--text-muted); }
   border-color: var(--accent-primary);
   background: var(--active-tint);
 }
+/* Marcado para baixar e um estado diferente de escolhido para cortar: dois
+   cards com a mesma cara seriam duas coisas diferentes parecendo uma. */
+.result[data-selected="1"] {
+  border-color: var(--border-strong);
+  background: var(--well-bg);
+}
+.result-check {
+  display: grid; place-items: center; align-self: stretch;
+  padding-top: 2px; cursor: pointer;
+}
+.result-check input { width: 16px; height: 16px; margin: 0; cursor: pointer; }
 
 /* A thumbnail. 9:16 e o formato que o pipeline produz, entao o card ja mostra
    o enquadramento real. O fundo segura o espaco antes da imagem chegar (e come
@@ -377,7 +390,7 @@ input::placeholder { color: var(--text-muted); }
 /* Abaixo de 620px o card perde a coluna de acoes: os botoes descem para baixo
    do texto, senao a thumbnail de 96px come metade da largura util. */
 @media (max-width: 620px) {
-  .result { grid-template-columns: 72px minmax(0, 1fr); }
+  .result { grid-template-columns: 22px 72px minmax(0, 1fr); }
   .result-thumb { width: 72px; }
   .result-actions { grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; }
 }
@@ -650,6 +663,57 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
       <section class="card" aria-labelledby="h-resultados">
         <h2 id="h-resultados"><span class="ico" aria-hidden="true">≡</span> Resultados</h2>
         <p class="card-sub" id="resultados-sub">Nada buscado ainda.</p>
+
+        <!-- Selecao em lote. Fica escondida ate existir lista, pelo mesmo motivo
+             do bloco de arquivamento logo abaixo: sem itens na tela, um botao
+             que seleciona "todos" nao seleciona nada. -->
+        <div id="select-box" hidden
+             style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;
+                    margin:0 0 14px;padding:12px;border-radius:var(--radius-md);
+                    background:var(--well-bg);border:1px solid var(--border-subtle);">
+          <button class="btn pressable" type="button" id="btn-select-all">
+            Selecionar todos
+          </button>
+          <button class="btn pressable btn-primary" type="button" id="btn-download" disabled>
+            Baixar selecionados
+          </button>
+          <span class="field-hint" id="select-count" style="flex:1 1 200px;">
+            Nada selecionado.
+          </span>
+        </div>
+
+        <!-- Arquivar so faz sentido com uma lista na tela, entao o bloco fica
+             escondido ate a busca devolver itens: um botao que baixa "tudo" de
+             nada e pior que nenhum botao. -->
+        <div id="arquivar-box" hidden
+             style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;
+                    margin:0 0 14px;padding:12px;border-radius:var(--radius-md);
+                    background:var(--well-bg);border:1px solid var(--border-subtle);">
+          <div style="flex:0 0 150px;">
+            <label class="field-hint" for="arq-only" style="display:block;margin-bottom:6px;">
+              O que baixar
+            </label>
+            <select id="arq-only" name="only">
+              <option value="">Reels e posts</option>
+              <option value="reels">Só reels</option>
+              <option value="posts">Só posts</option>
+            </select>
+          </div>
+          <div style="flex:0 0 130px;">
+            <label class="field-hint" for="arq-max" style="display:block;margin-bottom:6px;">
+              Máximo de itens
+            </label>
+            <input type="number" id="arq-max" name="max-items" min="1" value="20">
+          </div>
+          <button class="btn pressable btn-primary" type="button" id="btn-arquivar">
+            Baixar para o computador
+          </button>
+          <span class="field-hint" style="flex:1 1 200px;">
+            Salva os vídeos em <code>reels/</code> e <code>posts/</code>. Itens já
+            baixados são pulados, então repetir continua de onde parou.
+          </span>
+        </div>
+
         <div id="resultados" aria-live="polite"></div>
       </section>
     </div>
@@ -867,6 +931,13 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   // ---------- resultados ----------
   var results = [];
   var picked = null;
+  // Indices marcados para baixar. E um Set e nao um campo de cada item porque a
+  // lista inteira e re-renderizada a cada busca: o estado tem de viver fora do
+  // DOM, ou a marcacao some junto com os cards antigos.
+  var selected = new Set();
+  // Titulo da lista em tela ("ANCAPSU - Vídeos"), usado para nomear a pasta do
+  // download. Guardado no render porque o `title` so existe dentro dele.
+  var collectionTitle = "";
   // Cresce a cada busca. Vai na URL da thumbnail para o browser nao servir a
   // imagem da busca anterior do cache quando o indice do card se repete — os
   // indices 0,1,2... sao sempre os mesmos, entao sem isto o item 2 da busca
@@ -918,7 +989,13 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
     const title = item.title || "(sem título)";
     const href = safeUrl(item.url);
 
-    return '<article class="result" data-index="' + index + '">' +
+    return '<article class="result" data-index="' + index + '"' +
+        (selected.has(index) ? ' data-selected="1"' : "") + ">" +
+      '<label class="result-check">' +
+        '<input type="checkbox" data-act="check" data-index="' + index + '"' +
+        (selected.has(index) ? " checked" : "") +
+        ' aria-label="Selecionar para baixar">' +
+      "</label>" +
       thumbMarkup() +
       '<div class="result-main">' +
         (href
@@ -1010,16 +1087,133 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
     });
   }
 
+  // ---------- selecao para baixar ----------
+  // "Usar" escolhe UM video para cortar; a marcacao escolhe QUANTOS videos
+  // baixar. Sao estados diferentes de proposito, e por isso tem cores
+  // diferentes no card: uma escolha e destrutiva (muda o alvo dos cortes), a
+  // outra e cumulativa.
+  function toggleSelection(index, on) {
+    if (on) selected.add(index);
+    else selected.delete(index);
+    const card = cardFor(index);
+    if (card) {
+      if (on) card.setAttribute("data-selected", "1");
+      else card.removeAttribute("data-selected");
+    }
+    renderSelection();
+  }
+
+  // Sincroniza o DOM inteiro com o Set. Usado pelo "Selecionar todos", que
+  // marca N cards de uma vez: re-renderizar a lista faria as thumbnails
+  // recarregarem todas a toa, e elas ja estao certas.
+  function paintSelection() {
+    $$(".result").forEach((card) => {
+      const index = Number(card.getAttribute("data-index"));
+      const on = selected.has(index);
+      const input = card.querySelector("input[data-act='check']");
+      if (input) input.checked = on;
+      if (on) card.setAttribute("data-selected", "1");
+      else card.removeAttribute("data-selected");
+    });
+    renderSelection();
+  }
+
+  function renderSelection() {
+    const total = results.length;
+    const chosen = selected.size;
+    const count = $("#select-count");
+    if (count) {
+      count.textContent = chosen
+        ? chosen + " de " + total + " selecionado(s). O download pula o que já está em disco."
+        : "Nada selecionado. Marque os vídeos ou use Selecionar todos.";
+    }
+    const all = $("#btn-select-all");
+    if (all) {
+      all.textContent = total && chosen === total ? "Limpar seleção" : "Selecionar todos";
+      all.disabled = total === 0;
+    }
+    const button = $("#btn-download");
+    if (button) {
+      button.disabled = chosen === 0;
+      button.textContent = chosen ? "Baixar selecionados (" + chosen + ")" : "Baixar selecionados";
+    }
+  }
+
+  function toggleAll() {
+    if (!results.length) return;
+    // Tudo marcado e o unico momento em que o mesmo botao significa o
+    // contrario; o rotulo diz qual dos dois vai acontecer antes do clique.
+    const clearing = selected.size === results.length;
+    selected.clear();
+    if (!clearing) results.forEach((_, index) => selected.add(index));
+    paintSelection();
+  }
+
+  // ---------- baixar a selecao ----------
+  // Diferente de "Baixar para o computador" (que le o catalogo de um perfil do
+  // Instagram a partir de cookies), aqui a lista ja esta na tela: o que vai para
+  // o servidor e a selecao exata, uma URL por item, e cada site responde por si.
+  // Por isso funciona igual em YouTube, TikTok e Instagram.
+  async function downloadSelected(event) {
+    if (event) event.preventDefault();
+    const items = Array.from(selected)
+      .sort((a, b) => a - b)
+      .map((index) => results[index])
+      .filter(Boolean)
+      .map((item) => ({ url: item.url, id: item.id, title: item.title }));
+    if (!items.length) {
+      toast("Nada selecionado.", "bad");
+      return;
+    }
+
+    const btn = $("#btn-download");
+    if (btn) { btn.disabled = true; btn.textContent = "Baixando…"; }
+
+    const cookiesFile = $("#scrap-cookies-file");
+    const sub = $("#resultados-sub");
+    if (sub) sub.textContent = "Baixando " + items.length + " item(ns)… (pode levar alguns minutos)";
+    toast("Baixando " + items.length + " vídeo(s)… não feche a página.", "ok");
+
+    const r = await post("/scrap/download", {
+      items: items,
+      collection: collectionTitle,
+      cookies_file: cookiesFile ? cookiesFile.value.trim() : "",
+    });
+
+    if (r.error) {
+      toast(String(r.error).slice(0, 120), "bad");
+      if (sub) sub.textContent = "O download da seleção falhou.";
+      renderSelection();
+      return;
+    }
+
+    if (sub) {
+      sub.textContent = r.downloaded + " baixado(s), " + r.skipped + " já tinha, " +
+                        r.failed + " falha(s) em " + r.root;
+    }
+    toast(r.downloaded + " vídeo(s) em " + r.root, "ok");
+    // A selecao continua na tela: o que acabou de descer agora esta em disco, e
+    // repetir o download pula esses e tenta so o que faltou.
+    renderSelection();
+  }
+
   function renderResults(title) {
     const box = $("#resultados");
     const sub = $("#resultados-sub");
     if (!box) return;
+    // Lista nova, selecao nova: indices marcados na busca anterior apontariam
+    // para outros videos agora.
+    selected.clear();
+    collectionTitle = title || "";
     box.innerHTML = "";
     if (sub) {
       sub.textContent = title
         ? title + " · " + results.length + (results.length === 1 ? " item" : " itens")
         : "Nada buscado ainda.";
     }
+    const selectBox = $("#select-box");
+    if (selectBox) selectBox.hidden = results.length === 0;
+    renderSelection();
     if (!results.length) {
       box.innerHTML =
         '<p class="empty"><strong>Sem itens.</strong>' +
@@ -1042,6 +1236,14 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
       const index = Number(btn.getAttribute("data-index"));
       pick(index);
       markPicked(index);
+    });
+    // ``change`` e nao ``click``: clicar no rotulo do checkbox dispara tambem o
+    // clique do proprio input, entao um handler de clique leria o estado duas
+    // vezes por toque. O ``change`` acontece uma vez, depois da alternancia.
+    resultsBox.addEventListener("change", (event) => {
+      const input = event.target.closest("input[data-act='check']");
+      if (!input) return;
+      toggleSelection(Number(input.getAttribute("data-index")), input.checked);
     });
   }
 
@@ -1197,7 +1399,127 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
     thumbQueue = [];
     renderResults(r.title || "");
     renderPick();
+    // O bloco de arquivamento so aparece quando ha uma lista: oferecer "baixar
+    // tudo" sem nada na tela e um botao que nao faz nada.
+    const arqBox = $("#arquivar-box");
+    if (arqBox) arqBox.hidden = results.length === 0;
     toast(results.length + " item(ns) encontrado(s).", results.length ? "ok" : "bad");
+  }
+
+  // ---------- arquivar o perfil ----------
+  // Escolhe o cookies.txt do formulario do mesmo jeito que a busca, para nao
+  // existirem duas verdades sobre qual sessao esta a ser usada. Diferente da
+  // busca, um seletor de navegador NAO serve aqui: a rota do Instagram exige o
+  // `sessionid` num header, e o yt-dlp nao intermediaria essa chamada.
+  async function archive(event) {
+    if (event) event.preventDefault();
+    const url = ($("#scrap-url") && $("#scrap-url").value || "").trim();
+    if (!url) {
+      toast("Faça uma busca de perfil primeiro.", "bad");
+      return;
+    }
+    const cookiesFile = $("#scrap-cookies-file");
+    const cookiesPath = cookiesFile ? cookiesFile.value.trim() : "";
+    if (!cookiesPath) {
+      toast("Informe o arquivo cookies.txt — o Instagram exige sessão.", "bad");
+      if (cookiesFile) cookiesFile.focus();
+      return;
+    }
+
+    const btn = $("#btn-arquivar");
+    const label = btn ? btn.textContent : "";
+    if (btn) { btn.disabled = true; btn.textContent = "Baixando…"; }
+
+    const only = $("#arq-only");
+    const max = $("#arq-max");
+    const payload = {
+      profile: url,
+      cookies_file: cookiesPath,
+      only: only ? only.value : "",
+      max_items: max ? Number(max.value) || 0 : 0,
+    };
+
+    const sub = $("#resultados-sub");
+    if (sub) sub.textContent = "Baixando o perfil… (isto pode levar alguns minutos)";
+    toast("Baixando… não feche a página.", "ok");
+
+    const r = await post("/scrap/archive", payload);
+
+    if (btn) { btn.disabled = false; btn.textContent = label || "Baixar para o computador"; }
+
+    if (r.error) {
+      toast(String(r.error).slice(0, 120), "bad");
+      if (sub) sub.textContent = "O download do perfil falhou.";
+      renderArchive(null, r.error);
+      return;
+    }
+
+    if (sub) {
+      sub.textContent = "@" + r.username + ": " + r.downloaded + " baixado(s), " +
+                        r.skipped + " já tinha, " + r.photos + " sem vídeo, " +
+                        r.failed + " falha(s)";
+    }
+    renderArchive(r, "");
+    toast(r.downloaded + " vídeo(s) baixado(s) em " + r.root, "ok");
+  }
+
+  // Painel do resultado do arquivamento. Substitui os cards: depois de baixar,
+  // a lista de resultados deixa de ser a informacao mais util da tela.
+  function renderArchive(report, error) {
+    const box = $("#resultados");
+    if (!box) return;
+    box.innerHTML = "";
+
+    const wrap = document.createElement("div");
+    wrap.style.cssText =
+      "padding:14px;border-radius:var(--radius-md);background:var(--well-bg);" +
+      "border:1px solid var(--border-subtle);";
+
+    const title = document.createElement("p");
+    title.style.cssText = "margin:0 0 10px;font-weight:600;";
+    title.textContent = error ? "Não foi possível baixar" : "Download concluído";
+    wrap.appendChild(title);
+
+    if (error) {
+      const p = document.createElement("p");
+      p.className = "empty";
+      p.textContent = error;
+      wrap.appendChild(p);
+      box.appendChild(wrap);
+      return;
+    }
+
+    const list = document.createElement("ul");
+    list.style.cssText = "margin:0;padding-left:18px;";
+    (report.lines || []).forEach((line) => {
+      const li = document.createElement("li");
+      li.textContent = line.trim();
+      list.appendChild(li);
+    });
+    wrap.appendChild(list);
+
+    if (report.errors && report.errors.length) {
+      const head = document.createElement("p");
+      head.style.cssText = "margin:12px 0 6px;font-weight:600;";
+      head.textContent = "Itens que falharam";
+      wrap.appendChild(head);
+      const errs = document.createElement("ul");
+      errs.style.cssText = "margin:0;padding-left:18px;";
+      report.errors.slice(0, 20).forEach((entry) => {
+        const li = document.createElement("li");
+        li.textContent = entry.item + ": " + entry.error;
+        errs.appendChild(li);
+      });
+      wrap.appendChild(errs);
+      const tip = document.createElement("p");
+      tip.className = "field-hint";
+      tip.style.marginTop = "10px";
+      tip.textContent =
+        "Repetir o download tenta só o que falhou — o que já está em disco é pulado.";
+      wrap.appendChild(tip);
+    }
+
+    box.appendChild(wrap);
   }
 
   // ---------- fio de ligacao com a pagina de cortes ----------
@@ -1214,6 +1536,15 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 
   const form = $("#scrap-form");
   if (form) form.addEventListener("submit", search);
+
+  const arq = $("#btn-arquivar");
+  if (arq) arq.addEventListener("click", archive);
+
+  const selectAll = $("#btn-select-all");
+  if (selectAll) selectAll.addEventListener("click", toggleAll);
+
+  const download = $("#btn-download");
+  if (download) download.addEventListener("click", downloadSelected);
 
   renderMode();
   renderResults("");

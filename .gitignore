@@ -16,6 +16,13 @@ config.yaml
 config.toml
 .env
 
+# Exported browser cookies. A cookies.txt holds live session tokens: committing
+# one hands over the account. Needed here because the natural place to drop the
+# file is the repo root, right next to the tool that consumes it.
+cookies.txt
+*cookies*.txt
+!requirements.txt
+
 # Run logs and tooling scratch
 *.log
 .pytest_cache/

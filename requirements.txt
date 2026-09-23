@@ -6,6 +6,14 @@ numpy>=1.26
 faster-whisper>=1.0.3
 yt-dlp>=2024.1.0
 
+# --- Instagram needs TLS impersonation --------------------------------------
+# Instagram rejects requests whose TLS fingerprint is not a real browser's, and
+# answers with a bare "HTTP Error 400: Bad Request" that names nothing useful.
+# With curl_cffi installed, yt-dlp can impersonate Chrome and the same request
+# succeeds. Without it, every Instagram URL fails, cookies or not.
+#
+#   pip install "curl_cffi>=0.7"
+
 # External binaries (must be available on PATH):
 #   ffmpeg / ffprobe  - decoding, cutting, rendering, loudness normalization
 # They are not Python packages; install them separately.

@@ -77,6 +77,18 @@ class ExplainFailureTests(unittest.TestCase):
         message = download.explain_failure("ERROR: Could not copy Chrome cookie database")
         self.assertIn("cookies.txt", message)
 
+    def test_instagram_extraction_failure_names_curl_cffi(self):
+        """Without curl_cffi, Instagram rejects the TLS fingerprint outright.
+
+        The bare "Unable to extract data" reads like a broken extractor, so the
+        hint has to name the missing optional dependency.
+        """
+        message = download.explain_failure(
+            "ERROR: [instagram:user] nasa: Unable to extract data; please report "
+            "this issue on https://github.com/yt-dlp/yt-dlp/issues"
+        )
+        self.assertIn("curl_cffi", message)
+
     def test_unknown_error_keeps_the_cause_and_the_url(self):
         message = download.explain_failure(
             "ERROR: something entirely new", "https://youtu.be/x"

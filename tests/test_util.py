@@ -31,6 +31,42 @@ class LimitNativeThreadsTests(unittest.TestCase):
             self.assertEqual(os.environ["OPENBLAS_NUM_THREADS"], "4")
             self.assertEqual(os.environ["OMP_NUM_THREADS"], "1")
 
+class ScrubProxyEnvTests(unittest.TestCase):
+    """Ambient proxy settings must not reach yt-dlp.
+
+    A host process (an IDE, a VPN shim) can export HTTP_PROXY for its own
+    traffic. The child inherits it and the download then fails with a generic
+    "Unable to extract data", because the proxy - not the site - answered.
+    """
+
+    def test_every_proxy_variable_is_dropped(self):
+        env = {name: "http://127.0.0.1:65511" for name in util._PROXY_VARS}
+        env["PATH"] = "/usr/bin"
+        cleaned = util.scrub_proxy_env(env)
+        for name in util._PROXY_VARS:
+            self.assertNotIn(name, cleaned)
+        self.assertEqual(cleaned["PATH"], "/usr/bin")
+
+    def test_the_opt_out_keeps_them(self):
+        env = {name: "http://p:1" for name in util._PROXY_VARS}
+        env[util.KEEP_PROXY_ENV] = "1"
+        cleaned = util.scrub_proxy_env(env)
+        for name in util._PROXY_VARS:
+            self.assertIn(name, cleaned)
+
+    def test_the_opt_out_must_be_exactly_one(self):
+        """An empty value must not be read as consent."""
+        env = {util.KEEP_PROXY_ENV: "", "HTTPS_PROXY": "http://p:1"}
+        self.assertNotIn("HTTPS_PROXY", util.scrub_proxy_env(env))
+
+    def test_a_real_child_process_does_not_see_the_proxy(self):
+        """End-to-end: the scrubbing has to survive the actual spawn."""
+        script = "import os; print(os.environ.get('HTTPS_PROXY', 'ausente'))"
+        with patch.dict(os.environ, {"HTTPS_PROXY": "http://127.0.0.1:65511"}):
+            proc = util.run([sys.executable, "-c", script])
+        self.assertIn("ausente", proc.stdout)
+
+
 class RunStreamingCapturedTests(unittest.TestCase):
     """Long commands must stream output and keep a copy for diagnostics."""
 

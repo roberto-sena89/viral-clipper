@@ -483,6 +483,22 @@ warnings.
   the terminal.
 - `This video is unavailable: ...` or an age gate: pass
   `--cookies-from-browser chrome` (or `firefox`, `edge`, ...).
+- `Failed to decrypt with DPAPI` on Chrome or Edge: that browser is on 127+ and
+  seals each cookie with App-Bound Encryption, which yt-dlp cannot open. Export
+  a `cookies.txt` with a browser extension and pass
+  `--ytdlp-arg --cookies --ytdlp-arg C:\path\cookies.txt`. The web panel has a
+  field for the same path.
+- Instagram fails with `Unable to extract data` while everything else works:
+  check that `curl_cffi` is installed (`pip install "curl_cffi>=0.7"`).
+  Instagram rejects requests whose TLS fingerprint is not a browser's and
+  answers with a bare HTTP 400 otherwise. Note that **profile** URLs are
+  currently broken inside yt-dlp itself (`InstagramUserIE._WORKING = False`);
+  a direct post/reel/video link works.
+- A download fails with a generic extractor error and the log shows
+  `Proxy map: {'https': 'http://127.0.0.1:...'}`: an ambient `HTTP_PROXY` was
+  inherited from the host process. The tool strips those by default; set
+  `VIRALCLIPPER_KEEP_PROXY=1` to pass them through, or point at a proxy
+  explicitly with `--ytdlp-arg --proxy --ytdlp-arg <url>`.
 - `x264 [error]: malloc of size ... failed`: lower `--workers` and `--threads`.
 - `Could not load 'small' (mkl_malloc: failed to allocate memory); trying
   'base' instead`: expected on a memory-tight machine. The run continues on a

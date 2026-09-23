@@ -118,6 +118,38 @@ def ffmpeg_binaries(ffmpeg: str = "ffmpeg", ffprobe: str = "ffprobe") -> tuple[s
     return require_binary(ffmpeg), require_binary(ffprobe)
 
 
+# Proxy variables an embedding host may set for its own traffic (an IDE with a
+# local interception proxy, a corporate VPN shim). Inherited by the tools we
+# spawn, they route yt-dlp's downloads through a proxy that has no business
+# seeing them - and one that is often only listening for the host's own
+# requests. The first symptom is not a proxy error: it is a generic
+# "Unable to extract data", because the proxy answered instead of the site.
+_PROXY_VARS: tuple[str, ...] = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+)
+
+# Set to "1" to pass the ambient proxy through anyway.
+KEEP_PROXY_ENV = "VIRALCLIPPER_KEEP_PROXY"
+
+
+def scrub_proxy_env(env: dict[str, str]) -> dict[str, str]:
+    """Drop inherited proxy settings unless the user opted back in.
+
+    Only the *ambient* variables are touched: a proxy the user asks for lives in
+    ``config.extra_ytdlp_args`` (``--proxy``), which is explicit and survives.
+    """
+    if env.get(KEEP_PROXY_ENV) == "1":
+        return env
+    for name in _PROXY_VARS:
+        env.pop(name, None)
+    return env
+
+
 def run(
     cmd: list[str],
     *,
@@ -128,7 +160,7 @@ def run(
     """Run a command, capture output and raise ``ClipperError`` on failure."""
     if logger:
         logger.debug("run: " + " ".join(str(part) for part in cmd))
-    env = dict(os.environ)
+    env = scrub_proxy_env(dict(os.environ))
     env.setdefault("PYTHONIOENCODING", "utf-8")
     proc = subprocess.run(
         [str(part) for part in cmd],
@@ -188,7 +220,7 @@ def run_streaming_captured(
     """
     if logger:
         logger.debug("run: " + " ".join(str(part) for part in cmd))
-    env = dict(os.environ)
+    env = scrub_proxy_env(dict(os.environ))
     env.setdefault("PYTHONIOENCODING", "utf-8")
     proc = subprocess.Popen(
         [str(part) for part in cmd],

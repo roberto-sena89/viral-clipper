@@ -104,6 +104,15 @@ _HINTS: tuple[tuple[str, str], ...] = (
         "repita, ou exporte os cookies para um arquivo cookies.txt e passe "
         "--cookies /caminho/cookies.txt.",
     ),
+    (
+        # Instagram rejects any request whose TLS fingerprint is not a real
+        # browser's, and answers with a bare 400 that names nothing. Without
+        # curl_cffi yt-dlp cannot impersonate, so the failure looks like a
+        # broken extractor instead of a missing optional dependency.
+        "unable to extract data",
+        "Se for Instagram, falta o curl_cffi: pip install \"curl_cffi>=0.7\". "
+        "O Instagram recusa requisições cujo TLS não seja de um navegador real.",
+    ),
 )
 
 

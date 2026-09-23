@@ -1,0 +1,23 @@
+# Runtime requirements for viral-clipper.
+# Python 3.11+ is required (the code uses PEP 604 unions).
+# Verified on Python 3.13.14 with numpy 2.5.3, yt-dlp 2026.8.19 and
+# faster-whisper 1.2.1 (ctranslate2 4.8.2).
+numpy>=1.26
+faster-whisper>=1.0.3
+yt-dlp>=2024.1.0
+
+# External binaries (must be available on PATH):
+#   ffmpeg / ffprobe  - decoding, cutting, rendering, loudness normalization
+# They are not Python packages; install them separately.
+
+# --- optional: face-guided reframing (--layout focus) -----------------------
+# Without one of these, --layout focus silently falls back to a plain center
+# crop. The 4.x line matters: OpenCV 5 removed CascadeClassifier and stopped
+# shipping the Haar XMLs, leaving only FaceDetectorYN, which needs an ONNX
+# model downloaded at runtime.
+#
+#   pip install "opencv-python-headless<5"
+#
+# --- optional: semantic ranker (--ranker llm) -------------------------------
+# Nothing to install: it speaks plain HTTP to any OpenAI-compatible
+# /chat/completions endpoint via urllib.

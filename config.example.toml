@@ -1,0 +1,110 @@
+# viral-clipper config example (TOML)
+# Save as config.toml and run: viralclipper URL --config config.toml
+# CLI flags always win over values set here.
+#
+# Note on TOML tables: a [table] header applies to every key that follows it
+# until the next header, so a [whisper] block placed in the middle of the file
+# would silently swallow the rest of the settings. The whisper options below
+# therefore use dotted keys, which are position independent.
+
+# selection
+min_duration = 30.0
+max_duration = 60.0
+target_duration = 45.0
+count = 8
+engine = "hybrid"  # hybrid | audio | transcript
+min_gap = 6.0
+# Absolute quality gate on the 0..100 window score. The score is computed from
+# video-independent bounds, so this means the same thing in every video: a clip
+# below the floor is dropped instead of being force-fed to the output.
+# 0 disables the gate and always yields the top `count` windows.
+min_score = 0.0
+pad_start = 0.25
+pad_end = 0.35
+
+# transcription
+whisper.model = "small"        # tiny | base | small | medium | large-v3
+whisper.device = "auto"        # auto | cpu | cuda
+whisper.compute_type = "int8"  # int8 | float16 | float32
+whisper.language = "pt"        # force language (ISO 639-1)
+whisper.beam_size = 1
+whisper.vad_filter = true
+
+# cache
+cache_dir = "cache/transcripts"
+transcript_cache = true
+
+# semantic ranker (optional; off by default, never needs network when "none")
+ranker = "none"          # none | llm
+ranker_model = "gpt-4o-mini"
+ranker_base_url = "https://api.openai.com/v1"  # any OpenAI-compatible endpoint
+ranker_api_key_env = "OPENAI_API_KEY"
+ranker_requires_key = true   # set false for a local Ollama/LM Studio
+ranker_top_n = 24        # cost dial: one model call per candidate per video
+ranker_weight = 0.6      # 0 = pure heuristic, 1 = pure model
+ranker_timeout = 60.0
+
+# audio analysis
+min_silence = 0.32
+hop_ms = 20
+# silence_db = -40.0   # uncomment for a fixed threshold instead of adaptive
+
+# download
+# "full" downloads once and cuts locally: one network round trip instead of one
+# per clip, which is what a batch wants. "sections" fetches only the ranges.
+download_mode = "sections"  # sections | full
+max_height = 1080
+cookies_from_browser = ""  # chrome | firefox | edge | ... (empty = none)
+extra_ytdlp_args = []      # list of extra yt-dlp args
+
+# rendering
+vertical = true
+# focus = crop guided by face detection when a detector is installed, and a
+# plain center crop otherwise. center | blur | fit | focus
+layout = "focus"
+width = 1080
+height = 1920
+burn_captions = true
+caption_style = "karaoke"  # karaoke | block | none
+caption_words_per_line = 3
+font = "Arial Black"
+font_size = 84
+# 640 keeps the caption at ~62% of the frame height, clear of the TikTok UI
+# zone (username, caption and buttons cover the lower ~25% of the screen).
+caption_margin_v = 640
+uppercase_captions = true
+# Karaoke highlight and headline color, ASS format &HAABBGGRR (yellow shown).
+highlight_color = "&H0000FFFF"
+# Burned opening headline at the top of the frame. Off by default: the shipped
+# look is captions only. Set e.g. 3.0 to show the hook as on-screen text.
+headline_seconds = 0.0     # 0 disables
+# headline_text = "..."   # unset = derived from the clip's opening words
+headline_font_size = 100
+# Watched-progress bar across the top of the frame. Off by default: the shipped
+# look is the video plus captions only.
+progress_bar = false
+progress_bar_height = 10
+progress_bar_color = "yellow"  # any ffmpeg color (name or 0xRRGGBB)
+loudnorm = true
+target_lufs = -14.0
+jump_cut = false
+crf = 20
+preset = "veryfast"
+audio_bitrate = "192k"
+# libx264 allocates frame buffers per thread. 0 means one thread per core, which
+# is how a 1080x1920 render runs an 8 GB machine out of memory.
+threads = 2
+
+# execution
+parallel = true
+# Each worker runs its own libx264 encode. Raise this only on a box with RAM to
+# spare; "one per core" is a reliable way to get an out-of-memory failure.
+workers = 2
+
+# misc
+ffmpeg = "ffmpeg"
+ffprobe = "ffprobe"
+quiet = false
+verbose = false
+keep_temp = false
+dry_run = false

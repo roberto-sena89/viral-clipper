@@ -1,0 +1,337 @@
+"""Unit tests for :mod:`viralclipper.ranker`.
+
+The provider is injected, so nothing here touches the network. The tests cover
+the three things that make the ranker safe to enable in a pipeline: parsing a
+messy model response, blending without losing the absolute scale, and failing
+softly when the model or the transport misbehaves.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from viralclipper import ranker
+from viralclipper.config import ClipConfig
+from viralclipper.score import Window
+from viralclipper.util import ClipperError, Logger
+
+FULL_JSON = (
+    '{"autocontido": 8, "gancho": 9, "payoff": 7, '
+    '"compartilhavel": 8, "final_completo": 6, "motivo": "historia completa"}'
+)
+
+
+class FakeProvider:
+    """Provider whose response (or failure) is dictated by the test."""
+
+    name = "fake"
+
+    def __init__(self, response: str = FULL_JSON, error: Exception | None = None):
+        self.response = response
+        self.error = error
+        self.calls = 0
+        self.prompts: list[tuple[str, str]] = []
+
+    def complete(self, system: str, user: str) -> str:
+        self.calls += 1
+        self.prompts.append((system, user))
+        if self.error is not None:
+            raise self.error
+        return self.response
+
+
+def _window(text: str, score: float, start: float = 0.0) -> Window:
+    return Window(
+        start=start,
+        end=start + 30.0,
+        unit_start=0,
+        unit_end=1,
+        text=text,
+        score=score,
+        components={"hook_start": 0.5},
+    )
+
+
+class RankerTestCase(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="ranker-test-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.log = Logger(quiet=True)
+
+    def config(self, **overrides) -> ClipConfig:
+        payload = {
+            "url": "https://youtu.be/fixture",
+            "ranker": "llm",
+            "cache_dir": self.tmp,
+            "ranker_requires_key": False,
+        }
+        payload.update(overrides)
+        return ClipConfig(**payload)
+
+
+class ParseVerdictTests(unittest.TestCase):
+    def test_plain_json(self):
+        verdict = ranker.parse_verdict(FULL_JSON)
+        self.assertEqual(verdict.scores["gancho"], 9.0)
+        self.assertEqual(verdict.reason, "historia completa")
+
+    def test_fenced_json(self):
+        verdict = ranker.parse_verdict(f"```json\n{FULL_JSON}\n```")
+        self.assertEqual(verdict.scores["payoff"], 7.0)
+
+    def test_json_inside_prose(self):
+        verdict = ranker.parse_verdict(f"Claro! Aqui esta:\n{FULL_JSON}\nEspero ter ajudado.")
+        self.assertEqual(verdict.scores["autocontido"], 8.0)
+
+    def test_values_are_clamped_to_the_scale(self):
+        verdict = ranker.parse_verdict('{"gancho": 99, "payoff": -4}')
+        self.assertEqual(verdict.scores["gancho"], 10.0)
+        self.assertEqual(verdict.scores["payoff"], 0.0)
+
+    def test_unknown_keys_are_ignored(self):
+        verdict = ranker.parse_verdict('{"gancho": 5, "carisma": 10}')
+        self.assertEqual(set(verdict.scores), {"gancho"})
+
+    def test_non_numeric_values_are_skipped(self):
+        verdict = ranker.parse_verdict('{"gancho": "alto", "payoff": 6}')
+        self.assertEqual(set(verdict.scores), {"payoff"})
+
+    def test_overall_is_the_mean(self):
+        verdict = ranker.parse_verdict(FULL_JSON)
+        self.assertAlmostEqual(verdict.overall, (8 + 9 + 7 + 8 + 6) / 5, places=6)
+
+    def test_missing_every_dimension_raises(self):
+        with self.assertRaises(ClipperError):
+            ranker.parse_verdict('{"motivo": "nada"}')
+
+    def test_no_json_at_all_raises(self):
+        with self.assertRaises(ClipperError):
+            ranker.parse_verdict("desculpe, nao posso ajudar")
+
+    def test_unbalanced_json_raises(self):
+        with self.assertRaises(ClipperError):
+            ranker.parse_verdict('{"gancho": 5, ')
+
+    def test_every_declared_dimension_is_parsed(self):
+        document = {dimension: 5 for dimension in ranker.DIMENSIONS}
+        verdict = ranker.parse_verdict(json.dumps(document))
+        self.assertEqual(set(verdict.scores), set(ranker.DIMENSIONS))
+
+
+class CacheKeyTests(unittest.TestCase):
+    def test_same_window_and_model_agree(self):
+        window = _window("texto", 50.0)
+        self.assertEqual(
+            ranker.cache_key(window, "m"), ranker.cache_key(_window("texto", 50.0), "m")
+        )
+
+    def test_text_changes_the_key(self):
+        self.assertNotEqual(
+            ranker.cache_key(_window("a", 50.0), "m"),
+            ranker.cache_key(_window("b", 50.0), "m"),
+        )
+
+    def test_model_changes_the_key(self):
+        window = _window("a", 50.0)
+        self.assertNotEqual(ranker.cache_key(window, "m1"), ranker.cache_key(window, "m2"))
+
+    def test_heuristic_score_does_not_change_the_key(self):
+        """The verdict is about the text, not about the heuristic's opinion."""
+        self.assertEqual(
+            ranker.cache_key(_window("a", 10.0), "m"),
+            ranker.cache_key(_window("a", 90.0), "m"),
+        )
+
+
+class BuildProviderTests(unittest.TestCase):
+    def test_disabled_returns_none(self):
+        self.assertIsNone(ranker.build_provider(self._config(ranker="none")))
+
+    def _config(self, **overrides):
+        payload = {"url": "u", "ranker_requires_key": False}
+        payload.update(overrides)
+        return ClipConfig(**payload)
+
+    def test_unknown_ranker_raises(self):
+        with self.assertRaises(ClipperError):
+            ranker.build_provider(self._config(ranker="magic"))
+
+    def test_missing_key_raises_when_required(self):
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(ClipperError):
+                ranker.build_provider(
+                    self._config(ranker="llm", ranker_requires_key=True)
+                )
+
+    def test_key_from_environment_is_accepted(self):
+        with patch.dict("os.environ", {"MY_KEY": "secret"}):
+            provider = ranker.build_provider(
+                self._config(
+                    ranker="llm", ranker_requires_key=True, ranker_api_key_env="MY_KEY"
+                )
+            )
+        self.assertEqual(provider.api_key, "secret")
+
+    def test_local_endpoint_without_key(self):
+        with patch.dict("os.environ", {}, clear=True):
+            provider = ranker.build_provider(self._config(ranker="llm"))
+        self.assertIsNone(provider.api_key)
+
+
+class ApplyTests(RankerTestCase):
+    def test_disabled_ranker_is_a_no_op(self):
+        provider = FakeProvider()
+        windows = [_window("a", 50.0), _window("b", 40.0)]
+        judged = ranker.apply(
+            windows, self.config(ranker="none"), self.log, provider=provider
+        )
+        self.assertEqual(judged, 0)
+        self.assertEqual(provider.calls, 0)
+        self.assertEqual([w.score for w in windows], [50.0, 40.0])
+
+    def test_every_candidate_is_judged_and_reweighted(self):
+        provider = FakeProvider()
+        windows = [_window("a", 50.0), _window("b", 40.0)]
+        judged = ranker.apply(windows, self.config(), self.log, provider=provider)
+        self.assertEqual(judged, 2)
+        self.assertEqual(provider.calls, 2)
+        expected = 50.0 * 0.4 + 7.6 * 10.0 * 0.6
+        self.assertAlmostEqual(windows[0].score, round(expected, 2), places=2)
+
+    def test_heuristic_score_is_preserved_in_the_components(self):
+        windows = [_window("a", 50.0)]
+        ranker.apply(windows, self.config(), self.log, provider=FakeProvider())
+        self.assertEqual(windows[0].components["heuristic_score"], 50.0)
+
+    def test_model_dimensions_land_in_the_components(self):
+        windows = [_window("a", 50.0)]
+        ranker.apply(windows, self.config(), self.log, provider=FakeProvider())
+        self.assertIn("llm_overall", windows[0].components)
+        self.assertIn("llm_gancho", windows[0].components)
+        self.assertIn("llm_motivo", windows[0].components)
+
+    def test_weight_zero_keeps_the_heuristic_score(self):
+        windows = [_window("a", 50.0)]
+        ranker.apply(
+            windows, self.config(ranker_weight=0.0), self.log, provider=FakeProvider()
+        )
+        self.assertAlmostEqual(windows[0].score, 50.0, places=2)
+
+    def test_weight_one_uses_only_the_model(self):
+        windows = [_window("a", 5.0)]
+        ranker.apply(
+            windows, self.config(ranker_weight=1.0), self.log, provider=FakeProvider()
+        )
+        self.assertAlmostEqual(windows[0].score, 76.0, places=2)
+
+    def test_only_the_top_n_candidates_are_sent(self):
+        provider = FakeProvider()
+        windows = [_window(f"w{index}", float(index)) for index in range(10)]
+        judged = ranker.apply(
+            windows, self.config(ranker_top_n=3), self.log, provider=provider
+        )
+        self.assertEqual(judged, 3)
+        self.assertEqual(provider.calls, 3)
+        # The three highest scoring windows were the ones judged.
+        judged_texts = {window.text for window in windows if "llm_overall" in window.components}
+        self.assertEqual(judged_texts, {"w9", "w8", "w7"})
+
+    def test_unjudged_candidates_are_pushed_below_every_judged_one(self):
+        windows = [_window(f"w{index}", float(index)) for index in range(10)]
+        ranker.apply(windows, self.config(ranker_top_n=3), self.log, provider=FakeProvider())
+        unjudged = [window for window in windows if "llm_overall" not in window.components]
+        self.assertEqual(len(unjudged), 7)
+        for window in unjudged:
+            self.assertEqual(window.score, -1.0)
+
+    def test_verdict_is_cached_and_the_provider_is_not_called_twice(self):
+        provider = FakeProvider()
+        config = self.config()
+        ranker.apply([_window("mesmo texto", 50.0)], config, self.log, provider=provider)
+        second = FakeProvider()
+        judged = ranker.apply(
+            [_window("mesmo texto", 50.0)], config, self.log, provider=second
+        )
+        self.assertEqual(judged, 1)
+        self.assertEqual(second.calls, 0)
+
+    def test_provider_failure_leaves_the_heuristic_scores_intact(self):
+        windows = [_window("a", 50.0), _window("b", 40.0)]
+        judged = ranker.apply(
+            windows,
+            self.config(),
+            self.log,
+            provider=FakeProvider(error=ClipperError("boom")),
+        )
+        self.assertEqual(judged, 0)
+        self.assertEqual([w.score for w in windows], [50.0, 40.0])
+
+    def test_a_bad_response_for_one_window_does_not_stop_the_others(self):
+        class FlakyProvider(FakeProvider):
+            def complete(self, system: str, user: str) -> str:
+                self.calls += 1
+                if "quebrado" in user:
+                    return "nao vou responder json"
+                return FULL_JSON
+
+        windows = [_window("quebrado", 50.0), _window("ok", 40.0)]
+        judged = ranker.apply(windows, self.config(), self.log, provider=FlakyProvider())
+        self.assertEqual(judged, 1)
+        self.assertEqual(windows[0].score, 50.0)
+        self.assertGreater(windows[1].score, 0.0)
+
+    def test_corrupt_cache_entry_is_a_miss(self):
+        config = self.config()
+        window = _window("texto", 50.0)
+        key = ranker.cache_key(window, config.ranker_model)
+        directory = ranker.resolve_cache_dir(config)
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / f"{key}.json").write_text("{not json", encoding="utf-8")
+
+        provider = FakeProvider()
+        judged = ranker.apply([window], config, self.log, provider=provider)
+        self.assertEqual(judged, 1)
+        self.assertEqual(provider.calls, 1)
+        self.assertTrue((directory / f"{key}.json").exists())
+
+    def test_empty_candidate_list(self):
+        self.assertEqual(ranker.apply([], self.config(), self.log, provider=FakeProvider()), 0)
+
+    def test_zero_top_n_judges_nothing(self):
+        windows = [_window("a", 50.0)]
+        judged = ranker.apply(
+            windows, self.config(ranker_top_n=0), self.log, provider=FakeProvider()
+        )
+        self.assertEqual(judged, 0)
+        self.assertEqual(windows[0].score, 50.0)
+
+    def test_cache_dir_follows_the_explicit_cache_dir(self):
+        config = self.config()
+        self.assertEqual(ranker.resolve_cache_dir(config), self.tmp / "rank")
+
+    def test_cache_dir_falls_back_to_the_work_dir(self):
+        config = ClipConfig(url="u", output_dir=self.tmp / "out", ranker="llm")
+        self.assertEqual(
+            ranker.resolve_cache_dir(config),
+            self.tmp / "out" / "_work" / "cache" / "rank",
+        )
+
+
+class BlendTests(unittest.TestCase):
+    def test_midpoint_weight_averages_both_scales(self):
+        verdict = ranker.Verdict(scores={"gancho": 10.0})
+        self.assertAlmostEqual(ranker._blend(50.0, verdict, 0.5), 75.0, places=6)
+
+    def test_weight_is_clamped(self):
+        verdict = ranker.Verdict(scores={"gancho": 10.0})
+        self.assertEqual(ranker._blend(50.0, verdict, 5.0), 100.0)
+        self.assertEqual(ranker._blend(50.0, verdict, -1.0), 50.0)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    unittest.main()

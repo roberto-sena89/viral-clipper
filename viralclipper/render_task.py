@@ -1,0 +1,170 @@
+"""Render one clip, used by :func:`pipeline.render_windows`.
+
+The module-level function is picklable: :class:`_RenderTask` carries everything
+a worker needs, and the worker writes its result back into the task object
+through a module-level function so the parent can collect it without
+serialising a render result across the process boundary.
+"""
+
+from __future__ import annotations
+
+import shutil
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from . import download, render, report, util
+from .config import ClipConfig
+from .util import ClipperError, Logger
+
+
+@dataclass
+class _RenderTask:
+    position: int
+    window: object  # score.Window, kept as object to avoid a circular import
+    finish: float
+    words: list
+    silences: list[tuple[float, float]]
+    media: Path | None
+    metadata: dict
+    config: ClipConfig
+    clip_dir: Path
+    output_dir: Path
+    # Timestamp of the source video that corresponds to 0:00 of ``media``.
+    # 0 for a full download; the section offset when the section timeline was
+    # reset. See :func:`download.resolve_origin`.
+    media_origin: float = 0.0
+    rendered: object | None = None
+    record: object | None = None
+    error: str | None = None
+
+
+def _render_task(task: _RenderTask) -> _RenderTask:
+    """Render one clip in a worker process, writing the result into ``task``."""
+    logger = Logger(quiet=task.config.quiet, verbose=task.config.verbose)
+    clip_dir = task.clip_dir
+    try:
+        if task.media is not None:
+            media = task.media
+        else:
+            media = download.download_section(
+                task.config.url,
+                task.window.start,
+                task.finish,
+                clip_dir / "section",
+                task.config,
+                logger,
+            )
+            task.media_origin = download.resolve_origin(
+                task.config.ffprobe,
+                media,
+                max(0.0, task.window.start - download.SECTION_PADDING),
+                logger,
+            )
+
+        filename = _clip_filename(task.position, task.window, task.metadata)
+        destination = task.output_dir / filename
+        rendered = _render_with_retry(
+            media=media,
+            destination=destination,
+            window=task.window,
+            finish=task.finish,
+            silences=task.silences,
+            words=task.words,
+            config=task.config,
+            work=clip_dir,
+            logger=logger,
+            source_origin=task.media_origin,
+        )
+        task.rendered = rendered
+    except Exception as exc:  # noqa: BLE001 - worker must not poison the pool
+        task.error = f"{type(exc).__name__}: {exc}"
+        logger.warn(f"Clip {task.position} failed: {task.error}")
+    finally:
+        if not task.config.keep_temp:
+            shutil.rmtree(clip_dir, ignore_errors=True)
+
+    task.record = _record(task.position, task.window, task.finish, task.rendered, task.config)
+    return task
+
+
+def _render_with_retry(
+    *,
+    media: Path,
+    destination: Path,
+    window,
+    finish: float,
+    silences: list[tuple[float, float]],
+    words: list,
+    config: ClipConfig,
+    work: Path,
+    logger: Logger,
+    source_origin: float = 0.0,
+):
+    """Render once, retrying without jump cutting if the clip got too short."""
+    attempts: list[ClipConfig] = []
+    if config.jump_cut:
+        attempts.append(config)
+        attempts.append(ClipConfig(**{**config.__dict__, "jump_cut": False}))
+    else:
+        attempts.append(config)
+
+    result = None
+    for attempt, attempt_config in enumerate(attempts, start=1):
+        result = render.render_clip(
+            source=media,
+            destination=destination,
+            clip_start=window.start,
+            clip_end=finish,
+            config=attempt_config,
+            ffmpeg=attempt_config.ffmpeg,
+            ffprobe=attempt_config.ffprobe,
+            words=words,
+            silences=silences,
+            work_dir=work / f"attempt{attempt}",
+            logger=logger,
+            source_origin=source_origin,
+        )
+        if result.duration >= config.min_duration - 0.05:
+            return result
+        if attempt < len(attempts):
+            logger.warn(
+                f"Jump cut produced {result.duration:.1f}s, below "
+                f"{config.min_duration:.0f}s. Re-rendering without jump cut."
+            )
+
+    if result is None:  # pragma: no cover - defensive branch
+        raise ClipperError("Rendering produced no result.")
+    logger.warn(
+        f"Clip is {result.duration:.1f}s long, below the requested "
+        f"{config.min_duration:.0f}s minimum."
+    )
+    return result
+
+
+def _clip_filename(position: int, window, metadata: dict) -> str:
+    video_id = str(metadata.get("id") or "video")
+    stem = util.slugify(window.text[:60], fallback="clip", max_length=40)
+    return f"{video_id}_{position:02d}_{stem}_{int(window.start):06d}.mp4"
+
+
+def _record(
+    position: int,
+    window,
+    finish: float,
+    rendered,
+    config: ClipConfig,
+):
+    return report.ClipRecord(
+        index=position,
+        start=round(window.start, 3),
+        end=round(finish, 3),
+        duration=round(rendered.duration, 2) if rendered else round(finish - window.start, 2),
+        score=window.score,
+        meets_minimum=bool(rendered and rendered.duration >= config.min_duration - 0.05),
+        file=str(rendered.path) if rendered else "",
+        hook_terms=window.hook_terms,
+        text=window.text,
+        components=window.components,
+        width=rendered.width if rendered else 0,
+        height=rendered.height if rendered else 0,
+    )

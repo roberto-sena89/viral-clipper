@@ -1,0 +1,13 @@
+tests
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+README.md
+smoke_test.py
+*.log
+*.md
+config.example.toml
+config.example.yaml

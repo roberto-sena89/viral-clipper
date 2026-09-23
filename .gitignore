@@ -1,0 +1,36 @@
+__pycache__/
+*.py[cod]
+
+# Pipeline output and intermediate files.
+output/
+_work/
+cache/
+
+# Virtual environment
+.venv/
+venv/
+
+# Local config overrides (may contain paths and API keys)
+config.yaml
+config.toml
+.env
+
+# Run logs and tooling scratch
+*.log
+.pytest_cache/
+.openclaw-probe-out/
+.workbuddy-ai/
+
+# Local visual-test images (not part of the web UI)
+web/1.jfif
+web/2.jpg
+web/3.jpg
+
+# Scratch: one-off debug scripts, preset previews and sample transcripts kept
+# next to the repo while tuning. Not part of the tool.
+_scratch/
+
+# Snapshot of the .git directory that lost its packfiles on 2026-09-22.
+# Kept on disk for reference until the history is confirmed unrecoverable.
+.git-corrompido-*/
+

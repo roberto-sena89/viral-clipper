@@ -963,7 +963,15 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
                   <option value="firefox" data-title="Firefox" data-desc="Usa os cookies do Firefox instalado">firefox</option>
                   <option value="edge" data-title="Edge" data-desc="Usa os cookies do Edge instalado">edge</option>
                 </select>
-                <span class="hint">Para vídeos com restrição de idade.</span>
+                <span class="hint">Para vídeos com restrição de idade. No Chrome/Edge 127+
+                  isto sempre falha (App-Bound Encryption) — use o arquivo abaixo.</span>
+              </div>
+              <div class="field">
+                <label for="cookies-file">Arquivo cookies.txt</label>
+                <input type="text" id="cookies-file" name="cookies-file"
+                       placeholder="C:\caminho\cookies.txt">
+                <span class="hint">Tem precedência sobre o seletor acima. Exporte com uma
+                  extensão do navegador.</span>
               </div>
             </div>
           </div>
@@ -1713,6 +1721,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
       count: parseInt($('#count').value, 10) || 5,
       download_mode: $('#download-mode').value,
       cookies_from_browser: $('#cookies-from-browser').value || null,
+      cookies_file: $('#cookies-file').value.trim() || null,
       min_duration: parseFloat($('#min-duration').value) || 30,
       max_duration: parseFloat($('#max-duration').value) || 60,
       target_duration: parseFloat($('#target-duration').value) || 42,
@@ -1780,7 +1789,8 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
     if (!o.vad_filter) parts.push('--no-vad');
     if (!o.transcript_cache) parts.push('--no-transcript-cache');
     parts.push('--download-mode', o.download_mode);
-    if (o.cookies_from_browser) parts.push('--cookies-from-browser', o.cookies_from_browser);
+    if (o.cookies_file) parts.push('--ytdlp-arg', '--cookies', o.cookies_file);
+    else if (o.cookies_from_browser) parts.push('--cookies-from-browser', o.cookies_from_browser);
     parts.push('--layout', o.layout);
     if (o.transcript_text) parts.push('--transcript caminho/da/transcricao.srt');
     parts.push('--caption-style', o.caption_style);

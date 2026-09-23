@@ -83,6 +83,45 @@ class ClipPayloadTests(unittest.TestCase):
         self.assertTrue(payload["rendered"])
 
 
+class CookiesFileOptionTests(unittest.TestCase):
+    """``cookies_file`` is sugar for ``--ytdlp-arg --cookies <path>``.
+
+    It exists because the browser route is dead on Chrome/Edge 127+: cookie
+    values are sealed with App-Bound Encryption (the ``v20`` prefix) and yt-dlp
+    has no way to open them, so a file the user exported by hand is the only
+    route that works there. ``cookies_file`` is not a ClipConfig field, so
+    without this folding it would be dropped as an unknown key and the flag
+    would never reach yt-dlp — silently, with the UI still showing the path.
+    """
+
+    def _config(self, **options):
+        return server._options_to_config({"url": "https://youtu.be/x", **options})
+
+    def test_the_file_becomes_a_cookies_flag(self):
+        config = self._config(cookies_file="C:/cookies.txt")
+        self.assertEqual(config.extra_ytdlp_args, ["--cookies", "C:/cookies.txt"])
+
+    def test_the_file_overrides_the_browser_picker(self):
+        """Both can stay selected; only one set of cookie flags may reach yt-dlp."""
+        config = self._config(cookies_file="C:/cookies.txt",
+                              cookies_from_browser="chrome")
+        self.assertIsNone(config.cookies_from_browser)
+        self.assertEqual(config.extra_ytdlp_args, ["--cookies", "C:/cookies.txt"])
+
+    def test_it_does_not_clobber_other_extra_args(self):
+        config = self._config(extra_ytdlp_args=["--playlist-end", "5"],
+                              cookies_file="C:/cookies.txt")
+        self.assertEqual(
+            config.extra_ytdlp_args,
+            ["--playlist-end", "5", "--cookies", "C:/cookies.txt"],
+        )
+
+    def test_a_blank_path_is_ignored(self):
+        config = self._config(cookies_file="   ", cookies_from_browser="chrome")
+        self.assertEqual(config.extra_ytdlp_args, [])
+        self.assertEqual(config.cookies_from_browser, "chrome")
+
+
 class UiServerBindTests(unittest.TestCase):
     def test_refuses_a_second_bind(self):
         first = server.UiServer(("127.0.0.1", 0), server.Handler)
@@ -372,6 +411,48 @@ class ScrapResultsTests(unittest.TestCase):
     def test_a_missing_url_is_rejected(self):
         with self.assertRaises(ClipperError):
             server._scrap_results({"url": "  ", "mode": "link"})
+
+    def test_a_whole_command_line_is_split_into_argv(self):
+        """A single string must not be exploded into one argument per character.
+
+        ``list("--cookies x.txt")`` yields 20 single-character strings, and the
+        run then dies with yt-dlp listing the whole alphabet back at the user.
+        """
+        payload = {"title": "Um vídeo", "id": "abc", "webpage_url": "https://x/1"}
+        _, _, seen = self._run(
+            payload,
+            {"url": "https://x/1", "mode": "link",
+             "extra_ytdlp_args": "--cookies C:/cookies.txt"},
+        )
+        self.assertEqual(seen["args"], ["--cookies", "C:/cookies.txt"])
+
+    def test_a_pre_split_argument_list_is_passed_through(self):
+        payload = {"title": "Um vídeo", "id": "abc", "webpage_url": "https://x/1"}
+        _, _, seen = self._run(
+            payload,
+            {"url": "https://x/1", "mode": "link",
+             "extra_ytdlp_args": ["--cookies", "C:/cookies.txt"]},
+        )
+        self.assertEqual(seen["args"], ["--cookies", "C:/cookies.txt"])
+
+
+class YtdlpArgvTests(unittest.TestCase):
+    """_ytdlp_argv normalises the three shapes clients actually send."""
+
+    def test_none_and_empty_are_empty(self):
+        self.assertEqual(server._ytdlp_argv(None), [])
+        self.assertEqual(server._ytdlp_argv([]), [])
+        self.assertEqual(server._ytdlp_argv("   "), [])
+
+    def test_a_single_character_argument_survives(self):
+        """Splitting must not be applied twice — ``-x`` is a real flag."""
+        self.assertEqual(server._ytdlp_argv(["-x"]), ["-x"])
+
+    def test_a_blank_element_is_dropped(self):
+        self.assertEqual(
+            server._ytdlp_argv(["--cookies", "", "C:/c.txt"]),
+            ["--cookies", "C:/c.txt"],
+        )
 
 
 class TemplatesPageTests(unittest.TestCase):

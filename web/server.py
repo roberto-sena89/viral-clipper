@@ -123,6 +123,20 @@ def _options_to_config(options: dict) -> config_mod.ClipConfig:
     else:
         payload.pop("transcript_file", None)
 
+    # A cookies file is not a ClipConfig field: it is sugar for
+    # ``--ytdlp-arg --cookies <path>``. Folding it in here, before the unknown
+    # keys are dropped, keeps the UI able to offer the one cookie route that
+    # still works on Chrome/Edge 127+ (App-Bound Encryption sealed the other).
+    # It wins over ``cookies_from_browser`` so both can stay selected in the
+    # form without producing two competing sets of cookie flags.
+    cookies_file = payload.pop("cookies_file", None)
+    if isinstance(cookies_file, str) and cookies_file.strip():
+        payload["cookies_from_browser"] = None
+        payload["extra_ytdlp_args"] = [
+            *_ytdlp_argv(payload.get("extra_ytdlp_args")),
+            "--cookies", cookies_file.strip(),
+        ]
+
     # Drop keys the dataclass does not declare, mirroring config_from_args.
     known = {field.name for field in __import__("dataclasses").fields(config_mod.ClipConfig)}
     clean = {k: v for k, v in payload.items() if k in known}
@@ -232,6 +246,33 @@ def resolve_within(base: Path, rel: str) -> Path | None:
 LIBRARY_SUFFIXES: frozenset[str] = frozenset({".mp4", ".mkv", ".webm", ".mov"})
 
 
+def _ytdlp_argv(raw: object) -> list[str]:
+    """Normalise a client-supplied yt-dlp argument list into argv words.
+
+    ``download._base_args`` splices this straight into the command line, so each
+    element has to be exactly one word. Three shapes arrive in practice:
+
+    * ``["--cookies", "C:/x.txt"]`` — already argv; used as is.
+    * ``"--cookies C:/x.txt"`` — a whole line. ``list()`` on it yields 18
+      single-character arguments, so the failure surfaces as yt-dlp complaining
+      about every letter of the alphabet rather than about the real mistake.
+    * ``["--cookies C:/x.txt"]`` — one element holding a whole line, the shape
+      someone reaches for when the docs show a command rather than a list.
+
+    The last two are split on whitespace. Paths with spaces in them cannot be
+    expressed through the convenience form; pass the pre-split list instead.
+    """
+    if raw is None:
+        return []
+    items = [raw] if isinstance(raw, str) else list(raw)
+    argv: list[str] = []
+    for item in items:
+        text = str(item).strip()
+        if text:
+            argv.extend(text.split())
+    return argv
+
+
 def _scrap_results(payload: dict) -> tuple[list[dict], str]:
     """Expand a link or a profile into a list of downloadable videos.
 
@@ -254,7 +295,13 @@ def _scrap_results(payload: dict) -> tuple[list[dict], str]:
         raise ClipperError("Informe o link do vídeo ou o perfil.")
 
     config = _options_to_config({"url": url, "output": payload.get("output") or "output"})
-    config.extra_ytdlp_args = list(payload.get("extra_ytdlp_args") or [])
+    # ``extra_ytdlp_args`` is a list of argv words, one flag per element. A bare
+    # string is accepted as a convenience and split on whitespace, because
+    # ``list("--cookies x.txt")`` silently becomes 21 one-character arguments
+    # and yt-dlp then fails with a baffling "unrecognized arguments" list.
+    # A whole command line as one element (``["--cookies x.txt"]``) is split
+    # too, for the same reason.
+    config.extra_ytdlp_args = _ytdlp_argv(payload.get("extra_ytdlp_args"))
 
     if mode == "link":
         # A single item: reuse the metadata path verbatim, so the answer the

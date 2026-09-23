@@ -577,6 +577,19 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
             Instagram exige sessão até para um reel isolado.
           </span>
         </div>
+
+        <div style="margin:14px 0 0;">
+          <label class="field-hint" for="scrap-cookies-file" style="display:block;margin-bottom:6px;">
+            Ou um arquivo cookies.txt
+          </label>
+          <input type="text" id="scrap-cookies-file" name="cookies-file"
+                 placeholder="C:\caminho\cookies.txt" style="max-width:340px;">
+          <span class="field-hint" style="display:block;margin-top:6px;">
+            Tem precedência sobre o seletor acima. Necessário no Chrome/Edge 127+,
+            onde os cookies são selados com App-Bound Encryption e o yt-dlp não
+            consegue lê-los do navegador.
+          </span>
+        </div>
       </section>
 
       <section class="card" aria-labelledby="h-resultados">
@@ -950,8 +963,15 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
     // Cookies are offered in both modes: Instagram refuses an isolated reel as
     // readily as it refuses a profile, so gating this on "profile" left the
     // link mode with no way to authenticate at all.
+    //
+    // The file wins over the browser picker. On Chrome/Edge 127+ the browser
+    // route is sealed with App-Bound Encryption and always fails, so a file the
+    // user exported by hand is the only thing that can actually work there.
+    const cookiesFile = $("#scrap-cookies-file");
     const cookies = $("#scrap-cookies");
-    if (cookies && cookies.value) {
+    if (cookiesFile && cookiesFile.value.trim()) {
+      payload.extra_ytdlp_args = ["--cookies", cookiesFile.value.trim()];
+    } else if (cookies && cookies.value) {
       payload.extra_ytdlp_args = ["--cookies-from-browser", cookies.value];
     }
 

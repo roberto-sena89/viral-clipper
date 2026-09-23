@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 
@@ -200,12 +201,25 @@ def run_streaming(
     return proc.returncode
 
 
+def _drain_lines(buffer: str) -> tuple[list[str], str]:
+    """Split a stream buffer into complete lines on both ``\\n`` and ``\\r``.
+
+    yt-dlp rewrites its progress on a single line with carriage returns, so
+    splitting on ``\\n`` alone would hold a progress update back until the
+    download finishes — which is the one moment it is no longer useful.
+    Returns the complete lines and whatever is left of the last one.
+    """
+    pieces = buffer.replace("\r", "\n").split("\n")
+    return [piece for piece in pieces[:-1] if piece.strip()], pieces[-1]
+
+
 def run_streaming_captured(
     cmd: list[str],
     *,
     cwd: str | Path | None = None,
     logger: Logger | None = None,
     echo: bool = True,
+    on_line: Callable[[str], None] | None = None,
 ) -> tuple[int, str]:
     """Run a long command, echoing its output and keeping a copy.
 
@@ -215,6 +229,9 @@ def run_streaming_captured(
     streams every chunk straight through (progress bars keep their carriage
     returns) while accumulating the tail of the output for the caller to turn
     into an actionable message.
+
+    ``on_line`` is called with each complete line as it arrives, which is how a
+    caller turns yt-dlp's own progress output into a percentage.
 
     Returns ``(returncode, captured_output)``.
     """
@@ -230,6 +247,7 @@ def run_streaming_captured(
         env=env,
     )
     captured: list[str] = []
+    pending = ""
     assert proc.stdout is not None
     while True:
         chunk = proc.stdout.read(4096)
@@ -237,6 +255,10 @@ def run_streaming_captured(
             break
         text = chunk.decode("utf-8", "replace")
         captured.append(text)
+        if on_line is not None:
+            lines, pending = _drain_lines(pending + text)
+            for line in lines:
+                on_line(line)
         if echo:
             try:
                 sys.stdout.write(text)
@@ -245,6 +267,8 @@ def run_streaming_captured(
                 # A dead console must not abort a download in progress.
                 echo = False
     proc.wait()
+    if on_line is not None and pending.strip():
+        on_line(pending)
     # Only the tail matters for diagnostics, and it keeps memory flat on a
     # multi-minute render.
     output = "".join(captured)[-8000:]

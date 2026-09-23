@@ -41,7 +41,7 @@ PORT = 7755
 # Shared state. The HTTP handler runs on one thread; runs happen on a worker
 # thread, so access goes through the lock.
 _lock = threading.Lock()
-_state: dict = {"jobs": [], "clips": [], "scrap": []}
+_state: dict = {"jobs": [], "clips": [], "scrap": [], "download": None}
 
 
 class CollectingLogger(util.Logger):
@@ -83,6 +83,55 @@ def _clip_to_payload(clip: report.ClipRecord, output_dir: Path) -> dict:
         "hook_terms": clip.hook_terms,
         "text": clip.text,
     }
+
+
+def _download_worker(
+    targets: list[download_mod.MediaTarget],
+    root: Path,
+    config: config_mod.ClipConfig,
+    logger: CollectingLogger,
+) -> None:
+    """Run one batch off the request thread, publishing progress as it goes.
+
+    Never raises: the record is where a caller looks, so a failure is written
+    there instead of dying inside a thread where nothing can see it.
+    """
+
+    def progress(event) -> None:
+        _publish_download(
+            phase=event.phase,
+            index=event.index,
+            total=event.total,
+            title=event.title,
+            percent=0.0 if event.percent is None else event.percent,
+            downloaded=event.downloaded,
+            skipped=event.skipped,
+            failed=event.failed,
+        )
+
+    try:
+        summary = download_mod.download_many(
+            targets, root, config, logger, on_progress=progress
+        )
+    except Exception as exc:  # noqa: BLE001 - a thread must not die silently
+        _publish_download(
+            active=False, state="erro", error=f"{exc!r}", lines=logger.lines
+        )
+        return
+
+    _publish_download(
+        active=False,
+        state="concluido",
+        phase="done",
+        percent=100.0,
+        total=summary.total,
+        downloaded=summary.downloaded,
+        skipped=summary.skipped,
+        failed=summary.failed,
+        root=_relative_to_repo(summary.root),
+        lines=summary.lines(),
+        errors=[{"item": name, "error": error} for name, error in summary.errors],
+    )
 
 
 def _options_to_config(options: dict) -> config_mod.ClipConfig:
@@ -424,6 +473,51 @@ def _relative_to_repo(path: Path | None) -> str:
         return str(path).replace("\\", "/")
 
 
+#: One batch at a time. Two selections writing into the same folder would fight
+#: over the same file names and double the load on a site that already throttles;
+#: the page posts, gets the job and then follows it.
+_DOWNLOAD_SLOT = "download"
+
+
+def _download_record(**fields) -> dict:
+    """The state the scrap page paints while a batch runs.
+
+    One flat record with every field always present: the page polls it twice a
+    second and reads it directly, so a missing key would be a rendering bug
+    rather than a smaller payload.
+    """
+    record = {
+        "active": False,
+        "state": "ocioso",  # ocioso | baixando | concluido | erro
+        "phase": "",  # item | bytes | skipped | failed | done
+        "total": 0,
+        "index": 0,
+        "title": "",
+        "percent": 0.0,
+        "downloaded": 0,
+        "skipped": 0,
+        "failed": 0,
+        "root": "",
+        "lines": [],
+        "errors": [],
+        "error": "",
+    }
+    record.update(fields)
+    return record
+
+
+def _publish_download(**fields) -> None:
+    """Merge fields into the download record, under the lock.
+
+    The worker thread writes and the request thread reads, so this goes through
+    ``_lock`` like every other piece of shared state.
+    """
+    with _lock:
+        record = dict(_state.get(_DOWNLOAD_SLOT) or _download_record())
+        record.update(fields)
+        _state[_DOWNLOAD_SLOT] = record
+
+
 def _thumb_dir() -> Path:
     """Where thumbnail bytes are cached, under the server's own directory.
 
@@ -730,7 +824,16 @@ class Handler(http_server.BaseHTTPRequestHandler):
             return
         if path == "/status":
             with _lock:
-                self._send_json(dict(_state))
+                snapshot = dict(_state)
+            # The download record has its own endpoint; keeping it out of /status
+            # leaves that payload the {jobs, clips} contract the gallery expects.
+            snapshot.pop(_DOWNLOAD_SLOT, None)
+            self._send_json(snapshot)
+            return
+        if path == "/scrap/download/progress":
+            with _lock:
+                record = dict(_state.get(_DOWNLOAD_SLOT) or _download_record())
+            self._send_json(record)
             return
         if path == "/library":
             # Everything playable in the output folder, not just the last job.
@@ -1010,24 +1113,43 @@ class Handler(http_server.BaseHTTPRequestHandler):
             config = _options_to_config(
                 {"url": "", "output": str(root), "cookies_file": cookies_file}
             )
-            summary = download_mod.download_many(targets, root, config, logger)
         except ClipperError as exc:
-            self._send_json({"error": str(exc), "log_lines": logger.lines}, 400)
+            self._send_json({"error": str(exc)}, 400)
             return
-        except Exception as exc:  # noqa: BLE001 - surface anything to the UI
-            self._send_json({"error": f"{exc!r}", "log_lines": logger.lines}, 400)
-            return
+
+        # O download roda fora da thread da requisicao: uma selecao de vinte
+        # videos leva minutos, e uma requisicao que fica minutos sem responder
+        # nao tem como mostrar progresso nenhum. A pagina recebe o aceite e
+        # acompanha o record em /scrap/download/progress.
+        with _lock:
+            current = _state.get(_DOWNLOAD_SLOT) or {}
+            if current.get("active"):
+                self._send_json(
+                    {"error": "já existe um download em andamento; espere ele terminar"},
+                    409,
+                )
+                return
+            _state[_DOWNLOAD_SLOT] = _download_record(
+                active=True,
+                state="baixando",
+                phase="item",
+                total=len(targets),
+                index=0,
+                root=_relative_to_repo(root),
+            )
+
+        threading.Thread(
+            target=_download_worker,
+            args=(targets, root, config, logger),
+            name="scrap-download",
+            daemon=True,
+        ).start()
 
         self._send_json(
             {
-                "total": summary.total,
-                "downloaded": summary.downloaded,
-                "skipped": summary.skipped,
-                "failed": summary.failed,
-                "root": _relative_to_repo(summary.root),
-                "lines": summary.lines(),
-                "errors": [{"item": name, "error": error} for name, error in summary.errors],
-                "log_lines": logger.lines,
+                "started": True,
+                "total": len(targets),
+                "root": _relative_to_repo(root),
             }
         )
 

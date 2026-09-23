@@ -248,13 +248,20 @@ def _run_captured(cmd: list[str], url: str, logger: Logger | None) -> str:
     return proc.stdout or ""
 
 
-def _run_visible(cmd: list[str], url: str, logger: Logger | None) -> None:
+def _run_visible(
+    cmd: list[str],
+    url: str,
+    logger: Logger | None,
+    on_line: Callable[[str], None] | None = None,
+) -> None:
     """Run a download with progress on screen, failing with the real cause.
 
     The output is captured as it streams, so a failure reports what yt-dlp
     actually said (and the flag that fixes it) instead of a bare exit code.
+    ``on_line`` forwards each line as it arrives, which is what turns yt-dlp's
+    own progress output into a percentage.
     """
-    code, output = util.run_streaming_captured(cmd, logger=logger)
+    code, output = util.run_streaming_captured(cmd, logger=logger, on_line=on_line)
     if code != 0:
         if not _YTDLP_ERROR.search(output or ""):
             # yt-dlp died without printing a reason: the exit code is all there is.
@@ -459,6 +466,7 @@ def download_media(
     destination: str | Path,
     config: ClipConfig,
     logger: Logger | None = None,
+    on_line: Callable[[str], None] | None = None,
 ) -> Path:
     """Download one media item whole, at the configured height.
 
@@ -473,6 +481,9 @@ def download_media(
     personal archive of the profile, and one playable file per post is the
     point. ``-S`` orders the format selection so the merge is deterministic
     instead of whatever the site happened to list first.
+
+    ``on_line`` is where the progress of a long item can be followed; a caller
+    that does not care leaves it alone.
     """
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -492,6 +503,7 @@ def download_media(
         ),
         url,
         logger,
+        on_line,
     )
     return _resolve_downloaded(destination)
 
@@ -562,6 +574,32 @@ class MediaTarget:
     url: str
     media_id: str = ""
     title: str = ""
+
+
+#: yt-dlp writes its progress as ``[download]  54.9% of  230.98MiB at ...``. The
+#: percentage is the only part of that line that means the same thing on every
+#: site, so it is the only part that is read.
+_YTDLP_PERCENT = re.compile(r"\[download\]\s+(?P<percent>\d+(?:\.\d+)?)%")
+
+
+@dataclasses.dataclass(frozen=True)
+class DownloadEvent:
+    """One step of a batch download, reported while it happens.
+
+    ``percent`` is the byte progress of the item in hand, when yt-dlp knows the
+    size. That is what keeps a single long video from freezing the bar at
+    "1 de 20" for minutes; it is ``None`` for the events that are not about
+    bytes (a skip, a failure, the end).
+    """
+
+    phase: str  # item | bytes | skipped | failed | done
+    index: int = 0
+    total: int = 0
+    title: str = ""
+    percent: float | None = None
+    downloaded: int = 0
+    skipped: int = 0
+    failed: int = 0
 
 
 @dataclasses.dataclass
@@ -641,6 +679,7 @@ def download_many(
     logger: Logger | None = None,
     downloader: Callable[..., Path] | None = None,
     overwrite: bool = False,
+    on_progress: Callable[[DownloadEvent], None] | None = None,
 ) -> DownloadSummary:
     """Download every target into one folder, resumable and failure-isolated.
 
@@ -653,6 +692,11 @@ def download_many(
     ``downloader`` is injected so the loop can be tested without a network,
     exactly like :func:`viralclipper.archive.archive_profile`; production passes
     :func:`download_media`.
+
+    ``on_progress`` is called with a :class:`DownloadEvent` at every step: when
+    an item starts, on each percentage yt-dlp reports, on a skip, on a failure
+    and once at the end. A batch of twenty long videos takes minutes, and
+    without this the only thing a caller can show is a spinner.
     """
     fetch = downloader or download_media
     root = Path(destination)
@@ -662,11 +706,29 @@ def download_many(
         return summary
     root.mkdir(parents=True, exist_ok=True)
 
+    def report(phase: str, index: int = 0, title: str = "", percent: float | None = None) -> None:
+        """Hand one step to the caller, with the counts as they stand now."""
+        if on_progress is None:
+            return
+        on_progress(
+            DownloadEvent(
+                phase=phase,
+                index=index,
+                total=summary.total,
+                title=title,
+                percent=percent,
+                downloaded=summary.downloaded,
+                skipped=summary.skipped,
+                failed=summary.failed,
+            )
+        )
+
     for position, target in enumerate(items, start=1):
         url = str(target.url or "").strip()
         if not url:
             summary.failed += 1
             summary.errors.append((media_stem(target), "sem URL"))
+            report("failed", position, target.title)
             continue
 
         existing = None if overwrite else _already_downloaded(root, target)
@@ -674,26 +736,57 @@ def download_many(
             summary.skipped += 1
             if logger:
                 logger.info(f"[{position}/{summary.total}] ja existe: {existing.name}")
+            report("skipped", position, target.title)
             continue
 
         stem = media_stem(target)
         if logger:
             logger.step(f"[{position}/{summary.total}] {stem}")
+        report("item", position, target.title, 0.0)
+
+        highest = 0.0
+
+        def track(line: str, _position: int = position, _title: str = target.title) -> None:
+            """Turn yt-dlp's own progress line into a percentage.
+
+            The item arrives as two streams (video, then audio) and the
+            percentage restarts at zero for the second one, so only a value
+            higher than the last one seen is reported: the bar never goes
+            backwards.
+            """
+            nonlocal highest
+            match = _YTDLP_PERCENT.search(line)
+            if match is None:
+                return
+            percent = float(match.group("percent"))
+            if percent <= highest:
+                return
+            highest = percent
+            report("bytes", _position, _title, percent)
+
         try:
-            fetch(url, root / stem, config, logger)
+            if on_progress is None:
+                fetch(url, root / stem, config, logger)
+            else:
+                # Only a caller that wants progress asks the downloader for it:
+                # an injected fake takes the four arguments it always took.
+                fetch(url, root / stem, config, logger, on_line=track)
         except ClipperError as exc:
             summary.failed += 1
             summary.errors.append((stem, str(exc)))
             if logger:
                 logger.warn(f"falhou: {stem}: {exc}")
+            report("failed", position, target.title)
         except Exception as exc:  # noqa: BLE001 - one item must not stop the batch
             summary.failed += 1
             summary.errors.append((stem, repr(exc)))
             if logger:
                 logger.warn(f"falhou: {stem}: {exc!r}")
+            report("failed", position, target.title)
         else:
             summary.downloaded += 1
 
+    report("done")
     return summary
 
 

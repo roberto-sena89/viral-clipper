@@ -339,6 +339,25 @@ input::placeholder { color: var(--text-muted); }
 }
 .result-check input { width: 16px; height: 16px; margin: 0; cursor: pointer; }
 
+/* Barra de progresso do download em lote. Ocupa a linha inteira da mesma
+   tabela da selecao, embaixo dos botoes, e so existe enquanto ha trabalho. */
+.dl-track {
+  flex: 1 1 100%; height: 8px; border-radius: 999px; overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+.dl-fill {
+  display: block; height: 100%; width: 0;
+  background: var(--accent-primary); border-radius: 999px;
+  transition: width 200ms linear;
+}
+.dl-track[data-state="done"] .dl-fill { background: var(--success); }
+.dl-track[data-state="error"] .dl-fill { background: var(--danger); }
+
+/* O atributo hidden perde para style="display:flex" inline (a regra embutida
+   vence o [hidden] do UA), entao select-box e arquivar-box ficariam sempre
+   visiveis sem esta regra. A barra usa a mesma regra pelo mesmo motivo. */
+#select-box[hidden], #arquivar-box[hidden], #download-bar[hidden] { display: none; }
+
 /* A thumbnail. 9:16 e o formato que o pipeline produz, entao o card ja mostra
    o enquadramento real. O fundo segura o espaco antes da imagem chegar (e come
    o icone quando ela nunca chega), para a lista nao "pular" ao carregar. */
@@ -680,6 +699,13 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
           <span class="field-hint" id="select-count" style="flex:1 1 200px;">
             Nada selecionado.
           </span>
+          <!-- Onde o progresso aparece. Nasce escondida: uma barra parada em 0%
+               antes de qualquer download so ocupa espaco e mente. -->
+          <div id="download-bar" class="dl-track" hidden role="progressbar"
+               data-state="running" aria-valuemin="0" aria-valuemax="100"
+               aria-valuenow="0" aria-label="Progresso do download dos selecionados">
+            <span id="download-fill" class="dl-fill"></span>
+          </div>
         </div>
 
         <!-- Arquivar so faz sentido com uma lista na tela, entao o bloco fica
@@ -877,7 +903,21 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
         body: JSON.stringify(body || {}),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { error: data.error || ("HTTP " + res.status) };
+      if (!res.ok) return { error: data.error || ("HTTP " + res.status), code: res.status };
+      return data;
+    } catch (e) {
+      return { error: "Servidor local não respondeu. Inicie web/server.py.", offline: true };
+    }
+  }
+
+  // Leitura simples, para acompanhar o progresso. O codigo HTTP vem junto porque
+  // o chamador precisa distinguir "o servidor nao respondeu" de "aquele job ja
+  // estava rodando" (409): no segundo caso o certo e continuar acompanhando.
+  async function get(path) {
+    try {
+      const res = await fetch(path);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { error: data.error || ("HTTP " + res.status), code: res.status };
       return data;
     } catch (e) {
       return { error: "Servidor local não respondeu. Inicie web/server.py.", offline: true };
@@ -1134,8 +1174,10 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
     }
     const button = $("#btn-download");
     if (button) {
-      button.disabled = chosen === 0;
-      button.textContent = chosen ? "Baixar selecionados (" + chosen + ")" : "Baixar selecionados";
+      button.disabled = busy || chosen === 0;
+      button.textContent = busy
+        ? "Baixando…"
+        : (chosen ? "Baixar selecionados (" + chosen + ")" : "Baixar selecionados");
     }
   }
 
@@ -1149,13 +1191,116 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
     paintSelection();
   }
 
-  // ---------- baixar a selecao ----------
+  // ---------- progresso do download ----------
+  // O POST so devolve o aceite: o trabalho roda numa thread no servidor, porque
+  // uma selecao de vinte videos leva minutos e uma resposta que so volta no fim
+  // nao teria como mostrar progresso. Quem mostra e este poll, duas vezes por
+  // segundo, lendo o record que o servidor publica.
+  var downloadTimer = null;
+  var busy = false;
+
+  function paintDownload(record) {
+    const bar = $("#download-bar");
+    const fill = $("#download-fill");
+    const count = $("#select-count");
+    if (record.state === "ocioso" || !record.state) return;
+
+    if (bar && fill) {
+      const total = Number(record.total) || 0;
+      const index = Number(record.index) || 0;
+      // A fracao soma os itens ja fechados com o pedaco do item em maos. Sem
+      // isso a barra ficaria parada em "1 de 20" durante os minutos de um video
+      // longo, que e justamente quando ela e util.
+      const done = Math.max(0, Math.min(index, total) - (record.active ? 1 : 0));
+      const current = record.active ? (Number(record.percent) || 0) / 100 : 0;
+      const fraction = total ? Math.min(1, (done + current) / total) : 0;
+      bar.hidden = false;
+      bar.setAttribute("data-state", record.active ? "running" : (record.state === "erro" ? "error" : "done"));
+      bar.setAttribute("aria-valuenow", String(Math.round(fraction * 100)));
+      fill.style.width = (fraction * 100).toFixed(1) + "%";
+    }
+
+    if (count) {
+      if (record.active) {
+        const parts = ["Baixando " + Math.min(Number(record.index) || 1, Number(record.total) || 1) +
+                       " de " + (Number(record.total) || 0)];
+        if (record.percent) parts.push(Math.round(Number(record.percent)) + "%");
+        if (record.title) parts.push(record.title.slice(0, 48));
+        count.textContent = parts.join(" · ");
+      } else if (record.state === "erro") {
+        count.textContent = "O download falhou: " + (record.error || "erro");
+      } else {
+        const parts = [
+          record.downloaded + " baixado(s)",
+          record.skipped + " já tinha",
+          record.failed + " falha(s)",
+        ];
+        if (record.root) parts.push(record.root);
+        count.textContent = parts.join(" · ");
+      }
+    }
+  }
+
+  function stopPolling() {
+    if (downloadTimer) {
+      clearInterval(downloadTimer);
+      downloadTimer = null;
+    }
+  }
+
+  function setBusy(on) {
+    busy = on;
+    const all = $("#btn-select-all");
+    if (all) all.disabled = on;
+    renderSelection();
+  }
+
+  function followDownload() {
+    stopPolling();
+    downloadTimer = setInterval(pollDownload, 700);
+  }
+
+  async function pollDownload() {
+    const record = await get("/scrap/download/progress");
+    if (record.error) {
+      // O servidor caiu no meio: para de perguntar e devolve o controle.
+      stopPolling();
+      setBusy(false);
+      toast(String(record.error).slice(0, 120), "bad");
+      return;
+    }
+    paintDownload(record);
+    if (record.active) return;
+
+    stopPolling();
+    setBusy(false);
+    if (record.state === "erro") {
+      toast(("Falhou: " + (record.error || "")).slice(0, 120), "bad");
+      return;
+    }
+    const summary = record.downloaded + " baixado(s), " + record.skipped +
+                    " já tinha, " + record.failed + " falha(s)";
+    toast(summary + (record.root ? " em " + record.root : ""), "ok");
+  }
+
+  // Se a pagina for recarregada no meio de um lote, o trabalho continua no
+  // servidor: aqui ele volta a ser acompanhado em vez de virar um fantasma.
+  async function resumeDownload() {
+    const record = await get("/scrap/download/progress");
+    if (record.error || !record.active) return;
+    setBusy(true);
+    paintDownload(record);
+    followDownload();
+  }
+
+
   // Diferente de "Baixar para o computador" (que le o catalogo de um perfil do
   // Instagram a partir de cookies), aqui a lista ja esta na tela: o que vai para
   // o servidor e a selecao exata, uma URL por item, e cada site responde por si.
   // Por isso funciona igual em YouTube, TikTok e Instagram.
   async function downloadSelected(event) {
     if (event) event.preventDefault();
+    if (busy) return;
     const items = Array.from(selected)
       .sort((a, b) => a - b)
       .map((index) => results[index])
@@ -1166,14 +1311,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
       return;
     }
 
-    const btn = $("#btn-download");
-    if (btn) { btn.disabled = true; btn.textContent = "Baixando…"; }
-
     const cookiesFile = $("#scrap-cookies-file");
-    const sub = $("#resultados-sub");
-    if (sub) sub.textContent = "Baixando " + items.length + " item(ns)… (pode levar alguns minutos)";
-    toast("Baixando " + items.length + " vídeo(s)… não feche a página.", "ok");
-
     const r = await post("/scrap/download", {
       items: items,
       collection: collectionTitle,
@@ -1181,20 +1319,24 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
     });
 
     if (r.error) {
+      // 409 e "ja existe um lote rodando": nao e erro para mostrar e parar, e
+      // motivo para voltar a acompanhar o que ja esta em andamento.
+      if (r.code === 409) {
+        setBusy(true);
+        await resumeDownload();
+        return;
+      }
       toast(String(r.error).slice(0, 120), "bad");
-      if (sub) sub.textContent = "O download da seleção falhou.";
-      renderSelection();
       return;
     }
 
-    if (sub) {
-      sub.textContent = r.downloaded + " baixado(s), " + r.skipped + " já tinha, " +
-                        r.failed + " falha(s) em " + r.root;
-    }
-    toast(r.downloaded + " vídeo(s) em " + r.root, "ok");
-    // A selecao continua na tela: o que acabou de descer agora esta em disco, e
-    // repetir o download pula esses e tenta so o que faltou.
-    renderSelection();
+    setBusy(true);
+    paintDownload({
+      active: true, state: "baixando", phase: "item", index: 0,
+      total: r.total, percent: 0, title: "",
+      downloaded: 0, skipped: 0, failed: 0, root: r.root,
+    });
+    followDownload();
   }
 
   function renderResults(title) {
@@ -1549,6 +1691,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   renderMode();
   renderResults("");
   renderPick();
+  resumeDownload();
 })();
 </script>
 

@@ -582,43 +582,58 @@ def mock_lock_empty():
 
 
 class SelectedDownloadTests(unittest.TestCase):
-    """``/scrap/download`` baixa exatamente as linhas marcadas na lista.
+    """``/scrap/download`` aceita a selecao e roda como job.
 
     Diferente de ``/scrap/archive`` (que percorre um catalogo do Instagram a
     partir de cookies), aqui a lista ja esta na tela: o que chega e a selecao,
-    uma URL por item. E isso que faz a rota servir para YouTube e TikTok tambem.
+    uma URL por item. A resposta e o ACEITE, nao o resultado: uma selecao de
+    vinte videos leva minutos, entao o trabalho roda numa thread e a pagina
+    acompanha o progresso em ``/scrap/download/progress``.
     """
 
     def setUp(self):
         self.sent: dict = {}
         self.handler = object.__new__(server.Handler)
         self.handler._send_json = lambda payload, code=200: self.sent.update(payload, _code=code)
-        self.seen: list[dict] = []
+        self.started: list[dict] = []
+        with server._lock:
+            server._state[server._DOWNLOAD_SLOT] = None
 
-    def _handle(self, payload, summary=None):
-        """Call the handler with the batch downloader faked out."""
+    def _handle(self, payload, *, expected_worker: bool = True):
+        """Call the handler with the worker replaced, then wait for the handoff.
 
-        def fake_many(targets, destination, config, logger=None):
-            self.seen.append(
-                {
-                    "targets": list(targets),
-                    "destination": Path(destination),
-                    "args": list(config.extra_ytdlp_args),
-                }
-            )
-            if summary is not None:
-                return summary
-            return server.download_mod.DownloadSummary(
-                total=len(targets), downloaded=len(targets), root=Path(destination)
-            )
-
+        The real thread stays (it is part of what the route does) and its target
+        is a recorder plus an event: without the wait the assertions would race
+        the thread that was just spawned. A refusal starts no thread at all, so
+        there is nothing to wait for and the caller says so.
+        """
+        import threading
         from unittest import mock
 
-        with mock.patch.object(server.download_mod, "download_many", fake_many):
+        done = threading.Event()
+
+        def record_worker(targets, root, config, logger):
+            self.started.append(
+                {
+                    "targets": list(targets),
+                    "root": Path(root),
+                    "config": config,
+                    "logger": logger,
+                }
+            )
+            done.set()
+
+        with mock.patch.object(server, "_download_worker", record_worker):
             server.Handler._handle_selected_download(self.handler, payload)
+        if expected_worker:
+            done.wait(5)
         return self.sent
 
-    def test_the_selection_reaches_the_downloader_in_order(self):
+    def _record(self) -> dict:
+        with server._lock:
+            return dict(server._state[server._DOWNLOAD_SLOT] or {})
+
+    def test_the_selection_is_accepted_and_handed_over_in_order(self):
         payload = {
             "items": [
                 {"url": "https://x/1", "id": "id1", "title": "Um"},
@@ -626,96 +641,190 @@ class SelectedDownloadTests(unittest.TestCase):
             ],
             "collection": "ANCAPSU - Vídeos",
         }
-        self._handle(payload)
-        targets = self.seen[0]["targets"]
+        sent = self._handle(payload)
+        targets = self.started[0]["targets"]
         self.assertEqual([t.url for t in targets], ["https://x/1", "https://x/2"])
         self.assertEqual([t.media_id for t in targets], ["id1", "id2"])
         self.assertEqual([t.title for t in targets], ["Um", "Dois"])
+        self.assertEqual(sent["_code"], 200)
+
+    def test_the_answer_is_an_acceptance_not_a_result(self):
+        """A pagina nao recebe contagens: ela acompanha o progresso."""
+        sent = self._handle({"items": [{"url": "https://x/1"}, {"url": "https://x/2"}]})
+        self.assertTrue(sent["started"])
+        self.assertEqual(sent["total"], 2)
+        self.assertNotIn("downloaded", sent)
 
     def test_the_folder_is_named_after_the_listing_on_screen(self):
         # slugify preserva letra acentuada, entao a pasta tambem: e o nome que o
         # usuario vai ler no Explorer.
         self._handle({"items": [{"url": "https://x/1"}], "collection": "ANCAPSU - Vídeos"})
         self.assertEqual(
-            self.seen[0]["destination"],
+            self.started[0]["root"],
             server.REPO_ROOT / "output" / "downloads" / "ancapsu_vídeos",
         )
 
     def test_a_listing_without_a_title_still_gets_a_folder(self):
         self._handle({"items": [{"url": "https://x/1"}]})
         self.assertEqual(
-            self.seen[0]["destination"],
+            self.started[0]["root"],
             server.REPO_ROOT / "output" / "downloads" / "selecionados",
         )
 
     def test_the_cookies_file_becomes_a_ytdlp_argument(self):
         self._handle({"items": [{"url": "https://x/1"}], "cookies_file": "C:/cookies.txt"})
-        args = self.seen[0]["args"]
+        args = self.started[0]["config"].extra_ytdlp_args
         self.assertEqual(args[args.index("--cookies") + 1], "C:/cookies.txt")
 
-    def test_the_summary_is_what_the_page_renders(self):
-        summary = server.download_mod.DownloadSummary(
-            total=3, downloaded=2, skipped=0, failed=1, root=Path("output/downloads/x"),
-            errors=[("id3", "video privado")],
+    def test_the_slot_is_taken_before_the_worker_starts(self):
+        """A pagina pode perguntar pelo progresso no instante seguinte ao POST."""
+        self._handle({"items": [{"url": "https://x/1"}]})
+        record = self._record()
+        self.assertTrue(record["active"])
+        self.assertEqual(record["state"], "baixando")
+        self.assertEqual(record["total"], 1)
+        self.assertEqual(record["root"], "output/downloads/selecionados")
+
+    def test_an_empty_selection_is_refused(self):
+        for payload in ({}, {"items": []}, {"items": "todos"}):
+            with self.subTest(payload=payload):
+                sent = self._handle(payload, expected_worker=False)
+                self.assertEqual(sent["_code"], 400)
+                self.assertIn("nenhum item", sent["error"])
+        self.assertEqual(self.started, [])
+
+    def test_items_without_a_url_are_refused(self):
+        sent = self._handle(
+            {"items": [{"id": "id1", "title": "sem url"}, None, 7]}, expected_worker=False
         )
-        payload = self._handle({"items": [{"url": "https://x/1"}]}, summary=summary)
+        self.assertEqual(sent["_code"], 400)
+        self.assertIn("URL", sent["error"])
+        self.assertEqual(self.started, [])
+
+    def test_a_valid_item_next_to_junk_is_still_downloaded(self):
+        self._handle({"items": [None, {"url": "  https://x/1  "}, {"id": "so-id"}]})
+        self.assertEqual([t.url for t in self.started[0]["targets"]], ["https://x/1"])
+
+    def test_the_selection_is_capped(self):
+        payload = {"items": [{"url": f"https://x/{n}"} for n in range(300)]}
+        self._handle(payload)
+        self.assertEqual(len(self.started[0]["targets"]), server._MAX_SELECTED_DOWNLOADS)
+
+    def test_a_second_batch_is_refused_while_one_runs(self):
+        """Dois lotes na mesma pasta brigariam pelos mesmos nomes."""
+        self._handle({"items": [{"url": "https://x/1"}]})
+        sent = self._handle({"items": [{"url": "https://x/2"}]}, expected_worker=False)
+        self.assertEqual(sent["_code"], 409)
+        self.assertIn("andamento", sent["error"])
+        self.assertEqual(len(self.started), 1)
+
+    def test_a_new_batch_is_allowed_once_the_previous_ended(self):
+        self._handle({"items": [{"url": "https://x/1"}]})
+        server._publish_download(active=False, state="concluido")
+        self._handle({"items": [{"url": "https://x/2"}]})
+        self.assertEqual(len(self.started), 2)
+
+    def _run_worker(self, summary=None, events=(), explode=None) -> list[dict]:
+        """Run the worker inline with ``download_many`` faked out.
+
+        Returns the record after every progress event — what the page would have
+        painted — plus the final state at the end.
+        """
+        from unittest import mock
+
+        seen: list[dict] = []
+
+        def fake_many(targets, destination, config, logger=None, on_progress=None):
+            for event in events:
+                on_progress(event)
+                seen.append(self._record())
+            if explode is not None:
+                raise explode
+            return summary
+
+        logger = server.CollectingLogger()
+        with mock.patch.object(server.download_mod, "download_many", fake_many):
+            server._download_worker([], Path("output/downloads/x"), None, logger)
+        seen.append(self._record())
+        return seen
+
+    def test_the_worker_publishes_each_step_as_it_happens(self):
+        event = server.download_mod.DownloadEvent
+        seen = self._run_worker(
+            summary=server.download_mod.DownloadSummary(total=1, downloaded=1),
+            events=(
+                event("item", index=1, total=1, title="Um", percent=0.0),
+                event("bytes", index=1, total=1, title="Um", percent=45.5),
+                event("bytes", index=1, total=1, title="Um", percent=88.0),
+            ),
+        )
         self.assertEqual(
-            (payload["total"], payload["downloaded"], payload["skipped"], payload["failed"]),
-            (3, 2, 0, 1),
+            [(record["phase"], record["percent"]) for record in seen[:3]],
+            [("item", 0.0), ("bytes", 45.5), ("bytes", 88.0)],
         )
-        self.assertEqual(payload["errors"], [{"item": "id3", "error": "video privado"}])
-        self.assertTrue(any("baixados : 2" in line for line in payload["lines"]))
-        self.assertEqual(payload["_code"], 200)
+        self.assertEqual(seen[1]["title"], "Um")
+        self.assertEqual(seen[1]["index"], 1)
+
+    def test_a_percent_of_none_is_reported_as_zero(self):
+        event = server.download_mod.DownloadEvent
+        seen = self._run_worker(
+            summary=server.download_mod.DownloadSummary(total=1),
+            events=(event("skipped", index=1, total=1, title="Um", skipped=1),),
+        )
+        self.assertEqual(seen[0]["percent"], 0.0)
+
+    def test_the_worker_ends_with_the_summary_the_page_shows(self):
+        summary = server.download_mod.DownloadSummary(
+            total=3, downloaded=2, skipped=1, failed=0, root=Path("output/downloads/x"),
+        )
+        final = self._run_worker(summary=summary)[-1]
+        self.assertFalse(final["active"])
+        self.assertEqual(final["state"], "concluido")
+        self.assertEqual(final["percent"], 100.0)
+        self.assertEqual((final["downloaded"], final["skipped"]), (2, 1))
+        self.assertTrue(any("baixados : 2" in line for line in final["lines"]))
+
+    def test_the_worker_reports_the_failures_one_by_one(self):
+        summary = server.download_mod.DownloadSummary(
+            total=2, downloaded=1, failed=1, errors=[("id2", "video privado")],
+        )
+        final = self._run_worker(summary=summary)[-1]
+        self.assertEqual(final["errors"], [{"item": "id2", "error": "video privado"}])
+        self.assertEqual(final["failed"], 1)
+
+    def test_a_worker_that_explodes_still_leaves_a_record(self):
+        """Numa thread uma excecao nao tem quem a veja: o record e o canal."""
+        final = self._run_worker(explode=RuntimeError("sem rede"))[-1]
+        self.assertFalse(final["active"])
+        self.assertEqual(final["state"], "erro")
+        self.assertIn("sem rede", final["error"])
 
     def test_a_folder_outside_the_project_is_still_reported(self):
         """``relative_to`` raises for a path outside the repo; the UI still shows it."""
         summary = server.download_mod.DownloadSummary(
             total=1, downloaded=1, root=Path("D:/fora/do/repo")
         )
-        payload = self._handle({"items": [{"url": "https://x/1"}]}, summary=summary)
-        self.assertEqual(payload["_code"], 200)
-        self.assertEqual(payload["root"], "D:/fora/do/repo")
+        self.assertEqual(self._run_worker(summary=summary)[-1]["root"], "D:/fora/do/repo")
 
     def test_no_destination_is_reported_as_empty(self):
         summary = server.download_mod.DownloadSummary(total=0)
-        payload = self._handle({"items": [{"url": "https://x/1"}]}, summary=summary)
-        self.assertEqual(payload["root"], "")
+        self.assertEqual(self._run_worker(summary=summary)[-1]["root"], "")
 
-    def test_an_empty_selection_is_refused(self):
-        for payload in ({}, {"items": []}, {"items": "todos"}):
-            with self.subTest(payload=payload):
-                sent = self._handle(payload)
-                self.assertEqual(sent["_code"], 400)
-                self.assertIn("nenhum item", sent["error"])
-        self.assertEqual(self.seen, [])
+    def test_the_record_has_every_field_the_page_reads(self):
+        """A pagina le o record direto: chave faltando vira bug de render."""
+        record = server._download_record()
+        for field in (
+            "active", "state", "phase", "total", "index", "title", "percent",
+            "downloaded", "skipped", "failed", "root", "lines", "errors", "error",
+        ):
+            self.assertIn(field, record)
+        self.assertFalse(record["active"])
 
-    def test_items_without_a_url_are_refused(self):
-        sent = self._handle({"items": [{"id": "id1", "title": "sem url"}, None, 7]})
-        self.assertEqual(sent["_code"], 400)
-        self.assertIn("URL", sent["error"])
-        self.assertEqual(self.seen, [])
-
-    def test_a_valid_item_next_to_junk_is_still_downloaded(self):
-        self._handle({"items": [None, {"url": "  https://x/1  "}, {"id": "so-id"}]})
-        self.assertEqual([t.url for t in self.seen[0]["targets"]], ["https://x/1"])
-
-    def test_the_selection_is_capped(self):
-        payload = {"items": [{"url": f"https://x/{n}"} for n in range(300)]}
-        self._handle(payload)
-        self.assertEqual(len(self.seen[0]["targets"]), server._MAX_SELECTED_DOWNLOADS)
-
-    def test_a_download_that_explodes_does_not_take_the_server_down(self):
-        def boom(*args, **kwargs):
-            raise RuntimeError("sem rede")
-
-        from unittest import mock
-
-        with mock.patch.object(server.download_mod, "download_many", boom):
-            server.Handler._handle_selected_download(
-                self.handler, {"items": [{"url": "https://x/1"}]}
-            )
-        self.assertEqual(self.sent["_code"], 400)
-        self.assertIn("sem rede", self.sent["error"])
+    def test_publishing_merges_instead_of_replacing(self):
+        server._publish_download(state="baixando", total=7)
+        server._publish_download(percent=42.0)
+        record = self._record()
+        self.assertEqual((record["state"], record["total"], record["percent"]), ("baixando", 7, 42.0))
 
 
 class ScrapSelectionPageTests(unittest.TestCase):
@@ -741,6 +850,13 @@ class ScrapSelectionPageTests(unittest.TestCase):
 
     def test_the_page_posts_the_selection_to_the_route(self):
         self.assertIn('"/scrap/download"', self.page)
+
+    def test_the_page_follows_the_progress_of_the_route(self):
+        self.assertIn("/scrap/download/progress", self.page)
+
+    def test_the_toolbar_carries_a_progress_bar(self):
+        self.assertIn('id="download-bar"', self.page)
+        self.assertIn('id="download-fill"', self.page)
 
     def test_the_server_registers_the_route(self):
         self.assertIn('"/scrap/download"', self.source)

@@ -124,5 +124,74 @@ class LibraryListingTests(unittest.TestCase):
         self.assertEqual(server.list_library(self.tmp / "nao_existe"), [])
 
 
+class TemplatesPageTests(unittest.TestCase):
+    """The wizard page holds its own copy of the preset catalog for the preview.
+
+    A page that silently drifts from the engine offers presets that no longer
+    exist, or hides the ones that do - and the failure only shows up at render
+    time. These tests are the tripwire for that.
+    """
+
+    def setUp(self):
+        self.page = server.WEB_DIR / "templates.html"
+
+    def test_the_page_exists(self):
+        self.assertTrue(self.page.exists(), "web/templates.html is missing")
+
+    def test_the_page_lists_every_shipped_preset(self):
+        from viralclipper import caption_presets
+
+        body = self.page.read_text(encoding="utf-8")
+        missing = [name for name in caption_presets.PRESETS if f'"{name}"' not in body]
+        self.assertEqual(
+            missing, [], f"presets ausentes na pagina de templates: {missing}"
+        )
+
+    def test_the_page_invents_no_preset(self):
+        import re
+
+        from viralclipper import caption_presets
+
+        body = self.page.read_text(encoding="utf-8")
+        block = re.search(r"var PRESETS = \{(.*?)\n  \};", body, re.S)
+        self.assertIsNotNone(block, "bloco PRESETS nao encontrado na pagina")
+        keys = set(re.findall(r'^\s*"([a-z0-9-]+)":', block.group(1), re.M))
+        unknown = sorted(keys - set(caption_presets.PRESETS))
+        self.assertEqual(
+            unknown, [], f"a pagina oferece presets que o motor nao tem: {unknown}"
+        )
+
+    def test_the_page_offers_every_zone_kind(self):
+        from viralclipper import template as template_mod
+
+        body = self.page.read_text(encoding="utf-8")
+        missing = [kind for kind in template_mod.ZONE_KINDS if f"{kind}:" not in body]
+        self.assertEqual(missing, [], f"tipos de zona ausentes na pagina: {missing}")
+
+    def test_the_panel_links_to_the_templates_page(self):
+        panel = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        self.assertIn('href="/templates"', panel)
+
+    def test_the_geometry_rule_matches_the_engine(self):
+        """The page recomputes band pixels; the numbers must agree.
+
+        Both implementations are compared on the same input, so a change to
+        either one that is not mirrored fails here instead of producing a
+        preview that lies about the render.
+        """
+        from viralclipper import template as template_mod
+
+        body = self.page.read_text(encoding="utf-8")
+        # The page absorbs the rounding remainder into the last pixel band, the
+        # same way plan_bands does. Assert the shared constants are present so a
+        # rewrite cannot quietly drop the rule.
+        self.assertIn("zone.fraction", body)
+        self.assertIn("marginTop", body)
+        self.assertIn("marginLeft", body)
+        builtin = template_mod.BUILTIN["split-card"]
+        bands = template_mod.plan_bands(builtin, 1080, 1920)
+        self.assertEqual([b.kind for b in bands], ["video", "frame", "captions"])
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

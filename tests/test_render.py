@@ -10,8 +10,10 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from viralclipper import render
+from viralclipper import template as tpl
 from viralclipper.util import ClipperError
 
 from ._fixtures import make_config, make_word
@@ -275,6 +277,122 @@ class ConfigValidationTests(unittest.TestCase):
 
     def test_defaults_validate(self):
         make_config().validate()
+
+
+class TemplateCaptionBandTests(unittest.TestCase):
+    """The caption band must follow the video zone, not the canvas bottom."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="vc_render_tpl_")
+
+    def _margin(self, template, **overrides):
+        config = make_config(**overrides)
+        style = render.caption_presets.resolve(config)
+        return render._caption_margin_for_band(config, style, template)
+
+    def test_no_template_keeps_the_preset_margin(self):
+        style = render.caption_presets.resolve(make_config())
+        self.assertEqual(
+            render._caption_margin_for_band(make_config(), style, None), style.margin_v
+        )
+
+    def test_full_frame_video_zone_keeps_the_preset_margin(self):
+        self.assertEqual(
+            self._margin(tpl.FULL_FRAME),
+            render.caption_presets.resolve(make_config()).margin_v,
+        )
+
+    def test_split_template_lifts_the_margin_to_the_band_edge(self):
+        # split-card's video zone is 62% of 1920 = 1190px, so the band edge sits
+        # 730px above the bottom.
+        style = render.caption_presets.resolve(make_config())
+        margin = self._margin(tpl.SPLIT_CARD)
+        self.assertEqual(margin, 1920 - 1190 + style.margin_v)
+
+    def test_the_lifted_margin_reaches_the_ass_header(self):
+        path = render.build_captions(
+            [make_word(10.0, 10.4, "ola")],
+            10.0,
+            Path(self.tmp) / "captions.ass",
+            make_config(),
+            tpl.SPLIT_CARD,
+        )
+        body = path.read_text(encoding="utf-8")
+        expected = 1920 - 1190 + render.caption_presets.resolve(make_config()).margin_v
+        self.assertIn(f",{expected},1", body)
+
+    def test_default_call_without_a_template_is_unchanged(self):
+        plain = render.build_captions(
+            [make_word(10.0, 10.4, "ola")], 10.0, Path(self.tmp) / "a.ass", make_config()
+        ).read_text(encoding="utf-8")
+        expected = render.caption_presets.resolve(make_config()).margin_v
+        self.assertIn(f",{expected},1", plain)
+
+
+class TemplateComposeIntegrationTests(unittest.TestCase):
+    """``render_clip`` must build a zone graph only when a template needs one."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="vc_render_compose_"))
+        self.commands: list[list[str]] = []
+
+    def _render(self, template=None, **overrides):
+        config = make_config(width=1080, height=1920, **overrides)
+
+        def fake_run_streaming(command, **kwargs):
+            self.commands.append(list(command))
+            # ffmpeg writes the temp file the caller then moves into place.
+            work = Path(kwargs.get("cwd") or self.tmp)
+            work.mkdir(parents=True, exist_ok=True)
+            (work / f"render{Path(self.tmp / 'out.mp4').suffix}").write_bytes(b"")
+
+        with patch.object(render.util, "run_streaming", side_effect=fake_run_streaming), \
+             patch.object(render.util, "probe_video_size", return_value=(1920, 1080)), \
+             patch.object(render.util, "probe_duration", return_value=10.0), \
+             patch.object(render, "has_audio_stream", return_value=False), \
+             patch.object(render, "_focus_crop_x", return_value=None):
+            render.render_clip(
+                source=self.tmp / "src.mp4",
+                destination=self.tmp / "out.mp4",
+                clip_start=10.0,
+                clip_end=20.0,
+                config=config,
+                ffmpeg="ffmpeg",
+                ffprobe="ffprobe",
+                words=[],
+                work_dir=self.tmp / "work",
+                template=template,
+            )
+        return self.commands[-1]
+
+    def _graph(self, command) -> str:
+        return command[command.index("-filter_complex") + 1]
+
+    def test_no_template_uses_the_plain_layout(self):
+        graph = self._graph(self._render())
+        self.assertIn("scale=1080:1920", graph)
+        self.assertNotIn("overlay", graph)
+
+    def test_full_frame_template_keeps_the_plain_path(self):
+        graph = self._graph(self._render(template=tpl.FULL_FRAME))
+        # A single video zone needs no composer: captions-only templates must
+        # not pay the cost of an extra overlay pass.
+        self.assertNotIn("[z0s]", graph)
+
+    def test_split_template_composes_zones(self):
+        graph = self._graph(self._render(template=tpl.SPLIT_CARD))
+        self.assertIn("overlay", graph)
+        # The video band is 62% of 1920, so zones must be scaled to a 1190px band.
+        self.assertIn("1190", graph)
+
+    def test_split_template_adds_a_still_input(self):
+        command = self._render(template=tpl.SPLIT_CARD)
+        # One -i for the clip, one more for the extracted frame.
+        self.assertEqual(command.count("-i"), 2)
+
+    def test_composed_graph_has_balanced_labels(self):
+        graph = self._graph(self._render(template=tpl.SPLIT_CARD))
+        self.assertEqual(graph.count("["), graph.count("]"))
 
 
 if __name__ == "__main__":

@@ -331,6 +331,29 @@ class Handler(http_server.BaseHTTPRequestHandler):
             else:
                 self._send_json({"error": "index.html missing"}, 404)
             return
+        if path in {"/templates", "/templates.html"}:
+            page = WEB_DIR / "templates.html"
+            if page.exists():
+                self._send_file(page.read_bytes(), "text/html; charset=utf-8")
+            else:
+                self._send_json({"error": "templates.html missing"}, 404)
+            return
+        if path == "/templates/catalog":
+            # The zone kinds and caption presets the wizard offers, read from
+            # the engine rather than duplicated a third time in the page. The
+            # page keeps its own copy for the numeric preview; this endpoint is
+            # what keeps the two from drifting silently.
+            from viralclipper import caption_presets, template as template_mod
+
+            self._send_json(
+                {
+                    "presets": sorted(caption_presets.PRESETS),
+                    "zone_kinds": list(template_mod.ZONE_KINDS),
+                    "fit_modes": list(template_mod.FIT_MODES),
+                    "builtin": sorted(template_mod.BUILTIN),
+                }
+            )
+            return
         if path == "/status":
             with _lock:
                 self._send_json(dict(_state))

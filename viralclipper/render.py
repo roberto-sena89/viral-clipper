@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import caption_presets, reframe, util
+from . import caption_presets, reframe, template as template_mod, util
 from .config import ClipConfig
 from .transcribe import Word
 from .util import ClipperError, Logger
@@ -134,6 +134,7 @@ def build_captions(
     clip_start: float,
     destination: Path,
     config: ClipConfig,
+    template=None,
 ) -> Path | None:
     """Write the ASS file: karaoke captions plus the opening headline.
 
@@ -143,6 +144,9 @@ def build_captions(
     """
     events: list[str] = []
     style = caption_presets.resolve(config)
+    # On a split template the captions belong to the video band, not to the
+    # canvas bottom, so the margin is lifted to the band edge.
+    margin_v = _caption_margin_for_band(config, style, template)
 
     headline = _headline_text(words, config, style)
     if headline:
@@ -210,13 +214,66 @@ def build_captions(
         border_style=style.border_style,
         outline_w=f"{style.outline_width:g}",
         shadow=f"{style.shadow_depth:g}",
-        margin_v=style.margin_v,
+        margin_v=margin_v,
         headline_size=config.headline_font_size or 100,
         highlight=style.highlight_color,
     )
     destination.write_text(header + "\n".join(events) + "\n", encoding="utf-8")
     return destination
 
+
+
+def extract_frame(
+    *,
+    ffmpeg: str,
+    source: str | Path,
+    at: float,
+    destination: Path,
+    logger: Logger | None = None,
+) -> Path | None:
+    """Grab one still from ``source`` for a template's ``frame`` zone.
+
+    This is the "poster" idea: a template can show a large still derived from
+    the clip itself instead of an external asset, which means a channel can
+    ship a branded split layout with no image files at all. ``at`` is in source
+    timeline seconds; the caller has already resolved any section origin.
+
+    A missing frame is never fatal: the zone degrades to the clip video, which
+    still produces a valid clip. Failing the whole render because one poster
+    could not be grabbed would be a bad trade.
+    """
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    args = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
+    if at > 0:
+        args += ["-ss", util.fmt_clock_ms(at)]
+    # One frame is enough; -frames:v 1 lets ffmpeg exit on its own.
+    args += ["-i", str(Path(source).resolve()), "-frames:v", "1", "-q:v", "2", str(destination)]
+    proc = util.run(args, logger=logger, check=False)
+    if proc.returncode != 0 or not destination.exists():
+        if logger:
+            logger.warn("Nao consegui extrair o frame do template; usando o video.")
+        return None
+    return destination
+
+
+def _caption_margin_for_band(config: ClipConfig, style, template) -> int:
+    """Caption bottom margin that keeps the text inside the video band.
+
+    ``margin_v`` is measured from the bottom of the canvas, but on a split
+    template the captions belong to the *video* band, which ends well above the
+    bottom. Without this the text lands on top of the image zone. The preset's
+    own margin is kept as a floor so a template with a full-height video band
+    behaves exactly as before.
+    """
+    if template is None:
+        return style.margin_v
+    video_zone = template.video_zone
+    if video_zone is None or video_zone.fraction >= 1.0:
+        return style.margin_v
+    below = config.height - int(round(config.height * video_zone.fraction))
+    # The preset's margin is a bottom gutter inside a full-height frame; carry
+    # the same gutter up to the band edge.
+    return below + style.margin_v
 
 
 def _layout_filter(
@@ -372,10 +429,67 @@ def _apply(filters: str, extra: str) -> str:
     """
     if not extra:
         return filters
+    # An empty ``filters`` is the composer's case: the graph is fully built and
+    # only the overlay stage is appended to its labelled output.
+    if not filters:
+        return extra
     head, separator, tail = filters.rpartition(";")
     if separator:
         return f"{head}{separator}{tail},{extra}"
     return f"{filters},{extra}"
+
+
+def len_for_compose(template) -> int:
+    """Count the zones a template actually draws.
+
+    ``captions`` never draws a band (libass positions the text absolutely), so
+    a template of one video zone plus captions needs no composer at all and
+    keeps the original single-stream render path.
+    """
+    return sum(1 for zone in template.zones if zone.kind != "captions")
+
+
+def _template_stills(
+    template,
+    config: ClipConfig,
+    ffmpeg: str,
+    source: str | Path,
+    work: Path,
+    clip_start: float,
+    logger: Logger | None,
+) -> list[str]:
+    """Resolve every still a template needs, in zone order.
+
+    ``image`` zones use their own file; ``frame`` zones get one grabbed from the
+    clip. A zone whose still cannot be produced falls back to the clip video
+    rather than failing the render, so a missing logo file degrades the look
+    instead of costing the whole clip.
+    """
+    inputs: list[str] = []
+    for index, zone in enumerate(template.zones):
+        if zone.kind == "image":
+            candidate = Path(zone.source)
+            if not candidate.is_absolute():
+                candidate = Path(config.output_dir) / candidate
+            if candidate.exists():
+                inputs.append(str(candidate.resolve()))
+                continue
+            if logger:
+                logger.warn(f"Imagem da zona {index + 1} nao encontrada: {zone.source}")
+            # Point at the clip so the overlay stays valid (an input index must
+            # exist even when its content is unusable).
+            inputs.append(str(Path(source).resolve()))
+        elif zone.kind == "frame":
+            still = work / f"zone{index}.jpg"
+            grabbed = extract_frame(
+                ffmpeg=ffmpeg,
+                source=source,
+                at=clip_start + max(0.0, zone.frame_at),
+                destination=still,
+                logger=logger,
+            )
+            inputs.append(str(grabbed.resolve() if grabbed else Path(source).resolve()))
+    return inputs
 
 
 def _focus_crop_x(
@@ -416,6 +530,7 @@ def render_clip(
     work_dir: str | Path,
     logger: Logger | None = None,
     source_origin: float = 0.0,
+    template=None,
 ) -> RenderedClip:
     """Cut, reframe, caption and normalize one window into a final clip.
 
@@ -424,6 +539,10 @@ def render_clip(
     corresponds to 0:00 of the file being cut: 0 for a full download, and the
     section offset when the media is a section download whose timeline was
     reset. Everything that seeks inside the file subtracts it.
+
+    ``template`` is optional. ``None`` (and any template that only fills the
+    canvas with the video) renders through the original single-stream path, so
+    existing behaviour is unchanged.
     """
     work = util.ensure_dir(work_dir)
     destination = Path(destination).resolve()
@@ -432,7 +551,9 @@ def render_clip(
     window_end = clip_end + config.pad_end
     duration = max(0.1, window_end - window_start)
 
-    caption_path = build_captions(words or [], clip_start, work / CAPTION_FILE, config)
+    caption_path = build_captions(
+        words or [], clip_start, work / CAPTION_FILE, config, template
+    )
     source_width, source_height = util.probe_video_size(ffprobe, source, logger)
     audio_available = has_audio_stream(ffprobe, source, logger)
 
@@ -470,8 +591,39 @@ def render_clip(
         for stage in (caption_stage, _progress_bar_filter(config, duration))
         if stage
     )
-    video_chain = f"{video_input}setpts=PTS-STARTPTS,{_apply(layout, overlay_chain)}[vout]"
-    graph_parts.append(video_chain)
+
+    # A template that draws more than a full-canvas video zone needs its own
+    # graph: the plain layout filter only ever produces one full-canvas stream.
+    zones_need_composing = (
+        template is not None and len_for_compose(template) > 1
+    )
+    extra_inputs: list[str] = []
+    if zones_need_composing:
+        extra_inputs = _template_stills(
+            template, config, ffmpeg, source, work / "zones", seek_start, logger
+        )
+        compose_graph, compose_label = template_mod.compose(
+            template,
+            config.width,
+            config.height,
+            # After a jump cut the clip is no longer 0:v; handing the composer
+            # the live label keeps the cut in the graph instead of silently
+            # dropping it.
+            video_input=video_input.strip("[]"),
+        )
+        graph_parts.append(compose_graph)
+        # The composer relabels the clip input itself; the caption and progress
+        # stages then run over the composed canvas so the burnt text sits on top
+        # of every zone. With neither stage enabled the label is all that is
+        # needed - appending a bare comma would make ffmpeg parse an empty
+        # filter name and fail the whole render.
+        if overlay_chain:
+            graph_parts.append(f"{compose_label}{overlay_chain}[vout]")
+        else:
+            graph_parts.append(f"{compose_label}null[vout]")
+    else:
+        video_chain = f"{video_input}setpts=PTS-STARTPTS,{_apply(layout, overlay_chain)}[vout]"
+        graph_parts.append(video_chain)
 
     maps = ["-map", "[vout]"]
     if audio_available:
@@ -493,6 +645,12 @@ def render_clip(
         util.fmt_clock_ms(seek_start),
         "-i",
         str(Path(source).resolve()),
+    ]
+    # Still zones are appended after the clip, in zone order, because the
+    # composer addresses them positionally as [1:v], [2:v], ...
+    for still in extra_inputs:
+        command += ["-i", still]
+    command += [
         "-sn",
         "-filter_complex",
         ";".join(graph_parts),

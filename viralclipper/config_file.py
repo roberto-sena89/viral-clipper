@@ -110,6 +110,54 @@ def _flatten(
     return out
 
 
+def load_template_file(path: Path) -> dict[str, Any]:
+    """Read a template file and return its *nested* mapping.
+
+    Unlike :func:`load_config_file` this deliberately does **not** flatten:
+    a template's zones are a list of tables, and flattening would destroy the
+    structure the template loader needs. Reusing the format detection keeps
+    both file kinds consistent for the user.
+    """
+    from .util import ClipperError
+
+    if not path.exists():
+        raise ClipperError(f"Template nao encontrado: {path}")
+    if not path.is_file():
+        raise ClipperError(f"Caminho de template nao e um arquivo: {path}")
+
+    suffix = path.suffix.lower()
+    if suffix == ".toml":
+        import tomllib
+
+        try:
+            with path.open("rb") as handle:
+                return tomllib.load(handle)
+        except tomllib.TOMLDecodeError as exc:
+            raise ClipperError(f"TOML invalido em {path}: {exc}") from exc
+    if suffix in {".yaml", ".yml"}:
+        try:
+            import yaml
+        except ImportError as exc:  # pragma: no cover - exercised via CLI
+            raise ClipperError(
+                "Template YAML exige PyYAML. Instale com `pip install pyyaml`."
+            ) from exc
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                raw = yaml.safe_load(handle)
+        except yaml.YAMLError as exc:
+            raise ClipperError(f"YAML invalido em {path}: {exc}") from exc
+        if raw is None:
+            return {}
+        if not isinstance(raw, dict):
+            raise ClipperError(
+                f"Template {path} precisa ser um mapa no nivel de cima."
+            )
+        return raw
+    raise ClipperError(
+        f"Formato de template nao reconhecido: {path}. Use .toml, .yaml ou .yml."
+    )
+
+
 def apply_defaults(
     parser,
     defaults: dict[str, Any],

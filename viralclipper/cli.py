@@ -239,6 +239,40 @@ def build_parser() -> argparse.ArgumentParser:
     video.add_argument("--ffmpeg", default="ffmpeg")
     video.add_argument("--ffprobe", default="ffprobe")
 
+    templates = parser.add_argument_group("templates")
+    templates.add_argument(
+        "--template",
+        default=None,
+        help=(
+            "Composicao nomeada (split-card) ou caminho de um .toml/.yaml. "
+            "Sem isso o video ocupa o quadro inteiro."
+        ),
+    )
+    templates.add_argument(
+        "--variant-presets",
+        dest="variant_presets",
+        default=None,
+        help="Presets de legenda separados por virgula: rende o mesmo corte uma vez por preset",
+    )
+    templates.add_argument(
+        "--variant-layouts",
+        dest="variant_layouts",
+        default=None,
+        help="Layouts separados por virgula: rende o mesmo corte uma vez por layout",
+    )
+    templates.add_argument(
+        "--list-templates",
+        dest="list_templates",
+        action="store_true",
+        help="Mostra os templates embutidos e sai",
+    )
+    templates.add_argument(
+        "--describe-template",
+        dest="describe_template",
+        default=None,
+        help="Mostra a composicao resolvida (faixas em pixels) e sai",
+    )
+
     execution = parser.add_argument_group("execucao")
     execution.add_argument(
         "--workers",
@@ -328,7 +362,46 @@ def config_from_args(args: argparse.Namespace) -> config_mod.ClipConfig:
     # The positional URL is optional now that --batch exists; the batch runner
     # replaces it per job.
     payload["url"] = args.url or ""
+    # The variant axes arrive as one comma-separated string on the CLI because
+    # repeating a flag per preset reads worse; the dataclass wants a list.
+    payload["variant_presets"] = _split_axis(getattr(args, "variant_presets", None))
+    payload["variant_layouts"] = _split_axis(getattr(args, "variant_layouts", None))
     return config_mod.ClipConfig(**payload)
+
+
+def _split_axis(raw: str | None) -> list[str]:
+    """Turn ``"neon, fire"`` into ``["neon", "fire"]``, dropping blanks."""
+    if not raw:
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _list_templates() -> int:
+    """Print the built-in templates and their zones."""
+    from . import template as template_mod
+
+    for name in sorted(template_mod.BUILTIN):
+        template = template_mod.BUILTIN[name]
+        zones = " + ".join(
+            f"{zone.kind} {zone.fraction:.0%}" for zone in template.zones
+        )
+        print(f"{name:<12} {zones}")
+        if template.description:
+            print(f"{'':<12} {template.description}")
+    return 0
+
+
+def _describe_template(reference: str, width: int, height: int, logger) -> int:
+    """Print the pixel geometry a template resolves to at a given canvas."""
+    from . import template as template_mod
+
+    try:
+        template = config_mod.resolve_template(reference)
+    except ClipperError as exc:
+        logger.warn(str(exc))
+        return 2
+    print(template_mod.describe(template, width, height))
+    return 0
 
 
 def run_single(
@@ -479,6 +552,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logger.quiet = args.quiet
     logger.verbose = args.verbose
+
+    # Informational template flags short-circuit before any URL is required:
+    # they are how you discover a composition without reading the source.
+    if getattr(args, "list_templates", False):
+        return _list_templates()
+    if getattr(args, "describe_template", None):
+        return _describe_template(args.describe_template, args.width, args.height, logger)
 
     try:
         config = config_from_args(args)

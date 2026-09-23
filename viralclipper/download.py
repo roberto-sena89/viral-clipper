@@ -80,6 +80,11 @@ _HINTS: tuple[tuple[str, str], ...] = (
     ("timed out", "The connection timed out. Check the connection and retry."),
     ("connection reset", "The connection was reset mid-download. Retry."),
     ("no space left", "The disk is full. Free space and retry."),
+    (
+        "ffmpeg exited with code",
+        "yt-dlp failed to cut a section with ffmpeg. Retry, or use "
+        "--download-mode full to download the whole video at once.",
+    ),
     ("unable to download webpage", "Could not reach the site. Check the connection."),
 )
 

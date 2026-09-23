@@ -22,6 +22,7 @@ from unittest.mock import MagicMock, patch
 from tests._fixtures import make_analysis, make_config, make_transcript, make_word
 from viralclipper import pipeline, report, transcribe, transcript_cache
 from viralclipper.config import ClipConfig
+from viralclipper.render_task import _clip_filename
 from viralclipper.score import Window
 from viralclipper.util import ClipperError, Logger
 
@@ -561,4 +562,118 @@ class UnreachableMinScoreWarningTests(unittest.TestCase):
         pipeline._warn_unreachable_min_score(make_config(min_score=0.0), None, logger)
         logger.warn.assert_not_called()
         logger.info.assert_not_called()
+
+
+class TemplateRenderTests(PipelineTestCase):
+    """Templates and the variant matrix, exercised through the real task builder."""
+
+    def _tasks(self, config):
+        return pipeline._build_tasks(
+            self.windows,
+            self.analysis,
+            self.transcript,
+            config,
+            {"id": "abc"},
+            WORK,
+            self.output_dir,
+            None,
+            Logger(quiet=True),
+        )
+
+    def test_no_template_is_one_task_per_window(self):
+        tasks = self._tasks(self.config())
+        self.assertEqual(len(tasks), 3)
+        self.assertTrue(all(task.template is None for task in tasks))
+        self.assertTrue(all(task.variant == "" for task in tasks))
+
+    def test_a_full_frame_template_draws_no_zones_but_still_travels(self):
+        # split-card would compose; full-frame is the identity composition, so
+        # it must not add a variant suffix or change the task count.
+        tasks = self._tasks(self.config(template="full-frame"))
+        self.assertEqual(len(tasks), 3)
+        self.assertTrue(all(task.variant == "" for task in tasks))
+        self.assertEqual(tasks[0].template.name, "full-frame")
+
+    def test_split_card_template_is_a_single_task_per_window(self):
+        tasks = self._tasks(self.config(template="split-card"))
+        self.assertEqual(len(tasks), 3)
+        self.assertEqual(tasks[0].template.name, "split-card")
+        # The unadorned filename is kept when there is only one rendering.
+        self.assertEqual(tasks[0].variant, "")
+
+    def test_variant_axes_multiply_the_task_list(self):
+        tasks = self._tasks(
+            self.config(
+                template="split-card",
+                variant_presets=["neon", "fire"],
+                variant_layouts=["focus", "blur"],
+            )
+        )
+        self.assertEqual(len(tasks), 12)  # 3 windows x 4 variants
+
+    def test_each_variant_gets_its_own_config(self):
+        tasks = self._tasks(
+            self.config(
+                template="split-card",
+                variant_presets=["neon", "fire"],
+                variant_layouts=["focus"],
+            )
+        )
+        seen = {(task.config.caption_preset, task.config.layout) for task in tasks}
+        self.assertEqual(seen, {("neon", "focus"), ("fire", "focus")})
+        # The base config must not be mutated by any variant.
+        self.assertEqual(self.config().caption_preset, "karaoke")
+
+    def test_each_variant_gets_its_own_work_directory(self):
+        tasks = self._tasks(
+            self.config(
+                template="split-card",
+                variant_presets=["neon", "fire"],
+                variant_layouts=["focus", "blur"],
+            )
+        )
+        # Two renders of the same window must never share a captions.ass.
+        self.assertEqual(len({str(task.clip_dir) for task in tasks}), len(tasks))
+
+    def test_variant_filenames_are_distinct_and_grouped(self):
+        tasks = self._tasks(
+            self.config(template="split-card", variant_presets=["neon", "fire"])
+        )
+        names = [
+            _clip_filename(task.position, task.window, {"id": "abc"}, task.variant)
+            for task in tasks
+        ]
+        self.assertEqual(len(set(names)), len(names))
+        self.assertTrue(any("__neon" in name for name in names))
+        self.assertTrue(any("__fire" in name for name in names))
+
+    def test_repeated_windows_share_one_download(self):
+        records, download_section, _, render_clip, _ = self.render(
+            self.windows,
+            self.config(
+                parallel=False,
+                template="split-card",
+                variant_presets=["neon", "fire"],
+                variant_layouts=["focus", "blur"],
+            ),
+        )
+        # 3 windows x 4 variants = 12 renders, but the section is fetched once
+        # per window: an axis that only re-encodes must not cost network.
+        self.assertEqual(render_clip.call_count, 12)
+        self.assertEqual(download_section.call_count, 3)
+
+    def test_every_variant_receives_the_resolved_template(self):
+        _, _, _, render_clip, _ = self.render(
+            self.windows,
+            self.config(
+                parallel=False,
+                template="split-card",
+                variant_presets=["neon", "fire"],
+            ),
+        )
+        templates = [call.kwargs.get("template") for call in render_clip.call_args_list]
+        self.assertTrue(all(t is not None for t in templates))
+        self.assertEqual(
+            {t.caption_preset for t in templates}, {"neon", "fire"}
+        )
 

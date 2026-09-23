@@ -33,6 +33,13 @@ class _RenderTask:
     # 0 for a full download; the section offset when the section timeline was
     # reset. See :func:`download.resolve_origin`.
     media_origin: float = 0.0
+    # The template this task renders, when the run has one. None means the
+    # original single-zone full-frame path.
+    template: object | None = None
+    # Suffix distinguishing this task from its siblings when one window is
+    # rendered once per variant ("__neon-focus"). Empty for a plain run, which
+    # keeps existing filenames byte-identical.
+    variant: str = ""
     rendered: object | None = None
     record: object | None = None
     error: str | None = None
@@ -61,7 +68,7 @@ def _render_task(task: _RenderTask) -> _RenderTask:
                 logger,
             )
 
-        filename = _clip_filename(task.position, task.window, task.metadata)
+        filename = _clip_filename(task.position, task.window, task.metadata, task.variant)
         destination = task.output_dir / filename
         rendered = _render_with_retry(
             media=media,
@@ -74,6 +81,7 @@ def _render_task(task: _RenderTask) -> _RenderTask:
             work=clip_dir,
             logger=logger,
             source_origin=task.media_origin,
+            template=task.template,
         )
         task.rendered = rendered
     except Exception as exc:  # noqa: BLE001 - worker must not poison the pool
@@ -99,6 +107,7 @@ def _render_with_retry(
     work: Path,
     logger: Logger,
     source_origin: float = 0.0,
+    template=None,
 ):
     """Render once, retrying without jump cutting if the clip got too short."""
     attempts: list[ClipConfig] = []
@@ -123,6 +132,7 @@ def _render_with_retry(
             work_dir=work / f"attempt{attempt}",
             logger=logger,
             source_origin=source_origin,
+            template=template,
         )
         if result.duration >= config.min_duration - 0.05:
             return result
@@ -141,10 +151,14 @@ def _render_with_retry(
     return result
 
 
-def _clip_filename(position: int, window, metadata: dict) -> str:
+def _clip_filename(position: int, window, metadata: dict, variant: str = "") -> str:
     video_id = str(metadata.get("id") or "video")
     stem = util.slugify(window.text[:60], fallback="clip", max_length=40)
-    return f"{video_id}_{position:02d}_{stem}_{int(window.start):06d}.mp4"
+    # The variant suffix goes before the timecode so all renderings of the same
+    # window sort together, which is what makes a variant matrix reviewable.
+    return (
+        f"{video_id}_{position:02d}_{stem}{variant}_{int(window.start):06d}.mp4"
+    )
 
 
 def _record(

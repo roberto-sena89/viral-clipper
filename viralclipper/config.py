@@ -126,6 +126,16 @@ class ClipConfig:
     crf: int = 20
     preset: str = "veryfast"
     audio_bitrate: str = "192k"
+    # --- template -------------------------------------------------------------
+    # A named composition (zones stacking video, stills and a caption band).
+    # None keeps the original single-zone full-frame render. A built-in name
+    # ("split-card") or a path to a .toml/.yaml template file both work.
+    template: str | None = None
+    # Cross the template with these axes: every preset x every layout renders
+    # the same window again. This is the output multiplier - one analysis pass,
+    # many deliverables - so the only cost is the extra encodes.
+    variant_presets: list[str] = field(default_factory=list)
+    variant_layouts: list[str] = field(default_factory=list)
     # libx264 allocates its frame buffers per thread, so the ffmpeg default
     # (one thread per core) is what makes a 1080x1920 render run out of memory
     # on an 8 GB machine. 2 keeps a single encode comfortable.
@@ -197,3 +207,42 @@ class ClipConfig:
             raise ValueError("ranker_timeout must be greater than zero")
         if self.workers < 0:
             raise ValueError("workers must not be negative")
+        # The template is validated eagerly so a typo in a zone fraction fails
+        # before a download, not after transcription.
+        if self.template:
+            from . import template as template_mod
+
+            resolve_template(self.template, template_mod)
+        for axis, field_name in (
+            (self.variant_presets, "variant_presets"),
+            (self.variant_layouts, "variant_layouts"),
+        ):
+            if not isinstance(axis, list):
+                raise ValueError(f"{field_name} must be a list of strings")
+        for preset in self.variant_presets:
+            if not isinstance(preset, str):
+                raise ValueError("variant_presets must contain only strings")
+        for layout in self.variant_layouts:
+            if layout not in {"center", "blur", "fit", "focus"}:
+                raise ValueError(
+                    f"variant_layouts contains '{layout}'; "
+                    "must be center, blur, fit or focus"
+                )
+
+
+def resolve_template(name: str, template_mod=None):
+    """Resolve a template reference: a built-in name or a path to a file.
+
+    Accepting both from the same knob means the CLI needs one flag, not two,
+    and a built-in can be promoted to a custom file by copying it out and
+    passing the path instead of the name.
+    """
+    if template_mod is None:
+        from . import template as template_mod
+
+    candidate = Path(name)
+    # A path wins over a name only when it actually exists, so a file called
+    # "split-card" in the cwd cannot shadow the built-in by accident.
+    if candidate.suffix.lower() in {".toml", ".yaml", ".yml"} or candidate.exists():
+        return template_mod.load_template(candidate)
+    return template_mod.get_template(name)

@@ -9,7 +9,9 @@ from pathlib import Path
 
 from . import audio as audio_mod
 from . import download, ranker, render, report, score, transcribe, transcript_cache, util
+from . import template as template_mod
 from . import transcript_import, viral_report
+from . import config as config_mod
 from .config import ClipConfig
 from .render_task import _RenderTask, _render_task
 from .util import ClipperError, Logger
@@ -244,6 +246,95 @@ def build_viral_report(
     return analyses
 
 
+def _build_tasks(
+    windows: list[score.Window],
+    analysis: audio_mod.AudioAnalysis,
+    transcript: transcribe.Transcript | None,
+    config: ClipConfig,
+    metadata: dict,
+    work: Path,
+    output_dir: Path,
+    full_source: Path | None,
+    logger: Logger,
+) -> list[_RenderTask]:
+    """One task per (window, template variant) pair.
+
+    Without a template, or with one that only fills the canvas, this is exactly
+    the original one-task-per-window list. With variants it multiplies: nothing
+    is re-downloaded and nothing is re-analysed, only re-encoded.
+    """
+    variants: list[tuple[object | None, str]] = [(None, "")]
+    if config.template:
+        base = config_mod.resolve_template(config.template)
+        combinations = template_mod.expand_variations(
+            base,
+            caption_presets=config.variant_presets,
+            layouts=config.variant_layouts,
+        )
+        if len(combinations) == 1:
+            # A single variant is just "the template", not a matrix of one:
+            # keep the plain task shape and the unadorned filename.
+            variants = [(combinations[0], "")]
+        else:
+            variants = [
+                (variant, _variant_suffix(variant)) for variant in combinations
+            ]
+            axes = []
+            if config.variant_presets:
+                axes.append(f"{len(config.variant_presets)} presets")
+            if config.variant_layouts:
+                axes.append(f"{len(config.variant_layouts)} layouts")
+            logger.step(
+                f"Variacoes: {' x '.join(axes)} = {len(variants)} renders por corte"
+            )
+
+    tasks: list[_RenderTask] = []
+    for position, window in enumerate(windows, start=1):
+        finish = min(window.end + config.pad_end, analysis.duration or window.end)
+        words = (
+            transcript.words_between(window.start, finish) if transcript else []
+        )
+        silences = analysis.silence_overlaps(window.start, finish)
+        for variant_template, suffix in variants:
+            # Each variant gets its own ClipConfig so a template override
+            # (preset, layout) cannot leak into the next variant's render.
+            variant_config = (
+                template_mod.apply_to_config(config, variant_template)
+                if variant_template is not None
+                else config
+            )
+            # A variant's work directory is per-variant: two renders of the
+            # same window would otherwise race on the same captions.ass.
+            clip_dir = work / f"clip_{position:02d}{suffix}"
+            tasks.append(
+                _RenderTask(
+                    position=position,
+                    window=window,
+                    finish=finish,
+                    words=words,
+                    silences=silences,
+                    media=full_source,
+                    metadata=metadata,
+                    config=variant_config,
+                    clip_dir=clip_dir,
+                    output_dir=output_dir,
+                    template=variant_template,
+                    variant=suffix,
+                )
+            )
+    return tasks
+
+
+def _variant_suffix(template) -> str:
+    """Filename suffix for a variant: ``__neon-focus``.
+
+    Derived from the template name, which already encodes the axes, so the two
+    can never drift apart.
+    """
+    _, _, tail = template.name.partition("__")
+    return f"__{tail}" if tail else ""
+
+
 def render_windows(
     windows: list[score.Window],
     metadata: dict,
@@ -272,27 +363,17 @@ def render_windows(
             records.append(_record(position, window, finish, None, config))
         return records
 
-    tasks = [
-        _RenderTask(
-            position=position,
-            window=window,
-            finish=min(window.end + config.pad_end, analysis.duration or window.end),
-            words=transcript.words_between(
-                window.start,
-                min(window.end + config.pad_end, analysis.duration or window.end),
-            ) if transcript else [],
-            silences=analysis.silence_overlaps(
-                window.start,
-                min(window.end + config.pad_end, analysis.duration or window.end),
-            ),
-            media=full_source,
-            metadata=metadata,
-            config=config,
-            clip_dir=work / f"clip_{position:02d}",
-            output_dir=output_dir,
-        )
-        for position, window in enumerate(windows, start=1)
-    ]
+    tasks = _build_tasks(
+        windows,
+        analysis,
+        transcript,
+        config,
+        metadata,
+        work,
+        output_dir,
+        full_source,
+        logger,
+    )
 
     # In "sections" mode every clip needs its own download. Doing that inside
     # the worker pool means N simultaneous yt-dlp requests hammering the same
@@ -300,24 +381,34 @@ def render_windows(
     # already-downloaded media. In "full" mode the single download happens above
     # and every task already points at that same file, so no worker downloads.
     if not config.dry_run and config.download_mode == "sections" and full_source is None:
+        # Variants of the same window share one download: downloading the same
+        # section once per variant would triple the network cost of an axis that
+        # only exists to re-encode.
+        downloaded: dict[int, tuple[Path, float]] = {}
         logger.step("Baixando as secoes dos clips")
         for task in tasks:
-            task.media = download.download_section(
-                config.url,
-                task.window.start,
-                task.finish,
-                task.clip_dir / "section",
-                config,
-                logger,
-            )
+            key = task.position
+            if key not in downloaded:
+                media = download.download_section(
+                    config.url,
+                    task.window.start,
+                    task.finish,
+                    task.clip_dir / f"section_{task.position:02d}",
+                    config,
+                    logger,
+                )
+                origin = download.resolve_origin(
+                    config.ffprobe,
+                    media,
+                    max(0.0, task.window.start - download.SECTION_PADDING),
+                    logger,
+                )
+                downloaded[key] = (media, origin)
+            media, origin = downloaded[key]
             # The renderer seeks into this file, so it has to know whether the
             # section kept the source timestamps or was reset to zero.
-            task.media_origin = download.resolve_origin(
-                config.ffprobe,
-                task.media,
-                max(0.0, task.window.start - download.SECTION_PADDING),
-                logger,
-            )
+            task.media = media
+            task.media_origin = origin
 
     if config.parallel and len(tasks) > 1:
         workers = config.workers or min(os.cpu_count() or 1, len(tasks))

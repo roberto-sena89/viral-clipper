@@ -501,6 +501,21 @@ class ScrapCardTests(unittest.TestCase):
         self.assertEqual(escaped('<b>"x"</b>'), "&lt;b&gt;&quot;x&quot;&lt;/b&gt;")
         self.assertEqual(escaped("'"), "&#x27;")
 
+    def test_the_count_is_written_the_brazilian_way(self):
+        """16.000.000 reads as "16mi", not "16M".
+
+        The suffix and the decimal comma are the two things a Brazilian reader
+        expects, and "M" is the English spelling of "mi".
+        """
+        self.assertIn('+ "mi"', self.page)
+        self.assertIn('+ "k"', self.page)
+        self.assertIn('replace(".", ",")', self.page)
+        self.assertNotIn('+ "M"', self.page)
+
+    def test_the_count_formatter_climbs_out_of_the_thousands_band(self):
+        """``1000k`` is not something anyone writes, so 999.999 becomes "1mi"."""
+        self.assertIn('thousands === "1000"', self.page)
+
 
 class ScrapThumbTests(unittest.TestCase):
     """A thumbnail lookup must never turn a listed video into an error."""

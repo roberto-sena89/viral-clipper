@@ -356,6 +356,132 @@ class MetadataLanguageTests(unittest.TestCase):
         self.assertEqual(config.metadata_language, "pt")
 
 
+class ViewCountRepairTests(unittest.TestCase):
+    """The localized listing truncates the counts, so they are read twice.
+
+    With a pt-BR request YouTube writes "57 mi de visualizações" and yt-dlp's
+    suffix parser keeps only the digits, which is how a video with 57 million
+    views reached the card as "57 views". The repair asks the same listing once
+    more in English and merges by video id.
+    """
+
+    def setUp(self):
+        # (url, language, argv) of every metadata call the repair makes.
+        self.calls: list[tuple[str, str, list[str]]] = []
+
+    def _fake(self, document):
+        def fake_fetch(url, config, logger=None):
+            self.calls.append(
+                (
+                    url,
+                    str(getattr(config, "metadata_language", "")),
+                    download._base_args(config),
+                )
+            )
+            if isinstance(document, Exception):
+                raise document
+            return document
+        return fake_fetch
+
+    def test_a_truncated_count_gets_its_scale_back(self):
+        entries = [{"id": "a", "view_count": 57}, {"id": "b", "view_count": 111}]
+        document = {
+            "entries": [
+                {"id": "a", "view_count": 57_000_000},
+                {"id": "b", "view_count": 111_000_000},
+            ]
+        }
+        with patch.object(download, "fetch_metadata", self._fake(document)):
+            corrected = download.repair_view_counts(entries, "https://x/videos", make_config())
+        self.assertEqual(corrected, 2)
+        self.assertEqual([entry["view_count"] for entry in entries], [57_000_000, 111_000_000])
+
+    def test_the_english_listing_keeps_the_callers_args(self):
+        """The probe is the same listing call, only in another language."""
+        document = {"entries": [{"id": "a", "view_count": 16_000_000}]}
+        config = make_config(extra_ytdlp_args=["--flat-playlist", "--playlist-end", "20"])
+        with patch.object(download, "fetch_metadata", self._fake(document)):
+            download.repair_view_counts([{"id": "a", "view_count": 16}], "u", config)
+        url, language, argv = self.calls[0]
+        self.assertEqual((url, language), ("u", "en"))
+        self.assertIn("--flat-playlist", argv)
+        self.assertIn("youtube:lang=en", argv)
+        # The caller's config is not the one that got localized.
+        self.assertEqual(config.metadata_language, "pt")
+
+    def test_nothing_is_asked_when_the_listing_was_not_localized(self):
+        for language in ("", "en", "en-GB"):
+            with self.subTest(language=language):
+                self.calls.clear()
+                entries = [{"id": "a", "view_count": 57}]
+                with patch.object(download, "fetch_metadata", self._fake({"entries": []})):
+                    corrected = download.repair_view_counts(
+                        entries, "u", make_config(metadata_language=language)
+                    )
+                self.assertEqual((corrected, self.calls), (0, []))
+                self.assertEqual(entries[0]["view_count"], 57)
+
+    def test_a_failing_probe_leaves_the_list_untouched(self):
+        """A count is decoration: it must never take the search down."""
+        entries = [{"id": "a", "view_count": 57}]
+        with patch.object(download, "fetch_metadata", self._fake(ClipperError("boom"))):
+            corrected = download.repair_view_counts(entries, "u", make_config())
+        self.assertEqual(corrected, 0)
+        self.assertEqual(entries[0]["view_count"], 57)
+
+    def test_a_row_missing_from_the_english_listing_is_left_alone(self):
+        entries = [{"id": "a", "view_count": 57}, {"id": "z", "view_count": 16}]
+        document = {"entries": [{"id": "a", "view_count": 57_000_000}]}
+        with patch.object(download, "fetch_metadata", self._fake(document)):
+            self.assertEqual(download.repair_view_counts(entries, "u", make_config()), 1)
+        self.assertEqual([entry["view_count"] for entry in entries], [57_000_000, 16])
+
+    def test_playlists_inside_the_tab_are_read(self):
+        document = {
+            "entries": [
+                {"_type": "playlist", "entries": [{"id": "a", "view_count": 16_000_000}]},
+                "not-a-dict",
+            ]
+        }
+        with patch.object(download, "fetch_metadata", self._fake(document)):
+            self.assertEqual(
+                download.repair_view_counts([{"id": "a", "view_count": 16}], "u", make_config()),
+                1,
+            )
+
+    def test_a_row_without_a_count_receives_one(self):
+        document = {"entries": [{"id": "a", "view_count": 82_512}]}
+        entries: list[dict] = [{"id": "a"}]
+        with patch.object(download, "fetch_metadata", self._fake(document)):
+            self.assertEqual(download.repair_view_counts(entries, "u", make_config()), 1)
+        self.assertEqual(entries[0]["view_count"], 82_512)
+
+    def test_a_count_that_already_matched_is_not_reported(self):
+        document = {"entries": [{"id": "a", "view_count": 42}]}
+        with patch.object(download, "fetch_metadata", self._fake(document)):
+            self.assertEqual(
+                download.repair_view_counts([{"id": "a", "view_count": 42}], "u", make_config()),
+                0,
+            )
+
+    def test_a_row_without_an_id_cannot_be_matched(self):
+        document = {"entries": [{"id": "", "view_count": 1_000_000}]}
+        entries = [{"view_count": 1}, {"id": "a", "view_count": 2}]
+        with patch.object(download, "fetch_metadata", self._fake(document)):
+            self.assertEqual(download.repair_view_counts(entries, "u", make_config()), 0)
+        self.assertEqual([entry["view_count"] for entry in entries], [1, 2])
+
+    def test_a_count_that_is_not_a_number_is_ignored(self):
+        document = {
+            "entries": [{"id": "a", "view_count": "57 mi"}, {"id": "b", "view_count": None}]
+        }
+        with patch.object(download, "fetch_metadata", self._fake(document)):
+            self.assertEqual(
+                download.repair_view_counts([{"id": "a", "view_count": 57}], "u", make_config()),
+                0,
+            )
+
+
 class VisibleDownloadFailureTests(unittest.TestCase):
     """A failing download must report what yt-dlp said, not a bare exit code."""
 

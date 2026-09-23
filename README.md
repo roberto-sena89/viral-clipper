@@ -189,6 +189,18 @@ segunda flag ao lado do `youtube:player_client=...` do usuário apagava o
 idioma e os títulos voltavam em inglês, sem erro nenhum. Por isso a linguagem é
 dobrada numa flag única, junto das outras chaves do usuário.
 
+Os números viajam no mesmo payload, então a listagem localizada trunca as
+contagens: o YouTube escreve `57 mi de visualizações` e o parser de sufixo do
+yt-dlp conhece só `K`/`M`/`B`, ou seja, lê 57. Um vídeo de 57 milhões aparecia
+como "57 views". Em modo perfil a mesma listagem é pedida **duas vezes** — uma
+localizada, para os títulos, e uma em inglês, descartável, para os números — e
+as contagens entram por `id`. Custa uma requisição; se ela falhar, a lista
+continua funcionando, só com o número que o YouTube escreveu por extenso. Em
+modo link nada disso acontece: os metadados do vídeo trazem a contagem exata.
+
+A contagem é exibida no formato curto do pt-BR: `16`, `16k`, `16,5k`, `16mi`
+(vírgula decimal e "mi" de milhão, não o "M" do inglês).
+
 ### Caption presets
 
 One flag, one finished look. `--caption-preset NAME` picks the font, size,

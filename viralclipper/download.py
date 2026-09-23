@@ -8,6 +8,7 @@ boundaries of the source video.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from pathlib import Path
@@ -304,6 +305,94 @@ def _extract_json_object(text: str, url: str) -> str:
 
 def _template(output: str | Path) -> str:
     return str(Path(output).with_suffix(".%(ext)s"))
+
+
+#: Language of the throwaway listing that restores the view counts. yt-dlp's
+#: suffix parser knows "K", "M" and "B" and nothing else, so a listing fetched
+#: in pt-BR — the language that keeps the titles readable — truncates every
+#: count above a thousand: "57 mi de visualizações" comes back as 57.
+_COUNT_LANGUAGE = "en"
+
+
+def _walk_entries(document: dict):
+    """Every video entry of a flat playlist document, nesting included.
+
+    A channel tab can hold playlists that hold videos, which is the same shape
+    ``_scrap_results`` flattens before showing the list.
+    """
+    stack = list(document.get("entries") or [])
+    while stack:
+        entry = stack.pop()
+        if not isinstance(entry, dict):
+            continue
+        nested = entry.get("entries")
+        if entry.get("_type") == "playlist" and nested:
+            stack.extend(nested)
+            continue
+        yield entry
+
+
+def unlocalized_view_counts(
+    url: str, config: ClipConfig, logger: Logger | None = None
+) -> dict[str, int]:
+    """View counts of a listing, keyed by video id, with the scale intact.
+
+    Localizing the request is what keeps the titles in pt-BR, and the counts
+    travel in the same payload: YouTube writes them as "57 mi de visualizações"
+    and yt-dlp reads only the digits. The listing is therefore asked for twice
+    when a non-English language is configured — once localized for the titles,
+    once in English for the numbers. Costs one request, and returns an empty
+    map (rather than raising) when the extra call fails or is not needed,
+    because a missing count must never take the list down.
+    """
+    language = str(getattr(config, "metadata_language", "") or "").strip()
+    if not language or language.lower().startswith("en"):
+        # Nothing was localized, so the listing the caller already holds is fine.
+        return {}
+
+    probe = dataclasses.replace(config, metadata_language=_COUNT_LANGUAGE)
+    try:
+        document = fetch_metadata(url, probe, logger)
+    except ClipperError as exc:
+        if logger:
+            logger.warn(f"Contagem de views nao pode ser lida: {exc}")
+        return {}
+
+    counts: dict[str, int] = {}
+    for entry in _walk_entries(document):
+        video_id = str(entry.get("id") or "")
+        value = entry.get("view_count")
+        if video_id and isinstance(value, (int, float)):
+            counts[video_id] = int(value)
+    return counts
+
+
+def repair_view_counts(
+    entries: list[dict],
+    url: str,
+    config: ClipConfig,
+    logger: Logger | None = None,
+) -> int:
+    """Put the real scale back into the view counts of ``entries``, in place.
+
+    ``url`` has to be the listing the entries came from, and ``entries`` the
+    flat playlist entries themselves, so the ids line up. Returns how many rows
+    were corrected.
+    """
+    counts = unlocalized_view_counts(url, config, logger)
+    if not counts:
+        return 0
+
+    corrected = 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        exact = counts.get(str(entry.get("id") or ""))
+        if exact is None or entry.get("view_count") == exact:
+            continue
+        entry["view_count"] = exact
+        corrected += 1
+    return corrected
 
 
 def download_audio(

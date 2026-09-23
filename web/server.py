@@ -321,7 +321,8 @@ def _scrap_results(payload: dict) -> tuple[list[dict], str]:
         except (TypeError, ValueError):
             limit = 20
         config.extra_ytdlp_args += ["--flat-playlist", "--playlist-end", str(limit)]
-        info = download_mod.fetch_metadata(_with_videos_tab(url), config)
+        tab_url = _with_videos_tab(url)
+        info = download_mod.fetch_metadata(tab_url, config)
         entries = list(info.get("entries") or [])
         title = str(info.get("title") or info.get("uploader") or "")
         # One more level: a tab that itself holds playlists. Flatten it, or the
@@ -333,6 +334,11 @@ def _scrap_results(payload: dict) -> tuple[list[dict], str]:
             elif isinstance(entry, dict):
                 flattened.append(entry)
         entries = flattened[:limit]
+        # The request language that keeps the titles readable also localizes the
+        # counts, and yt-dlp reads "57 mi de visualizações" as 57. The repair is
+        # one extra listing in English, merged by id; when it fails the list
+        # still works, just with the numbers YouTube wrote in words.
+        download_mod.repair_view_counts(entries, tab_url, config)
 
     results = []
     for index, entry in enumerate(entries, start=1):

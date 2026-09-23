@@ -780,11 +780,25 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
     return m + ":" + String(r).padStart(2, "0");
   }
 
+  // Contagem curta em pt-BR: 16, 16k, 16,5k, 16mi. O sufixo e o que o publico
+  // brasileiro le em qualquer plataforma ("mi" de milhao, nao "M") e a casa
+  // decimal usa virgula, como manda o idioma.
   function fmtCount(n) {
     if (n == null) return "—";
-    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(".0", "") + "M";
-    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(".0", "") + "k";
+    if (n >= 1e6) return fmtShort(n / 1e6) + "mi";
+    if (n >= 1e3) {
+      const thousands = fmtShort(n / 1e3);
+      // 999.999 arredonda para "1000k", que ninguem escreve: vira "1mi".
+      return thousands === "1000" ? "1mi" : thousands + "k";
+    }
     return String(n);
+  }
+
+  // Uma casa decimal, sem ",0" no fim: 16.000 vira "16k", 16.500 vira "16,5k",
+  // 16.000.000 vira "16mi". O corte e ancorado no fim porque ".0" solto tambem
+  // aparece no meio de outros valores.
+  function fmtShort(value) {
+    return value.toFixed(1).replace(/\.0$/, "").replace(".", ",");
   }
 
   // ---------- backend ----------

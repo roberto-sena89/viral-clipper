@@ -28,8 +28,8 @@ WEB_DIR = Path(__file__).resolve().parent
 import sys
 sys.path.insert(0, str(REPO_ROOT))
 
-from viralclipper import cli as cli_mod  # noqa: E402
 from viralclipper import config as config_mod  # noqa: E402
+from viralclipper import download as download_mod  # noqa: E402
 from viralclipper import pipeline, report, transcript_import, util, viral_report  # noqa: E402
 from viralclipper.util import ClipperError  # noqa: E402
 
@@ -232,6 +232,144 @@ def resolve_within(base: Path, rel: str) -> Path | None:
 LIBRARY_SUFFIXES: frozenset[str] = frozenset({".mp4", ".mkv", ".webm", ".mov"})
 
 
+def _scrap_results(payload: dict) -> tuple[list[dict], str]:
+    """Expand a link or a profile into a list of downloadable videos.
+
+    Two modes, and the difference is one yt-dlp flag:
+
+    - ``link``  -> a single post/reel/video. Answered by ``fetch_metadata``,
+      which already exists and is already what the CLI uses.
+    - ``profile`` -> the whole feed of an account. Here the flat playlist is
+      read instead: one entry per item, no per-video extraction, which is the
+      only shape that stays fast when the account has hundreds of posts.
+
+    ``--playlist-end`` is appended through ``extra_ytdlp_args``, which
+    ``download._base_args`` appends LAST — that is what lifts the
+    ``--no-playlist`` hardcoded at the top of the same list. So profile
+    expansion needs no change to ``download.py`` at all.
+    """
+    url = str(payload.get("url") or "").strip()
+    mode = str(payload.get("mode") or "link").strip()
+    if not url:
+        raise ClipperError("Informe o link do vídeo ou o perfil.")
+
+    config = _options_to_config({"url": url, "output": payload.get("output") or "output"})
+    config.extra_ytdlp_args = list(payload.get("extra_ytdlp_args") or [])
+
+    if mode == "link":
+        # A single item: reuse the metadata path verbatim, so the answer the
+        # panel shows is the same one a run would act on.
+        meta = download_mod.fetch_metadata(url, config)
+        entries = [meta]
+        title = str(meta.get("title") or "")
+    else:
+        # Only reach here for a profile-shaped URL. A bare profile name is
+        # accepted too, but a full URL is what yt-dlp can resolve without
+        # guessing the site.
+        limit = payload.get("limit")
+        try:
+            limit = max(1, min(int(limit), 100)) if limit is not None else 20
+        except (TypeError, ValueError):
+            limit = 20
+        config.extra_ytdlp_args += ["--flat-playlist", "--playlist-end", str(limit)]
+        info = download_mod.fetch_metadata(_with_videos_tab(url), config)
+        entries = list(info.get("entries") or [])
+        title = str(info.get("title") or info.get("uploader") or "")
+        # One more level: a tab that itself holds playlists. Flatten it, or the
+        # list would offer "Videos" as if it were a video.
+        flattened: list[dict] = []
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("_type") == "playlist":
+                flattened.extend(e for e in (entry.get("entries") or []) if isinstance(e, dict))
+            elif isinstance(entry, dict):
+                flattened.append(entry)
+        entries = flattened[:limit]
+
+    results = []
+    for index, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict):
+            continue
+        results.append(
+            {
+                "index": index,
+                "id": str(entry.get("id") or ""),
+                "title": str(entry.get("title") or entry.get("id") or "(sem título)"),
+                "url": str(entry.get("webpage_url") or entry.get("url") or ""),
+                "duration": _as_float(entry.get("duration")),
+                "uploader": str(entry.get("uploader") or entry.get("channel") or ""),
+                # Flat extraction may not carry a duration (live, some
+                # Instagram shapes). The UI shows what it has rather than a 0.
+                "view_count": _as_int(entry.get("view_count")),
+            }
+        )
+    return results, title
+
+
+def _as_float(value) -> float | None:
+    try:
+        return round(float(value), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_int(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+#: A channel URL with no tab resolves to a playlist OF playlists — "Videos",
+#: "Live", "Shorts" — so expanding it yields three sub-tabs and zero videos.
+#: yt-dlp explains this itself: "The URL does not have a videos tab, but it has
+#: videos. Use .../@handle/videos". Appending the tab is what makes a pasted
+#: profile URL behave the way someone pasting it expects.
+_CHANNEL_TABS = ("videos", "shorts", "streams", "live", "playlists", "featured")
+
+#: Path segments that mean "this URL names one item, not an account".
+_ITEM_SEGMENTS = ("watch", "shorts", "embed", "v", "p", "reel", "tv", "video", "photo")
+
+
+def _segments(url: str) -> tuple[str, list[str]]:
+    """Split a URL into (host, path segments), ignoring query and fragment."""
+    without_query = url.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    parts = [p for p in without_query.split("/") if p]
+    if len(parts) < 2 or ":" not in parts[0]:
+        return "", []
+    return parts[1].lower(), parts[2:]
+
+
+def _is_profile_url(url: str) -> bool:
+    """True for an account URL rather than a single post."""
+    host, tail = _segments(url)
+    if not tail:
+        return False
+    # Any URL that names an item is a single video, whatever the site.
+    if any(seg in _ITEM_SEGMENTS for seg in tail):
+        return False
+    if "tiktok.com" in host:
+        return tail[0].startswith("@")
+    if host.endswith("instagram.com"):
+        return len(tail) == 1
+    if "youtube.com" in host:
+        return tail[0].startswith("@") or tail[0] in {"c", "user", "channel"}
+    return False
+
+
+def _with_videos_tab(url: str) -> str:
+    """Point a YouTube channel URL at its videos tab when it has none."""
+    host, tail = _segments(url)
+    if "youtube.com" not in host or not tail:
+        return url
+    # /watch?v=ID has no item segment in the path — the id rides in the query.
+    if "watch" in url.split("?", 1)[0].split("/") or "v=" in url:
+        return url
+    if any(seg in _CHANNEL_TABS for seg in tail):
+        return url
+    base = url.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    return base + "/videos"
+
+
 def list_library(base: Path, limit: int = 200) -> list[dict]:
     """List the videos inside ``base``, newest first.
 
@@ -338,6 +476,13 @@ class Handler(http_server.BaseHTTPRequestHandler):
             else:
                 self._send_json({"error": "templates.html missing"}, 404)
             return
+        if path in {"/scrap", "/scrap.html"}:
+            page = WEB_DIR / "scrap.html"
+            if page.exists():
+                self._send_file(page.read_bytes(), "text/html; charset=utf-8")
+            else:
+                self._send_json({"error": "scrap.html missing"}, 404)
+            return
         if path == "/templates/catalog":
             # The zone kinds and caption presets the wizard offers, read from
             # the engine rather than duplicated a third time in the page. The
@@ -396,10 +541,13 @@ class Handler(http_server.BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             self._send_json({"error": "invalid json"}, 400)
             return
+        if path == "/scrap":
+            self._handle_scrap(payload)
+            return
+        if path == "/transcript/normalize":
+            self._handle_normalize(payload)
+            return
         if path != "/run":
-            if path == "/transcript/normalize":
-                self._handle_normalize(payload)
-                return
             self._send_json({"error": "not found"}, 404)
             return
         options = payload.get("options") or {}
@@ -409,6 +557,26 @@ class Handler(http_server.BaseHTTPRequestHandler):
             return
         result = _run_job(options, plan_only)
         self._send_json(result)
+
+    def _handle_scrap(self, payload: dict) -> None:
+        """Answer the ViceScrap search box.
+
+        Read-only: it enumerates what a URL yields and hands the list back. It
+        runs on the request thread and is a metadata fetch, not a download, so
+        there is no job to queue — the pick from the list is what feeds /run.
+
+        Failures go back as the same one-line cause the CLI prints, so an
+        expired cookie or a private post reads the same in both places.
+        """
+        try:
+            results, title = _scrap_results(payload)
+        except ClipperError as exc:
+            self._send_json({"error": str(exc)}, 400)
+            return
+        except Exception as exc:  # noqa: BLE001 - surface anything to the UI
+            self._send_json({"error": f"{exc!r}"}, 400)
+            return
+        self._send_json({"title": title, "count": len(results), "results": results})
 
     def _handle_normalize(self, payload: dict) -> None:
         """Clean a pasted transcript and return it minute-aligned."""

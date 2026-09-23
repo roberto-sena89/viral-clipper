@@ -15,6 +15,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from viralclipper import report
+from viralclipper.util import ClipperError
 from web import server
 from web.server import resolve_within
 
@@ -125,6 +126,214 @@ class LibraryListingTests(unittest.TestCase):
         self.assertEqual(server.list_library(self.tmp / "nao_existe"), [])
 
 
+class ScrapPageTests(unittest.TestCase):
+    """The Scrap page: one link, or a whole profile.
+
+    The page is a thin shell over yt-dlp. What can silently break is the URL
+    routing — a profile URL that resolves to a channel's sub-tab playlists
+    instead of its videos looks like "the profile has no content", which is the
+    worst possible failure mode because it is plausible.
+    """
+
+    def setUp(self):
+        self.page = server.WEB_DIR / "scrap.html"
+
+    def test_the_page_exists(self):
+        self.assertTrue(self.page.exists(), "web/scrap.html is missing")
+
+    def test_the_route_serves_the_page(self):
+        """do_GET must have a /scrap branch, not fall through to 404."""
+        source = (server.WEB_DIR / "server.py").read_text(encoding="utf-8")
+        self.assertIn('"/scrap", "/scrap.html"', source)
+        self.assertIn('WEB_DIR / "scrap.html"', source)
+
+    def test_the_route_survives_the_not_run_guard(self):
+        """POST /scrap must be handled before the `path != "/run"` rejection.
+
+        The normalize handler used to live nested inside that guard. A new route
+        added below it would be swallowed and answered 404 with no clue why.
+        """
+        source = (server.WEB_DIR / "server.py").read_text(encoding="utf-8")
+        scrap_at = source.index('if path == "/scrap":')
+        guard_at = source.index('if path != "/run":')
+        self.assertLess(scrap_at, guard_at, "POST /scrap ficou atras do guard")
+
+    def test_the_page_offers_both_modes(self):
+        body = self.page.read_text(encoding="utf-8")
+        self.assertIn('data-mode="link"', body)
+        self.assertIn('data-mode="profile"', body)
+
+    def test_the_page_hands_off_to_the_panel(self):
+        """The pick has to lead somewhere, or the page is a dead end."""
+        body = self.page.read_text(encoding="utf-8")
+        self.assertIn('encodeURIComponent(picked.url)', body)
+        self.assertIn('"/?url="', body)
+
+    def test_the_panel_accepts_the_handoff(self):
+        panel = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        self.assertIn("URLSearchParams(window.location.search)", panel)
+        self.assertIn("params.get('url')", panel)
+
+
+class ScrapUrlRoutingTests(unittest.TestCase):
+    """Which URLs are a profile, and which are one post.
+
+    Getting this wrong is invisible: yt-dlp happily returns an answer either
+    way, it just returns the wrong one.
+    """
+
+    def test_a_post_is_not_a_profile(self):
+        for url in (
+            "https://www.instagram.com/reel/ABC123/",
+            "https://www.instagram.com/p/ABC123/",
+            "https://www.tiktok.com/@someone/video/999",
+            "https://www.tiktok.com/@someone/photo/999",
+            "https://www.youtube.com/watch?v=IwZVXmQdX1E",
+            "https://www.youtube.com/shorts/myZ9kn9MIWQ",
+        ):
+            with self.subTest(url=url):
+                self.assertFalse(server._is_profile_url(url))
+
+    def test_an_account_is_a_profile(self):
+        for url in (
+            "https://www.instagram.com/someone/",
+            "https://www.tiktok.com/@someone",
+            "https://www.youtube.com/@NASA",
+            "https://youtube.com/channel/UCLA_DiR1FfKNvjuUpBHmylQ",
+            "https://www.youtube.com/c/SomeName",
+        ):
+            with self.subTest(url=url):
+                self.assertTrue(server._is_profile_url(url))
+
+    def test_a_youtube_channel_gets_its_videos_tab(self):
+        """Without the tab yt-dlp answers with the channel's sub-tabs.
+
+        Verified against the real extractor: /@NASA returns entries named
+        "NASA - Videos", "NASA - Live", "NASA - Shorts" — playlists, not
+        videos. The tab is what turns it into a feed.
+        """
+        self.assertEqual(
+            server._with_videos_tab("https://www.youtube.com/@NASA"),
+            "https://www.youtube.com/@NASA/videos",
+        )
+        self.assertEqual(
+            server._with_videos_tab("https://youtube.com/channel/UCabc"),
+            "https://youtube.com/channel/UCabc/videos",
+        )
+
+    def test_the_tab_is_not_added_twice(self):
+        for url in (
+            "https://www.youtube.com/@NASA/videos",
+            "https://www.youtube.com/@NASA/shorts",
+            "https://www.youtube.com/@NASA/streams",
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(server._with_videos_tab(url), url)
+
+    def test_a_watch_url_is_left_alone(self):
+        """The video id rides in the query, so the path looks like a channel."""
+        url = "https://www.youtube.com/watch?v=IwZVXmQdX1E"
+        self.assertEqual(server._with_videos_tab(url), url)
+        self.assertEqual(server._with_videos_tab("https://youtu.be/IwZVXmQdX1E"),
+                         "https://youtu.be/IwZVXmQdX1E")
+
+    def test_instagram_and_tiktok_get_no_youtube_tab(self):
+        """Neither site has a /videos tab; the profile URL is already the feed."""
+        for url in ("https://www.instagram.com/someone/",
+                    "https://www.tiktok.com/@someone"):
+            with self.subTest(url=url):
+                self.assertEqual(server._with_videos_tab(url), url)
+
+
+class ScrapResultsTests(unittest.TestCase):
+    """_scrap_results normalises whatever yt-dlp hands back.
+
+    The network is faked: the point is the shaping (flat entries, missing
+    durations, playlist-inside-playlist), not the extractor.
+    """
+
+    def _run(self, payload, options):
+        """Call _scrap_results with fetch_metadata faked out.
+
+        Returns (results, title, seen), where ``seen`` records the URL and the
+        extra yt-dlp args the call produced. The patch has to stay in place for
+        the duration of the call — restoring in a ``finally`` inside a helper
+        would put the real function back before it is ever invoked.
+        """
+        seen: dict = {}
+
+        def fake(url, config, logger=None):
+            seen["url"] = url
+            seen["args"] = list(config.extra_ytdlp_args)
+            return payload
+
+        from unittest import mock
+
+        with mock.patch.object(server.download_mod, "fetch_metadata", fake):
+            results, title = server._scrap_results(options)
+        return results, title, seen
+
+    def test_a_single_link_becomes_one_result(self):
+        payload = {"title": "Um vídeo", "id": "abc", "webpage_url": "https://x/1",
+                   "duration": 67.5, "uploader": "Canal"}
+        results, title, seen = self._run(payload, {"url": "https://x/1", "mode": "link"})
+        self.assertEqual(title, "Um vídeo")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["duration"], 67.5)
+        self.assertEqual(results[0]["url"], "https://x/1")
+        # Link mode must NOT go through playlist expansion.
+        self.assertEqual(seen["args"], [])
+
+    def test_a_profile_expands_and_asks_for_the_limit(self):
+        payload = {"title": "Canal", "entries": [
+            {"id": "1", "title": "A", "url": "https://x/1", "duration": 30},
+            {"id": "2", "title": "B", "url": "https://x/2", "duration": 40},
+        ]}
+        results, title, seen = self._run(
+            payload, {"url": "https://x/canal", "mode": "profile", "limit": 7}
+        )
+        self.assertEqual(len(results), 2)
+        self.assertEqual(title, "Canal")
+        # --playlist-end is what lifts the hardcoded --no-playlist, because
+        # _base_args appends extra_ytdlp_args last.
+        self.assertIn("--flat-playlist", seen["args"])
+        self.assertIn("--playlist-end", seen["args"])
+        self.assertIn("7", seen["args"])
+
+    def test_a_missing_duration_is_not_zero(self):
+        """Flat entries often carry no duration (live, some Instagram shapes).
+
+        Reporting 0 would tell the user a 40-minute video is empty.
+        """
+        payload = {"title": "C", "entries": [
+            {"id": "1", "title": "A", "url": "https://x/1"},
+        ]}
+        results, _, _ = self._run(payload, {"url": "https://x/c", "mode": "profile"})
+        self.assertIsNone(results[0]["duration"])
+
+    def test_a_playlist_inside_a_playlist_is_flattened(self):
+        payload = {"title": "C", "entries": [
+            {"_type": "playlist", "entries": [
+                {"id": "1", "title": "A", "url": "https://x/1"},
+            ]},
+            {"_type": "url", "id": "2", "title": "B", "url": "https://x/2"},
+        ]}
+        results, _, _ = self._run(payload, {"url": "https://x/c", "mode": "profile"})
+        self.assertEqual([r["title"] for r in results], ["A", "B"])
+
+    def test_the_limit_is_clamped(self):
+        """A typed 99999 must not turn into an unbounded enumeration."""
+        payload = {"title": "C", "entries": []}
+        _, _, seen = self._run(
+            payload, {"url": "https://x/c", "mode": "profile", "limit": 99999}
+        )
+        self.assertIn("100", seen["args"])
+
+    def test_a_missing_url_is_rejected(self):
+        with self.assertRaises(ClipperError):
+            server._scrap_results({"url": "  ", "mode": "link"})
+
+
 class TemplatesPageTests(unittest.TestCase):
     """The wizard page holds its own copy of the preset catalog for the preview.
 
@@ -188,6 +397,7 @@ class RailNavigationTests(unittest.TestCase):
     DESTINATIONS = {
         "/": {"title": "Cortes", "ico": "▶"},
         "/templates": {"title": "Templates", "ico": "▣"},
+        "/scrap": {"title": "Scrap", "ico": "⤓"},
     }
 
     def body(self, name: str) -> str:

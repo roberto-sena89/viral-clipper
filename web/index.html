@@ -814,6 +814,15 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
         </span>
       </a>
     </li>
+    <li>
+      <a class="rail-item pressable" href="/scrap" data-rail-page="/scrap">
+        <span class="ri-ico" aria-hidden="true">⤓</span>
+        <span>
+          <span class="ri-title">Scrap</span>
+          <span class="ri-desc">Baixar por link ou varrer um perfil inteiro.</span>
+        </span>
+      </a>
+    </li>
   </ul>
 
   <div class="rail-foot">
@@ -852,6 +861,15 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
               <span>
                 <span class="ri-title">Templates</span>
                 <span class="ri-desc">Montar o layout das faixas e as variações.</span>
+              </span>
+            </a>
+          </li>
+          <li>
+            <a class="rail-item pressable" href="/scrap" data-rail-page="/scrap">
+              <span class="ri-ico" aria-hidden="true">⤓</span>
+              <span>
+                <span class="ri-title">Scrap</span>
+                <span class="ri-desc">Baixar por link ou varrer um perfil inteiro.</span>
               </span>
             </a>
           </li>
@@ -1312,6 +1330,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   const PAGES = {
     '/':          'Cortes',
     '/templates': 'Templates',
+    '/scrap':     'Scrap',
   };
 
   (function initRail() {
@@ -2139,6 +2158,25 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
     document.getElementById('config').scrollIntoView({ behavior: 'smooth' });
     setTimeout(() => $('#url').focus(), 500);
   });
+
+  // ---------- entrada vinda da pagina Scrap ----------
+  // A pagina de Scrap nao guarda estado (nenhuma pagina guarda), entao o item
+  // escolhido chega pelo endereco. Ler ?url= aqui e o que fecha o ciclo:
+  // procurar -> escolher -> gerar, sem redigitar o link. Limpa o parametro
+  // depois de consumir para um recarregar/F5 nao remexer no que ja foi digitado.
+  (function acceptHandoff() {
+    const params = new URLSearchParams(window.location.search);
+    const incoming = (params.get('url') || '').trim();
+    if (!incoming) return;
+    const field = $('#url');
+    if (!field) return;
+    field.value = incoming;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    params.delete('url');
+    const query = params.toString();
+    history.replaceState(null, '', window.location.pathname + (query ? '?' + query : ''));
+    toast('Vídeo recebido da página Scrap.', 'ok');
+  })();
 
   // ---------- sondagem de estado (se houver servidor) ----------
   async function poll() {

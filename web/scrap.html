@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Viral Clipper — Scrap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
+<style>
+/* A camada de tokens e identica a do index.html e do templates.html de
+   proposito: as tres paginas sao o mesmo produto, e um token duplicado com
+   valor diferente seria duas verdades. Se mudar um valor aqui, mude la tambem. */
+:root {
+  --bg-deep: #0b0d12;
+  --bg-surface: #14171f;
+  --bg-card: rgba(22, 26, 35, 0.72);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.10);
+  --accent-primary: #6366f1;
+  --accent-glow: rgba(99, 102, 241, 0.28);
+  --accent-soft: #818cf8;
+  --accent-warm: #fbbf24;
+  --success: #34d399;
+  --danger: #f87171;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs-lh: 1.35;
+  --text-caption: 0.78125rem;
+  --text-caption-lh: 1.45;
+  --text-body-sm: 0.84375rem;
+  --text-body-sm-lh: 1.5;
+  --text-body: 0.875rem;
+  --text-body-lh: 1.5;
+  --text-cta: 0.90625rem;
+  --text-cta-lh: 1.4;
+  --text-subtitle: 0.9375rem;
+  --text-title: 1.0625rem;
+  --text-title-lh: 1.35;
+  --text-heading-sm: 1.375rem;
+  --text-heading-sm-lh: 1.25;
+  --text-heading: 1.5rem;
+  --text-heading-lh: 1.2;
+  --text-display: clamp(2.2rem, 5vw, 3.4rem);
+  --text-display-lh: 1.12;
+
+  --content-bg: var(--bg-deep);
+  --shell-bg: #0e1017;
+  --shell-surface: var(--bg-surface);
+  --shell-border: var(--border-subtle);
+  --active-tint: rgba(99, 102, 241, 0.10);
+  --well-bg: rgba(0, 0, 0, 0.35);
+
+  --text-ink: #f3f4f6;
+  --text-ink-muted: #9ca3af;
+  --text-ink-subtle: #6b7280;
+
+  --grad: #ff4fae;
+  --grad-ink: #1c1024;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --shadow-card: 0 18px 40px -14px rgba(0, 0, 0, 0.6);
+
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-instant: 0.1s;
+  --motion-fast: 0.2s;
+  --motion-base: 0.3s;
+  --transition: var(--motion-fast) var(--ease-out-expo);
+
+  --text-primary: var(--text-ink);
+  --text-secondary: var(--text-ink-muted);
+  --text-muted: var(--text-ink-subtle);
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  line-height: 1.55;
+  min-height: 100vh;
+  background-image:
+    radial-gradient(1200px 600px at 80% -10%, rgba(99, 102, 241, 0.10), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, rgba(251, 191, 36, 0.05), transparent 60%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+
+/* ---------- UTILITARIOS ---------- */
+.pressable {
+  transition:
+    transform var(--motion-fast) var(--ease-spring),
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease,
+    opacity var(--motion-fast) ease;
+}
+.pressable:active {
+  transition-duration: var(--motion-instant);
+  transition-timing-function: ease-out;
+  transform: scale(0.97);
+}
+.pressable:disabled { cursor: not-allowed; }
+.pressable:disabled:active { transform: none; }
+.pressable:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .pressable { transition: none; }
+  .pressable:active { transform: none; }
+}
+
+/* ---------- RAIL LATERAL ----------
+   Mesma coluna do index.html. As duas paginas sao servidas soltas (sem
+   build), entao a duplicacao e deliberada: um @import custaria uma requisicao
+   extra e um arquivo a mais para manter sincronizado. Se mexer aqui, mexa la
+   tambem — RailNavigationTests em tests/test_web_server.py trava a deriva. */
+:root {
+  --rail-w: 244px;
+}
+body { padding-left: var(--rail-w); }
+
+.rail {
+  position: fixed; top: 0; left: 0; bottom: 0; width: var(--rail-w); z-index: 60;
+  display: flex; flex-direction: column;
+  background: linear-gradient(180deg, var(--bg-surface), var(--bg-deep));
+  border-right: 1px solid var(--border-subtle);
+  padding: 18px 14px;
+}
+.rail-brand {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 600; font-size: 1rem; letter-spacing: -0.02em;
+  padding: 0 6px 16px; border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 14px;
+}
+.rail-brand .brand-mark { width: 30px; height: 30px; border-radius: 9px; font-size: 0.9rem; flex: none; }
+.rail-brand small { display: block; color: var(--text-muted); font-weight: 400; font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; }
+
+.rail-label {
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--text-muted); padding: 0 10px; margin: 4px 0 8px;
+}
+
+/* A lista de destinos. <nav> + lista de links: um leitor de tela anuncia
+   "navegacao, 2 itens" e cada link diz para onde vai. O menu anterior
+   precisava de role=listbox/option para se comportar como widget; uma lista
+   estatica de links nao precisa de nada disso. */
+.rail-menu {
+  display: flex; flex-direction: column; gap: 2px;
+  list-style: none; margin: 0; padding: 0;
+}
+/* O rail nao usa os papeis de listbox; o fallback do header (mais abaixo)
+   tambem e uma lista de links, entao herda o mesmo tratamento. */
+.rail-menu[hidden] { display: none; }
+
+.rail-item {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 10px 11px; border-radius: var(--radius-sm);
+  border: 1px solid transparent; background: transparent;
+  color: var(--text-primary); font-family: inherit; font-size: 0.86rem;
+  text-align: left; cursor: pointer; text-decoration: none;
+}
+.rail-item:hover { background: rgba(255, 255, 255, 0.04); border-color: var(--border-subtle); }
+/* O item da pagina atual fica marcado. aria-current e a fonte da verdade
+   para o leitor de tela; a cor e a contraparte visual. */
+.rail-item[aria-current="page"] {
+  background: var(--active-tint); border-color: var(--accent-primary); color: var(--accent-soft);
+}
+.rail-item[aria-current="page"] .ri-desc { color: var(--text-secondary); }
+.rail-item .ri-ico { font-size: 1.05rem; line-height: 1.3; width: 20px; text-align: center; flex: none; }
+.rail-item .ri-title { display: block; font-weight: 600; }
+.rail-item .ri-desc { display: block; font-size: 0.73rem; color: var(--text-muted); line-height: 1.4; }
+
+.rail-foot { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--border-subtle); }
+.rail-foot span { display: block; font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; }
+
+/* ---------- MENU DO HEADER (<=920px) ----------
+   Substitui o rail quando nao ha largura para ele. Mesmo padrao de botao +
+   painel sobreposto, mas aqui o menu PRECISA de widget semantics: ele abre e
+   fecha, entao aria-expanded e o estado tem que existir. */
+.rail-dropdown { position: relative; display: none; }
+
+.menu-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: inherit; font-size: var(--text-cta); font-weight: 600;
+  border: 1px solid var(--border-strong); background: var(--bg-surface);
+  color: var(--text-primary); padding: 10px 14px; border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.menu-btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }
+.menu-btn .mb-bars { font-size: 1rem; line-height: 1; }
+.menu-btn .mb-caret { color: var(--accent-soft); font-size: 0.75rem; transition: transform var(--transition); }
+.menu-btn[aria-expanded="true"] .mb-caret { transform: rotate(180deg); }
+
+.rail-dropdown .rail-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 70; min-width: 258px;
+  background: var(--bg-surface); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-card);
+  padding: 6px;
+  animation: railMenuIn 180ms var(--ease-out-expo);
+}
+@keyframes railMenuIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .rail-dropdown .rail-menu { animation: none; }
+}
+
+/* ---------- HEADER ---------- */
+header {
+  position: sticky; top: 0; z-index: 50;
+  backdrop-filter: blur(14px) saturate(180%);
+  background: rgba(11, 13, 18, 0.72);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.header-inner {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 68px;
+}
+.brand {
+  display: flex; align-items: center; gap: 12px;
+  font-weight: 600; letter-spacing: -0.02em; font-size: 1.25rem;
+  color: var(--text-primary); text-decoration: none;
+}
+.brand-mark {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-soft));
+  display: grid; place-items: center;
+  box-shadow: 0 8px 20px -6px var(--accent-glow);
+  color: white; font-weight: 700; font-size: 1.1rem;
+}
+.nav-actions { display: flex; gap: 10px; align-items: center; }
+.btn {
+  font-family: inherit; font-size: var(--text-cta); font-weight: 600;
+  border: 1px solid var(--border-strong); background: var(--bg-surface);
+  color: var(--text-primary); padding: 10px 16px; border-radius: var(--radius-sm);
+  cursor: pointer; text-decoration: none;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }
+.btn:disabled { opacity: 0.5; }
+.btn:disabled:focus-visible { outline: none; }
+.btn-primary {
+  background: var(--grad);
+  border-color: transparent; color: var(--grad-ink);
+  box-shadow: 0 8px 20px -8px var(--accent-glow);
+}
+.btn-primary:hover { filter: brightness(1.06); border-color: transparent; }
+.btn-sm { padding: 7px 11px; font-size: var(--text-body-sm); }
+.btn-ghost { background: transparent; }
+
+/* ---------- CHIPS ---------- */
+.chip {
+  background: var(--bg-card); border: 1px solid var(--border-subtle);
+  padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; color: var(--text-secondary);
+  display: inline-block;
+}
+.chip strong { color: var(--text-primary); font-weight: 600; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+
+/* ---------- SCRAP: busca, lista e selecao ---------- */
+/* Esta pagina nao tem wizard: e buscar, escolher, mandar. A casca (tokens,
+   rail, header, botoes, chips) vem igual das outras duas paginas; so o miolo
+   e proprio. */
+
+.scrap-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px;
+  align-items: start;
+}
+@media (max-width: 1040px) { .scrap-grid { grid-template-columns: 1fr; } }
+
+/* Abas Link / Perfil. Sao dois modos do mesmo formulario, entao sao um
+   tablist de verdade: setas movem, aria-selected diz qual esta ativo. */
+.tabs {
+  display: inline-flex; gap: 2px; padding: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
+}
+.tab {
+  appearance: none; border: 1px solid transparent; background: transparent;
+  color: var(--text-muted); font-family: inherit; font-size: var(--text-caption);
+  font-weight: 600; padding: 7px 14px; border-radius: 7px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.tab:hover { color: var(--text-primary); }
+.tab[aria-selected="true"] {
+  background: var(--active-tint); border-color: var(--accent-primary);
+  color: var(--accent-soft);
+}
+
+.scrap-form { display: flex; gap: 8px; margin-top: 14px; }
+.scrap-form input[type="url"] { flex: 1; min-width: 0; }
+input[type="url"], input[type="number"], input[type="text"], select {
+  font-family: inherit; font-size: var(--text-body); color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  padding: 10px 12px; width: 100%;
+}
+input:focus-visible, select:focus-visible { border-color: var(--accent-primary); }
+input::placeholder { color: var(--text-muted); }
+.field-hint { font-size: var(--text-caption); color: var(--text-muted); margin-top: 8px; }
+
+/* Linha da lista de resultados */
+.result {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); background: rgba(255, 255, 255, 0.02);
+}
+.result + .result { margin-top: 6px; }
+.result-main { flex: 1; min-width: 0; }
+.result-title {
+  display: block; font-size: var(--text-body-sm); font-weight: 600;
+  color: var(--text-primary); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.result-meta {
+  display: block; font-size: var(--text-2xs); color: var(--text-muted);
+  margin-top: 3px;
+}
+.result-badge {
+  flex: none; font-size: var(--text-2xs); font-weight: 600;
+  color: var(--text-secondary); background: rgba(255, 255, 255, 0.05);
+  border-radius: 999px; padding: 3px 9px;
+}
+
+.empty {
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+  padding: 30px 20px; text-align: center; color: var(--text-muted);
+  font-size: var(--text-body-sm);
+}
+.empty strong { display: block; color: var(--text-secondary); margin-bottom: 6px; }
+
+/* Painel lateral: o que fazer com o item escolhido */
+.pick { position: sticky; top: 18px; }
+.pick-empty { color: var(--text-muted); font-size: var(--text-body-sm); }
+.pick-title {
+  font-size: var(--text-body); font-weight: 600; color: var(--text-primary);
+  margin: 0 0 4px; overflow-wrap: anywhere;
+}
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 14px 0; }
+.kv dt { font-size: var(--text-2xs); color: var(--text-muted); align-self: center; }
+.kv dd {
+  margin: 0; font-size: var(--text-body-sm); color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.pick-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.pick-actions .btn { justify-content: center; width: 100%; }
+
+/* A caixa de log e a mesma linguagem das outras paginas. */
+.log-box {
+  margin-top: 14px; max-height: 200px; overflow-y: auto;
+  background: rgba(0, 0, 0, 0.32); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); padding: 12px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: var(--text-2xs); line-height: 1.7; color: var(--text-secondary);
+}
+.log-box .ln-err { color: var(--danger); }
+.log-box .ln-ok { color: var(--success); }
+.log-box .ln-warn { color: var(--accent-warm); }
+.log-box .ln-sys { color: var(--accent-soft); }
+.log-box p { margin: 0; }
+
+.toast {
+  position: fixed; right: 18px; bottom: 18px; z-index: 90;
+  background: var(--bg-surface); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); padding: 11px 15px;
+  font-size: var(--text-body-sm); box-shadow: var(--shadow-card);
+  animation: toast-in var(--motion-base) var(--ease-out-expo);
+  max-width: 340px;
+}
+.toast.ok { border-color: rgba(52,211,153,0.4); }
+.toast.bad { border-color: rgba(248,113,113,0.4); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+
+.card {
+  position: relative; background: var(--bg-card);
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+  padding: 24px; backdrop-filter: blur(6px); box-shadow: var(--shadow-card);
+}
+.card + .card { margin-top: 18px; }
+.card h2 {
+  margin: 0 0 4px; font-size: var(--text-body); font-weight: 600;
+  display: flex; align-items: center; gap: 8px;
+}
+.card h2 .ico { color: var(--accent-soft); }
+.card-sub { color: var(--text-muted); font-size: var(--text-caption); margin-bottom: 16px; }
+
+footer {
+  border-top: 1px solid var(--border-subtle);
+  padding: 26px 0 40px; color: var(--text-muted); font-size: var(--text-caption);
+}
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent-soft); outline-offset: 2px;
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+</style>
+</head>
+<body>
+
+<!-- ==================== RAIL LATERAL ====================
+     Menu principal: uma linha por pagina, sempre visivel. O item com
+     aria-current="page" e a pagina atual, derivado de location.pathname pelo
+     JS abaixo — nunca escrito a mao, senao a pagina errada se declara atual. -->
+<nav class="rail" aria-label="Navegação principal">
+  <div class="rail-brand">
+    <div class="brand-mark" aria-hidden="true">VC</div>
+    <div>Viral Clipper<small>scrap</small></div>
+  </div>
+
+  <div class="rail-label" id="rail-label-paginas">Páginas</div>
+
+  <ul class="rail-menu" aria-labelledby="rail-label-paginas">
+    <li>
+      <a class="rail-item pressable" href="/" data-rail-page="/">
+        <span class="ri-ico" aria-hidden="true">▶</span>
+        <span>
+          <span class="ri-title">Cortes</span>
+          <span class="ri-desc">Configurar e gerar os clips de um vídeo longo.</span>
+        </span>
+      </a>
+    </li>
+    <li>
+      <a class="rail-item pressable" href="/templates" data-rail-page="/templates">
+        <span class="ri-ico" aria-hidden="true">▣</span>
+        <span>
+          <span class="ri-title">Templates</span>
+          <span class="ri-desc">Montar o layout das faixas e as variações.</span>
+        </span>
+      </a>
+    </li>
+    <li>
+      <a class="rail-item pressable" href="/scrap" data-rail-page="/scrap">
+        <span class="ri-ico" aria-hidden="true">⤓</span>
+        <span>
+          <span class="ri-title">Scrap</span>
+          <span class="ri-desc">Baixar por link ou varrer um perfil inteiro.</span>
+        </span>
+      </a>
+    </li>
+  </ul>
+
+  <div class="rail-foot">
+    <span>viral-clipper · 9:16 1080×1920</span>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap header-inner">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">VC</div>
+      <span>Viral Clipper <small>scrap</small></span>
+    </div>
+    <div class="nav-actions">
+      <!-- Fallback do rail abaixo de 920px: mesmos destinos, em menu. -->
+      <div class="rail-dropdown" data-rail-picker>
+        <button class="menu-btn pressable" type="button" id="rail-menu-btn"
+                aria-haspopup="true" aria-expanded="false" aria-controls="rail-menu-sm">
+          <span class="mb-bars" aria-hidden="true">☰</span>
+          <span class="sr-only">Menu de páginas</span>
+          <span class="mb-caret" aria-hidden="true">▾</span>
+        </button>
+        <ul class="rail-menu" id="rail-menu-sm" data-rail-menu hidden>
+          <li>
+            <a class="rail-item pressable" href="/" data-rail-page="/">
+              <span class="ri-ico" aria-hidden="true">▶</span>
+              <span>
+                <span class="ri-title">Cortes</span>
+                <span class="ri-desc">Configurar e gerar os clips de um vídeo longo.</span>
+              </span>
+            </a>
+          </li>
+          <li>
+            <a class="rail-item pressable" href="/templates" data-rail-page="/templates">
+              <span class="ri-ico" aria-hidden="true">▣</span>
+              <span>
+                <span class="ri-title">Templates</span>
+                <span class="ri-desc">Montar o layout das faixas e as variações.</span>
+              </span>
+            </a>
+          </li>
+          <li>
+            <a class="rail-item pressable" href="/scrap" data-rail-page="/scrap">
+              <span class="ri-ico" aria-hidden="true">⤓</span>
+              <span>
+                <span class="ri-title">Scrap</span>
+                <span class="ri-desc">Baixar por link ou varrer um perfil inteiro.</span>
+              </span>
+            </a>
+          </li>
+        </ul>
+      </div>
+      <button class="btn pressable btn-primary" type="button" id="btn-open-cortes">Ir para Cortes</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="hero" aria-label="Apresentação">
+    <div>
+      <h1>Scrap</h1>
+      <p class="lead">
+        Baixe por um link ou varra um perfil inteiro. A busca lista o que o
+        endereço tem — você escolhe o item e ele vira um trabalho de cortes.
+      </p>
+    </div>
+    <div class="chip-row">
+      <span class="chip">Instagram · TikTok · YouTube</span>
+      <span class="chip">sem cookie = só conteúdo público</span>
+    </div>
+  </section>
+
+  <div class="scrap-grid">
+
+    <!-- ---------- COLUNA ESQUERDA: busca + resultados ---------- -->
+    <div>
+      <section class="card" aria-labelledby="h-busca">
+        <h2 id="h-busca"><span class="ico" aria-hidden="true">⌕</span> Buscar</h2>
+        <p class="card-sub">Um post, um reel, um vídeo — ou o perfil inteiro que os contém.</p>
+
+        <div class="tabs" role="tablist" aria-label="Tipo de busca">
+          <button class="tab" type="button" role="tab" id="tab-link"
+                  aria-selected="true" aria-controls="scrap-url"
+                  data-mode="link">
+            <span aria-hidden="true">🔗</span> Link
+          </button>
+          <button class="tab" type="button" role="tab" id="tab-perfil"
+                  aria-selected="false" aria-controls="scrap-url" tabindex="-1"
+                  data-mode="profile">
+            <span aria-hidden="true">@</span> Perfil
+          </button>
+        </div>
+
+        <form class="scrap-form" id="scrap-form" novalidate>
+          <label class="sr-only" for="scrap-url">Endereço do vídeo ou do perfil</label>
+          <input type="url" id="scrap-url" name="url" autocomplete="off"
+                 placeholder="https://www.instagram.com/reel/... ou https://www.tiktok.com/@.../video/..."
+                 required>
+          <button class="btn pressable btn-primary" type="submit" id="btn-scrap">Buscar</button>
+        </form>
+
+        <p class="field-hint" id="scrap-hint">
+          Modo <strong>Link</strong>: aceita um post, reel ou vídeo.
+        </p>
+
+        <fieldset id="perfil-opts" hidden
+                  style="border:0;margin:14px 0 0;padding:0;display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;">
+          <legend class="sr-only">Opções do perfil</legend>
+          <div style="flex:0 0 130px;">
+            <label class="field-hint" for="scrap-limit" style="display:block;margin-bottom:6px;">
+              Itens a listar
+            </label>
+            <input type="number" id="scrap-limit" name="limit" min="1" max="100" value="20">
+          </div>
+          <div style="flex:0 0 220px;">
+            <label class="field-hint" for="scrap-cookies" style="display:block;margin-bottom:6px;">
+              Cookies do navegador
+            </label>
+            <select id="scrap-cookies" name="cookies">
+              <option value="">Nenhum</option>
+              <option value="chrome">chrome</option>
+              <option value="firefox">firefox</option>
+              <option value="edge">edge</option>
+            </select>
+          </div>
+        </fieldset>
+      </section>
+
+      <section class="card" aria-labelledby="h-resultados">
+        <h2 id="h-resultados"><span class="ico" aria-hidden="true">≡</span> Resultados</h2>
+        <p class="card-sub" id="resultados-sub">Nada buscado ainda.</p>
+        <div id="resultados" aria-live="polite"></div>
+      </section>
+    </div>
+
+    <!-- ---------- COLUNA DIREITA: item escolhido ---------- -->
+    <aside class="pick" aria-labelledby="h-escolha">
+      <section class="card">
+        <h2 id="h-escolha"><span class="ico" aria-hidden="true">✎</span> Escolha</h2>
+        <div id="pick-body">
+          <p class="pick-empty">
+            Escolha um item da lista. Ele vira o vídeo de origem dos cortes —
+            transcrição, nota e render já existentes.
+          </p>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    Viral Clipper · scrap · o download é o yt-dlp que já roda no pipeline
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- rail lateral (menu principal) ----------
+  // A lista de destinos vive no HTML: uma vez no rail fixo, e uma copia no
+  // menu do header que aparece abaixo de 920px. Aqui so marcamos qual e a
+  // pagina atual — derivado de location.pathname, nunca escrito a mao, para
+  // que adicionar uma pagina nova nao exija mexer em estado.
+  const PAGES = {
+    "/":          "Cortes",
+    "/templates": "Templates",
+    "/scrap":     "Scrap",
+  };
+
+  (function initRail() {
+    // Nao usa os helpers $ / $$ do resto do arquivo: eles sao declarados mais
+    // abaixo, e `var` sofre hoisting como undefined — a chamada estouraria
+    // aqui. O rail busca o que precisa direto.
+    const q = function (sel) { return document.querySelector(sel); };
+
+    const path = window.location.pathname.replace(/\/index\.html$/, "/");
+    const norm = path.endsWith("/") ? path : path + "/";
+    const key = PAGES[path] ? path : (PAGES[norm] ? norm : "/");
+    const title = PAGES[key];
+
+    document.title = `${title} · Viral Clipper`;
+
+    // Cada instancia da lista (rail + menu do header) marca o seu proprio item.
+    document.querySelectorAll("[data-rail-page]").forEach((item) => {
+      if (item.getAttribute("data-rail-page") === key) {
+        item.setAttribute("aria-current", "page");
+      }
+    });
+
+    // O menu do header e o unico componente com estado aqui: abre e fecha.
+    const menu = q("[data-rail-menu]");
+    const btn = q("[data-rail-picker] .menu-btn");
+    if (!menu || !btn) return;
+
+    const setOpen = (open) => {
+      menu.hidden = !open;
+      btn.setAttribute("aria-expanded", String(open));
+    };
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const willOpen = menu.hidden;
+      setOpen(willOpen);
+      if (willOpen) {
+        const first = menu.querySelector(".rail-item");
+        if (first) first.focus({ preventScroll: true });
+      }
+    });
+
+    // O painel fica sobre o conteudo; sem isto um clique nele fecharia o menu
+    // E dispararia a acao do elemento por baixo.
+    menu.addEventListener("click", (e) => {
+      if (e.target.closest(".rail-item")) setOpen(false);
+      e.stopPropagation();
+    });
+
+    document.addEventListener("click", () => setOpen(false));
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !menu.hidden) {
+        setOpen(false);
+        btn.focus({ preventScroll: true });
+      }
+    });
+  })();
+
+  // ---------- estado da pagina ----------
+  var API = "";
+
+  // ---------- helpers ----------
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+  let toastTimer = null;
+  function toast(message, kind) {
+    const el = $("#toast");
+    if (!el) return;
+    el.textContent = message;
+    el.className = "toast " + (kind || "");
+    el.hidden = false;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 2600);
+  }
+
+  function fmtDuration(seconds) {
+    if (seconds == null) return "—";
+    const s = Math.round(Number(seconds));
+    if (!isFinite(s)) return "—";
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    if (m >= 60) {
+      const h = Math.floor(m / 60);
+      return h + "h " + String(m % 60).padStart(2, "0") + "m";
+    }
+    return m + ":" + String(r).padStart(2, "0");
+  }
+
+  function fmtCount(n) {
+    if (n == null) return "—";
+    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(".0", "") + "M";
+    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(".0", "") + "k";
+    return String(n);
+  }
+
+  // ---------- backend ----------
+  // Caminho relativo de proposito: a pagina pode estar sob /scrap e o mesmo
+  // host serve a API. Sem isto o fetch viraria cross-origin quando o painel
+  // muda de porta.
+  async function post(path, body) {
+    try {
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { error: data.error || ("HTTP " + res.status) };
+      return data;
+    } catch (e) {
+      return { error: "Servidor local não respondeu. Inicie web/server.py.", offline: true };
+    }
+  }
+
+  // ---------- abas Link / Perfil ----------
+  var mode = "link";
+
+  function renderMode() {
+    $$("[data-mode]").forEach((tab) => {
+      const active = tab.getAttribute("data-mode") === mode;
+      tab.setAttribute("aria-selected", String(active));
+      tab.tabIndex = active ? 0 : -1;
+    });
+    const opts = $("#perfil-opts");
+    if (opts) opts.hidden = mode !== "profile";
+    const hint = $("#scrap-hint");
+    if (hint) {
+      hint.innerHTML = mode === "profile"
+        ? "Modo <strong>Perfil</strong>: varre a lista de vídeos da conta. " +
+          "Instagram costuma exigir cookies."
+        : "Modo <strong>Link</strong>: aceita um post, reel ou vídeo.";
+    }
+    const input = $("#scrap-url");
+    if (input) {
+      input.placeholder = mode === "profile"
+        ? "https://www.tiktok.com/@perfil ou https://www.youtube.com/@canal"
+        : "https://www.instagram.com/reel/... ou https://www.tiktok.com/@.../video/...";
+    }
+  }
+
+  function setMode(next) {
+    mode = next === "profile" ? "profile" : "link";
+    renderMode();
+  }
+
+  // Arrow keys move between tabs; that is what role=tablist promises.
+  $$("[data-mode]").forEach((tab) => {
+    tab.addEventListener("click", () => setMode(tab.getAttribute("data-mode")));
+    tab.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      e.preventDefault();
+      setMode(mode === "link" ? "profile" : "link");
+      const active = $('[data-mode="' + mode + '"]');
+      if (active) active.focus();
+    });
+  });
+
+  // ---------- resultados ----------
+  var results = [];
+  var picked = null;
+
+  function renderResults(title) {
+    const box = $("#resultados");
+    const sub = $("#resultados-sub");
+    if (!box) return;
+    box.innerHTML = "";
+    if (sub) {
+      sub.textContent = title
+        ? title + " · " + results.length + (results.length === 1 ? " item" : " itens")
+        : "Nada buscado ainda.";
+    }
+    if (!results.length) {
+      box.innerHTML =
+        '<p class="empty"><strong>Sem itens.</strong>' +
+        "A busca não devolveu nada. Confira o endereço ou passe os cookies do navegador.</p>";
+      return;
+    }
+    results.forEach((item, index) => {
+      const row = document.createElement("div");
+      row.className = "result";
+
+      const main = document.createElement("div");
+      main.className = "result-main";
+
+      const t = document.createElement("span");
+      t.className = "result-title";
+      t.textContent = item.title || "(sem título)";
+      t.title = item.title || "";
+      main.appendChild(t);
+
+      const meta = document.createElement("span");
+      meta.className = "result-meta";
+      meta.textContent = [item.uploader, fmtDuration(item.duration),
+                          item.view_count != null ? fmtCount(item.view_count) + " views" : null]
+                          .filter(Boolean).join(" · ");
+      main.appendChild(meta);
+
+      const badge = document.createElement("span");
+      badge.className = "result-badge";
+      badge.textContent = fmtDuration(item.duration);
+
+      const use = document.createElement("button");
+      use.type = "button";
+      use.className = "btn btn-sm pressable";
+      use.textContent = "Usar";
+      use.addEventListener("click", () => pick(index));
+
+      row.appendChild(main);
+      row.appendChild(badge);
+      row.appendChild(use);
+      box.appendChild(row);
+    });
+  }
+
+  // ---------- escolha ----------
+  function pick(index) {
+    picked = results[index] || null;
+    renderPick();
+    if (picked) toast("Selecionado: " + (picked.title || "").slice(0, 40), "ok");
+  }
+
+  function renderPick() {
+    const box = $("#pick-body");
+    if (!box) return;
+    if (!picked) {
+      box.innerHTML =
+        '<p class="pick-empty">Escolha um item da lista. Ele vira o vídeo de ' +
+        "origem dos cortes — transcrição, nota e render já existentes.</p>";
+      return;
+    }
+    box.innerHTML = "";
+
+    const h = document.createElement("p");
+    h.className = "pick-title";
+    h.textContent = picked.title || "(sem título)";
+    box.appendChild(h);
+
+    const dl = document.createElement("dl");
+    dl.className = "kv";
+    const rows = [
+      ["Duração", fmtDuration(picked.duration)],
+      ["Canal", picked.uploader || "—"],
+      ["Views", picked.view_count != null ? fmtCount(picked.view_count) : "—"],
+      ["Id", picked.id || "—"],
+    ];
+    rows.forEach(([k, v]) => {
+      const dt = document.createElement("dt");
+      dt.textContent = k;
+      const dd = document.createElement("dd");
+      dd.textContent = v;
+      dl.appendChild(dt);
+      dl.appendChild(dd);
+    });
+    box.appendChild(dl);
+
+    const actions = document.createElement("div");
+    actions.className = "pick-actions";
+
+    const open = document.createElement("a");
+    open.className = "btn pressable";
+    open.href = picked.url;
+    open.target = "_blank";
+    open.rel = "noopener noreferrer";
+    open.textContent = "Abrir no site";
+    actions.appendChild(open);
+
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "btn pressable";
+    copy.textContent = "Copiar link";
+    copy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(picked.url);
+        toast("Link copiado.", "ok");
+      } catch (e) {
+        toast("Não foi possível copiar.", "bad");
+      }
+    });
+    actions.appendChild(copy);
+
+    const cortes = document.createElement("button");
+    cortes.type = "button";
+    cortes.className = "btn pressable btn-primary";
+    cortes.textContent = "Levar para Cortes";
+    // A pagina de cortes le ?url= do endereco: e o unico canal de hand-off
+    // que existe hoje (nenhuma das paginas guarda estado entre navegacoes).
+    cortes.addEventListener("click", () => {
+      window.location.href = "/?url=" + encodeURIComponent(picked.url);
+    });
+    actions.appendChild(cortes);
+
+    box.appendChild(actions);
+  }
+
+  // ---------- busca ----------
+  async function search(event) {
+    if (event) event.preventDefault();
+    const input = $("#scrap-url");
+    const url = (input && input.value || "").trim();
+    if (!url) {
+      toast("Informe o endereço.", "bad");
+      if (input) input.focus();
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      toast("O endereço precisa começar com http:// ou https://", "bad");
+      if (input) input.focus();
+      return;
+    }
+
+    const btn = $("#btn-scrap");
+    if (btn) { btn.disabled = true; btn.textContent = "Buscando…"; }
+    const box = $("#resultados");
+    if (box) {
+      box.innerHTML = '<p class="empty">Buscando…</p>';
+    }
+
+    const payload = { url: url, mode: mode };
+    if (mode === "profile") {
+      const limit = $("#scrap-limit");
+      if (limit) payload.limit = Number(limit.value) || 20;
+      const cookies = $("#scrap-cookies");
+      if (cookies && cookies.value) payload.extra_ytdlp_args = ["--cookies-from-browser", cookies.value];
+    }
+
+    const r = await post("/scrap", payload);
+
+    if (btn) { btn.disabled = false; btn.textContent = "Buscar"; }
+
+    if (r.error) {
+      results = [];
+      picked = null;
+      renderResults("");
+      const sub = $("#resultados-sub");
+      if (sub) sub.textContent = "Falhou.";
+      if (box) box.innerHTML = '<p class="empty"><strong>A busca falhou.</strong></p>';
+      renderPick();
+      toast(r.error.slice(0, 120), "bad");
+      const errBox = document.createElement("p");
+      errBox.className = "empty";
+      errBox.textContent = r.error;
+      if (box) box.appendChild(errBox);
+      return;
+    }
+
+    results = Array.isArray(r.results) ? r.results : [];
+    picked = null;
+    renderResults(r.title || "");
+    renderPick();
+    toast(results.length + " item(ns) encontrado(s).", results.length ? "ok" : "bad");
+  }
+
+  // ---------- fio de ligacao com a pagina de cortes ----------
+  // Nada aqui le ?url=; quem consome e o index.html. O botao do header so
+  // leva para la, porque a unica acao util desta pagina e ir para Cortes.
+  const go = $("#btn-open-cortes");
+  if (go) {
+    go.addEventListener("click", () => {
+      window.location.href = picked
+        ? "/?url=" + encodeURIComponent(picked.url)
+        : "/";
+    });
+  }
+
+  const form = $("#scrap-form");
+  if (form) form.addEventListener("submit", search);
+
+  renderMode();
+  renderResults("");
+  renderPick();
+})();
+</script>
+
+</body>
+</html>

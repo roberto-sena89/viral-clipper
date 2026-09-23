@@ -95,6 +95,19 @@ audio_bitrate = "192k"
 # is how a 1080x1920 render runs an 8 GB machine out of memory.
 threads = 2
 
+# templates
+# A named composition (full-frame, split-card) or a path to a .toml/.yaml file
+# written by the wizard at /templates. Empty keeps the original single-zone
+# render, which is byte-identical to a run without this feature.
+template = ""
+# Cross the template with these axes: every preset x every layout re-encodes the
+# same clip from one analysis pass, so one download yields many deliverables.
+# The variant lands in the filename before the timecode:
+#   ..._<stem>__neon-focus_000010.mp4
+# Empty lists mean a single output per window, named exactly as before.
+variant_presets = []  # e.g. ["neon", "karaoke"] — run --list-templates for names
+variant_layouts = []  # center | blur | fit | focus
+
 # execution
 parallel = true
 # Each worker runs its own libx264 encode. Raise this only on a box with RAM to

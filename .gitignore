@@ -3,6 +3,7 @@ __pycache__/
 
 # Pipeline output and intermediate files.
 output/
+out/
 _work/
 cache/
 

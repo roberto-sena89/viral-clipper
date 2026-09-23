@@ -427,21 +427,47 @@ class Handler(http_server.BaseHTTPRequestHandler):
         return
 
 
-def main() -> int:
+def _parse_port(argv: list[str]) -> int:
+    """Read ``--port N`` (or ``PORT=N``) from the command line.
+
+    The port used to be a constant, which made a stale listener a hard stop with
+    no way out except killing processes. It stays defaulting to 7755 so the
+    documented URL never changes.
+    """
+    for index, arg in enumerate(argv):
+        if arg in {"--port", "-p"} and index + 1 < len(argv):
+            try:
+                candidate = int(argv[index + 1])
+            except ValueError:
+                continue
+            if 1 <= candidate <= 65535:
+                return candidate
+        elif arg.startswith("--port="):
+            try:
+                candidate = int(arg.split("=", 1)[1])
+            except ValueError:
+                continue
+            if 1 <= candidate <= 65535:
+                return candidate
+    return PORT
+
+
+def main(argv: list[str] | None = None) -> int:
     # Same rationale as viralclipper.cli: job logs carry video titles, and a
     # legacy code page would turn the first combining mark into a crash.
     util.configure_stdio()
-    addr = (HOST, PORT)
+    port = _parse_port(list(argv if argv is not None else sys.argv[1:]))
+    addr = (HOST, port)
     try:
         httpd = UiServer(addr, Handler)
     except OSError as exc:
-        print(f"[!] Nao foi possivel abrir a porta {PORT}: {exc}")
-        print(f"[!] Ja existe uma viral-clipper web UI rodando na porta {PORT}?")
-        print("[!] Feche as janelas antigas (ou encerre os processos python antigos) e tente de novo.")
+        print(f"[!] Nao foi possivel abrir a porta {port}: {exc}")
+        print(f"[!] Ja existe uma viral-clipper web UI rodando na porta {port}?")
+        print(f"[!] Use --port {port + 1} para subir numa porta livre.")
         return 1
-    url = f"http://{HOST}:{PORT}/"
+    url = f"http://{HOST}:{port}/"
     print(f"[*] viral-clipper web UI: {url}")
-    print(f"[*] servindo {WEB_DIR / 'index.html'}")
+    print(f"[*] templates: {url}templates")
     print("[*] CTRL+C para parar")
     try:
         webbrowser.open(url)

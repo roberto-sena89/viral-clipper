@@ -8,6 +8,7 @@ by running the real server against the rendered output.
 
 from __future__ import annotations
 
+import re
 import tempfile
 import unittest
 from dataclasses import replace
@@ -171,13 +172,133 @@ class TemplatesPageTests(unittest.TestCase):
     def test_the_panel_links_to_the_templates_page(self):
         panel = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
         self.assertIn('href="/templates"', panel)
+class RailNavigationTests(unittest.TestCase):
+    """The page picker on the lateral rail.
+
+    Both pages are served as standalone HTML with no build step, so the rail
+    markup and its stylesheet are duplicated on purpose. That duplication is
+    exactly what drifts: a page gets the new item and the other one keeps the
+    old list, or one copy loses the responsive fallback and the narrow layout
+    ends up with no navigation at all. These tests pin the parts that must
+    match, without prescribing the whole file.
+    """
+
+    PAGES = ("index.html", "templates.html")
+    #: Destinations the rail offers, keyed by the href the browser will see.
+    DESTINATIONS = {
+        "/": {"title": "Cortes", "ico": "▶"},
+        "/templates": {"title": "Templates", "ico": "▣"},
+    }
+
+    def body(self, name: str) -> str:
+        return (server.WEB_DIR / name).read_text(encoding="utf-8")
+
+    def markup(self, name: str) -> str:
+        """The page with <script>/<style>/comments stripped.
+
+        Counting ``data-rail-picker`` in the raw file overcounts: the attribute
+        also appears in the CSS comment and in the JS selector. Only real
+        elements matter here.
+        """
+        import re
+
+        text = self.body(name)
+        text = re.sub(r"<script.*?</script>", "", text, flags=re.S)
+        text = re.sub(r"<style.*?</style>", "", text, flags=re.S)
+        return re.sub(r"<!--.*?-->", "", text, flags=re.S)
+
+    def test_every_page_has_a_rail(self):
+        for name in self.PAGES:
+            with self.subTest(page=name):
+                self.assertIn('class="rail"', self.markup(name))
+
+    def test_every_page_offers_every_destination(self):
+        for name in self.PAGES:
+            markup = self.markup(name)
+            for href, meta in self.DESTINATIONS.items():
+                with self.subTest(page=name, href=href):
+                    self.assertIn(f'data-rail-page="{href}"', markup)
+                    self.assertIn(meta["title"], markup)
+
+    def test_the_picker_is_a_real_button_with_full_aria(self):
+        for name in self.PAGES:
+            markup = self.markup(name)
+            with self.subTest(page=name):
+                self.assertIn('aria-haspopup="listbox"', markup)
+                self.assertIn('aria-expanded="false"', markup)
+                self.assertIn('role="option"', markup)
+
+    def test_the_rail_has_a_narrow_screen_fallback(self):
+        """Below the rail breakpoint the same menu must exist in the header.
+
+        Without this the rail is display:none on a phone and the page is
+        unreachable except by typing the URL.
+        """
+        for name in self.PAGES:
+            markup = self.markup(name)
+            with self.subTest(page=name):
+                self.assertIn("rail-dropdown", markup)
+        # Both pages must hide the rail and reveal the fallback at the same
+        # width, or one of them breaks silently.
+        for name in self.PAGES:
+            css = self.body(name)
+            with self.subTest(page=name):
+                self.assertIn("max-width: 920px", css)
+                self.assertIn("body { padding-left: 0; }", css)
+
+    def test_every_destination_is_declared_in_the_js(self):
+        """The rail list lives in the JS so ``aria-current`` can be derived.
+
+        The two pages do not share a spelling: the panel is written with single
+        quotes and the wizard with double ones, and the declaration keyword
+        differs too. Match on the binding name and accept either quote style,
+        so a formatting change on one page cannot fail this test.
+        """
+        for name in self.PAGES:
+            body = self.body(name)
+            match = re.search(
+                r"""\b(?:const|var|let)\s+PAGES\s*=\s*\{(.*?)\n\s*\};""", body, re.S
+            )
+            self.assertIsNotNone(match, f"{name} nao declara PAGES")
+            keys = set(re.findall(r"""['"](/[a-z-]*)['"]\s*:""", match.group(1)))
+            self.assertEqual(
+                keys,
+                set(self.DESTINATIONS),
+                f"{name} declara destinos diferentes do rail: {sorted(keys)}",
+            )
+
+    def test_the_current_page_is_marked_by_the_js(self):
+        """aria-current must be derived, never hardcoded to one page."""
+        for name in self.PAGES:
+            body = self.body(name)
+            with self.subTest(page=name):
+                code = body.replace("'", '"')
+                self.assertIn('setAttribute("aria-current", "page")', code)
+                # And the static markup must not pre-mark anything, or the
+                # page that is not current would still claim to be.
+                self.assertNotIn('aria-current="page"', self.markup(name))
+
+    def test_the_old_static_template_link_is_gone(self):
+        """The header link was replaced by the rail picker.
+
+        Keeping both would mean two competing entry points, and the leftover
+        anchor would drift out of sync with the rail list.
+        """
+        panel = self.markup("index.html")
+        self.assertNotIn('<a class="btn pressable" href="/templates">', panel)
+
+
+class TemplatesGeometryTests(unittest.TestCase):
+    """The wizard recomputes band pixels; the numbers must agree with the engine."""
+
+    def setUp(self):
+        self.page = server.WEB_DIR / "templates.html"
 
     def test_the_geometry_rule_matches_the_engine(self):
-        """The page recomputes band pixels; the numbers must agree.
+        """Both implementations are compared on the same input.
 
-        Both implementations are compared on the same input, so a change to
-        either one that is not mirrored fails here instead of producing a
-        preview that lies about the render.
+        A change to either one that is not mirrored fails here instead of
+        producing a preview that lies about the render.
         """
         from viralclipper import template as template_mod
 
@@ -191,6 +312,25 @@ class TemplatesPageTests(unittest.TestCase):
         builtin = template_mod.BUILTIN["split-card"]
         bands = template_mod.plan_bands(builtin, 1080, 1920)
         self.assertEqual([b.kind for b in bands], ["video", "frame", "captions"])
+
+
+class PortParsingTests(unittest.TestCase):
+    """``--port`` exists so a stale listener is not a dead end."""
+
+    def test_defaults_to_the_documented_port(self):
+        self.assertEqual(server._parse_port([]), server.PORT)
+        self.assertEqual(server.PORT, 7755)
+
+    def test_short_and_long_forms(self):
+        self.assertEqual(server._parse_port(["--port", "9000"]), 9000)
+        self.assertEqual(server._parse_port(["-p", "9000"]), 9000)
+        self.assertEqual(server._parse_port(["--port=9000"]), 9000)
+
+    def test_invalid_values_fall_back_to_the_default(self):
+        self.assertEqual(server._parse_port(["--port", "abc"]), server.PORT)
+        self.assertEqual(server._parse_port(["--port", "0"]), server.PORT)
+        self.assertEqual(server._parse_port(["--port", "70000"]), server.PORT)
+        self.assertEqual(server._parse_port(["--port"]), server.PORT)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -19,8 +19,14 @@ config.toml
 # Exported browser cookies. A cookies.txt holds live session tokens: committing
 # one hands over the account. Needed here because the natural place to drop the
 # file is the repo root, right next to the tool that consumes it.
+#
+# ``cookies`` without the .txt is yt-dlp's OWN cookie jar, which it rewrites
+# into the CWD on every run. Tracked by the first two lines -- catch it here
+# rather than discovering it as an untracked file that looks like a stray.
+cookies
 cookies.txt
 *cookies*.txt
+*[Cc]ookie*.jar
 !requirements.txt
 
 # Run logs and tooling scratch

@@ -1,9 +1,16 @@
 """Render one clip, used by :func:`pipeline.render_windows`.
 
 The module-level function is picklable: :class:`_RenderTask` carries everything
-a worker needs, and the worker writes its result back into the task object
-through a module-level function so the parent can collect it without
-serialising a render result across the process boundary.
+a worker needs in, and the worker returns the same task object with ``rendered``
+and ``record`` filled in. Both are plain picklable values (``RenderedClip`` is a
+dataclass of a ``Path``, floats and ints; ``ClipRecord`` is a dataclass of
+primitives), so shipping the whole task back is what the pool already does - the
+parent copies those two attributes onto its own task object.
+
+The one invariant that matters: ``record`` is built from ``rendered`` here, in
+the worker, right after the render. A record that says ``file = ""`` therefore
+means this function decided the clip was never produced - it is not a reporting
+detail the parent can repair.
 """
 
 from __future__ import annotations
@@ -91,6 +98,8 @@ def _render_task(task: _RenderTask) -> _RenderTask:
         if not task.config.keep_temp:
             shutil.rmtree(clip_dir, ignore_errors=True)
 
+    # Built after the cleanup on purpose: the destination lives in output_dir,
+    # not in clip_dir, so removing the work directory cannot invalidate it.
     task.record = _record(task.position, task.window, task.finish, task.rendered, task.config)
     return task
 

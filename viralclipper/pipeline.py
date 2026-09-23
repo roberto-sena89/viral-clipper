@@ -434,6 +434,10 @@ def render_windows(
                     original.error = result.error
         except Exception as exc:
             logger.warn(f"Render paralelo falhou ({exc!r}); retribuindo um por vez")
+            # ``_render_task`` assigns ``record``/``rendered`` unconditionally,
+            # so this retry is the last writer for every task: whatever the
+            # broken pool had already copied back cannot survive it. A clip the
+            # retry renders is therefore never reported with an empty ``file``.
             for task in tasks:
                 _render_task(task)
     else:

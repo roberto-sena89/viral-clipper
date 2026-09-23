@@ -220,13 +220,63 @@ class RailNavigationTests(unittest.TestCase):
                     self.assertIn(f'data-rail-page="{href}"', markup)
                     self.assertIn(meta["title"], markup)
 
-    def test_the_picker_is_a_real_button_with_full_aria(self):
+    def test_the_rail_lists_destinations_as_plain_links(self):
+        """The rail menu is a list of links, not a widget.
+
+        It used to be a button that opened a listbox. Now every destination is
+        always visible, so it needs no popup semantics — a screen reader should
+        announce "navigation, 2 items" and stop there. If someone reintroduces
+        role=listbox here it would contradict the "always visible" model.
+        """
         for name in self.PAGES:
             markup = self.markup(name)
             with self.subTest(page=name):
-                self.assertIn('aria-haspopup="listbox"', markup)
+                self.assertIn('class="rail-menu"', markup)
+                self.assertIn('aria-labelledby="rail-label-paginas"', markup)
+                # The rail itself must not claim to be a listbox popup.
+                rail = markup.split("</nav>", 1)[0]
+                self.assertNotIn('role="listbox"', rail)
+                self.assertNotIn('role="option"', rail)
+                self.assertNotIn("aria-haspopup", rail)
+
+    def test_both_instances_share_the_same_destinations(self):
+        """The rail and the header fallback must list the same pages.
+
+        They are separate copies of the same list (no build step to share it),
+        so a page added to one and forgotten in the other is the realistic bug.
+        Compare the hrefs each instance carries.
+        """
+        for name in self.PAGES:
+            markup = self.markup(name)
+            rail = markup.split("</nav>", 1)[0]
+            fallback = markup.split('data-rail-picker', 1)[1].split("</header>", 1)[0]
+
+            def hrefs(chunk):
+                return sorted(re.findall(r'data-rail-page="([^"]+)"', chunk))
+
+            with self.subTest(page=name):
+                self.assertEqual(
+                    hrefs(rail),
+                    hrefs(fallback),
+                    f"{name}: rail e menu do header listam destinos diferentes",
+                )
+                self.assertEqual(
+                    hrefs(rail),
+                    sorted(self.DESTINATIONS),
+                    f"{name}: destinos inesperados no rail",
+                )
+
+    def test_the_header_fallback_is_a_toggle_with_aria(self):
+        """The header menu DOES need popup semantics: it opens and closes."""
+        for name in self.PAGES:
+            markup = self.markup(name)
+            with self.subTest(page=name):
+                self.assertIn('class="menu-btn', markup)
+                self.assertIn('aria-haspopup="true"', markup)
                 self.assertIn('aria-expanded="false"', markup)
-                self.assertIn('role="option"', markup)
+                self.assertIn('aria-controls="rail-menu-sm"', markup)
+                # The panel it controls must actually carry that id.
+                self.assertIn('id="rail-menu-sm"', markup)
 
     def test_the_rail_has_a_narrow_screen_fallback(self):
         """Below the rail breakpoint the same menu must exist in the header.
@@ -278,14 +328,65 @@ class RailNavigationTests(unittest.TestCase):
                 # page that is not current would still claim to be.
                 self.assertNotIn('aria-current="page"', self.markup(name))
 
+    def test_the_rail_marks_one_item_per_instance(self):
+        """Each copy of the list marks exactly one current item.
+
+        There are two copies (rail + header fallback), so the whole document
+        legitimately ends up with two marks. What must hold is that within each
+        copy there is exactly one — an unmarked or double-marked copy means the
+        derivation broke.
+        """
+        for name, current in (("index.html", "/"), ("templates.html", "/templates")):
+            markup = self.markup(name)
+            rail = markup.split("</nav>", 1)[0]
+            fallback = markup.split('data-rail-picker', 1)[1].split("</header>", 1)[0]
+            for label, chunk in (("rail", rail), ("header", fallback)):
+                with self.subTest(page=name, instance=label):
+                    # Only the item matching this page is expected; in the
+                    # static markup nothing is marked, so assert the JS has the
+                    # key it needs rather than a pre-written attribute.
+                    self.assertIn(f'data-rail-page="{current}"', chunk)
+
     def test_the_old_static_template_link_is_gone(self):
-        """The header link was replaced by the rail picker.
+        """The header link was replaced by the rail menu.
 
         Keeping both would mean two competing entry points, and the leftover
         anchor would drift out of sync with the rail list.
         """
         panel = self.markup("index.html")
         self.assertNotIn('<a class="btn pressable" href="/templates">', panel)
+
+    def test_the_rail_does_not_use_a_late_declared_helper(self):
+        """The rail block must not call $ / $$ before they are defined.
+
+        ``var`` hoists as undefined, so a call written above the declaration
+        throws at load and kills the whole script — taking the wizard or the
+        panel with it. The rail sits near the top of the wizard file, above the
+        helpers, so it has to fetch what it needs with document.querySelector.
+
+        Checks the rail block itself rather than file order: it is fine for the
+        rail to sit above the helpers as long as it does not touch them.
+        """
+        for name in self.PAGES:
+            body = self.body(name)
+            start = body.index("// ---------- rail lateral")
+            end = body.index("// ----------", start + 10)
+            block = body[start:end]
+
+            helper = re.search(r"\b(?:var|const|let)\s+\$\$?\s*=", body)
+            if helper is None or helper.start() < start:
+                continue  # helpers come first: nothing to guard against
+
+            with self.subTest(page=name):
+                # A call looks like $( / $$( — the bare name in a comment or in
+                # a `var q =` declaration is fine.
+                calls = re.findall(r"(?<![\w$])\$\$?\s*\(", block)
+                self.assertEqual(
+                    calls,
+                    [],
+                    f"{name}: o rail chama {calls} antes de o helper existir; "
+                    "use document.querySelector dentro do bloco",
+                )
 
 
 class TemplatesGeometryTests(unittest.TestCase):

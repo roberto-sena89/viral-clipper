@@ -206,12 +206,18 @@ header {
 .nav-actions { display: flex; gap: 10px; align-items: center; }
 
 /* ---------- RAIL LATERAL ----------
-   Coluna fixa a esquerda com os destinos do app. Fica FORA do <header> de
-   proposito: o header e sticky e cobre a largura toda, entao um rail dentro
-   dele nao teria altura. Aqui ele e position:fixed do topo ate o fim da
-   viewport, e o conteudo ganha --rail-w de recuo no body.
-   Em <=920px o rail some e os mesmos destinos reaparecem no .rail-dropdown
-   dentro do header — sem isso a pagina ficaria sem navegacao no celular. */
+   Coluna fixa a esquerda com os destinos do app, sempre visiveis: cada pagina
+   e uma linha propria, e a atual fica destacada. Antes isso era um botao que
+   abria um menu sobreposto; virou lista fixa porque um menu que esconde dois
+   itens esconde tambem a propria existencia da outra pagina.
+
+   Fica FORA do <header> de proposito: o header e sticky e cobre a largura
+   toda, entao um rail dentro dele nao teria altura. Aqui ele e
+   position:fixed do topo ate o fim da viewport, e o conteudo ganha --rail-w
+   de recuo no body.
+
+   Em <=920px o rail some e os destinos reaparecem como menu no header —
+   sem isso a pagina ficaria sem navegacao no celular. */
 :root {
   --rail-w: 244px;
 }
@@ -238,41 +244,21 @@ body { padding-left: var(--rail-w); }
   color: var(--text-muted); padding: 0 10px; margin: 4px 0 8px;
 }
 
-/* O botao que abre a lista de paginas. E um <button> de verdade (nao um
-   <select>) para combinar com o rail: <select> nao aceita icone nem descricao
-   por item sem virar dropdown nativo. */
-.rail-picker { position: relative; }
-
-.rail-btn {
-  width: 100%; text-align: left;
-  display: flex; align-items: center; gap: 11px;
-  padding: 11px 12px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border-strong); background: rgba(0, 0, 0, 0.28);
-  color: var(--text-primary); font-family: inherit; font-size: var(--text-cta); font-weight: 600;
-  cursor: pointer;
-}
-.rail-btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }
-.rail-btn[aria-expanded="true"] { border-color: var(--accent-primary); }
-.rail-btn .rb-ico { font-size: 1.05rem; line-height: 1; flex: none; width: 20px; text-align: center; }
-.rail-btn .rb-text { flex: 1; min-width: 0; }
-.rail-btn .rb-name { display: block; }
-.rail-btn .rb-sub { display: block; font-weight: 400; font-size: 0.75rem; color: var(--text-muted); }
-.rail-btn .rb-caret { color: var(--accent-soft); font-size: 0.8rem; transition: transform var(--transition); }
-.rail-btn[aria-expanded="true"] .rb-caret { transform: rotate(180deg); }
-
+/* A lista de destinos. <nav> + lista de links: um leitor de tela anuncia
+   "navegacao, 2 itens" e cada link diz para onde vai. O menu anterior
+   precisava de role=listbox/option para se comportar como widget; uma lista
+   estatica de links nao precisa de nada disso. */
 .rail-menu {
-  position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 70;
-  background: var(--bg-surface); border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md); box-shadow: var(--shadow-card);
-  padding: 6px; display: flex; flex-direction: column; gap: 2px;
-  animation: railMenuIn 180ms var(--ease-out-expo);
+  display: flex; flex-direction: column; gap: 2px;
+  list-style: none; margin: 0; padding: 0;
 }
+/* O rail nao usa os papeis de listbox; o fallback do header (mais abaixo)
+   tambem e uma lista de links, entao herda o mesmo tratamento. */
 .rail-menu[hidden] { display: none; }
-@keyframes railMenuIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 
 .rail-item {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 9px 10px; border-radius: var(--radius-sm);
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 10px 11px; border-radius: var(--radius-sm);
   border: 1px solid transparent; background: transparent;
   color: var(--text-primary); font-family: inherit; font-size: 0.86rem;
   text-align: left; cursor: pointer; text-decoration: none;
@@ -284,17 +270,42 @@ body { padding-left: var(--rail-w); }
   background: var(--active-tint); border-color: var(--accent-primary); color: var(--accent-soft);
 }
 .rail-item[aria-current="page"] .ri-desc { color: var(--text-secondary); }
-.rail-item .ri-ico { font-size: 1rem; line-height: 1.35; width: 20px; text-align: center; flex: none; }
+.rail-item .ri-ico { font-size: 1.05rem; line-height: 1.3; width: 20px; text-align: center; flex: none; }
 .rail-item .ri-title { display: block; font-weight: 600; }
-.rail-item .ri-desc { display: block; font-size: 0.74rem; color: var(--text-muted); line-height: 1.4; }
-.rail-item .ri-ext { margin-left: auto; font-size: 0.72rem; color: var(--text-muted); }
+.rail-item .ri-desc { display: block; font-size: 0.73rem; color: var(--text-muted); line-height: 1.4; }
 
 .rail-foot { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--border-subtle); }
 .rail-foot span { display: block; font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; }
 
-/* ---------- FALLBACK <=920px ---------- */
+/* ---------- MENU DO HEADER (<=920px) ----------
+   Substitui o rail quando nao ha largura para ele. Mesmo padrao de botao +
+   painel sobreposto, mas aqui o menu PRECISA de widget semantics: ele abre e
+   fecha, entao aria-expanded e o estado tem que existir. */
 .rail-dropdown { position: relative; display: none; }
-.rail-dropdown .rail-menu { left: auto; right: 0; min-width: 250px; }
+
+.menu-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: inherit; font-size: var(--text-cta); font-weight: 600;
+  border: 1px solid var(--border-strong); background: var(--bg-surface);
+  color: var(--text-primary); padding: 10px 14px; border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.menu-btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }
+.menu-btn .mb-bars { font-size: 1rem; line-height: 1; }
+.menu-btn .mb-caret { color: var(--accent-soft); font-size: 0.75rem; transition: transform var(--transition); }
+.menu-btn[aria-expanded="true"] .mb-caret { transform: rotate(180deg); }
+
+.rail-dropdown .rail-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 70; min-width: 258px;
+  background: var(--bg-surface); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-card);
+  padding: 6px;
+  animation: railMenuIn 180ms var(--ease-out-expo);
+}
+@keyframes railMenuIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .rail-dropdown .rail-menu { animation: none; }
+}
 .btn {
   font-family: inherit; font-size: var(--text-cta); font-weight: 600;
   border: 1px solid var(--border-strong); background: var(--bg-surface);
@@ -744,7 +755,7 @@ footer {
 @keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
 
 /* ---------- RESPONSIVO ---------- */
-/* Abaixo de 920px nao cabe rail + conteudo: o rail vira dropdown no header. */
+/* Abaixo de 920px nao cabe rail + conteudo: os destinos viram menu no header. */
 @media (max-width: 920px) {
   body { padding-left: 0; }
   .rail { display: none; }
@@ -758,10 +769,7 @@ footer {
   .hero { padding: 40px 0 32px; }
   .gallery { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
   .wrap { padding: 0 16px; }
-  .nav-actions .btn { padding: 9px 12px; font-size: 0.84rem; }
-  /* O nome da pagina colapsa para o icone: com 4 botoes o header estoura. */
-  .rail-dropdown .rb-text { display: none; }
-  .rail-dropdown .rail-btn { padding: 9px 11px; }
+  .nav-actions .btn, .menu-btn { padding: 9px 11px; font-size: 0.84rem; }
 }
 
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
@@ -776,9 +784,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 <body>
 
 <!-- ==================== RAIL LATERAL ====================
-     Destinos do app. O item marcado com aria-current="page" e a pagina atual;
-     o JS abaixo deriva isso de location.pathname, entao a mesma lista serve
-     para index.html e templates.html sem duplicar logica de estado. -->
+     Menu principal: uma linha por pagina, sempre visivel. O item com
+     aria-current="page" e a pagina atual, derivado de location.pathname pelo
+     JS abaixo — nunca escrito a mao, senao a pagina errada se declara atual. -->
 <nav class="rail" aria-label="Navegação principal">
   <div class="rail-brand">
     <div class="brand-mark" aria-hidden="true">VC</div>
@@ -787,34 +795,26 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 
   <div class="rail-label" id="rail-label-paginas">Páginas</div>
 
-  <div class="rail-picker" data-rail-picker>
-    <button class="rail-btn pressable" type="button" id="rail-page-btn"
-            aria-haspopup="listbox" aria-expanded="false" aria-labelledby="rail-label-paginas rail-page-name">
-      <span class="rb-ico" id="rail-page-ico" aria-hidden="true">▶</span>
-      <span class="rb-text">
-        <span class="rb-name" id="rail-page-name">Cortes</span>
-        <span class="rb-sub" id="rail-page-sub">Gerar clips de um vídeo</span>
-      </span>
-      <span class="rb-caret" aria-hidden="true">▾</span>
-    </button>
-
-    <div class="rail-menu" id="rail-page-menu" role="listbox" aria-label="Escolher página" hidden>
-      <a class="rail-item pressable" href="/" role="option" data-rail-page="/">
+  <ul class="rail-menu" aria-labelledby="rail-label-paginas">
+    <li>
+      <a class="rail-item pressable" href="/" data-rail-page="/">
         <span class="ri-ico" aria-hidden="true">▶</span>
         <span>
           <span class="ri-title">Cortes</span>
           <span class="ri-desc">Configurar e gerar os clips de um vídeo longo.</span>
         </span>
       </a>
-      <a class="rail-item pressable" href="/templates" role="option" data-rail-page="/templates">
+    </li>
+    <li>
+      <a class="rail-item pressable" href="/templates" data-rail-page="/templates">
         <span class="ri-ico" aria-hidden="true">▣</span>
         <span>
           <span class="ri-title">Templates</span>
           <span class="ri-desc">Montar o layout das faixas e as variações.</span>
         </span>
       </a>
-    </div>
-  </div>
+    </li>
+  </ul>
 
   <div class="rail-foot">
     <span>viral-clipper · 9:16 1080×1920</span>
@@ -828,32 +828,34 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
       <span>Viral Clipper <small>interface web</small></span>
     </div>
     <div class="nav-actions">
-      <!-- Fallback do rail abaixo de 920px: mesmos destinos, no header. -->
+      <!-- Fallback do rail abaixo de 920px: mesmos destinos, em menu. -->
       <div class="rail-dropdown" data-rail-picker>
-        <button class="rail-btn pressable" type="button" id="rail-page-btn-sm"
-                aria-haspopup="listbox" aria-expanded="false" aria-label="Escolher página">
-          <span class="rb-ico" id="rail-page-ico-sm" aria-hidden="true">▶</span>
-          <span class="rb-text">
-            <span class="rb-name" id="rail-page-name-sm">Cortes</span>
-          </span>
-          <span class="rb-caret" aria-hidden="true">▾</span>
+        <button class="menu-btn pressable" type="button" id="rail-menu-btn"
+                aria-haspopup="true" aria-expanded="false" aria-controls="rail-menu-sm">
+          <span class="mb-bars" aria-hidden="true">☰</span>
+          <span class="sr-only">Menu de páginas</span>
+          <span class="mb-caret" aria-hidden="true">▾</span>
         </button>
-        <div class="rail-menu" id="rail-page-menu-sm" role="listbox" aria-label="Escolher página" hidden>
-          <a class="rail-item pressable" href="/" role="option" data-rail-page="/">
-            <span class="ri-ico" aria-hidden="true">▶</span>
-            <span>
-              <span class="ri-title">Cortes</span>
-              <span class="ri-desc">Configurar e gerar os clips de um vídeo longo.</span>
-            </span>
-          </a>
-          <a class="rail-item pressable" href="/templates" role="option" data-rail-page="/templates">
-            <span class="ri-ico" aria-hidden="true">▣</span>
-            <span>
-              <span class="ri-title">Templates</span>
-              <span class="ri-desc">Montar o layout das faixas e as variações.</span>
-            </span>
-          </a>
-        </div>
+        <ul class="rail-menu" id="rail-menu-sm" data-rail-menu hidden>
+          <li>
+            <a class="rail-item pressable" href="/" data-rail-page="/">
+              <span class="ri-ico" aria-hidden="true">▶</span>
+              <span>
+                <span class="ri-title">Cortes</span>
+                <span class="ri-desc">Configurar e gerar os clips de um vídeo longo.</span>
+              </span>
+            </a>
+          </li>
+          <li>
+            <a class="rail-item pressable" href="/templates" data-rail-page="/templates">
+              <span class="ri-ico" aria-hidden="true">▣</span>
+              <span>
+                <span class="ri-title">Templates</span>
+                <span class="ri-desc">Montar o layout das faixas e as variações.</span>
+              </span>
+            </a>
+          </li>
+        </ul>
       </div>
       <button class="btn pressable" type="button" id="btn-batch">Lote</button>
       <button class="btn pressable btn-primary" type="button" id="btn-run">Gerar clips</button>
@@ -1302,70 +1304,66 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 
   const state = { running: false, jobs: [], clips: [], viral: [] };
 
-  // ---------- rail lateral / seletor de pagina ----------
-  // A lista de destinos vive no HTML (uma vez no rail, uma vez no dropdown do
-  // header para telas estreitas). Aqui so cuidamos de abrir/fechar e de marcar
-  // qual e a pagina atual — derivado de location.pathname, nunca escrito a mao,
-  // para que adicionar uma pagina nova nao exija mexer em estado.
+  // ---------- rail lateral (menu principal) ----------
+  // A lista de destinos vive no HTML: uma vez no rail fixo, e uma copia no
+  // menu do header que aparece abaixo de 920px. Aqui so marcamos qual e a
+  // pagina atual — derivado de location.pathname, nunca escrito a mao, para
+  // que adicionar uma pagina nova nao exija mexer em estado.
   const PAGES = {
-    '/':          { ico: '▶', title: 'Cortes',    sub: 'Gerar clips de um vídeo' },
-    '/templates': { ico: '▣', title: 'Templates', sub: 'Layout das faixas e variações' },
+    '/':          'Cortes',
+    '/templates': 'Templates',
   };
 
   (function initRail() {
     const path = window.location.pathname.replace(/\/index\.html$/, '/');
     const norm = path.endsWith('/') ? path : path + '/';
-    const current = PAGES[path] || PAGES[norm] || PAGES['/'];
+    const key = PAGES[path] ? path : (PAGES[norm] ? norm : '/');
+    const title = PAGES[key];
 
-    // 3 icones/nomes: dois no rail (ou dropdown) + o rotulo do botao pequeno.
-    $('#rail-page-ico').textContent = current.ico;
-    $('#rail-page-name').textContent = current.title;
-    $('#rail-page-sub').textContent = current.sub;
-    $('#rail-page-ico-sm').textContent = current.ico;
-    $('#rail-page-name-sm').textContent = current.title;
-    document.title = `${current.title} · Viral Clipper`;
+    document.title = `${title} · Viral Clipper`;
 
+    // Cada instancia da lista (rail + menu do header) marca o seu proprio item.
     $$('[data-rail-page]').forEach((item) => {
-      if (item.getAttribute('data-rail-page') === (PAGES[path] ? path : norm)) {
+      if (item.getAttribute('data-rail-page') === key) {
         item.setAttribute('aria-current', 'page');
       }
     });
 
-    // Cada .rail-picker tem o seu proprio botao e menu; o clique fora fecha.
-    const pickers = $$('[data-rail-picker]').map((root) => ({
-      root,
-      btn: root.querySelector('.rail-btn'),
-      menu: root.querySelector('.rail-menu'),
-    }));
+    // O menu do header e o unico componente com estado aqui: abre e fecha.
+    const menu = $('[data-rail-menu]');
+    const btn = $('[data-rail-picker] .menu-btn');
+    if (!menu || !btn) return;
 
-    const close = () => pickers.forEach((p) => {
-      p.menu.hidden = true;
-      p.btn.setAttribute('aria-expanded', 'false');
+    const setOpen = (open) => {
+      menu.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+    };
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const willOpen = menu.hidden;
+      setOpen(willOpen);
+      if (willOpen) {
+        const first = menu.querySelector('.rail-item');
+        if (first) first.focus({ preventScroll: true });
+      }
     });
 
-    pickers.forEach((p) => {
-      p.btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const willOpen = p.menu.hidden;
-        close();
-        p.menu.hidden = !willOpen;
-        p.btn.setAttribute('aria-expanded', String(willOpen));
-        if (willOpen) {
-          const first = p.menu.querySelector('.rail-item');
-          if (first) first.focus({ preventScroll: true });
-        }
-      });
-
-      // O menu fica aberto sobre o conteudo; sem isto um clique no painel
-      // fecharia o dropdown E dispararia a acao do elemento por baixo.
-      p.menu.addEventListener('click', (e) => {
-        if (e.target.closest('.rail-item')) close();
-      });
+    // O painel fica sobre o conteudo; sem isto um clique nele fecharia o menu
+    // E dispararia a acao do elemento por baixo.
+    menu.addEventListener('click', (e) => {
+      if (e.target.closest('.rail-item')) setOpen(false);
     });
 
-    document.addEventListener('click', close);
+    document.addEventListener('click', () => setOpen(false));
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') close();
+      if (e.key === 'Escape') {
+        const wasOpen = !menu.hidden;
+        setOpen(false);
+        // Devolve o foco ao botao, senao ele some para o body e o usuario de
+        // teclado perde a posicao.
+        if (wasOpen) btn.focus({ preventScroll: true });
+      }
     });
   })();
 

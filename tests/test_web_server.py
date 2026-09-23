@@ -174,6 +174,46 @@ class ScrapPageTests(unittest.TestCase):
         self.assertIn("URLSearchParams(window.location.search)", panel)
         self.assertIn("params.get('url')", panel)
 
+    def test_cookies_are_offered_in_both_modes(self):
+        """Instagram refuses a lone reel too, so the picker cannot be profile-only.
+
+        The selector used to live inside the ``#perfil-opts`` fieldset, which
+        ``renderMode`` hides for ``mode === "link"``. Link mode therefore had no
+        way to authenticate at all, and its searches failed permanently.
+        """
+        body = self.page.read_text(encoding="utf-8")
+        fieldset_at = body.index('id="perfil-opts"')
+        fieldset_close = body.index("</fieldset>", fieldset_at)
+        selector_at = body.index('id="scrap-cookies"')
+        self.assertGreater(
+            selector_at, fieldset_close,
+            "o seletor de cookies precisa ficar FORA do fieldset que o modo link esconde",
+        )
+
+    def test_cookies_are_sent_in_link_mode_too(self):
+        """The payload must carry the cookies regardless of the selected mode.
+
+        Reading the cookie selector has to happen at the function's top level.
+        When it lived inside ``if (mode === "profile")``, link mode never sent
+        them, so every Instagram reel search failed with no way to fix it.
+        """
+        body = self.page.read_text(encoding="utf-8")
+        handler_at = body.index("async function search")
+        snippet = body[handler_at:handler_at + 2000]
+        cookies_at = snippet.index("const cookies = ")
+        before = snippet[:cookies_at]
+        # The profile branch must be closed before the cookies are read.
+        opened = before.rfind('if (mode === "profile") {')
+        closed = before.rfind("\n    }")
+        self.assertGreater(
+            closed, opened,
+            "o bloco do modo perfil precisa fechar antes da leitura dos cookies",
+        )
+        self.assertIn(
+            "payload.extra_ytdlp_args", snippet[cookies_at:cookies_at + 200],
+            "o seletor de cookies precisa alimentar extra_ytdlp_args",
+        )
+
 
 class ScrapUrlRoutingTests(unittest.TestCase):
     """Which URLs are a profile, and which are one post.

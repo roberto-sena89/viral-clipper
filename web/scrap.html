@@ -560,18 +560,23 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
             </label>
             <input type="number" id="scrap-limit" name="limit" min="1" max="100" value="20">
           </div>
-          <div style="flex:0 0 220px;">
-            <label class="field-hint" for="scrap-cookies" style="display:block;margin-bottom:6px;">
-              Cookies do navegador
-            </label>
-            <select id="scrap-cookies" name="cookies">
-              <option value="">Nenhum</option>
-              <option value="chrome">chrome</option>
-              <option value="firefox">firefox</option>
-              <option value="edge">edge</option>
-            </select>
-          </div>
         </fieldset>
+
+        <div style="margin:14px 0 0;">
+          <label class="field-hint" for="scrap-cookies" style="display:block;margin-bottom:6px;">
+            Cookies do navegador
+          </label>
+          <select id="scrap-cookies" name="cookies" style="max-width:220px;">
+            <option value="">Nenhum</option>
+            <option value="chrome">chrome</option>
+            <option value="firefox">firefox</option>
+            <option value="edge">edge</option>
+          </select>
+          <span class="field-hint" id="scrap-cookies-hint"
+                style="display:block;margin-top:6px;">
+            Instagram exige sessão até para um reel isolado.
+          </span>
+        </div>
       </section>
 
       <section class="card" aria-labelledby="h-resultados">
@@ -749,7 +754,8 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
       hint.innerHTML = mode === "profile"
         ? "Modo <strong>Perfil</strong>: varre a lista de vídeos da conta. " +
           "Instagram costuma exigir cookies."
-        : "Modo <strong>Link</strong>: aceita um post, reel ou vídeo.";
+        : "Modo <strong>Link</strong>: aceita um post, reel ou vídeo. " +
+          "Reels do Instagram também exigem cookies.";
     }
     const input = $("#scrap-url");
     if (input) {
@@ -940,8 +946,13 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
     if (mode === "profile") {
       const limit = $("#scrap-limit");
       if (limit) payload.limit = Number(limit.value) || 20;
-      const cookies = $("#scrap-cookies");
-      if (cookies && cookies.value) payload.extra_ytdlp_args = ["--cookies-from-browser", cookies.value];
+    }
+    // Cookies are offered in both modes: Instagram refuses an isolated reel as
+    // readily as it refuses a profile, so gating this on "profile" left the
+    // link mode with no way to authenticate at all.
+    const cookies = $("#scrap-cookies");
+    if (cookies && cookies.value) {
+      payload.extra_ytdlp_args = ["--cookies-from-browser", cookies.value];
     }
 
     const r = await post("/scrap", payload);

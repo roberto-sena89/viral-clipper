@@ -49,6 +49,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="No modo lote, recolocar na fila as URLs que falharam",
     )
     parser.add_argument(
+        "--profile",
+        default=None,
+        help=(
+            "Perfil do Instagram (@nome ou URL): baixa todo o catalogo da conta, "
+            "separando reels/ de posts/. Nao renderiza clipes."
+        ),
+    )
+    parser.add_argument(
+        "--cookies",
+        dest="cookies_file",
+        default=None,
+        help="cookies.txt exportado do navegador (obrigatorio com --profile)",
+    )
+    parser.add_argument(
+        "--only",
+        dest="only_kinds",
+        default=None,
+        help="Com --profile, baixar so uma parte: reels, posts (aceita os dois separados por virgula)",
+    )
+    parser.add_argument(
+        "--max-items",
+        dest="max_items",
+        type=int,
+        default=None,
+        help="Com --profile, baixar no maximo N itens POR TIPO (os mais recentes de cada: N reels + N posts)",
+    )
+    parser.add_argument(
         "--config",
         dest="config_file",
         default=None,
@@ -124,6 +151,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     source.add_argument("--max-height", dest="max_height", type=int, default=1080)
     source.add_argument("--cookies-from-browser", dest="cookies_from_browser", default=None)
+    source.add_argument(
+        "--metadata-language",
+        dest="metadata_language",
+        default="pt",
+        help=(
+            "Idioma pedido ao yt-dlp (pt = titulos em pt-BR, mesmo os de origem "
+            "estrangeira). Vazio deixa o padrao do site"
+        ),
+    )
     source.add_argument(
         "--ytdlp-arg",
         dest="extra_ytdlp_args",
@@ -528,6 +564,68 @@ def run_batch_mode(
     return 0
 
 
+def run_profile_mode(
+    config: config_mod.ClipConfig,
+    profile: str,
+    cookies_file: str,
+    logger: Logger,
+    *,
+    only: str | None = None,
+    max_items: int | None = None,
+) -> int:
+    """Baixa o catalogo inteiro de um perfil, separado em reels/ e posts/.
+
+    Nao renderiza nada: o resultado e um arquivo navegavel da conta, nao clipes.
+    Renderizar fica a cargo de apontar o pipeline para uma pasta depois (ou para
+    uma URL unica), porque as duas tarefas tem custos muito diferentes.
+    """
+    from . import archive as archive_mod
+    from . import ig_profile as ig_profile_mod
+
+    kinds = [part.strip() for part in (only or "").split(",") if part.strip()]
+    valid = {ig_profile_mod.REELS_DIR, ig_profile_mod.POSTS_DIR}
+    unknown = [kind for kind in kinds if kind.lower() not in valid]
+    if unknown:
+        logger.warn(
+            f"--only aceita apenas {', '.join(sorted(valid))}; recebi {', '.join(unknown)}"
+        )
+        return 2
+
+    try:
+        logger.step(f"Lendo o perfil {profile}")
+        listing = ig_profile_mod.list_profile(profile, cookies_file, logger)
+    except ClipperError as exc:
+        logger.warn(str(exc))
+        return 1
+
+    chosen = archive_mod.select_items(listing, kinds=kinds, limit=max_items)
+    if not chosen:
+        logger.warn("O filtro --only/--max-items nao deixou nenhum item para baixar.")
+        return 1
+
+    listing_shown = ig_profile_mod.ProfileListing(
+        username=listing.username, title=listing.title, items=chosen, pages=listing.pages
+    )
+    logger.step(f"Baixando {len(chosen)} item(ns) para {config.output_dir}")
+
+    try:
+        summary = archive_mod.archive_profile(
+            listing_shown, config.output_dir, config, logger
+        )
+    except KeyboardInterrupt:
+        # The archive is resumable by construction: what landed on disk stays.
+        logger.warn("Interrompido. Rode de novo para continuar de onde parou.")
+        return 130
+
+    if not config.quiet:
+        print()
+        for line in summary.lines():
+            print(line)
+    if summary.failed:
+        logger.warn(f"{summary.failed} item(ns) falharam; rode de novo para tentar so eles.")
+    return 1 if summary.failed and not summary.downloaded else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     # First thing: a redirected stdout on Windows is cp1252, and one combining
     # mark in a video title would otherwise kill the run with UnicodeEncodeError.
@@ -567,11 +665,20 @@ def main(argv: list[str] | None = None) -> int:
         logger.warn(str(exc))
         return 2
 
-    if not config.url and not args.batch:
-        logger.warn("Informe uma URL ou use --batch ARQUIVO.")
+    if not config.url and not args.batch and not args.profile:
+        logger.warn("Informe uma URL, use --batch ARQUIVO ou use --profile @conta.")
         return 2
-    if config.url and args.batch:
-        logger.warn("Use --batch sem URL: o arquivo ja traz as URLs.")
+    if config.url and (args.batch or args.profile):
+        logger.warn("Use --profile sozinho, sem URL: a conta ja traz tudo.")
+        return 2
+    if args.batch and args.profile:
+        logger.warn("Escolha --batch (lista de URLs) ou --profile (catalogo de uma conta).")
+        return 2
+    if args.profile and not args.cookies_file:
+        logger.warn(
+            "--profile exige --cookies: o Instagram so devolve o catalogo para "
+            "uma sessao autenticada. Exporte os cookies para um cookies.txt."
+        )
         return 2
 
     try:
@@ -586,6 +693,16 @@ def main(argv: list[str] | None = None) -> int:
         logger.info(
             f"Ranker semantico: {config.ranker_model} "
             f"(top {config.ranker_top_n}, peso {config.ranker_weight:.2f})"
+        )
+
+    if args.profile:
+        return run_profile_mode(
+            config,
+            args.profile,
+            args.cookies_file,
+            logger,
+            only=args.only_kinds,
+            max_items=args.max_items,
         )
 
     if args.batch:

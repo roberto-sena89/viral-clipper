@@ -349,7 +349,8 @@ class ScrapResultsTests(unittest.TestCase):
         from unittest import mock
 
         with mock.patch.object(server.download_mod, "fetch_metadata", fake):
-            results, title = server._scrap_results(options)
+            results, title, removed = server._scrap_results(options)
+        seen["removed"] = removed
         return results, title, seen
 
     def test_a_single_link_becomes_one_result(self):
@@ -411,6 +412,72 @@ class ScrapResultsTests(unittest.TestCase):
     def test_a_missing_url_is_rejected(self):
         with self.assertRaises(ClipperError):
             server._scrap_results({"url": "  ", "mode": "link"})
+
+    def test_viral_lists_up_to_100_and_sorts_by_views(self):
+        """viral=true fetches the ceiling and ranks before cutting to limit."""
+        payload = {"title": "Canal", "entries": [
+            {"id": "1", "title": "Fraco", "url": "https://x/1", "view_count": 10},
+            {"id": "2", "title": "HIT", "url": "https://x/2", "view_count": 9000},
+            {"id": "3", "title": "Sem número", "url": "https://x/3"},
+            {"id": "4", "title": "Meio", "url": "https://x/4", "view_count": 500},
+        ]}
+        results, _, seen = self._run(
+            payload, {"url": "https://x/c", "mode": "profile", "limit": 2, "viral": True}
+        )
+        self.assertEqual([r["title"] for r in results], ["HIT", "Meio"])
+        self.assertIn("100", seen["args"])
+
+    def test_without_viral_the_feed_order_is_kept(self):
+        payload = {"title": "Canal", "entries": [
+            {"id": "1", "title": "Fraco", "url": "https://x/1", "view_count": 10},
+            {"id": "2", "title": "HIT", "url": "https://x/2", "view_count": 9000},
+        ]}
+        results, _, seen = self._run(
+            payload, {"url": "https://x/c", "mode": "profile", "limit": 2}
+        )
+        self.assertEqual([r["title"] for r in results], ["Fraco", "HIT"])
+        self.assertIn("2", seen["args"])
+
+    def test_a_repeated_id_is_listed_once(self):
+        """The extractor may repeat an item across pages/tabs."""
+        payload = {"title": "Canal", "entries": [
+            {"id": "1", "title": "A", "url": "https://x/1"},
+            {"id": "1", "title": "A", "url": "https://x/1"},
+            {"id": "2", "title": "B", "url": "https://x/2"},
+        ]}
+        results, _, seen = self._run(
+            payload, {"url": "https://x/c", "mode": "profile"}
+        )
+        self.assertEqual([r["title"] for r in results], ["A", "B"])
+        self.assertEqual(seen["removed"], 1)
+
+    def test_a_repost_keeps_the_take_with_more_views(self):
+        """Same normalised title + same duration under another id = repost."""
+        payload = {"title": "Canal", "entries": [
+            {"id": "1", "title": "Declaração positiva existe! #a #b",
+             "url": "https://x/1", "duration": 85, "view_count": 231},
+            {"id": "2", "title": "declaracao positiva existe @x",
+             "url": "https://x/2", "duration": 85, "view_count": 907},
+        ]}
+        results, _, seen = self._run(
+            payload, {"url": "https://x/c", "mode": "profile"}
+        )
+        self.assertEqual([r["id"] for r in results], ["2"])
+        self.assertEqual(seen["removed"], 1)
+
+    def test_episodes_of_a_series_are_not_merged(self):
+        """'parte 2' vs 'parte 3' differ after normalisation: both stay."""
+        payload = {"title": "Canal", "entries": [
+            {"id": "1", "title": "Mentiras premiadas parte 2",
+             "url": "https://x/1", "duration": 84, "view_count": 100},
+            {"id": "2", "title": "Mentiras premiadas parte 3",
+             "url": "https://x/2", "duration": 84, "view_count": 200},
+        ]}
+        results, _, seen = self._run(
+            payload, {"url": "https://x/c", "mode": "profile"}
+        )
+        self.assertEqual(len(results), 2)
+        self.assertEqual(seen["removed"], 0)
 
     def test_a_whole_command_line_is_split_into_argv(self):
         """A single string must not be exploded into one argument per character.
@@ -825,6 +892,294 @@ class SelectedDownloadTests(unittest.TestCase):
         server._publish_download(percent=42.0)
         record = self._record()
         self.assertEqual((record["state"], record["total"], record["percent"]), ("baixando", 7, 42.0))
+
+
+class ArchiveProgressTests(unittest.TestCase):
+    """O painel de arquivamento: percentual, linha corrente e log completo.
+
+    O arquivamento de perfil e a unica rota que baixa *muitos* itens sem a
+    lista na tela, entao a pagina so sabe o que acontece pelo record publicado.
+    Estes testes travam o que a pagina precisa: a % de trabalho executado, a
+    ultima linha do yt-dlp (detalhe da requisicao) e o transcript inteiro que
+    alimenta o painel recolhivel.
+    """
+
+    def setUp(self):
+        with server._lock:
+            server._state[server._ARCHIVE_SLOT] = None
+
+    def _record(self) -> dict:
+        with server._lock:
+            return dict(server._state[server._ARCHIVE_SLOT] or {})
+
+    def _run_worker(self, *, folders=("reels", "posts"), script=None,
+                    on_line_lines=(), progress=(), summary=None,
+                    explode=None) -> list[dict]:
+        """Run the archive worker inline, capturing the record after each event.
+
+        Returns the record as the page would have painted it after every
+        progress callback, plus the final record at the end. Corpos de classe
+        nao enxergam o escopo da funcao, entao tudo que depende de ``folders``
+        e montado fora das classes fake.
+        """
+        from unittest import mock
+
+        from viralclipper import archive as archive_mod
+        from viralclipper import ig_profile as ig_profile_mod
+
+        if script is None:
+            script = ([("line", line) for line in on_line_lines]
+                      + [("progress", step) for step in progress])
+
+        class FakeItem:
+            def __init__(self, folder, url, code):
+                self.folder = folder
+                self.url = url
+                self.code = code
+
+        items = [FakeItem(folder, "https://x/%d" % n, "c%d" % n)
+                 for n, folder in enumerate(folders)]
+
+        class FakeListing:
+            username = "perfil_teste"
+            title = "Teste"
+            pages = 1
+
+        FakeListing.items = items
+
+        class FakeSummary:
+            username = "perfil_teste"
+            root = server.REPO_ROOT / "output" / "instagram" / "perfil_teste"
+            errors = []
+
+            def __init__(self):
+                self.total = len(items)
+                self.downloaded = len(items)
+                self.skipped = 0
+                self.failed = 0
+                self.photos = 0
+                self.reels = len([f for f in folders if f == "reels"])
+                self.posts = len([f for f in folders if f == "posts"])
+
+            def lines(self):
+                return ["resumo"]
+
+        seen: list[dict] = []
+
+        def fake_archive(listing, destination, config, logger, *, on_progress=None,
+                         on_line=None, **kwargs):
+            # `script` reproduz a ordem real do archive.py: notify("item")
+            # antes de baixar, linhas do yt-dlp durante, notify("done") no fim.
+            # Sem ele, uma linha nunca apareceria antes do primeiro item.
+            for kind, payload in script:
+                if kind == "progress":
+                    on_progress(*payload)
+                else:
+                    on_line(payload)
+                seen.append(self._record())
+            if explode is not None:
+                raise explode
+            return summary if summary is not None else FakeSummary()
+
+        logger = server.CollectingLogger()
+        with mock.patch.object(ig_profile_mod, "list_profile", lambda *a, **k: FakeListing()), \
+             mock.patch.object(archive_mod, "archive_profile", fake_archive):
+            server._archive_worker("perfil_teste", "cookies.txt", list(folders), None, logger)
+        seen.append(self._record())
+        return seen
+
+    def test_each_ytdlp_line_is_published_so_the_page_can_echo_it(self):
+        lines = (
+            "[download]   0.5% of  12.00MiB at  1.2MiB/s",
+            "[download]  54.9% of  12.00MiB at  2.4MiB/s",
+        )
+        seen = self._run_worker(on_line_lines=lines)
+        # A pagina pinta a ultima linha do yt-dlp (detalhe da requisicao)...
+        self.assertEqual(seen[0]["current_line"], lines[0])
+        self.assertEqual(seen[1]["current_line"], lines[1])
+        # ...mas guarda o transcript inteiro pro painel de logs.
+        self.assertEqual(seen[1]["archive_lines"], list(lines))
+
+    def test_the_worker_reports_the_percentage_of_work_done(self):
+        # `position` e o item NA MAO (o notify do archive dispara antes de
+        # baixar), entao o percentual so conta itens ja fechados. Com 3 itens:
+        # item 1 na mao = 0%, item 2 na mao com o 1 fechado = 33.3%, e o "done"
+        # do ultimo fecha os 100%.
+        seen = self._run_worker(
+            folders=("reels", "posts", "reels"),
+            script=[
+                ("progress", (1, 3, "c0", "item")),
+                ("progress", (1, 3, "c0", "done")),
+                ("progress", (2, 3, "c1", "item")),
+                ("progress", (3, 3, "c2", "done")),
+            ],
+        )
+        self.assertEqual([r["percent"] for r in seen[:4]],
+                         [0.0, 33.3, 33.3, 100.0])
+        self.assertEqual([r["index"] for r in seen[:4]], [1, 1, 2, 3])
+        self.assertEqual(seen[0]["state"], "baixando")
+
+    def test_a_ytdlp_line_moves_the_bar_inside_the_current_item(self):
+        # Sem isso a barra congela enquanto um reel longo baixa: o item so
+        # fecha no fim, e com 4 itens o salto seria de 25%.
+        seen = self._run_worker(
+            folders=("reels", "posts", "reels", "posts"),
+            script=[
+                ("progress", (1, 4, "c0", "item")),
+                ("line", "[download]  50.0% of  10.00MiB at  1.0MiB/s"),
+            ],
+        )
+        # O notify do item abre em 0%; a linha com 50% do item=12.5% do total.
+        self.assertEqual(seen[0]["percent"], 0.0)
+        self.assertEqual(seen[1]["percent"], 12.5)
+        self.assertEqual(seen[1]["item_fraction"], 0.5)
+        self.assertEqual(seen[1]["current_line"],
+                         "[download]  50.0% of  10.00MiB at  1.0MiB/s")
+
+    def test_a_new_item_resets_the_progress_of_the_previous_one(self):
+        # Se o pedaco do item anterior vazasse, a barra andaria para tras.
+        seen = self._run_worker(
+            folders=("reels", "posts", "reels", "posts"),
+            script=[
+                ("progress", (1, 4, "c0", "item")),
+                ("line", "[download]  90.0% of  10.00MiB"),
+                ("progress", (2, 4, "c1", "item")),
+                ("line", "[download]  10.0% of  10.00MiB"),
+            ],
+        )
+        # A ultima entrada e o record final do worker (concluido, 100%).
+        self.assertEqual([r["percent"] for r in seen[:4]], [0.0, 22.5, 25.0, 27.5])
+        self.assertEqual(seen[-1]["percent"], 100.0)
+
+    def test_the_bar_never_goes_backwards_between_item_and_line(self):
+        seen = self._run_worker(
+            folders=("reels", "posts", "reels", "posts"),
+            script=[
+                ("progress", (1, 4, "c0", "item")),
+                ("progress", (1, 4, "c0", "done")),
+                ("progress", (2, 4, "c1", "item")),
+            ],
+        )
+        percents = [r["percent"] for r in seen[:3]]
+        self.assertEqual(percents, [0.0, 25.0, 25.0])
+
+    def test_a_finished_run_keeps_the_whole_log_in_the_record(self):
+        lines = ("[*] listando", "[download]  10.0% of 5.00MiB", "  baixados : 2")
+        seen = self._run_worker(on_line_lines=lines)
+        final = seen[-1]
+        self.assertEqual(final["state"], "concluido")
+        self.assertEqual(final["percent"], 100.0)
+        self.assertFalse(final["active"])
+        self.assertEqual(final["archive_lines"], list(lines))
+
+    def test_a_failure_keeps_the_lines_it_managed_to_produce(self):
+        lines = ("[download]  10.0% of 5.00MiB",)
+        seen = self._run_worker(on_line_lines=lines, explode=ClipperError("caiu"))
+        final = seen[-1]
+        self.assertEqual(final["state"], "erro")
+        self.assertEqual(final["archive_lines"], list(lines))
+        self.assertIn("caiu", final["error"])
+
+    def test_the_record_starts_idle_with_the_log_fields_the_page_reads(self):
+        record = server._archive_record()
+        self.assertEqual(record["state"], "ocioso")
+        self.assertEqual(record["archive_lines"], [])
+        self.assertEqual(record["current_line"], "")
+        self.assertEqual(record["percent"], 0.0)
+
+    def test_viral_order_keeps_the_most_engaged_per_folder(self):
+        """order="viral" sorts by engagement before the per-folder cap."""
+        from viralclipper import archive as archive_mod
+        from viralclipper import ig_profile as ig_profile_mod
+
+        def item(code, folder, plays, likes):
+            return ig_profile_mod.ProfileItem(
+                code=code, url=f"https://x/{code}",
+                folder=folder,
+                kind="reel" if folder == "reels" else "video",
+                media_type=2, play_count=plays, like_count=likes)
+
+        listing = ig_profile_mod.ProfileListing(username="u", items=[
+            item("novo-fraco", "reels", 10, 1),
+            item("antigo-hit", "reels", 9000, 500),
+            item("post-hit", "posts", 7000, 300),
+            item("post-fraco", "posts", 5, 0),
+        ])
+        got = archive_mod.select_items(listing, limit=1, order="viral")
+        self.assertEqual([i.code for i in got], ["antigo-hit", "post-hit"])
+        recent = archive_mod.select_items(listing, limit=1)
+        self.assertEqual([i.code for i in recent], ["novo-fraco", "post-hit"])
+
+
+class ArchiveLogPageTests(unittest.TestCase):
+    """O painel de logs existe no HTML e o JS o mantem acessivel."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = (server.REPO_ROOT / "web" / "scrap.html").read_text(encoding="utf-8")
+
+    def test_the_log_panel_markup_is_wired_to_the_progress_box(self):
+        for fragment in (
+            'id="archive-log"',
+            'id="archive-log-head"',
+            'id="archive-log-body"',
+            'id="archive-log-count"',
+            'aria-controls="archive-log-body"',
+        ):
+            self.assertIn(fragment, self.html, fragment)
+
+    def test_the_head_toggles_the_body_and_never_hides_the_panel(self):
+        # Recolher so esconde o corpo: o cabecalho continua clicavel, entao o
+        # log nao fica inacessivel quando o download termina.
+        self.assertIn("function setArchiveLogOpen(open)", self.html)
+        self.assertIn("archiveLogUserToggled", self.html)
+        self.assertNotIn("wrap.hidden = !open", self.html)
+
+    def test_the_page_echoes_the_current_line_while_downloading(self):
+        self.assertIn("record.current_line", self.html)
+        self.assertIn("record.archive_lines", self.html)
+
+
+class ViralOptionPageTests(unittest.TestCase):
+    """O "mais viralizados" existe nos dois paineis e chega ao servidor."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = (server.REPO_ROOT / "web" / "scrap.html").read_text(encoding="utf-8")
+
+    def test_the_option_exists_on_search_and_archive(self):
+        for fragment in (
+            'id="btn-viral"',
+            'id="btn-arq-viral"',
+            "aria-pressed",
+            "payload.viral",
+            '"viral"',
+            "updateArchiveVisibility",
+        ):
+            self.assertIn(fragment, self.html, fragment)
+
+
+class SearchLoadingTests(unittest.TestCase):
+    """O "Buscando" é um skeleton animado, não um parágrafo estático."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = (server.REPO_ROOT / "web" / "scrap.html").read_text(encoding="utf-8")
+
+    def test_the_search_state_is_a_skeleton(self):
+        for fragment in (
+            "function renderSearching()",
+            'class="search-loading"',
+            'class="search-loading-track"',
+            'class="skel-card"',
+            'role="status"',
+        ):
+            self.assertIn(fragment, self.html, fragment)
+
+    def test_the_skeleton_is_shown_and_cleared_by_search(self):
+        self.assertIn("renderSearching();", self.html)
+        # A resposta (ou o erro) pinta por cima: nada de skeleton residual.
+        self.assertNotIn("<p class=\"empty\">Buscando", self.html)
 
 
 class ScrapSelectionPageTests(unittest.TestCase):

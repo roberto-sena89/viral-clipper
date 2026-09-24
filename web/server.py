@@ -16,6 +16,7 @@ from __future__ import annotations
 import html
 import json
 import threading
+import unicodedata
 import webbrowser
 from http import server as http_server
 from pathlib import Path
@@ -27,6 +28,7 @@ WEB_DIR = Path(__file__).resolve().parent
 
 # Import the package itself; the server must run from the repo root so
 # `viralclipper` resolves, but __file__ lets us be explicit.
+import re
 import sys
 sys.path.insert(0, str(REPO_ROOT))
 
@@ -324,8 +326,11 @@ def _ytdlp_argv(raw: object) -> list[str]:
     return argv
 
 
-def _scrap_results(payload: dict) -> tuple[list[dict], str]:
+def _scrap_results(payload: dict) -> tuple[list[dict], str, int]:
     """Expand a link or a profile into a list of downloadable videos.
+
+    Returns (results, title, removed): ``removed`` counts the repeated videos
+    dropped from a profile listing (same id, or same title + duration).
 
     Two modes, and the difference is one yt-dlp flag:
 
@@ -360,6 +365,7 @@ def _scrap_results(payload: dict) -> tuple[list[dict], str]:
         meta = download_mod.fetch_metadata(url, config)
         entries = [meta]
         title = str(meta.get("title") or "")
+        removed = 0
     else:
         # Only reach here for a profile-shaped URL. A bare profile name is
         # accepted too, but a full URL is what yt-dlp can resolve without
@@ -369,7 +375,12 @@ def _scrap_results(payload: dict) -> tuple[list[dict], str]:
             limit = max(1, min(int(limit), 100)) if limit is not None else 20
         except (TypeError, ValueError):
             limit = 20
-        config.extra_ytdlp_args += ["--flat-playlist", "--playlist-end", str(limit)]
+        # "Mais viralizados": lista até o teto (100) e ordena por views antes
+        # de cortar no limite pedido — sem isso o corte traria os N primeiros
+        # do feed, não os N maiores. Sem a flag o custo é o de sempre.
+        viral = bool(payload.get("viral"))
+        fetch_end = 100 if viral else limit
+        config.extra_ytdlp_args += ["--flat-playlist", "--playlist-end", str(fetch_end)]
         tab_url = _with_videos_tab(url)
         info = download_mod.fetch_metadata(tab_url, config)
         entries = list(info.get("entries") or [])
@@ -382,12 +393,20 @@ def _scrap_results(payload: dict) -> tuple[list[dict], str]:
                 flattened.extend(e for e in (entry.get("entries") or []) if isinstance(e, dict))
             elif isinstance(entry, dict):
                 flattened.append(entry)
-        entries = flattened[:limit]
+        entries = flattened[:fetch_end]
+        # Repetidos fora antes de qualquer corte: o extrator repete o mesmo
+        # id entre páginas e reposts dividem título + duração. Sem isso o
+        # limite de N itens vinha com furos e a ordem viral ranqueava cópias.
+        entries, removed = _dedupe_entries(entries)
         # The request language that keeps the titles readable also localizes the
         # counts, and yt-dlp reads "57 mi de visualizações" as 57. The repair is
         # one extra listing in English, merged by id; when it fails the list
-        # still works, just with the numbers YouTube wrote in words.
+        # still works, just with the numbers YouTube wrote in words. Repair
+        # runs BEFORE the viral sort, or the ranking would use broken numbers.
         download_mod.repair_view_counts(entries, tab_url, config)
+        if viral:
+            entries.sort(key=_viral_rank)
+        entries = entries[:limit]
 
     results = []
     for index, entry in enumerate(entries, start=1):
@@ -416,7 +435,83 @@ def _scrap_results(payload: dict) -> tuple[list[dict], str]:
                 "_ytdlp_args": list(config.extra_ytdlp_args),
             }
         )
-    return results, title
+    return results, title, removed
+
+
+def _normalise_title(text: object) -> str:
+    """Canonical title for repost detection: no accents, no case, no tags.
+
+    Links, @mentions and #hashtags are dropped because a repost usually keeps
+    the sentence and changes the tags. "Parte 2" vs "parte 3" still differ,
+    so episodes of a series are NOT merged — only true reposts are.
+    """
+    base = unicodedata.normalize(
+        "NFKD", str(text if text is not None else ""))
+    base = "".join(ch for ch in base if not unicodedata.combining(ch))
+    base = base.lower()
+    base = re.sub(r"https?://\S+|@\w+|#\w+", " ", base)
+    base = re.sub(r"[^a-z0-9 ]+", " ", base)
+    return re.sub(r"\s+", " ", base).strip()
+
+
+def _dedupe_entries(entries: list[dict]) -> tuple[list[dict], int]:
+    """Drop repeated videos from a profile listing.
+
+    Two levels, in order:
+
+    1. Same id (or same URL when there is no id): the extractor repeated the
+       item across pages/tabs. Keeps the first occurrence.
+    2. Same normalised title AND same whole-second duration: a repost under
+       another id. Keeps the highest view_count, so the surviving take is the
+       one that performed best.
+
+    Returns (unique_entries, removed_count). Non-dict items pass through.
+    """
+    unique: list[dict] = []
+    removed = 0
+    seen_ids: set[str] = set()
+    seen_content: dict[tuple[str, int | None], int] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            unique.append(entry)
+            continue
+        key = str(entry.get("id") or entry.get("webpage_url") or entry.get("url") or "")
+        if key and key in seen_ids:
+            removed += 1
+            continue
+        if key:
+            seen_ids.add(key)
+        title = _normalise_title(entry.get("title"))
+        duration = entry.get("duration")
+        bucket = round(float(duration)) if isinstance(duration, (int, float)) else None
+        if title:
+            sig = (title, bucket)
+            if sig in seen_content:
+                removed += 1
+                previous = unique[seen_content[sig]]
+                if isinstance(previous, dict):
+                    cur_views = entry.get("view_count")
+                    prev_views = previous.get("view_count")
+                    cur_num = cur_views if isinstance(cur_views, (int, float)) else None
+                    prev_num = prev_views if isinstance(prev_views, (int, float)) else None
+                    if cur_num is not None and (prev_num is None or cur_num > prev_num):
+                        unique[seen_content[sig]] = entry
+                continue
+            seen_content[sig] = len(unique)
+        unique.append(entry)
+    return unique, removed
+
+
+def _viral_rank(entry: dict) -> float:
+    """Sort key for "most viral first": negated view count, unknowns last.
+
+    A missing count ranks below an explicit zero — zero means "flopped",
+    missing means "the extractor did not say".
+    """
+    views = entry.get("view_count") if isinstance(entry, dict) else None
+    if not isinstance(views, (int, float)):
+        return 1.0
+    return -views
 
 
 def _as_float(value) -> float | None:
@@ -477,6 +572,226 @@ def _relative_to_repo(path: Path | None) -> str:
 #: over the same file names and double the load on a site that already throttles;
 #: the page posts, gets the job and then follows it.
 _DOWNLOAD_SLOT = "download"
+
+#: Same single-slot rule for the profile archive: one catalogue at a time, so
+#: two runs never interleave files in output/instagram/ nor double the GraphQL
+#: pressure on Instagram. The page polls /scrap/archive/progress like it does
+#: for the selection download.
+_ARCHIVE_SLOT = "archive"
+
+
+def _archive_record(**fields) -> dict:
+    """The state the arquivar-box paints while a profile archive runs.
+
+    Mirrors _download_record on purpose: the page polls it the same way and
+    reads the same core keys (active/state/phase/total/index/title/percent),
+    plus the archive counters (reels/posts/photos/skipped/failed/downloaded).
+    """
+    record = {
+        "active": False,
+        "state": "ocioso",  # ocioso | listando | baixando | concluido | erro
+        "phase": "",  # listando | item | bytes | skipped | photo | failed | done
+        "total": 0,
+        "index": 0,
+        "title": "",
+        "percent": 0.0,
+        "item_fraction": 0.0,  # 0..1 progress inside the item being downloaded
+        "current_line": "",  # the last yt-dlp line, so the page can echo it
+        "archive_lines": [],  # every yt-dlp line, in order, for the log panel
+        "items": [],  # one {code, folder, kind, thumb} per chosen item, for the cards
+        "item_states": [],  # parallel phases ("", item, done, skipped, photo, failed)
+        "downloaded": 0,
+        "skipped": 0,
+        "failed": 0,
+        "photos": 0,
+        "reels": 0,
+        "posts": 0,
+        "username": "",
+        "root": "",
+        "lines": [],
+        "errors": [],
+        "error": "",
+    }
+    record.update(fields)
+    return record
+
+
+#: Marca "deixe este campo como esta". Um `None` cru apagaria o valor no
+#: merge abaixo (record.update), e nem todo publish quer tocar em todo campo.
+_UNSET = object()
+
+
+def _publish_archive(**fields) -> None:
+    """Merge fields into the archive record, under the lock."""
+    clean = {k: v for k, v in fields.items() if v is not _UNSET}
+    with _lock:
+        record = dict(_state.get(_ARCHIVE_SLOT) or _archive_record())
+        record.update(clean)
+        _state[_ARCHIVE_SLOT] = record
+
+
+def _archive_worker(
+    profile: str,
+    cookies_file: str,
+    kinds: list[str],
+    limit: int | None,
+    logger: CollectingLogger,
+    order: str = "recent",
+) -> None:
+    """Run one profile archive off the request thread, publishing progress.
+
+    Never raises: like _download_worker, the record is the channel and a dead
+    thread would leave the page stuck on "Baixando…".
+    """
+    from viralclipper import archive as archive_mod
+    from viralclipper import ig_profile as ig_profile_mod
+
+    _publish_archive(active=True, state="listando", phase="listando",
+                     title=f"@{profile}", percent=0.0, index=0, total=0)
+    try:
+        listing = ig_profile_mod.list_profile(profile, cookies_file, logger)
+    except ClipperError as exc:
+        _publish_archive(active=False, state="erro", error=str(exc),
+                         lines=logger.lines)
+        return
+    except Exception as exc:  # noqa: BLE001 - a thread must not die silently
+        _publish_archive(active=False, state="erro", error=f"{exc!r}",
+                         lines=logger.lines)
+        return
+
+    chosen = archive_mod.select_items(listing, kinds=kinds, limit=limit, order=order)
+    if not chosen:
+        _publish_archive(
+            active=False, state="erro",
+            error="o filtro não deixou nenhum item para baixar",
+            lines=logger.lines, username=listing.username,
+        )
+        return
+
+    root = (REPO_ROOT / "output" / "instagram").resolve()
+    destination = root / archive_mod.safe_slug(
+        listing.username, fallback="perfil", limit=40
+    )
+    total = len(chosen)
+    # Cards da pagina: um retrato por item (codigo, pasta, tem-capa?) mais o
+    # estado de cada um. As URLs das capas ficam fora do record — CDN expira
+    # e a pagina busca os bytes em /scrap/archive/thumb por indice.
+    # getattr porque os fakes de teste nao tem todos os campos.
+    snapshots = [
+        {
+            "code": getattr(item, "code", "") or getattr(item, "pk", ""),
+            "folder": getattr(item, "folder", ""),
+            "kind": getattr(item, "kind", ""),
+            "thumb": bool(getattr(item, "thumbnail", "")),
+        }
+        for item in chosen
+    ]
+    with _lock:
+        _state["archive_items_full"] = [
+            {
+                "code": snap["code"],
+                "thumbnail": getattr(item, "thumbnail", "") or "",
+            }
+            for snap, item in zip(snapshots, chosen)
+        ]
+    states = [""] * total
+    _publish_archive(active=True, state="baixando", phase="item", total=total,
+                     index=0, percent=0.0, username=listing.username,
+                     title=f"@{listing.username} · {total} itens",
+                     root=_relative_to_repo(destination),
+                     items=snapshots, item_states=list(states))
+
+    archive_lines: list[str] = []
+    #: Fracao 0..1 do item que esta na mao, lida das linhas do yt-dlp. O notify
+    #: do archive marca `position` como o item ATUAL (nao o fechado), entao
+    #: position/total sozinho adianta a barra e a faz pular de item em item.
+    inner = 0.0
+
+    def progress(position: int, _total: int, code: str, phase: str) -> None:
+        # `position` e o item na mao, nao o fechado. Publicar o limite inferior
+        # (itens ja fechados) e deixar o on_line somar o pedaco do item atual:
+        # assim a barra nunca anda para tras quando um item novo comeca.
+        nonlocal inner
+        fresh = phase in ("item", "bytes")
+        if fresh:
+            inner = 0.0  # item novo: o progresso do anterior nao vale mais
+        closed = max(0, position - 1) if fresh else position
+        done = min(1.0, closed / total) if total else 0.0
+        if 1 <= position <= len(states):
+            states[position - 1] = phase
+        # Em item novo a linha do yt-dlp tambem e nova: zerar o current_line
+        # evita mostrar o "99.0% of ..." do item anterior junto com frac 0.
+        _publish_archive(index=position, title=code, phase=phase,
+                         percent=round(done * 100.0, 1),
+                         item_fraction=round(inner, 4),
+                         current_line="" if fresh else _UNSET,
+                         item_states=list(states))
+
+    def on_line(line: str) -> None:
+        # yt-dlp rewrites its progress in place with carriage returns; echo the
+        # latest line so the page can show "1 de 20 · 54.9% of 230.98MiB"
+        # instead of freezing the bar while one long reel downloads. Keep every
+        # line too: the collapsible log panel shows the whole transcript of the
+        # download, not just the last one.
+        nonlocal inner
+        match = re.search(r"(\d+(?:[.,]\d+)?)\s*%", line or "")
+        if match:
+            try:
+                inner = max(0.0, min(1.0, float(match.group(1).replace(",", ".")) / 100.0))
+            except ValueError:
+                pass
+        archive_lines.append(line)
+        # A barra tambem anda por dentro do item: republica o percentual sem
+        # esperar o proximo notify, senao um reel longo congela a UI.
+        idx = _state.get(_ARCHIVE_SLOT, {}).get("index", 0)
+        if total and match:
+            done = min(1.0, (max(0, idx - 1) + inner) / total)
+            _publish_archive(percent=round(done * 100.0, 1), item_fraction=round(inner, 4),
+                             current_line=line, archive_lines=list(archive_lines))
+        else:
+            _publish_archive(current_line=line, archive_lines=list(archive_lines))
+
+    try:
+        config = _options_to_config(
+            {"url": "", "output": str(destination),
+             "cookies_file": cookies_file}
+        )
+        summary = archive_mod.archive_profile(
+            ig_profile_mod.ProfileListing(
+                username=listing.username, title=listing.title,
+                items=chosen, pages=listing.pages,
+            ),
+            destination, config, logger, on_progress=progress,
+            on_line=on_line,
+        )
+    except ClipperError as exc:
+        _publish_archive(active=False, state="erro", error=str(exc),
+                         lines=logger.lines, archive_lines=list(archive_lines))
+        return
+    except Exception as exc:  # noqa: BLE001 - surface anything to the UI
+        _publish_archive(active=False, state="erro", error=f"{exc!r}",
+                         lines=logger.lines, archive_lines=list(archive_lines))
+        return
+
+    _publish_archive(
+        active=False,
+        state="concluido",
+        phase="done",
+        index=total,
+        percent=100.0,
+        total=summary.total,
+        downloaded=summary.downloaded,
+        skipped=summary.skipped,
+        failed=summary.failed,
+        photos=summary.photos,
+        reels=summary.reels,
+        posts=summary.posts,
+        username=summary.username,
+        root=_relative_to_repo(summary.root),
+        lines=summary.lines(),
+        errors=[{"item": name, "error": error} for name, error in summary.errors],
+        archive_lines=list(archive_lines),
+    )
 
 
 def _download_record(**fields) -> dict:
@@ -583,6 +898,44 @@ def _scrap_thumb(item: dict) -> str | None:
             tmp.write_bytes(blob)
             tmp.replace(target)
         return f"/thumb/{quote(target.name)}"
+    except Exception:  # noqa: BLE001 - decoration must never break the list
+        return None
+
+
+def _archive_thumb_path(position: int) -> Path | None:
+    """Cached thumbnail file of the ``position``-th archived item, or None.
+
+    Never raises: a capa e decoracao — um CDN expirado ou um item sem
+    thumbnail deixa o card sem imagem, nunca derruba a lista.
+    """
+    try:
+        with _lock:
+            full = list(_state.get("archive_items_full") or [])
+            username = (_state.get(_ARCHIVE_SLOT) or {}).get("username", "") or "perfil"
+        if not 0 <= position < len(full):
+            return None
+        entry = full[position]
+        url = str(entry.get("thumbnail") or "").strip()
+        if not url.startswith("http"):
+            return None
+        safe = "".join(
+            ch for ch in f"arch-{username}-{entry.get('code', '')}"
+            if ch.isalnum() or ch in "-_"
+        )[:64]
+        if not safe:
+            return None
+        target = _thumb_dir() / f"{safe}.jpg"
+        if not target.is_file():
+            request = Request(
+                url, headers={"User-Agent": "Mozilla/5.0", "Accept": "image/*"})
+            with urlopen(request, timeout=20) as response:  # noqa: S310 - url came from Instagram
+                blob = response.read(_THUMB_MAX_BYTES)
+            if not blob:
+                return None
+            tmp = target.with_suffix(".jpg.part")
+            tmp.write_bytes(blob)
+            tmp.replace(target)
+        return target
     except Exception:  # noqa: BLE001 - decoration must never break the list
         return None
 
@@ -789,6 +1142,21 @@ class Handler(http_server.BaseHTTPRequestHandler):
                 return
             self._send_thumb_at(position, (query.get("s") or [""])[0])
             return
+        if path == "/scrap/archive/thumb":
+            # Capa do N-esimo item do ultimo arquivamento, para os cards do
+            # progresso. Posicao em vez de id: a pagina monta o <img> direto.
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                position = int((query.get("i") or [""])[0])
+            except (TypeError, ValueError):
+                self._send_json({"error": "bad index"}, 400)
+                return
+            target = _archive_thumb_path(position)
+            if target is None or not target.is_file():
+                self._send_json({"error": "no thumbnail"}, 404)
+                return
+            self._send_file(target.read_bytes(), "image/jpeg")
+            return
         if path.startswith("/thumb/"):
             # Cached thumbnail bytes. The name is validated against the cache
             # directory itself rather than pattern-matched: ``..\..\`` and an
@@ -825,14 +1193,20 @@ class Handler(http_server.BaseHTTPRequestHandler):
         if path == "/status":
             with _lock:
                 snapshot = dict(_state)
-            # The download record has its own endpoint; keeping it out of /status
-            # leaves that payload the {jobs, clips} contract the gallery expects.
+            # The download/archive records have their own endpoints; keeping them
+            # out of /status leaves that payload the {jobs, clips} contract.
             snapshot.pop(_DOWNLOAD_SLOT, None)
+            snapshot.pop(_ARCHIVE_SLOT, None)
             self._send_json(snapshot)
             return
         if path == "/scrap/download/progress":
             with _lock:
                 record = dict(_state.get(_DOWNLOAD_SLOT) or _download_record())
+            self._send_json(record)
+            return
+        if path == "/scrap/archive/progress":
+            with _lock:
+                record = dict(_state.get(_ARCHIVE_SLOT) or _archive_record())
             self._send_json(record)
             return
         if path == "/library":
@@ -951,14 +1325,15 @@ class Handler(http_server.BaseHTTPRequestHandler):
         expired cookie or a private post reads the same in both places.
         """
         try:
-            results, title = _scrap_results(payload)
+            results, title, removed = _scrap_results(payload)
         except ClipperError as exc:
             self._send_json({"error": str(exc)}, 400)
             return
         except Exception as exc:  # noqa: BLE001 - surface anything to the UI
             self._send_json({"error": f"{exc!r}"}, 400)
             return
-        self._send_json({"title": title, "count": len(results), "results": results})
+        self._send_json({"title": title, "count": len(results), "results": results,
+                         "removed": removed})
         # Kept so /scrap/thumb can serve the k-th row by index. The page holds
         # the same list, but re-deriving it there means sending every item back
         # through the API, and the URL has to be buildable from the row alone.
@@ -972,10 +1347,10 @@ class Handler(http_server.BaseHTTPRequestHandler):
 
         Diferente de ``/scrap`` (que so lista metadados) e de ``/run`` (que
         analisa UM video e produz clipes): aqui o produto e um arquivo da conta
-        inteira. Roda sincrono como o ``/scrap``, e nao na fila do ``/run``,
-        porque o resultado que importa e quantos arquivos foram escritos e onde.
+        inteira. Responde o ACEITE e roda numa thread — um perfil com dezenas
+        de itens leva minutos, e a pagina acompanha o record em
+        ``/scrap/archive/progress`` com a barra de progresso.
         """
-        from viralclipper import archive as archive_mod
         from viralclipper import ig_profile as ig_profile_mod
 
         profile = str(payload.get("profile") or "").strip()
@@ -1006,65 +1381,37 @@ class Handler(http_server.BaseHTTPRequestHandler):
         except (TypeError, ValueError):
             limit = None
 
-        logger = CollectingLogger()
-        root = (REPO_ROOT / "output" / "instagram").resolve()
-        try:
-            listing = ig_profile_mod.list_profile(profile, cookies_file, logger)
-        except ClipperError as exc:
-            self._send_json({"error": str(exc), "log_lines": logger.lines}, 400)
-            return
-        except Exception as exc:  # noqa: BLE001 - surface anything to the UI
-            self._send_json({"error": f"{exc!r}", "log_lines": logger.lines}, 400)
-            return
-
-        chosen = archive_mod.select_items(listing, kinds=kinds, limit=limit)
-        if not chosen:
+        order = str(payload.get("order") or "").strip().lower()
+        if order not in ("", "recent", "viral"):
             self._send_json(
-                {"error": "o filtro não deixou nenhum item para baixar",
-                 "log_lines": logger.lines},
-                400,
+                {"error": "order aceita recent ou viral"}, 400
             )
             return
+        if not order:
+            order = "recent"
 
-        # One folder per account, so archiving two profiles never mixes files.
-        destination = root / archive_mod.safe_slug(
-            listing.username, fallback="perfil", limit=40
-        )
-        try:
-            config = _options_to_config(
-                {"url": "", "output": str(destination),
-                 "cookies_file": cookies_file}
+        with _lock:
+            current = _state.get(_ARCHIVE_SLOT) or {}
+            if current.get("active"):
+                self._send_json(
+                    {"error": "já existe um arquivamento em andamento; espere ele terminar"},
+                    409,
+                )
+                return
+            _state[_ARCHIVE_SLOT] = _archive_record(
+                active=True, state="listando", phase="listando",
+                title=f"@{profile}",
             )
-            summary = archive_mod.archive_profile(
-                ig_profile_mod.ProfileListing(
-                    username=listing.username, title=listing.title,
-                    items=chosen, pages=listing.pages,
-                ),
-                destination, config, logger,
-            )
-        except ClipperError as exc:
-            self._send_json({"error": str(exc), "log_lines": logger.lines}, 400)
-            return
-        except Exception as exc:  # noqa: BLE001 - surface anything to the UI
-            self._send_json({"error": f"{exc!r}", "log_lines": logger.lines}, 400)
-            return
 
-        self._send_json(
-            {
-                "username": summary.username,
-                "downloaded": summary.downloaded,
-                "skipped": summary.skipped,
-                "failed": summary.failed,
-                "photos": summary.photos,
-                "reels": summary.reels,
-                "posts": summary.posts,
-                "root": str(summary.root.relative_to(REPO_ROOT)).replace("\\", "/")
-                        if summary.root else "",
-                "lines": summary.lines(),
-                "errors": [{"item": name, "error": error} for name, error in summary.errors],
-                "log_lines": logger.lines,
-            }
-        )
+        logger = CollectingLogger()
+        threading.Thread(
+            target=_archive_worker,
+            args=(profile, cookies_file, kinds, limit, logger, order),
+            name="scrap-archive",
+            daemon=True,
+        ).start()
+
+        self._send_json({"started": True, "profile": profile})
 
     def _handle_selected_download(self, payload: dict) -> None:
         """Baixa exatamente os itens marcados na lista de resultados.

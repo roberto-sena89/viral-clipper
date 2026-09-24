@@ -29,8 +29,11 @@ cookies.txt
 *[Cc]ookie*.jar
 !requirements.txt
 
-# Run logs and tooling scratch
+# Run logs and tooling scratch. ``.err`` is here because the web server's
+# stderr redirect (wsrv.err) lands in the repo root next to wsrv.log and
+# would otherwise show up as an untracked file.
 *.log
+*.err
 .pytest_cache/
 .openclaw-probe-out/
 .workbuddy-ai/

@@ -34,6 +34,19 @@ stopped shipping the Haar XMLs, leaving only `FaceDetectorYN`, which needs an
 ONNX model fetched at runtime. `python reframe_check.py` reports which backend
 is actually usable.
 
+## Tests
+
+The suite runs on pytest from the same `.venv` the tool uses:
+
+```powershell
+.venv\Scripts\python -m pip install -r requirements-dev.txt
+.venv\Scripts\python -m pytest
+```
+
+`pytest.ini` pins `testpaths = tests`, so collection never walks `_scratch/`
+(the gitignored folder of one-off debug scripts) and a stale backup there
+cannot abort the run. Verified on Python 3.13.14 with pytest 9.1.1.
+
 ## Quick start
 
 ```powershell

@@ -1,0 +1,16 @@
+# Development requirements for viral-clipper.
+#
+# Everything the test suite needs, on top of the runtime requirements. The
+# suite is run with pytest from the same .venv the tool uses, so one
+# environment covers both running and testing it:
+#
+#   .venv\Scripts\python -m pip install -r requirements-dev.txt
+#   .venv\Scripts\python -m pytest
+#
+# Verified on Python 3.13.14 with pytest 9.1.1 (the interpreter in the
+# documented .venv). The floor is 8.0, which is the first line whose
+# subtests/unittest integration the suite relies on.
+
+-r requirements.txt
+
+pytest>=8.0

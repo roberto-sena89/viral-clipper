@@ -766,10 +766,15 @@ input[type="range"]::-moz-range-thumb {
   position: relative; width: 100%; height: 100%;
   border-radius: 18px; overflow: hidden; background: #000;
   display: flex; flex-direction: column;
+  /* Mesmo contrato da previa: o recorte e o POV saem daqui. Em px a partir do
+     topo da TELA — antes o notch media da moldura e o POV da faixa de video, e
+     os dois numeros so coincidiam por sorte do padding. */
+  --notch-top: 6px;
+  --notch-h: 9px;
 }
 .gal-notch {
-  position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
-  width: 42px; height: 9px; border-radius: 99px; background: #000; z-index: 5;
+  position: absolute; top: var(--notch-top); left: 50%; transform: translateX(-50%);
+  width: 42px; height: var(--notch-h); border-radius: 99px; background: #000; z-index: 5;
   border: 1px solid rgba(255, 255, 255, 0.09);
 }
 .gal-home {
@@ -779,9 +784,27 @@ input[type="range"]::-moz-range-thumb {
 .gal-band {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
   min-height: 0; min-width: 0; overflow: hidden; position: relative;
-  background: #3f3f46; border-top: 1px solid rgba(0, 0, 0, 0.45);
+  /* `flex-basis: 0` e o que faz o `flex-grow` ser a PROPORCAO da faixa. Com a
+     base automatica (o padrao) o `flex-grow` reparte so o espaco LIVRE, e o
+     conteudo de cada faixa entra fora dessa conta: a faixa do tweet, que tem
+     conteudo alto, media 46% onde a zona declarada e 34%. `min-height: 0` e
+     `overflow: hidden` (acima) ja garantem que ela nao cresca pelo conteudo —
+     faltava a base zerada para a sobra nao existir.
+
+     E `flex-basis: 0` mede a caixa de CONTEUDO: padding e borda verticais da
+     faixa entram POR CIMA da base e saem do bolo que o `flex-grow` reparte. A
+     faixa do tweet (12px de padding) ficava com 12 + 0,34 x (H - 12) = 36,6% no
+     lugar dos 34% da zona. Por isso faixa NAO leva padding nem borda vertical: o
+     respiro vai para o filho, e o separador e um `inset` que so pinta, nao ocupa
+     lugar. Sem overhead, a fracao desenhada e a fracao declarada. */
+  flex-basis: 0;
+  background: #3f3f46;
 }
-.gal-band:first-child { border-top: 0; }
+/* Separador entre faixas. `inset` e pintado DENTRO da caixa e nao entra na
+   conta do `flex-grow` — com `border-top` a faixa de baixo crescia ~2 pontos
+   alem da zona declarada. O primeiro filho fica de fora: ali o traco seria a
+   borda de cima da tela. */
+.gal-band + .gal-band { box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.45); }
 .gal-band svg { width: 18px; height: 18px; flex: none; }
 .gal-kind { font-size: 0.62rem; font-weight: 600; color: rgba(255, 255, 255, 0.85); line-height: 1.2; }
 .gal-pct {
@@ -792,30 +815,51 @@ input[type="range"]::-moz-range-thumb {
   position: absolute; top: 4px; right: 4px;
   background: rgba(0, 0, 0, 0.6); padding: 1px 6px; border-radius: 99px;
 }
-/* Composição Meme (tema escuro): POV em cima, identidade embaixo. */
-.gal-meme-pov { background: #000; padding: 5px 7px 8px; justify-content: flex-end; }
-.gal-meme-pov p {
-  margin: 0; color: #fff; font-weight: 800; font-size: 0.6rem; line-height: 1.25; text-align: center;
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+/* Composição Meme (tema escuro): POV sobreposto no topo do vídeo, identidade
+   embaixo. O POV NAO e faixa: como faixa irma ele roubava 30% da altura da zona
+   de video, e o card prometia um layout que a previa nao entrega.
+
+   E o POV nao mora dentro da faixa: ele e texto de FRAME, posicionado contra a
+   tela (o motor o queima em coordenadas do frame, nao da zona). Dentro da faixa,
+   `top` seria lido contra ela — era preciso converter a area segura em fracao da
+   faixa, e a conta errava sempre que a zona de video mudava de tamanho. */
+.gal-pov {
+  position: absolute; top: calc(var(--notch-top) + var(--notch-h) + 2px);
+  left: 4px; right: 4px; z-index: 2; margin: 0;
+  color: #fff; font-weight: 800; font-size: 0.6rem; line-height: 1.25; text-align: center;
+  /* 4 linhas, nao 3: com 3 o `clamp` cortava o "mais!" e o card mostrava um POV
+     que nao e o do modelo. A zona de video tem 74% da tela — sobra altura. */
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 .gal-meme-id {
   background: #000; flex-direction: row; align-items: center; justify-content: center; gap: 6px;
-  padding: 4px 8px;
+  /* Sem padding vertical: entraria na base do `flex-basis: 0` e a barra de
+     identidade mediria 28,3% onde a zona declarada e 26%. `align-items: center`
+     ja centra o avatar e o texto. */
+  padding: 0 8px;
 }
 .gal-avatar--dark { background: #3f3f46; color: #fff; width: 18px; height: 18px; font-size: 0.55rem; }
 .gal-id-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; text-align: left; }
 .gal-id-text strong { font-size: 0.58rem; color: #fff; white-space: nowrap; }
 .gal-id-text small { font-size: 0.52rem; color: rgba(255, 255, 255, 0.72); white-space: nowrap; }
-/* Faixa de gancho do Vídeo Viral: o texto que a legenda queima, entre o
-   vídeo e a imagem. Fixa — não rouba altura proporcional das zonas. */
-.gal-hook { flex: none; background: #000; padding: 5px 7px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
-.gal-hook p {
-  margin: 0; color: #fff; font-weight: 700; font-size: 0.6rem; line-height: 1.28; text-align: center;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+/* Gancho do Vídeo Viral: o texto que a legenda queima, SOBREPOSTO na base da
+   faixa de vídeo — o mesmo ponto que a prévia usa e que o motor posiciona por
+   `captionMargin`. Como faixa irmã (`flex: none`) ele tirava 12% da altura da
+   zona de vídeo, e o card mostrava 48% onde a zona declarada é 58%. */
+.gal-hook {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  background: #000; padding: 3px 6px; border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff; font-weight: 700; font-size: 0.6rem; line-height: 1.28; text-align: center;
+  /* 3 linhas: em 2 o gancho saia cortado ("...sabe po...") e o card mostrava um
+     texto que nao e o do modelo. A faixa de video tem 58% da tela — sobra. */
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
 /* Mini-tweet (tema claro) na faixa de imagem do formato X. */
-.gal-tweet-band { background: #fff; padding: 6px 7px; align-items: stretch; }
-.gal-tweet { display: flex; flex-direction: column; gap: 4px; min-height: 0; }
+/* O respiro vertical vai no FILHO, nao na faixa: padding na faixa entra na base
+   do `flex-basis: 0` e engorda a zona (ver `.gal-band`). */
+.gal-tweet-band { background: #fff; padding: 0 7px; align-items: stretch; }
+.gal-tweet { display: flex; flex-direction: column; gap: 4px; min-height: 0; padding: 6px 0; }
 .gal-tweet-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .gal-avatar {
   width: 20px; height: 20px; border-radius: 999px; flex: none;
@@ -863,10 +907,13 @@ input[type="range"]::-moz-range-thumb {
 .pv-body { margin: 2cqw 0 0; font-size: 2.8cqw; font-weight: 700; line-height: 1.3; color: #0f1419; }
 /* POV + identidade do formato Meme dentro da prévia. */
 .pv-pov {
-  /* Sem `top`: a posicao vem do JS como fracao da ALTURA (cqh), porque o motor
-     mede do topo de um frame de 1920. Em cqw o texto subia so 1,4% da altura e
-     ficava atras do notch. */
-  position: absolute; left: 5cqw; right: 5cqw; z-index: 2; margin: 0;
+  /* Abaixo do recorte, e nao na margem do headline: o POV e ilustracao do modelo
+     e precisa APARECER — o recorte e moldura do aparelho e pinta por cima. A
+     posicao sai do fundo do notch (`--notch-top` + `--notch-h`), entao mexer no
+     recorte move o texto junto em vez de deixar os dois divergirem. A legenda
+     (`.caption-band`) e que mostra a posicao real que o motor queima. */
+  position: absolute; top: calc(var(--notch-top) + var(--notch-h) + 3px);
+  left: 5cqw; right: 5cqw; z-index: 2; margin: 0;
   color: #fff; font-weight: 800; font-size: 3.4cqw; line-height: 1.25; text-align: center;
 }
 .pv-idbar {
@@ -994,10 +1041,17 @@ input[type="range"]::-moz-range-thumb {
      essas medidas saem encolhidas pela razao de aspecto do palco. Seguro aqui
      porque o palco tem tamanho definido pelo pai e todo filho e absoluto. */
   container-type: size;
+  /* Recorte do aparelho, em px a partir do topo da TELA. Uma fonte so: o notch
+     desenha a partir daqui e o POV se ancora no FUNDO dele. O POV e ilustracao
+     do modelo e precisa aparecer; o recorte pinta por cima do conteudo, e a
+     area segura do motor (4%) comeca ACIMA dele — os dois numeros sao reais e
+     conflitam, entao quem manda no POV e o recorte. */
+  --notch-top: 10px;
+  --notch-h: 17px;
 }
 .phone-notch {
-  position: absolute; top: 21px; left: 50%; transform: translateX(-50%);
-  width: 82px; height: 17px; border-radius: 99px; background: #000; z-index: 9;
+  position: absolute; top: var(--notch-top); left: 50%; transform: translateX(-50%);
+  width: 82px; height: var(--notch-h); border-radius: 99px; background: #000; z-index: 9;
   border: 1px solid rgba(255, 255, 255, 0.09); pointer-events: none;
 }
 .phone-home {

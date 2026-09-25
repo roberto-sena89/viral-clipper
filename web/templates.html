@@ -455,8 +455,12 @@
             <div class="platform-chrome" aria-hidden="true"><span id="platform-name">TikTok</span></div>
             <div class="canvas" id="canvas"></div>
             <div class="stage-guides"><div class="safe"></div></div>
+            <!-- O recorte fica DENTRO da tela: e ele que define onde o conteudo
+                 pode comecar, e o POV se ancora no fundo dele. Como irmao da
+                 tela, o `top` era medido da moldura e a posicao real do recorte
+                 so aparecia subtraindo o padding do palco. -->
+            <span class="phone-notch" aria-hidden="true"></span>
           </div>
-          <span class="phone-notch" aria-hidden="true"></span>
           <span class="phone-home" aria-hidden="true"></span>
         </div>
 

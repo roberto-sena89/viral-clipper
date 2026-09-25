@@ -126,16 +126,13 @@
   // que o motor usa — e a decoracao pousava sob o notch.
   var HEADLINE_TOP_PX = 60;
 
-  // Topo da area segura, em % da altura do frame. E o mesmo numero que o guia
-  // (`.stage-guides .safe { top: 4% }`) desenha: uma fonte so, entao o guia e a
-  // decoracao nao podem discordar sobre onde a area segura comeca.
-  //
-  // As decoracoes de formato (POV do meme) usam esta linha, e nao a margem do
-  // headline: o notch e moldura do aparelho e pinta POR CIMA do conteudo, entao
-  // texto ancorado nos 60 px do motor fica atras dele. O headline e recurso do
-  // motor e mostra a posicao real (aviso no harness); o POV e ilustracao do
-  // modelo e precisa aparecer.
-  var SAFE_TOP_PCT = 4;
+  // A area segura do motor comeca a 4% da altura do frame — o mesmo numero que o
+  // guia (`.stage-guides .safe { top: 4% }`) desenha. Mas ela fica ACIMA do fundo
+  // do recorte do aparelho, que pinta por cima do conteudo. Os dois numeros sao
+  // reais e conflitam, entao quem manda nas decoracoes de formato (o POV do meme)
+  // e o recorte: o headline mostra a posicao do motor, o POV e ilustracao do
+  // modelo e precisa APARECER. O recuo vem do CSS (`--notch-top` + `--notch-h`),
+  // nao daqui — em px de tela, sem conversao para fracao de zona.
 
   var KINDS = {
     video:    { label: "Video",    color: "#6366f1" },
@@ -307,10 +304,10 @@
   function memePov() {
     var pov = document.createElement("p");
     pov.className = "pv-pov";
-    // Topo da area segura, e nao a margem do headline: o notch e moldura do
-    // aparelho, pinta por cima do conteudo e engolia a primeira linha do POV.
-    // (Ver SAFE_TOP_PCT.)
-    pov.style.top = SAFE_TOP_PCT + "cqh";
+    // Sem `top` daqui: o recuo e o fundo do recorte do aparelho, medido em px de
+    // tela pelo CSS. O notch e moldura, pinta por cima do conteudo e engolia a
+    // primeira linha do POV — enquanto a conta viveu aqui, cada mudanca de zona
+    // movia o texto para dentro ou para fora do recorte.
     pov.textContent = "POV: Você usou o formato de meme e VIRALIZOU com 3x mais!";
     return pov;
   }
@@ -1465,14 +1462,25 @@
   };
   var GAL_SHORT = { video: "Vídeo", frame: "Frame", image: "Imagem", solid: "Cor" };
 
+  // POV do card Meme: irmão das faixas, dentro da TELA. O motor queima o texto
+  // em coordenadas do frame, não da zona, e o recorte do aparelho também é da
+  // tela — como filho da faixa de vídeo o `top` era lido contra ela, e era
+  // preciso converter a área segura em fração da faixa (a conta errava toda vez
+  // que a zona de vídeo mudava de tamanho).
+  function povOverlay() {
+    return "<span class='gal-pov'>POV: Você usou o formato de meme e " +
+      "VIRALIZOU com 3x mais!</span>";
+  }
+
   function galleryCard(key, g) {
-    // Formato Meme (tema escuro): POV em cima, vídeo no meio, identidade
-    // embaixo. As frações das zonas mandam: a zona de vídeo vira POV + vídeo.
+    // As frações das zonas mandam em tudo: cada zona vira UMA faixa, e as
+    // decorações de formato (o POV) são sobrepostas na tela.
     var bands = g.mock === "meme" ? memeBands(g) :
       g.mock === "viral" ? viralBands(g) : g.zones.map(function (z) {
       if (z.mock === "tweet") return tweetBand(z);
       return mediaBand(z);
     }).join("");
+    var overlay = g.mock === "meme" ? povOverlay() : "";
 
   // Placeholder genérico de mídia: ícone + nome + % na cor do tipo. A
   // legenda mora na faixa de vídeo: é ali que o motor a queima (margem do
@@ -1489,18 +1497,21 @@
         (z.kind === "video" ? "<span class='gal-cap'>Legenda</span>" : "") + "</div>";
   }
 
-  // Composição Meme: a zona de vídeo vira POV (30%) + vídeo (70%); a zona
-  // de imagem vira a barra de identidade escura.
+  // Composição Meme: a zona de vídeo carrega o POV SOBREPOSTO — é assim que o
+  // motor queima o texto e é assim que a prévia desenha. A zona de imagem vira
+  // a barra de identidade escura.
+  //
+  // O POV era uma faixa irmã de 30% da zona de vídeo: como faixa ele consumia
+  // altura, e o card passava a mostrar [30, 43, 26] onde as zonas declaradas são
+  // [74, 26]. Sobreposto, o card passa a bater com o modelo. Quem emite a
+  // sobreposição é `povOverlay`, na tela — aqui só saem as zonas.
   function memeBands(g) {
     var v = 0, img = 0;
     g.zones.forEach(function (z) {
       if (z.kind === "video") v = z.fraction * 100;
       if (z.kind === "image") img = z.fraction * 100;
     });
-    var pov = v * 0.3, vid = v - pov;
-    return "<div class='gal-band gal-meme-pov' style='flex-grow:" + pov.toFixed(1) + "'>" +
-        "<p>POV: Você usou o formato de meme e VIRALIZOU com 3x mais!</p></div>" +
-      "<div class='gal-band' style='flex-grow:" + vid.toFixed(1) + "'>" +
+    return "<div class='gal-band' style='flex-grow:" + v.toFixed(1) + "'>" +
         "<svg viewBox='0 0 24 24' fill='none' stroke='#6366f1' stroke-width='1.8'" +
           " stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>" + GAL_ICONS.video + "</svg>" +
         "<span class='gal-kind'>Vídeo</span><span class='gal-cap'>Legenda</span></div>" +
@@ -1509,32 +1520,35 @@
         "<span class='gal-id-text'><strong>Seu Nome</strong><small>@seuhandle</small></span></div>";
   }
     return "<article class='gal-card'>" +
-      "<div class='gal-prev' aria-hidden='true'><div class='gal-screen'>" + bands + "</div>" +
-        "<span class='gal-notch'></span><span class='gal-home'></span></div>" +
+      "<div class='gal-prev' aria-hidden='true'><div class='gal-screen'>" + bands + overlay +
+        "<span class='gal-notch'></span></div>" +
+        "<span class='gal-home'></span></div>" +
       "<h3>" + g.label + "</h3><p>" + g.desc + "</p>" +
       "<button type='button' class='btn pressable btn-primary btn-sm' data-gallery='" + key + "'>" +
         "Usar este template <span aria-hidden='true'>→</span></button>" +
     "</article>";
   }
 
-  // Composição Vídeo Viral: vídeo em cima, faixa de gancho no meio (o texto
-  // que a legenda queima) e imagem embaixo. O gancho é fixo; as zonas
-  // repartem o restante da tela.
+  // Composição Vídeo Viral: vídeo em cima, gancho na base DO VÍDEO e imagem
+  // embaixo. O gancho é a legenda em contexto, e o motor a posiciona dentro da
+  // faixa de vídeo (`captionMargin`); a prévia faz o mesmo.
+  //
+  // Ele era faixa irmã (`flex: none`): consumia 12% da altura e o card mostrava
+  // [48, 12, 40] onde as zonas declaradas são [58, 42]. Sobreposto, o card passa
+  // a bater com o modelo.
   function viralBands(g) {
     return g.zones.map(function (z) {
       var meta = KINDS[z.kind] || { label: z.kind, color: "#888" };
       var icon = GAL_ICONS[z.kind] || GAL_ICONS.solid;
       var short = GAL_SHORT[z.kind] || meta.label;
-      var band = "<div class='gal-band' style='flex-grow:" + (z.fraction * 100).toFixed(1) + "'>" +
+      var hook = z.kind === "video"
+        ? "<span class='gal-hook'>" + esc(g.hook || "") + "</span>" : "";
+      return "<div class='gal-band' style='flex-grow:" + (z.fraction * 100).toFixed(1) + "'>" +
+        hook +
         "<svg viewBox='0 0 24 24' fill='none' stroke='" + meta.color + "' stroke-width='1.8'" +
           " stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>" + icon + "</svg>" +
         "<span class='gal-kind'>" + short + "</span>" +
         "<span class='gal-pct'>" + Math.round(z.fraction * 100) + "%</span></div>";
-      // O gancho mora entre o vídeo e a imagem — é a legenda em contexto.
-      if (z.kind === "video") {
-        band += "<div class='gal-hook'><p>" + (g.hook || "") + "</p></div>";
-      }
-      return band;
     }).join("");
   }
 

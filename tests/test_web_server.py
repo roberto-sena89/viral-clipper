@@ -1820,14 +1820,62 @@ class TemplatesPreviewFidelityTests(unittest.TestCase):
         self.assertIsNotNone(declared, "a prévia não declara a margem do headline")
         self.assertEqual(declared.group(1), engine_margin_v)
 
-    def test_the_safe_area_number_is_shared_with_the_guide(self):
-        """Uma fonte só: o guia desenhado e a decoração não podem discordar."""
-        self.assertIn("SAFE_TOP_PCT = 4", self.page)
-        self.assertIn("top: 4%", self.page)
+    def test_the_safe_guide_is_the_only_place_that_declares_the_safe_area(self):
+        """O guia é a fonte única do 4% do motor.
 
-    def test_the_pov_anchors_to_the_safe_area_not_the_headline_margin(self):
-        """O notch pinta por cima do conteúdo e engolia a primeira linha."""
-        self.assertIn("pov.style.top = SAFE_TOP_PCT", self.page)
+        O JS declarava ``SAFE_TOP_PCT = 4`` só para posicionar o POV, que agora
+        se ancora no recorte do aparelho. O mesmo número escrito em duas
+        linguagens é o que divergiu antes; sobrou um, no CSS, e é ele que o guia
+        desenha.
+        """
+        self.assertIn("top: 4%", self.page)
+        self.assertNotIn("SAFE_TOP_PCT", self.page)
+
+    def _rule(self, selector: str) -> str:
+        """O bloco de declarações de ``selector`` no CSS da página.
+
+        Ancorado no começo da linha para ``.gal-pov`` não casar dentro de
+        ``.gal-pov-x`` e ``.pv-pov`` não casar dentro de um comentário.
+        """
+        match = re.search(
+            r"^" + re.escape(selector) + r"\s*\{([^}]*)\}", self.page, re.MULTILINE
+        )
+        self.assertIsNotNone(match, f"a regra {selector} sumiu do CSS")
+        return match.group(1)
+
+    def test_the_notch_geometry_has_one_source(self):
+        """O recorte é declarado uma vez, no elemento da TELA.
+
+        Antes o notch media da moldura (``.stage``/``.gal-prev``) e o POV da
+        faixa de vídeo: dois espaços de coordenada, e a posição real do recorte
+        só aparecia subtraindo o padding do palco. Agora o desenho e a âncora do
+        POV saem das mesmas duas variáveis.
+        """
+        pairs = ((".phone-screen", ".phone-notch"), (".gal-screen", ".gal-notch"))
+        for screen, notch in pairs:
+            block = self._rule(screen)
+            self.assertIn("--notch-top", block, f"{screen} não declara o topo do recorte")
+            self.assertIn("--notch-h", block, f"{screen} não declara a altura do recorte")
+            drawn = self._rule(notch)
+            self.assertIn("top: var(--notch-top)", drawn)
+            self.assertIn("height: var(--notch-h)", drawn)
+
+    def test_the_pov_starts_below_the_notch(self):
+        """O POV é ilustração do modelo, e o recorte pinta por cima do conteúdo.
+
+        A âncora é o FUNDO do recorte, não a área segura do motor: os dois
+        números são reais e conflitam (o 4% do guia fica acima do recorte), e
+        quem manda no POV é o recorte. Também não há ``top`` vindo do JS — era
+        daí que vinha a conta de converter a área segura em fração da faixa, que
+        errava sempre que a zona de vídeo mudava de tamanho.
+        """
+        for pov in (".pv-pov", ".gal-pov"):
+            self.assertIn(
+                "top: calc(var(--notch-top) + var(--notch-h)",
+                self._rule(pov),
+                f"{pov} não está ancorado no fundo do recorte",
+            )
+        self.assertNotIn("pov.style.top", self.page)
 
 
 class PortParsingTests(unittest.TestCase):

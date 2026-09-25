@@ -134,6 +134,68 @@ class BuildCaptionsTests(unittest.TestCase):
         headline_style = [line for line in body.splitlines() if line.startswith("Style: Headline,")][0]
         self.assertIn(",120,", headline_style)
 
+    def test_headline_is_centered_by_default(self):
+        body = _write_captions(self.tmp, [make_word(10.0, 10.4, "ola.")]).read_text(encoding="utf-8")
+        headline_style = [line for line in body.splitlines() if line.startswith("Style: Headline,")][0]
+        self.assertIn(",1,5,2,8,60,60,60,1", headline_style)
+
+    def test_headline_align_left_and_right_move_the_digit(self):
+        for align, digit in (("left", "7"), ("right", "9")):
+            body = _write_captions(
+                self.tmp, [make_word(10.0, 10.4, "ola.")], headline_align=align
+            ).read_text(encoding="utf-8")
+            headline_style = [line for line in body.splitlines() if line.startswith("Style: Headline,")][0]
+            self.assertIn(",1,5,2," + digit + ",60,60,60,1", headline_style)
+
+    def test_headline_align_rejects_unknown_values(self):
+        with self.assertRaises(ValueError):
+            make_config(headline_align="middle").validate()
+
+    def test_box_theme_light_forces_light_box_and_dark_text(self):
+        style = render.caption_presets.resolve(make_config(caption_box_theme="light"))
+        self.assertEqual(style.border_style, 3)
+        self.assertEqual(style.box_color, "&H00F2F2F2")
+        self.assertEqual(style.primary_color, "&H00141414")
+
+    def test_box_theme_dark_forces_dark_box_and_white_text(self):
+        style = render.caption_presets.resolve(make_config(caption_box_theme="dark"))
+        self.assertEqual(style.border_style, 3)
+        self.assertEqual(style.box_color, "&HB3141417")
+        self.assertEqual(style.primary_color, "&H00FFFFFF")
+
+    def test_box_theme_rejects_unknown_values(self):
+        with self.assertRaises(ValueError):
+            make_config(caption_box_theme="neon").validate()
+
+    def test_headline_side_margins_reach_the_style(self):
+        body = _write_captions(
+            self.tmp, [make_word(10.0, 10.4, "ola.")], headline_margin_side=120
+        ).read_text(encoding="utf-8")
+        headline_style = [line for line in body.splitlines() if line.startswith("Style: Headline,")][0]
+        self.assertIn(",8,120,120,60,1", headline_style)
+
+    def test_headline_side_margins_reject_negatives(self):
+        with self.assertRaises(ValueError):
+            make_config(headline_margin_side=-5).validate()
+
+    def test_manual_reframe_builds_zoom_pan_filter(self):
+        filt = render._layout_filter(
+            make_config(reframe_zoom=2, reframe_pan_x=0.25, reframe_pan_y=0.75),
+            1920,
+            1080,
+        )
+        self.assertIn("scale=2160:3840", filt)
+        self.assertIn("x=(in_w-out_w)*0.25", filt)
+        self.assertIn("y=(in_h-out_h)*0.75", filt)
+
+    def test_reframe_rejects_zoom_below_one_and_pan_out_of_range(self):
+        with self.assertRaises(ValueError):
+            make_config(reframe_zoom=0.5).validate()
+        with self.assertRaises(ValueError):
+            make_config(reframe_pan_x=1.5).validate()
+        with self.assertRaises(ValueError):
+            make_config(reframe_pan_y=-0.1).validate()
+
 
 class ProgressBarTests(unittest.TestCase):
     def test_filter_string(self):
@@ -323,14 +385,26 @@ class TemplateCaptionBandTests(unittest.TestCase):
             render.caption_presets.resolve(make_config()).margin_v,
         )
 
-    def test_split_template_lifts_the_margin_to_the_band_edge(self):
-        # split-card's video zone is 62% of 1920 = 1190px, so the band edge sits
-        # 730px above the bottom.
-        style = render.caption_presets.resolve(make_config())
+    def test_split_template_hugs_the_video_band_bottom_edge(self):
+        # split-card's video zone is 62% of 1920 = 1190px, with 730px of card
+        # below it. Captions float 12% of the band (143px) above its bottom
+        # edge: lower third of the footage, the viral spot.
         margin = self._margin(tpl.SPLIT_CARD)
-        self.assertEqual(margin, 1920 - 1190 + style.margin_v)
+        self.assertEqual(margin, 730 + 143)
 
-    def test_the_lifted_margin_reaches_the_ass_header(self):
+    def test_bottom_anchored_video_clears_the_platform_ui(self):
+        # X-like layout: image on top (34%), video below (66%). 12% of the
+        # 1267px band is 152px — under the 307px social floor, so the floor
+        # wins and the networks' bottom UI never covers the text.
+        zones = (
+            tpl.Zone(kind="image", fraction=0.34),
+            tpl.Zone(kind="video", fraction=0.66),
+            tpl.Zone(kind="captions", fraction=0.0),
+        )
+        template = tpl.Template(name="x", zones=zones)
+        self.assertEqual(self._margin(template), 307)
+
+    def test_the_hugging_margin_reaches_the_ass_header(self):
         path = render.build_captions(
             [make_word(10.0, 10.4, "ola")],
             10.0,
@@ -339,15 +413,37 @@ class TemplateCaptionBandTests(unittest.TestCase):
             tpl.SPLIT_CARD,
         )
         body = path.read_text(encoding="utf-8")
-        expected = 1920 - 1190 + render.caption_presets.resolve(make_config()).margin_v
-        self.assertIn(f",{expected},1", body)
+        self.assertIn(",873,1", body)
 
     def test_default_call_without_a_template_is_unchanged(self):
         plain = render.build_captions(
-            [make_word(10.0, 10.4, "ola")], 10.0, Path(self.tmp) / "a.ass", make_config()
+            [make_word(10.0, 10.4, "ola.")], 10.0, Path(self.tmp) / "a.ass", make_config()
         ).read_text(encoding="utf-8")
         expected = render.caption_presets.resolve(make_config()).margin_v
         self.assertIn(f",{expected},1", plain)
+
+    def test_social_preset_uses_two_word_pops_in_the_safe_zone(self):
+        preset = render.caption_presets.get_preset("social")
+        self.assertEqual(preset.words_per_line, 2)
+        self.assertEqual(preset.margin_v, 560)
+        self.assertEqual(preset.font_size, 88)
+
+    def test_low_margin_is_lifted_to_the_social_safe_floor(self):
+        # 16% of 1920 = 307: below the TikTok/Reels bottom UI the text would
+        # be covered, so the margin is lifted even when asked lower.
+        style = render.caption_presets.resolve(make_config(caption_margin_v=100))
+        self.assertEqual(
+            render._caption_margin_for_band(make_config(caption_margin_v=100), style, None), 307
+        )
+
+    def test_safe_floor_scales_with_canvas_height(self):
+        style = render.caption_presets.resolve(make_config(caption_margin_v=0))
+        self.assertEqual(
+            render._caption_margin_for_band(
+                make_config(caption_margin_v=0, height=1280), style, None
+            ),
+            205,
+        )
 
 
 class TemplateComposeIntegrationTests(unittest.TestCase):

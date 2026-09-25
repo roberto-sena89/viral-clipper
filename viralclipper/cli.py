@@ -209,6 +209,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Cor de destaque do karaokê e do titulo, formato ASS &HAABBGGRR (padrao: herda do preset)",
     )
     video.add_argument(
+        "--caption-box-theme",
+        dest="caption_box_theme",
+        choices=("light", "dark"),
+        default=None,
+        help="Tema claro/escuro da caixa da legenda: forca o par caixa+texto classico (padrao: cores do preset)",
+    )
+    video.add_argument(
         "--headline",
         dest="headline_text",
         default=None,
@@ -229,6 +236,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Nao queimar o titulo do gancho no topo; gera somente as legendas",
     )
     video.add_argument("--headline-font-size", dest="headline_font_size", type=int, default=None)
+    video.add_argument(
+        "--reframe-zoom",
+        dest="reframe_zoom",
+        type=float,
+        default=None,
+        help="Zoom manual do recorte center/focus, 1 ou maior (padrao: sem zoom)",
+    )
+    video.add_argument(
+        "--reframe-pan-x",
+        dest="reframe_pan_x",
+        type=float,
+        default=None,
+        help="Posicao horizontal do recorte, 0 a 1 (padrao 0.5 = centro)",
+    )
+    video.add_argument(
+        "--reframe-pan-y",
+        dest="reframe_pan_y",
+        type=float,
+        default=None,
+        help="Posicao vertical do recorte, 0 a 1 (padrao 0.5 = centro)",
+    )
+    video.add_argument(
+        "--headline-margin-side",
+        dest="headline_margin_side",
+        type=int,
+        default=None,
+        help="Margem lateral do titulo do gancho em px, dos dois lados (padrao 60)",
+    )
     video.add_argument(
         "--progress-bar",
         dest="progress_bar",

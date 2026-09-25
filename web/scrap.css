@@ -1,0 +1,993 @@
+/* A camada de tokens e identica a do index.html e do templates.html de
+   proposito: as tres paginas sao o mesmo produto, e um token duplicado com
+   valor diferente seria duas verdades. Se mudar um valor aqui, mude la tambem. */
+:root {
+  --bg-deep: #0b0d12;
+  --bg-surface: #14171f;
+  --bg-card: rgba(22, 26, 35, 0.72);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.10);
+  --accent-primary: #6366f1;
+  --accent-glow: rgba(99, 102, 241, 0.28);
+  --accent-soft: #818cf8;
+  --accent-warm: #fbbf24;
+  --success: #34d399;
+  --danger: #f87171;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs-lh: 1.35;
+  --text-caption: 0.78125rem;
+  --text-caption-lh: 1.45;
+  --text-body-sm: 0.84375rem;
+  --text-body-sm-lh: 1.5;
+  --text-body: 0.875rem;
+  --text-body-lh: 1.5;
+  --text-cta: 0.90625rem;
+  --text-cta-lh: 1.4;
+  --text-subtitle: 0.9375rem;
+  --text-title: 1.0625rem;
+  --text-title-lh: 1.35;
+  --text-heading-sm: 1.375rem;
+  --text-heading-sm-lh: 1.25;
+  --text-heading: 1.5rem;
+  --text-heading-lh: 1.2;
+  --text-display: clamp(2.2rem, 5vw, 3.4rem);
+  --text-display-lh: 1.12;
+
+  --content-bg: var(--bg-deep);
+  --shell-bg: #0e1017;
+  --shell-surface: var(--bg-surface);
+  --shell-border: var(--border-subtle);
+  --active-tint: rgba(99, 102, 241, 0.10);
+  --well-bg: rgba(0, 0, 0, 0.35);
+
+  --text-ink: #f3f4f6;
+  --text-ink-muted: #9ca3af;
+  --text-ink-subtle: #6b7280;
+
+  --grad: #ff4fae;
+  --grad-ink: #1c1024;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --shadow-card: 0 18px 40px -14px rgba(0, 0, 0, 0.6);
+
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-instant: 0.1s;
+  --motion-fast: 0.2s;
+  --motion-base: 0.3s;
+  --transition: var(--motion-fast) var(--ease-out-expo);
+
+  --text-primary: var(--text-ink);
+  --text-secondary: var(--text-ink-muted);
+  --text-muted: var(--text-ink-subtle);
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  line-height: 1.55;
+  min-height: 100vh;
+  background-image:
+    radial-gradient(1200px 600px at 80% -10%, rgba(99, 102, 241, 0.10), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, rgba(251, 191, 36, 0.05), transparent 60%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+
+/* ---------- UTILITARIOS ---------- */
+.pressable {
+  transition:
+    transform var(--motion-fast) var(--ease-spring),
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease,
+    opacity var(--motion-fast) ease;
+}
+.pressable:active {
+  transition-duration: var(--motion-instant);
+  transition-timing-function: ease-out;
+  transform: scale(0.97);
+}
+.pressable:disabled { cursor: not-allowed; }
+.pressable:disabled:active { transform: none; }
+.pressable:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .pressable { transition: none; }
+  .pressable:active { transform: none; }
+}
+
+/* ---------- RAIL LATERAL ----------
+   Mesma coluna do index.html. As duas paginas sao servidas soltas (sem
+   build), entao a duplicacao e deliberada: um @import custaria uma requisicao
+   extra e um arquivo a mais para manter sincronizado. Se mexer aqui, mexa la
+   tambem — RailNavigationTests em tests/test_web_server.py trava a deriva. */
+:root {
+  --rail-w: 244px;
+}
+body { padding-left: var(--rail-w); }
+
+.rail {
+  position: fixed; top: 0; left: 0; bottom: 0; width: var(--rail-w); z-index: 60;
+  display: flex; flex-direction: column;
+  background: linear-gradient(180deg, var(--bg-surface), var(--bg-deep));
+  border-right: 1px solid var(--border-subtle);
+  padding: 18px 14px;
+}
+.rail-brand {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 600; font-size: 1rem; letter-spacing: -0.02em;
+  padding: 0 6px 16px; border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 14px;
+}
+.rail-brand .brand-mark { width: 30px; height: 30px; border-radius: 9px; font-size: 0.9rem; flex: none; }
+.rail-brand small { display: block; color: var(--text-muted); font-weight: 400; font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; }
+
+.rail-label {
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--text-muted); padding: 0 10px; margin: 4px 0 8px;
+}
+
+/* A lista de destinos. <nav> + lista de links: um leitor de tela anuncia
+   "navegacao, 2 itens" e cada link diz para onde vai. O menu anterior
+   precisava de role=listbox/option para se comportar como widget; uma lista
+   estatica de links nao precisa de nada disso. */
+.rail-menu {
+  display: flex; flex-direction: column; gap: 2px;
+  list-style: none; margin: 0; padding: 0;
+}
+/* O rail nao usa os papeis de listbox; o fallback do header (mais abaixo)
+   tambem e uma lista de links, entao herda o mesmo tratamento. */
+.rail-menu[hidden] { display: none; }
+
+.rail-item {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 10px 11px; border-radius: var(--radius-sm);
+  border: 1px solid transparent; background: transparent;
+  color: var(--text-primary); font-family: inherit; font-size: 0.86rem;
+  text-align: left; cursor: pointer; text-decoration: none;
+}
+.rail-item:hover { background: rgba(255, 255, 255, 0.04); border-color: var(--border-subtle); }
+/* O item da pagina atual fica marcado. aria-current e a fonte da verdade
+   para o leitor de tela; a cor e a contraparte visual. */
+.rail-item[aria-current="page"] {
+  background: var(--active-tint); border-color: var(--accent-primary); color: var(--accent-soft);
+}
+.rail-item[aria-current="page"] .ri-desc { color: var(--text-secondary); }
+.rail-item .ri-ico { font-size: 1.05rem; line-height: 1.3; width: 20px; text-align: center; flex: none; }
+.rail-item .ri-title { display: block; font-weight: 600; }
+.rail-item .ri-desc { display: block; font-size: 0.73rem; color: var(--text-muted); line-height: 1.4; }
+
+.rail-foot { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--border-subtle); }
+.rail-foot span { display: block; font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; }
+
+/* ---------- MENU DO HEADER (<=920px) ----------
+   Substitui o rail quando nao ha largura para ele. Mesmo padrao de botao +
+   painel sobreposto, mas aqui o menu PRECISA de widget semantics: ele abre e
+   fecha, entao aria-expanded e o estado tem que existir. */
+.rail-dropdown { position: relative; display: none; }
+
+.menu-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: inherit; font-size: var(--text-cta); font-weight: 600;
+  border: 1px solid var(--border-strong); background: var(--bg-surface);
+  color: var(--text-primary); padding: 10px 14px; border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.menu-btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }
+.menu-btn .mb-bars { font-size: 1rem; line-height: 1; }
+.menu-btn .mb-caret { color: var(--accent-soft); font-size: 0.75rem; transition: transform var(--transition); }
+.menu-btn[aria-expanded="true"] .mb-caret { transform: rotate(180deg); }
+
+.rail-dropdown .rail-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 70; min-width: 258px;
+  background: var(--bg-surface); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-card);
+  padding: 6px;
+  animation: railMenuIn 180ms var(--ease-out-expo);
+}
+@keyframes railMenuIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .rail-dropdown .rail-menu { animation: none; }
+}
+
+/* ---------- HEADER ---------- */
+header {
+  position: sticky; top: 0; z-index: 50;
+  backdrop-filter: blur(14px) saturate(180%);
+  background: rgba(11, 13, 18, 0.72);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.header-inner {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 68px;
+}
+.brand {
+  display: flex; align-items: center; gap: 12px;
+  font-weight: 600; letter-spacing: -0.02em; font-size: 1.25rem;
+  color: var(--text-primary); text-decoration: none;
+}
+.brand-mark {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-soft));
+  display: grid; place-items: center;
+  box-shadow: 0 8px 20px -6px var(--accent-glow);
+  color: white; font-weight: 700; font-size: 1.1rem;
+}
+.nav-actions { display: flex; gap: 10px; align-items: center; }
+.btn {
+  font-family: inherit; font-size: var(--text-cta); font-weight: 600;
+  border: 1px solid var(--border-strong); background: var(--bg-surface);
+  color: var(--text-primary); padding: 10px 16px; border-radius: var(--radius-sm);
+  cursor: pointer; text-decoration: none;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }
+.btn:disabled { opacity: 0.5; }
+.btn:disabled:focus-visible { outline: none; }
+.btn-primary {
+  background: var(--grad);
+  border-color: transparent; color: var(--grad-ink);
+  box-shadow: 0 8px 20px -8px var(--accent-glow);
+}
+.btn-primary:hover { filter: brightness(1.06); border-color: transparent; }
+.btn-sm { padding: 7px 11px; font-size: var(--text-body-sm); }
+.btn-ghost { background: transparent; }
+
+/* ---------- CHIPS ---------- */
+.chip {
+  background: var(--bg-card); border: 1px solid var(--border-subtle);
+  padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; color: var(--text-secondary);
+  display: inline-block;
+}
+.chip strong { color: var(--text-primary); font-weight: 600; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+
+/* ---------- SCRAP: busca, lista e selecao ---------- */
+/* Esta pagina nao tem wizard: e buscar, escolher, mandar. A casca (tokens,
+   rail, header, botoes, chips) vem igual das outras duas paginas; so o miolo
+   e proprio. */
+
+/* Buscar e Resultados lado a lado: o formulario a esquerda em coluna fixa,
+   a lista a direita ocupando o resto. A Escolha desce para linha cheia
+   abaixo dos dois. */
+.scrap-grid {
+  display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 20px;
+  align-items: start;
+}
+.scrap-grid > .card + .card { margin-top: 0; }
+.scrap-grid > .pick { grid-column: 1 / -1; position: static; }
+/* Filho de grid com min-width:auto empurra a coluna e o conteúdo vaza por
+   cima do vizinho — min-width:0 deixa cada coluna encolher no seu espaço. */
+.scrap-grid > * { min-width: 0; }
+@media (max-width: 1150px) { .scrap-grid { grid-template-columns: 1fr; } }
+
+/* Abas Link / Perfil. Sao dois modos do mesmo formulario, entao sao um
+   tablist de verdade: setas movem, aria-selected diz qual esta ativo. */
+.tabs {
+  display: inline-flex; gap: 2px; padding: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
+}
+.tab {
+  appearance: none; border: 1px solid transparent; background: transparent;
+  color: var(--text-muted); font-family: inherit; font-size: var(--text-caption);
+  font-weight: 600; padding: 7px 14px; border-radius: 7px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.tab:hover { color: var(--text-primary); }
+.tab[aria-selected="true"] {
+  background: var(--active-tint); border-color: var(--accent-primary);
+  color: var(--accent-soft);
+}
+
+.scrap-form { display: flex; gap: 8px; margin-top: 14px; }
+.scrap-form input[type="url"] { flex: 1; min-width: 0; }
+input[type="url"], input[type="number"], input[type="text"], select {
+  font-family: inherit; font-size: var(--text-body); color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  padding: 10px 12px; width: 100%;
+}
+input:focus-visible, select:focus-visible { border-color: var(--accent-primary); }
+input::placeholder { color: var(--text-muted); }
+.field-hint { font-size: var(--text-caption); color: var(--text-muted); margin-top: 8px; }
+
+/* ---------- FORMULÁRIO: campos e fileiras ----------
+   Antes cada label/div carregava style inline próprio (margin, flex-basis,
+   max-width). Agora o ritmo é um só: fileira flex com gap uniforme,
+   campo com label em cima, controle embaixo. */
+.form-row {
+  display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;
+  margin: 14px 0 0; padding: 0; border: 0; min-width: 0;
+}
+.form-row[hidden] { display: none; }
+/* Perfil: botão em linha própria, alinhado à esquerda — lado a lado com o
+   input ele disputava espaço e invadia o campo. Empilhado, a invasão é
+   estruturalmente impossível em qualquer largura. */
+.form-row--stack { flex-direction: column; align-items: flex-start; gap: 10px; }
+.form-row--stack .form-field--grow { flex: none; }
+.form-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.form-field--narrow { flex: 0 0 84px; }
+.form-field--grow { flex: 1 1 180px; justify-content: flex-end; }
+.form-field--auto { flex: 0 0 auto; justify-content: flex-end; }
+.field-label {
+  display: block; font-size: var(--text-caption); color: var(--text-muted);
+  line-height: var(--text-caption-lh);
+}
+.form-field input[type="number"] { width: 100%; }
+.form-field select { width: 100%; }
+/* O botão viral encolhe no próprio conteúdo em vez de esticar na fileira.
+   nowrap + max-width: o texto nunca quebra nem vaza por cima do vizinho;
+   a base alinha com o input via align-items:flex-end da fileira. */
+#btn-viral { align-self: flex-start; width: auto; max-width: 100%; white-space: nowrap; }
+
+/* ---------- SESSÃO / COOKIES (subitens do card Buscar) ----------
+   Antes eram dois .form-field soltos com style inline (select nativo +
+   input de caminho). Agora é um sub-card próprio: cabeçalho com status,
+   grade de 2 blocos (navegador | arquivo), controle segmentado em vez
+   do select nativo. O select original continua no DOM (sincronizado via
+   JS) para não quebrar o payload nem os testes. */
+.auth-card {
+  margin-top: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--well-bg);
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 12px;
+  min-width: 0;
+}
+.auth-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.auth-title {
+  margin: 0; font-size: var(--text-body); font-weight: 650;
+  letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px;
+}
+.auth-sub { margin: 4px 0 0; font-size: var(--text-caption); color: var(--text-muted); }
+.auth-status {
+  flex: none; align-self: flex-start; max-width: 100%; overflow-wrap: anywhere;
+  font-size: var(--text-caption); font-weight: 700;
+  border-radius: 999px; padding: 4px 12px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted); background: rgba(255, 255, 255, 0.03);
+  display: inline-flex; align-items: center; gap: 7px;
+  transition: color var(--transition), border-color var(--transition), background-color var(--transition);
+}
+.auth-status::before {
+  content: ""; width: 8px; height: 8px; border-radius: 999px; flex: none;
+  background: currentColor; opacity: 0.9;
+}
+.auth-status[data-state="none"] { color: var(--text-muted); }
+.auth-status[data-state="browser"] {
+  color: var(--accent-soft); border-color: var(--accent-primary); background: var(--active-tint);
+}
+.auth-status[data-state="file"] {
+  color: var(--success); border-color: rgba(52, 211, 153, 0.45); background: rgba(52, 211, 153, 0.08);
+}
+.auth-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 12px; min-width: 0;
+}
+@media (max-width: 720px) { .auth-grid { grid-template-columns: 1fr; } }
+.auth-block {
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 12px; min-width: 0;
+  display: flex; flex-direction: column; gap: 9px;
+  transition: border-color var(--transition);
+}
+.auth-block:focus-within { border-color: var(--accent-primary); }
+.auth-block-head { display: flex; align-items: center; justify-content: space-between; gap: 6px 8px; flex-wrap: wrap; min-width: 0; }
+.auth-block-head .field-label { flex: 1 1 auto; min-width: 0; }
+.auth-tag {
+  font-size: var(--text-2xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  white-space: nowrap; line-height: 1.6;
+  color: var(--accent-warm); background: rgba(251, 191, 36, 0.10);
+  border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 999px; padding: 1px 9px;
+  flex: none; align-self: flex-start;
+}
+/* Controle segmentado: 4 pílulas clicáveis (Nenhum/Chrome/Firefox/Edge).
+   Espelha o valor do select de navegador escondido. */
+.seg {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;
+  padding: 4px; border-radius: 10px;
+  background: rgba(0, 0, 0, 0.30); border: 1px solid var(--border-subtle);
+}
+.seg-btn {
+  appearance: none; border: 1px solid transparent; background: transparent;
+  color: var(--text-muted); font-family: inherit;
+  border-radius: 7px; padding: 8px 4px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 44px;
+}
+/* Ícones oficiais dos navegadores (SVG inline, sem dependência externa).
+   Apagado = dessaturado; selecionado ou hover = cor cheia. */
+.seg-icon { width: 24px; height: 24px; display: block; filter: grayscale(0.55); opacity: 0.6; transition: filter var(--transition), opacity var(--transition), transform var(--transition); }
+.seg-icon svg { width: 100%; height: 100%; display: block; }
+.seg-btn[data-value=""] .seg-icon { filter: none; opacity: 0.75; }
+.seg-btn:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.04); }
+.seg-btn:hover .seg-icon { filter: none; opacity: 1; }
+.seg-btn[aria-checked="true"] {
+  background: var(--active-tint); border-color: var(--accent-primary); color: var(--accent-soft);
+}
+.seg-btn[aria-checked="true"] .seg-icon { filter: none; opacity: 1; transform: scale(1.08); }
+.seg-btn[data-value=""][aria-checked="true"] { color: var(--text-primary); }
+.seg-btn:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 1px; }
+.auth-file-row { display: flex; gap: 8px; align-items: stretch; min-width: 0; }
+.auth-file-row input[type="text"] { flex: 1; min-width: 0; font-family: ui-monospace, monospace; font-size: var(--text-caption); }
+.auth-icon-btn {
+  appearance: none; flex: none; cursor: pointer; font-family: inherit;
+  font-size: var(--text-caption); font-weight: 600;
+  color: var(--text-primary); background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  padding: 0 12px; min-height: 40px;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.auth-icon-btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.10); }
+.auth-icon-btn--ghost { color: var(--text-muted); }
+.auth-note { font-size: var(--text-caption); color: var(--text-muted); margin: 0; line-height: var(--text-caption-lh); }
+.sr-only-select {
+  position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+}
+
+/* Caixas de ação (seleção em lote / arquivamento): mesmo cartão interno,
+   mesma fileira, mesmo ritmo — antes eram três inline styles copiados. */
+.tool-box {
+  display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;
+  margin: 0 0 14px; padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--well-bg); border: 1px solid var(--border-subtle);
+}
+.tool-box[hidden] { display: none; }
+.tool-box .tool-note { flex: 1 1 200px; margin-top: 0; align-self: center; }
+.tool-box .btn { flex: none; }
+
+/* ---------- CARD DE RESULTADO ----------
+   Antes era uma linha de lista. Virou card porque a decisao aqui e visual:
+   escolher qual video cortar sem ver o quadro e adivinhacao. A thumbnail e o
+   dado que o titulo nao da, entao ela vem primeiro na leitura. */
+.result {
+  display: grid;
+  /* A coluna do checkbox vem antes da thumbnail: marcar para baixar e uma acao
+     de lista, e a lista se le da esquerda para a direita. */
+  grid-template-columns: 28px 96px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  /* Cada card é uma ilha: nada do conteúdo interno pinta por cima do card
+     vizinho (título longo, nome de canal comprido). */
+  position: relative; isolation: isolate; min-width: 0;
+  transition: border-color var(--motion-fast) ease, background-color var(--motion-fast) ease;
+}
+.result > * { min-width: 0; }
+#resultados { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+#resultados .empty { margin: 0; }
+.result + .result { margin-top: 0; }
+.result:hover { border-color: var(--border-strong); }
+.result[data-picked="1"] {
+  border-color: var(--accent-primary);
+  background: var(--active-tint);
+}
+/* Marcado para baixar e um estado diferente de escolhido para cortar: dois
+   cards com a mesma cara seriam duas coisas diferentes parecendo uma. */
+.result[data-selected="1"] {
+  border-color: var(--border-strong);
+  background: var(--well-bg);
+}
+.result-check {
+  display: grid; place-items: center; align-self: center;
+  min-height: 32px; cursor: pointer;
+}
+.result-check input { width: 17px; height: 17px; margin: 0; cursor: pointer; accent-color: var(--accent-primary); }
+
+/* ---------- PROGRESSO DO DOWNLOAD EM LOTE ----------
+   Mesma linguagem do arquivamento: cartão com fase + pílula de
+   porcentagem, trilho em gradiente com brilho varrendo (shimmer)
+   enquanto há trabalho, verde/vermelho parado ao terminar. Ocupa a
+   linha inteira da caixa de seleção e só existe enquanto há trabalho. */
+.dl-progress {
+  flex: 1 1 100%; min-width: 0;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px; border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-subtle);
+}
+.dl-progress-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+}
+.dl-phase {
+  font-size: var(--text-caption); font-weight: 600; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dl-phase .dl-spin {
+  display: inline-block; width: 12px; height: 12px; margin-right: 8px;
+  border-radius: 999px; vertical-align: -1px;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: var(--accent-soft);
+  animation: dlSpin 0.9s linear infinite;
+}
+@keyframes dlSpin { to { transform: rotate(360deg); } }
+.dl-percent {
+  font-size: var(--text-caption); font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--accent-soft); background: var(--active-tint);
+  border: 1px solid var(--accent-primary); border-radius: 999px; padding: 2px 10px;
+  flex: none;
+}
+.dl-percent[data-state="done"] {
+  color: var(--success); border-color: rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.08);
+}
+.dl-percent[data-state="error"] {
+  color: var(--danger); border-color: rgba(248, 113, 113, 0.4); background: rgba(248, 113, 113, 0.08);
+}
+.dl-track {
+  position: relative; height: 10px; border-radius: 999px; overflow: hidden;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.dl-fill {
+  display: block; height: 100%; width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-soft) 60%, #22d3ee);
+  background-size: 200% 100%;
+  box-shadow: 0 0 12px var(--accent-glow);
+  transition: width 260ms var(--ease-out-expo);
+  animation: dlSlide 1.6s linear infinite;
+}
+.dl-track[data-state="done"] .dl-fill {
+  background: linear-gradient(90deg, #10b981, var(--success));
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.35);
+  animation: none;
+}
+.dl-track[data-state="error"] .dl-fill {
+  background: linear-gradient(90deg, #ef4444, var(--danger));
+  box-shadow: 0 0 12px rgba(248, 113, 113, 0.35);
+  animation: none;
+}
+@keyframes dlSlide {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.dl-meta {
+  margin: 0; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dl-fill { animation: none; }
+  .dl-phase .dl-spin { animation: none; border-top-color: rgba(255,255,255,0.18); }
+}
+
+/* ---------- BARRA DE PROGRESSO DO ARQUIVAMENTO ----------
+   Mesma linguagem da barra de download, um nível acima: o arquivamento tem
+   duas fases (listar o catálogo, depois baixar item a item), então a barra
+   mostra fase + fração + contadores. O preenchimento é um gradiente com
+   brilho varrendo (shimmer) enquanto há trabalho; parado em verde/vermelho
+   quando termina. */
+.arq-progress {
+  flex: 1 1 100%; min-width: 0;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px; border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-subtle);
+}
+.arq-progress-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+}
+.arq-phase {
+  font-size: var(--text-caption); font-weight: 600; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.arq-phase .arq-spin {
+  display: inline-block; width: 12px; height: 12px; margin-right: 8px;
+  border-radius: 999px; vertical-align: -1px;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: var(--accent-soft);
+  animation: arqSpin 0.9s linear infinite;
+}
+@keyframes arqSpin { to { transform: rotate(360deg); } }
+.arq-percent {
+  font-size: var(--text-caption); font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--accent-soft); background: var(--active-tint);
+  border: 1px solid var(--accent-primary); border-radius: 999px; padding: 2px 10px;
+  flex: none;
+}
+.arq-track {
+  position: relative; height: 10px; border-radius: 999px; overflow: hidden;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.arq-fill {
+  display: block; height: 100%; width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-soft) 60%, #22d3ee);
+  background-size: 200% 100%;
+  box-shadow: 0 0 12px var(--accent-glow);
+  transition: width 260ms var(--ease-out-expo);
+}
+/* O brilho varre a barra enquanto há trabalho: é o sinal de "está vivo",
+   diferente de uma barra travada em N%. */
+.arq-track[data-state="listando"] .arq-fill,
+.arq-track[data-state="baixando"] .arq-fill {
+  animation: arqSlide 1.6s linear infinite;
+}
+.arq-track[data-state="listando"] .arq-fill {
+  width: 100%;
+  background: linear-gradient(90deg, transparent, var(--accent-soft) 30%, var(--accent-primary) 50%, var(--accent-soft) 70%, transparent);
+  background-size: 200% 100%;
+  animation: arqIndeterminate 1.4s ease-in-out infinite;
+}
+@keyframes arqSlide {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@keyframes arqIndeterminate {
+  0% { background-position: 200% 0; opacity: 0.85; }
+  50% { opacity: 1; }
+  100% { background-position: -200% 0; opacity: 0.85; }
+}
+.arq-track[data-state="concluido"] .arq-fill {
+  background: linear-gradient(90deg, #10b981, var(--success));
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.35);
+  animation: none;
+}
+.arq-track[data-state="erro"] .arq-fill {
+  background: linear-gradient(90deg, #ef4444, var(--danger));
+  box-shadow: 0 0 12px rgba(248, 113, 113, 0.35);
+  animation: none;
+}
+.arq-track[data-state="concluido"] ~ .arq-progress-head .arq-percent,
+.arq-percent[data-state="concluido"] {
+  color: var(--success); border-color: rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.08);
+}
+.arq-meta {
+  margin: 0; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center;
+}
+.arq-meta .dot { opacity: 0.5; }
+
+/* Cards dos itens do arquivamento: um retrato 9:16 por video com a capa do
+   Instagram, o shortcode e o estado (Na fila / Baixando / Baixado / Já tinha
+   / Sem vídeo / Falha). Grade rolável com teto: 200 itens não podem empurrar
+   o resumo para fora da tela. O card do item em andamento ganha borda ativa
+   com brilho — é o "onde estou" da fila. */
+.arq-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px; max-height: 320px; overflow-y: auto;
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-subtle);
+}
+.arq-cards[hidden] { display: none; }
+.arq-card {
+  margin: 0; border-radius: 10px; overflow: hidden;
+  background: var(--well-bg); border: 1px solid var(--border-subtle);
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+}
+.arq-card-thumb {
+  position: relative; aspect-ratio: 9 / 16;
+  display: grid; place-items: center;
+  background: rgba(0, 0, 0, 0.35); color: var(--text-muted);
+  font-size: 1.2rem;
+}
+.arq-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.arq-card-thumb[data-empty="1"] img { display: none; }
+.arq-card-kind {
+  position: absolute; left: 5px; top: 5px;
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: #fff; background: rgba(0, 0, 0, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px; padding: 1px 7px;
+}
+.arq-card-foot { padding: 5px 7px 6px; display: flex; flex-direction: column; gap: 2px; }
+.arq-card-code {
+  font-size: 0.68rem; font-weight: 600; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.arq-card-st {
+  font-size: 0.62rem; color: var(--text-muted);
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.arq-card-st::before {
+  content: ""; width: 6px; height: 6px; border-radius: 999px; flex: none;
+  background: rgba(255, 255, 255, 0.25);
+}
+.arq-card[data-status="doing"] { border-color: var(--accent-primary); box-shadow: 0 0 12px var(--accent-glow); }
+.arq-card[data-status="doing"] .arq-card-st { color: var(--accent-soft); }
+.arq-card[data-status="doing"] .arq-card-st::before { background: var(--accent-soft); box-shadow: 0 0 8px var(--accent-glow); }
+.arq-card[data-status="done"] .arq-card-st { color: var(--success); }
+.arq-card[data-status="done"] .arq-card-st::before { background: var(--success); }
+.arq-card[data-status="skipped"] .arq-card-st::before { background: var(--accent-warm); }
+.arq-card[data-status="photo"] { opacity: 0.72; }
+.arq-card[data-status="failed"] { border-color: rgba(248, 113, 113, 0.45); }
+.arq-card[data-status="failed"] .arq-card-st { color: var(--danger); }
+.arq-card[data-status="failed"] .arq-card-st::before { background: var(--danger); }
+@media (prefers-reduced-motion: reduce) {
+  .arq-card { transition: none; }
+}
+
+/* O painel de logs do arquivamento: o mesmo padrão do log da página de cortes
+   (head colapsável + body rolável), mas enxuto — ele nasce aberto na primeira
+   linha em andamento e se recolhe quando o download acaba, pra não competir
+   com o resumo final. Cada linha herda a cor do prefixo do logger. */
+.arq-log {
+  margin-top: 10px; border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); background: rgba(0, 0, 0, 0.30);
+  overflow: hidden;
+}
+.arq-log-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 8px 12px; cursor: pointer; user-select: none;
+  font-size: var(--text-2xs); color: var(--text-secondary);
+}
+.arq-log-head:hover { background: rgba(255, 255, 255, 0.04); }
+.arq-log-head .arq-log-count { color: var(--text-muted); }
+.arq-log-head .arq-log-caret { transition: transform var(--transition); }
+.arq-log-head[aria-expanded="true"] .arq-log-caret { transform: rotate(180deg); }
+.arq-log-body {
+  max-height: 200px; overflow-y: auto;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: var(--text-2xs); line-height: 1.7; color: var(--text-secondary);
+  padding: 8px 12px 10px;
+}
+.arq-log-body[hidden] { display: none; }
+.arq-log-line { white-space: pre-wrap; word-break: break-word; }
+.arq-log-line .ln-prefix { opacity: 0.55; margin-right: 6px; }
+.arq-log-line.ln-err { color: var(--danger); }
+.arq-log-line.ln-ok { color: var(--success); }
+.arq-log-line.ln-warn { color: var(--accent-warm); }
+.arq-log-line.ln-sys { color: var(--accent-soft); }
+.arq-log-line.ln-step { color: var(--text-primary); }
+.arq-log-empty { color: var(--text-muted); padding: 8px 12px; font-style: italic; }
+
+.arq-steps {
+  display: flex; gap: 6px; align-items: center;
+  font-size: var(--text-2xs); color: var(--text-muted);
+}
+.arq-step { display: inline-flex; align-items: center; gap: 5px; }
+.arq-step .dot-step {
+  width: 7px; height: 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.16);
+}
+.arq-step[data-on="1"] { color: var(--text-secondary); }
+.arq-step[data-on="1"] .dot-step { background: var(--accent-soft); box-shadow: 0 0 8px var(--accent-glow); }
+.arq-step[data-done="1"] { color: var(--success); }
+.arq-step[data-done="1"] .dot-step { background: var(--success); }
+@media (prefers-reduced-motion: reduce) {
+  .arq-fill, .arq-track[data-state="listando"] .arq-fill,
+  .arq-track[data-state="baixando"] .arq-fill { animation: none; }
+  .arq-phase .arq-spin { animation: none; border-top-color: rgba(255,255,255,0.18); }
+}
+
+/* O atributo hidden perde para style="display:flex" inline (a regra embutida
+   vence o [hidden] do UA). As caixas agora usam classes (.form-row/.tool-box
+   com [hidden]), então esta regra é só rede de segurança para vestígios
+   de inline style e para as barras de progresso. */
+#perfil-opts[hidden], #select-box[hidden], #arquivar-box[hidden],
+  #download-progress[hidden], #archive-progress[hidden],
+  #archive-log[hidden] { display: none !important; }
+
+/* A thumbnail. 9:16 e o formato que o pipeline produz, entao o card ja mostra
+   o enquadramento real. O fundo segura o espaco antes da imagem chegar (e come
+   o icone quando ela nunca chega), para a lista nao "pular" ao carregar. */
+.result-thumb {
+  position: relative; flex: none; width: 96px; aspect-ratio: 9 / 16;
+  border-radius: var(--radius-sm); overflow: hidden;
+  background: var(--well-bg); border: 1px solid var(--border-subtle);
+  display: grid; place-items: center;
+}
+.result-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.result-thumb .thumb-fallback {
+  font-size: 1.4rem; color: var(--text-muted); line-height: 1;
+}
+.result-thumb[data-state="loading"] .thumb-fallback { opacity: 0.45; }
+.result-play {
+  position: absolute; right: 6px; bottom: 6px;
+  width: 24px; height: 24px; border-radius: 999px;
+  display: grid; place-items: center;
+  background: rgba(0, 0, 0, 0.62); color: #fff;
+  font-size: 0.6rem; line-height: 1;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+
+.result-main {
+  min-width: 0; align-self: center; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: center; gap: 7px;
+}
+.result-title {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--text-body-sm); font-weight: 600;
+  color: var(--text-primary); line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+a.result-title { text-decoration: none; }
+a.result-title:hover { color: var(--accent-soft); text-decoration: underline; text-underline-offset: 3px; }
+.result-meta {
+  display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center;
+  font-size: var(--text-2xs); color: var(--text-muted);
+  line-height: var(--text-2xs-lh); margin: 0;
+}
+.result-meta > span { display: inline-flex; align-items: center; min-width: 0; }
+/* Nome de canal comprido sem espaço: corta com reticências em vez de vazar
+   por cima da coluna de ações ou do card de baixo. */
+.result-uploader {
+  display: inline-block; min-width: 0; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  vertical-align: bottom;
+}
+.result-views { white-space: nowrap; }
+.result-meta .dot { color: var(--text-muted); opacity: 0.5; }
+.result-badge {
+  display: inline-flex; align-items: center;
+  font-size: var(--text-2xs); font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--text-secondary); background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px; padding: 3px 10px; line-height: 1.2;
+}
+.result-actions {
+  display: flex; flex-direction: column; gap: 6px;
+  align-items: stretch; justify-content: center; align-self: center;
+}
+.result-actions .btn { white-space: nowrap; justify-content: center; min-width: 96px; }
+
+/* Abaixo de 620px o card perde a coluna de acoes: os botoes descem para baixo
+   do texto, senao a thumbnail de 96px come metade da largura util. */
+@media (max-width: 620px) {
+  .result { grid-template-columns: 28px 72px minmax(0, 1fr); gap: 12px; }
+  .result-thumb { width: 72px; }
+  .result-actions { grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; align-self: stretch; }
+  .result-actions .btn { flex: 1 1 auto; }
+}
+
+.empty {
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+  padding: 30px 20px; text-align: center; color: var(--text-muted);
+  font-size: var(--text-body-sm);
+}
+.empty strong { display: block; color: var(--text-secondary); margin-bottom: 6px; }
+
+/* ---------- ESTADO "BUSCANDO" ----------
+   Skeleton animado no lugar do "Buscando…" estático: mesma grade dos cards
+   de resultado (retrato 9:16 + linhas), para a lista não "pular" quando os
+   dados chegam. Trilho indeterminado no topo + varredura (shimmer) nos
+   blocos, na mesma linguagem das barras de download/arquivamento. */
+.search-loading { display: flex; flex-direction: column; gap: 10px; }
+.search-loading-top { display: flex; align-items: center; gap: 12px; }
+.search-loading-label {
+  font-size: var(--text-body-sm); font-weight: 600; color: var(--text-secondary);
+  white-space: nowrap; animation: skelPulse 1.6s ease-in-out infinite;
+}
+.search-loading-track {
+  position: relative; flex: 1; height: 6px; border-radius: 999px; overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.search-loading-track > span {
+  position: absolute; top: 0; bottom: 0; width: 35%; border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--accent-soft), var(--accent-primary), transparent);
+  box-shadow: 0 0 12px var(--accent-glow);
+  animation: skelTravel 1.3s ease-in-out infinite;
+}
+@keyframes skelTravel { from { left: -35%; } to { left: 100%; } }
+@keyframes skelPulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.skel-card {
+  display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 14px;
+  align-items: center;
+  padding: 12px 14px; border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md); background: var(--bg-card);
+}
+.skel-card:nth-child(3) .skel-shimmer { animation-delay: 0.15s; }
+.skel-card:nth-child(4) .skel-shimmer { animation-delay: 0.3s; }
+.skel-card:nth-child(5) .skel-shimmer { animation-delay: 0.45s; }
+.skel-thumb { aspect-ratio: 9 / 16; border-radius: var(--radius-sm); }
+.skel-main { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+.skel-line { height: 12px; border-radius: 6px; }
+.skel-line.w80 { width: 80%; }
+.skel-line.w55 { width: 55%; }
+.skel-badge { width: 64px; height: 18px; border-radius: 999px; }
+.skel-shimmer {
+  background: linear-gradient(100deg,
+    rgba(255, 255, 255, 0.04) 30%,
+    rgba(255, 255, 255, 0.11) 50%,
+    rgba(255, 255, 255, 0.04) 70%);
+  background-size: 200% 100%;
+  animation: skelSweep 1.5s linear infinite;
+}
+@keyframes skelSweep { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (max-width: 620px) { .skel-card { grid-template-columns: 72px minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) {
+  .search-loading-label, .search-loading-track > span, .skel-shimmer { animation: none; }
+  .search-loading-track > span { left: 0; width: 100%; opacity: 0.5; }
+}
+
+/* Painel lateral: o que fazer com o item escolhido */
+.pick { position: sticky; top: 18px; }
+/* Escolha é painel auxiliar: padding menor que os cards principais (24px). */
+.pick .card { padding: 16px 18px; }
+.pick-empty { color: var(--text-muted); font-size: var(--text-body-sm); }
+.pick-title {
+  font-size: var(--text-body); font-weight: 600; color: var(--text-primary);
+  margin: 0 0 4px; overflow-wrap: anywhere;
+}
+.kv {
+  display: grid; grid-template-columns: 72px minmax(0, 1fr);
+  column-gap: 14px; margin: 10px 0 0; padding: 0;
+}
+.kv dt {
+  font-size: var(--text-2xs); font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--text-muted);
+  align-self: center; line-height: 1.5;
+  padding: 7px 0; margin: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.kv dd {
+  margin: 0; font-size: var(--text-body-sm); color: var(--text-primary);
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+  align-self: center; line-height: 1.5; text-align: left;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.kv dt:last-of-type, .kv dd:last-of-type { border-bottom: 0; }
+.pick-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.pick-actions .btn { justify-content: center; width: 100%; }
+
+/* A caixa de log e a mesma linguagem das outras paginas. */
+.log-box {
+  margin-top: 14px; max-height: 200px; overflow-y: auto;
+  background: rgba(0, 0, 0, 0.32); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); padding: 12px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: var(--text-2xs); line-height: 1.7; color: var(--text-secondary);
+}
+.log-box .ln-err { color: var(--danger); }
+.log-box .ln-ok { color: var(--success); }
+.log-box .ln-warn { color: var(--accent-warm); }
+.log-box .ln-sys { color: var(--accent-soft); }
+.log-box p { margin: 0; }
+
+.toast {
+  position: fixed; right: 18px; bottom: 18px; z-index: 90;
+  background: var(--bg-surface); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); padding: 11px 15px;
+  font-size: var(--text-body-sm); box-shadow: var(--shadow-card);
+  animation: toast-in var(--motion-base) var(--ease-out-expo);
+  max-width: 340px;
+}
+.toast.ok { border-color: rgba(52,211,153,0.4); }
+.toast.bad { border-color: rgba(248,113,113,0.4); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+
+.card {
+  position: relative; background: var(--bg-card); min-width: 0;
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+  padding: 24px; backdrop-filter: blur(6px); box-shadow: var(--shadow-card);
+}
+.card + .card { margin-top: 18px; }
+.card h2 {
+  margin: 0 0 4px; font-size: var(--text-body); font-weight: 600;
+  display: flex; align-items: center; gap: 8px;
+}
+.card h2 .ico { color: var(--accent-soft); }
+.card-sub { color: var(--text-muted); font-size: var(--text-caption); margin-bottom: 16px; }
+
+footer {
+  border-top: 1px solid var(--border-subtle);
+  padding: 26px 0 40px; color: var(--text-muted); font-size: var(--text-caption);
+}
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent-soft); outline-offset: 2px;
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}

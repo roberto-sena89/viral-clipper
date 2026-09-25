@@ -447,6 +447,115 @@ class ApplyToConfigTests(unittest.TestCase):
         tpl.apply_to_config(config, loud)
         self.assertEqual(config.caption_preset, "karaoke")
 
+    def test_headline_align_rides_along_when_set(self):
+        config = make_config()
+        aligned = tpl.Template(
+            name="aligned",
+            zones=(tpl.Zone(kind="video", fraction=1.0),),
+            headline_align="right",
+        )
+        result = tpl.apply_to_config(config, aligned)
+        self.assertEqual(result.headline_align, "right")
+
+    def test_headline_align_rejects_unknown_values(self):
+        bad = tpl.Template(
+            name="bad",
+            zones=(tpl.Zone(kind="video", fraction=1.0),),
+            headline_align="middle",
+        )
+        with self.assertRaises(ClipperError):
+            bad.validate()
+
+    def test_box_theme_rides_along_when_set(self):
+        config = make_config()
+        themed = tpl.Template(
+            name="themed",
+            zones=(tpl.Zone(kind="video", fraction=1.0),),
+            caption_box_theme="dark",
+        )
+        result = tpl.apply_to_config(config, themed)
+        self.assertEqual(result.caption_box_theme, "dark")
+
+    def test_box_theme_rejects_unknown_values(self):
+        bad = tpl.Template(
+            name="bad",
+            zones=(tpl.Zone(kind="video", fraction=1.0),),
+            caption_box_theme="sepia",
+        )
+        with self.assertRaises(ClipperError):
+            bad.validate()
+
+    def test_headline_size_and_margins_ride_along_when_set(self):
+        config = make_config()
+        sized = tpl.Template(
+            name="sized",
+            zones=(tpl.Zone(kind="video", fraction=1.0),),
+            headline_font_size=120,
+            headline_margin_side=120,
+        )
+        result = tpl.apply_to_config(config, sized)
+        self.assertEqual(result.headline_font_size, 120)
+        self.assertEqual(result.headline_margin_side, 120)
+
+    def test_headline_size_and_margins_reject_bad_values(self):
+        with self.assertRaises(ClipperError):
+            tpl.Template(
+                name="bad",
+                zones=(tpl.Zone(kind="video", fraction=1.0),),
+                headline_font_size=0,
+            ).validate()
+        with self.assertRaises(ClipperError):
+            tpl.Template(
+                name="bad",
+                zones=(tpl.Zone(kind="video", fraction=1.0),),
+                headline_margin_side=-1,
+            ).validate()
+
+    def test_reframe_rides_along_when_set(self):
+        config = make_config()
+        framed = tpl.Template(
+            name="framed",
+            zones=(tpl.Zone(kind="video", fraction=1.0),),
+            reframe_zoom=2,
+            reframe_pan_x=0.25,
+            reframe_pan_y=0.75,
+        )
+        result = tpl.apply_to_config(config, framed)
+        self.assertEqual(result.reframe_zoom, 2)
+        self.assertEqual(result.reframe_pan_x, 0.25)
+        self.assertEqual(result.reframe_pan_y, 0.75)
+
+    def test_reframe_rejects_bad_values(self):
+        with self.assertRaises(ClipperError):
+            tpl.Template(
+                name="bad",
+                zones=(tpl.Zone(kind="video", fraction=1.0),),
+                reframe_zoom=0.5,
+            ).validate()
+        with self.assertRaises(ClipperError):
+            tpl.Template(
+                name="bad",
+                zones=(tpl.Zone(kind="video", fraction=1.0),),
+                reframe_pan_x=2,
+            ).validate()
+
+    def test_zone_zoom_pan_reaches_the_compose_graph(self):
+        template = tpl.Template(
+            name="zoomed",
+            zones=(
+                tpl.Zone(kind="frame", fraction=1.0, zoom=2, pan_x=0.25, pan_y=0.75),
+                tpl.Zone(kind="captions", fraction=0.0),
+            ),
+        )
+        graph, _ = tpl.compose(template, 1080, 1920)
+        self.assertIn("crop=1080:1920:x=(in_w-out_w)*0.25:y=(in_h-out_h)*0.75", graph)
+
+    def test_zone_zoom_pan_rejects_bad_values(self):
+        with self.assertRaises(ClipperError):
+            tpl.Zone(kind="frame", fraction=1.0, zoom=0.5).validate(1)
+        with self.assertRaises(ClipperError):
+            tpl.Zone(kind="frame", fraction=1.0, pan_x=2).validate(1)
+
 
 class DescribeTests(unittest.TestCase):
     def test_description_mentions_every_band(self):

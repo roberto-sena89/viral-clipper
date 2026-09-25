@@ -59,6 +59,17 @@ PRESETS: dict[str, CaptionPreset] = {
         font="Arial Black",
         font_size=84,
     ),
+    # Platform default for TikTok/Reels: same karaoke language, but tuned to
+    # the networks' rules — 2 words per pop for retention, and a bottom
+    # margin that sits above the progress bar, video caption and action rail.
+    "social": CaptionPreset(
+        name="social",
+        description="Padrão TikTok/Reels — pop amarelo de 2 palavras na zona segura",
+        font="Arial Black",
+        font_size=88,
+        margin_v=560,
+        words_per_line=2,
+    ),
     # White text on a dark, semi-transparent box: the right answer when the
     # footage is light or busy and an outline alone cannot separate the text.
     "bold-box": CaptionPreset(
@@ -462,10 +473,29 @@ def resolve(config) -> CaptionPreset:
     field is an explicit choice and beats the preset.
     """
     base = get_preset(config.caption_preset)
+    box_theme = config.caption_box_theme
+    boxed_base = base.border_style == 3
     return replace(
         base,
         font=config.font if config.font is not None else base.font,
         font_size=config.font_size if config.font_size is not None else base.font_size,
+        primary_color=(
+            base.primary_color
+            if box_theme is None
+            else ("&H00FFFFFF" if box_theme == "dark" else "&H00141414")
+        ),
+        border_style=base.border_style if box_theme is None else 3,
+        outline_width=(
+            base.outline_width
+            if box_theme is None or boxed_base
+            else 14.0
+        ),
+        shadow_depth=base.shadow_depth if box_theme is None else 0.0,
+        box_color=(
+            base.box_color
+            if box_theme is None
+            else ("&HB3141417" if box_theme == "dark" else "&H00F2F2F2")
+        ),
         margin_v=config.caption_margin_v
         if config.caption_margin_v is not None
         else base.margin_v,

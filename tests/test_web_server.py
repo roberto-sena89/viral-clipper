@@ -1981,8 +1981,14 @@ class HeroPreviewTests(unittest.TestCase):
         self.assertIn("video.play()", self.page)
 
     def test_playback_is_retried_after_a_refused_autoplay(self):
-        """Muted autoplay is allowed, not guaranteed; a gesture unlocks it."""
-        for hook in ("'canplay'", "'pointerdown'", "'visibilitychange'"):
+        """Muted autoplay is allowed, not guaranteed; a gesture unlocks it.
+
+        The hooks are the whole recovery path, so all four matter: ``canplay``
+        covers a late file, ``pause`` re-arms the gesture listeners after the
+        browser stops the clip on its own (power saving, background tab), and
+        the gesture plus ``visibilitychange`` are the two ways back in.
+        """
+        for hook in ("'canplay'", "'pause'", "'pointerdown'", "'visibilitychange'"):
             self.assertIn(hook, self.page, f"falta o gancho {hook} para o play")
 
     def test_the_preload_is_eager_so_the_loop_starts_on_frames(self):

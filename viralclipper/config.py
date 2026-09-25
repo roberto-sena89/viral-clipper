@@ -113,6 +113,10 @@ class ClipConfig:
     caption_margin_v: int | None = None
     uppercase_captions: bool | None = None
     highlight_color: str | None = None
+    # Light/dark box theme for the burned captions. None keeps the preset's
+    # own colors; "light"/"dark" force the classic light/dark box+text pair
+    # (font, size and highlight still come from the preset).
+    caption_box_theme: str | None = None
     # Burned headline at the top of the frame for the opening seconds of every
     # clip. Off by default: the shipped look is captions only. Turn it on when
     # the hook deserves on-screen text (a strong opening question, a leak, a
@@ -121,6 +125,17 @@ class ClipConfig:
     # None derives the headline from the clip's opening words.
     headline_text: str | None = None
     headline_font_size: int | None = None
+    # Symmetric side margins of the burned headline in px (libass MarginL/R).
+    # Keeps the hook clear of the notch and the right-side action rail.
+    headline_margin_side: int | None = None
+    # Manual reframe override for the center/focus crop. zoom >= 1 magnifies
+    # around the pan point; pan 0..1 slides the crop window (0.5 = centered).
+    # None means "leave the layout alone".
+    reframe_zoom: float | None = None
+    reframe_pan_x: float | None = None
+    reframe_pan_y: float | None = None
+    # libass top-row alignment of the burned headline: left, center, right.
+    headline_align: str = "center"
     # Thin bar at the top of the frame showing watched progress. Off by default:
     # the shipped look is the video plus captions only. Enable it with
     # ``--progress-bar`` or the UI toggle when the platform's own progress hint
@@ -203,10 +218,22 @@ class ClipConfig:
             raise ValueError("caption_margin_v must not be negative")
         if self.highlight_color is not None and not self.highlight_color.startswith("&H"):
             raise ValueError("highlight_color must use the ASS format &HAABBGGRR")
+        if self.caption_box_theme is not None and self.caption_box_theme not in {"light", "dark"}:
+            raise ValueError("caption_box_theme must be light or dark")
         if self.headline_seconds < 0:
             raise ValueError("headline_seconds must not be negative")
         if self.headline_font_size is not None and self.headline_font_size <= 0:
             raise ValueError("headline_font_size must be greater than zero")
+        if self.headline_margin_side is not None and self.headline_margin_side < 0:
+            raise ValueError("headline_margin_side must not be negative")
+        if self.headline_align not in {"left", "center", "right"}:
+            raise ValueError("headline_align must be left, center or right")
+        if self.reframe_zoom is not None and self.reframe_zoom < 1:
+            raise ValueError("reframe_zoom must be 1 or greater")
+        for axis in ("reframe_pan_x", "reframe_pan_y"):
+            value = getattr(self, axis)
+            if value is not None and not 0.0 <= value <= 1.0:
+                raise ValueError(f"{axis} must be between 0 and 1")
         if self.caption_preset:
             # Raises ClipperError with the list of known presets when wrong.
             from . import caption_presets

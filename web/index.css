@@ -1,0 +1,787 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* --- paleta bruta ------------------------------------------------------ */
+  --bg-deep: #0b0d12;
+  --bg-surface: #14171f;
+  --bg-card: rgba(22, 26, 35, 0.72);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.10);
+  --accent-primary: #6366f1;
+  --accent-glow: rgba(99, 102, 241, 0.28);
+  --accent-soft: #818cf8;
+  --accent-warm: #fbbf24;
+  --success: #34d399;
+  --danger: #f87171;
+
+  /* --- escala tipografica semantica --------------------------------------
+     Nomes de papel, nao de tamanho: trocar os valores aqui reescala a
+     interface inteira sem tocar no markup. Os valores seguem a escala do
+     ViceScale (2xs .6875 / caption .78125 / body-sm .84375 / body .875 /
+     cta .90625 / subtitle .9375 / title 1.0625 / heading-sm 1.375), que e
+     mais densa que a media porque a interface tem muito numero e rotulo. */
+  --text-2xs: 0.6875rem;
+  --text-2xs-lh: 1.35;
+  --text-caption: 0.78125rem;
+  --text-caption-lh: 1.45;
+  --text-body-sm: 0.84375rem;
+  --text-body-sm-lh: 1.5;
+  --text-body: 0.875rem;
+  --text-body-lh: 1.5;
+  --text-cta: 0.90625rem;
+  --text-cta-lh: 1.4;
+  --text-subtitle: 0.9375rem;
+  --text-title: 1.0625rem;
+  --text-title-lh: 1.35;
+  --text-heading-sm: 1.375rem;
+  --text-heading-sm-lh: 1.25;
+  --text-heading: 1.5rem;
+  --text-heading-lh: 1.2;
+  --text-display: clamp(2.2rem, 5vw, 3.4rem);
+  --text-display-lh: 1.12;
+
+  /* --- tokens de papel (o que cada superficie significa) -----------------
+     Separados da paleta bruta de proposito: um card e uma superficie de
+     conteudo, o log e um poco, o input e uma superficie de entrada. Sem essa
+     separacao o mesmo #0b0d12 aparece com tres significados diferentes e o
+     tema fica impossivel de ajustar. */
+  --content-bg: var(--bg-deep);
+  --shell-bg: #0e1017;
+  --shell-surface: var(--bg-surface);
+  --shell-border: var(--border-subtle);
+  --active-tint: rgba(99, 102, 241, 0.10);
+  --well-bg: rgba(0, 0, 0, 0.35);
+
+  /* Texto: os nomes --text-* colidem com a escala tipografica acima, entao o
+     papel de cor usa o sufixo -ink. */
+  --text-ink: #f3f4f6;
+  --text-ink-muted: #9ca3af;
+  --text-ink-subtle: #6b7280;
+
+  /* Cor de marca: magenta chapado, nao gradiente. O token de gradiente da
+     referencia aponta para uma cor solida, sem linear-gradient nenhum. O nome
+     "grad" foi mantido porque e o que o markup ja usa, mas o valor e solido —
+     e o -ink e escuro (#1c1024), porque texto preto sobre magenta le mais que
+     branco. */
+  --grad: #ff4fae;
+  --grad-ink: #1c1024;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --shadow-card: 0 18px 40px -14px rgba(0, 0, 0, 0.6);
+
+  /* --- movimento ---------------------------------------------------------
+     O ease-spring passa de 1 (.34, 1.4, .64, 1): e o overshoot que da o
+     "pop". O .pressable da referencia encolhe no :active em .1s, nao sobe no
+     hover — a coisa so reage quando voce de fato aperta. */
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-instant: 0.1s;
+  --motion-fast: 0.2s;
+  --motion-base: 0.3s;
+  --transition: var(--motion-fast) var(--ease-out-expo);
+}
+
+/* Aliases de compatibilidade: o CSS antigo (e uns style="" inline no corpo)
+   ainda leem os nomes --text-primary/secondary/muted. Mantidos apontando para
+   os tokens de papel para que os dois vocabularios coexistam. */
+:root {
+  --text-primary: var(--text-ink);
+  --text-secondary: var(--text-ink-muted);
+  --text-muted: var(--text-ink-subtle);
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  line-height: 1.55;
+  min-height: 100vh;
+  background-image:
+    radial-gradient(1200px 600px at 80% -10%, rgba(99, 102, 241, 0.10), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, rgba(251, 191, 36, 0.05), transparent 60%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+
+/* ---------- UTILITARIOS ---------- */
+/* Micro-interacao unica para todo elemento clicavel. Duas decisoes copiadas
+   da referencia: o elemento NAO sobe no hover (so reage no :active, que e
+   quando o dedo/cursor de fato apertou) e o ease-spring tem overshoot, que e
+   o que da o "pop". O :focus-visible e a parte que a referencia tem e o painel
+   nao tinha: sem ele, quem navega por teclado nos dropdowns ricos fica sem
+   anel de foco. */
+.pressable {
+  transition:
+    transform var(--motion-fast) var(--ease-spring),
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease,
+    opacity var(--motion-fast) ease;
+}
+.pressable:active {
+  transition-duration: var(--motion-instant);
+  transition-timing-function: ease-out;
+  transform: scale(0.97);
+}
+.pressable:disabled { cursor: not-allowed; }
+.pressable:disabled:active { transform: none; }
+.pressable:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pressable { transition: none; }
+  .pressable:active { transform: none; }
+}
+
+/* ---------- SKELETON ---------- */
+/* O render leva minutos (transcricao + encode x264). Sem isto a regiao fica
+   vazia e parece travada; o shimmer comunica "esta trabalhando" sem custo.
+   O background usa o par panel/panel-soft da referencia para que o brilho
+   tenha so um degrau de contraste — mais que isso pisca. */
+@keyframes shimmer { to { background-position: -200% 0; } }
+.shimmer {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.04) 25%,
+    rgba(255,255,255,0.09) 50%,
+    rgba(255,255,255,0.04) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: var(--radius-sm);
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer { animation: none; background: rgba(255,255,255,0.05); }
+}
+.skeleton-card { display: flex; flex-direction: column; gap: 10px; }
+.skeleton-thumb { aspect-ratio: 9/16; width: 100%; border-radius: var(--radius-sm); }
+.skeleton-line { height: 11px; }
+.skeleton-line.w-60 { width: 60%; }
+.skeleton-line.w-40 { width: 40%; }
+.skeleton-line.w-80 { width: 80%; }
+
+/* ---------- HEADER ---------- */
+header {
+  position: sticky; top: 0; z-index: 50;
+  backdrop-filter: blur(14px) saturate(180%);
+  background: rgba(11, 13, 18, 0.72);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.header-inner {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 68px;
+}
+.brand {
+  display: flex; align-items: center; gap: 12px;
+  font-weight: 600; letter-spacing: -0.02em;
+  font-size: 1.25rem;
+}
+.brand-mark {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-soft));
+  display: grid; place-items: center;
+  box-shadow: 0 8px 20px -6px var(--accent-glow);
+  color: white; font-weight: 700; font-size: 1.1rem;
+}
+.brand small {
+  color: var(--text-secondary); font-weight: 400; font-size: 0.85rem;
+  margin-left: 6px;
+}
+.nav-actions { display: flex; gap: 10px; align-items: center; }
+
+/* ---------- RAIL LATERAL ----------
+   Coluna fixa a esquerda com os destinos do app, sempre visiveis: cada pagina
+   e uma linha propria, e a atual fica destacada. Antes isso era um botao que
+   abria um menu sobreposto; virou lista fixa porque um menu que esconde dois
+   itens esconde tambem a propria existencia da outra pagina.
+
+   Fica FORA do <header> de proposito: o header e sticky e cobre a largura
+   toda, entao um rail dentro dele nao teria altura. Aqui ele e
+   position:fixed do topo ate o fim da viewport, e o conteudo ganha --rail-w
+   de recuo no body.
+
+   Em <=920px o rail some e os destinos reaparecem como menu no header —
+   sem isso a pagina ficaria sem navegacao no celular. */
+:root {
+  --rail-w: 244px;
+}
+body { padding-left: var(--rail-w); }
+
+.rail {
+  position: fixed; top: 0; left: 0; bottom: 0; width: var(--rail-w); z-index: 60;
+  display: flex; flex-direction: column;
+  background: linear-gradient(180deg, var(--bg-surface), var(--bg-deep));
+  border-right: 1px solid var(--border-subtle);
+  padding: 18px 14px;
+}
+.rail-brand {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 600; font-size: 1rem; letter-spacing: -0.02em;
+  padding: 0 6px 16px; border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 14px;
+}
+.rail-brand .brand-mark { width: 30px; height: 30px; border-radius: 9px; font-size: 0.9rem; flex: none; }
+.rail-brand small { display: block; color: var(--text-muted); font-weight: 400; font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; }
+
+.rail-label {
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--text-muted); padding: 0 10px; margin: 4px 0 8px;
+}
+
+/* A lista de destinos. <nav> + lista de links: um leitor de tela anuncia
+   "navegacao, 2 itens" e cada link diz para onde vai. O menu anterior
+   precisava de role=listbox/option para se comportar como widget; uma lista
+   estatica de links nao precisa de nada disso. */
+.rail-menu {
+  display: flex; flex-direction: column; gap: 2px;
+  list-style: none; margin: 0; padding: 0;
+}
+/* O rail nao usa os papeis de listbox; o fallback do header (mais abaixo)
+   tambem e uma lista de links, entao herda o mesmo tratamento. */
+.rail-menu[hidden] { display: none; }
+
+.rail-item {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 10px 11px; border-radius: var(--radius-sm);
+  border: 1px solid transparent; background: transparent;
+  color: var(--text-primary); font-family: inherit; font-size: 0.86rem;
+  text-align: left; cursor: pointer; text-decoration: none;
+}
+.rail-item:hover { background: rgba(255, 255, 255, 0.04); border-color: var(--border-subtle); }
+/* O item da pagina atual fica marcado. aria-current e a fonte da verdade
+   para o leitor de tela; a cor e a contraparte visual. */
+.rail-item[aria-current="page"] {
+  background: var(--active-tint); border-color: var(--accent-primary); color: var(--accent-soft);
+}
+.rail-item[aria-current="page"] .ri-desc { color: var(--text-secondary); }
+.rail-item .ri-ico { font-size: 1.05rem; line-height: 1.3; width: 20px; text-align: center; flex: none; }
+.rail-item .ri-title { display: block; font-weight: 600; }
+.rail-item .ri-desc { display: block; font-size: 0.73rem; color: var(--text-muted); line-height: 1.4; }
+
+.rail-foot { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--border-subtle); }
+.rail-foot span { display: block; font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; }
+
+/* ---------- MENU DO HEADER (<=920px) ----------
+   Substitui o rail quando nao ha largura para ele. Mesmo padrao de botao +
+   painel sobreposto, mas aqui o menu PRECISA de widget semantics: ele abre e
+   fecha, entao aria-expanded e o estado tem que existir. */
+.rail-dropdown { position: relative; display: none; }
+
+.menu-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: inherit; font-size: var(--text-cta); font-weight: 600;
+  border: 1px solid var(--border-strong); background: var(--bg-surface);
+  color: var(--text-primary); padding: 10px 14px; border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.menu-btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }
+.menu-btn .mb-bars { font-size: 1rem; line-height: 1; }
+.menu-btn .mb-caret { color: var(--accent-soft); font-size: 0.75rem; transition: transform var(--transition); }
+.menu-btn[aria-expanded="true"] .mb-caret { transform: rotate(180deg); }
+
+.rail-dropdown .rail-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 70; min-width: 258px;
+  background: var(--bg-surface); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-card);
+  padding: 6px;
+  animation: railMenuIn 180ms var(--ease-out-expo);
+}
+@keyframes railMenuIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .rail-dropdown .rail-menu { animation: none; }
+}
+.btn {
+  font-family: inherit; font-size: var(--text-cta); font-weight: 600;
+  border: 1px solid var(--border-strong); background: var(--bg-surface);
+  color: var(--text-primary); padding: 10px 16px; border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+/* O hover do botao muda cor/borda; o movimento fica por conta do .pressable
+   (que encolhe no :active). Antes esta regra tambem subia o botao, o que
+   somava com o .pressable e dobrava a animacao. */
+.btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }
+.btn:disabled { opacity: 0.5; }
+/* O anel de foco dos botoes herda do .pressable; aqui so garantimos que o
+   disabled nao receba destaque de foco. */
+.btn:disabled:focus-visible { outline: none; }
+.btn-primary {
+  background: var(--grad);
+  border-color: transparent; color: var(--grad-ink);
+  box-shadow: 0 8px 20px -8px var(--accent-glow);
+}
+.btn-primary:hover { filter: brightness(1.06); border-color: transparent; }
+
+/* ---------- HERO ---------- */
+.hero {
+  padding: 72px 0 56px;
+  display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 48px; align-items: center;
+}
+.hero h1 {
+  font-size: clamp(2.2rem, 5vw, 3.4rem);
+  font-weight: 700; letter-spacing: -0.03em; line-height: 1.12;
+  background: linear-gradient(120deg, #ffffff 0%, #c7d2fe 70%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  margin-bottom: 18px;
+}
+.hero p.lead {
+  font-size: 1.08rem; color: var(--text-secondary);
+  max-width: 52ch; margin-bottom: 28px;
+}
+.hero .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 26px; }
+.chip {
+  background: var(--bg-card); border: 1px solid var(--border-subtle);
+  padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; color: var(--text-secondary);
+}
+.chip strong { color: var(--text-primary); font-weight: 600; }
+
+.hero-visual {
+  background: var(--bg-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: 28px; box-shadow: var(--shadow-card);
+  backdrop-filter: blur(8px);
+}
+.hero-visual .frame-label {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;
+}
+.preview-stack { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.preview-card {
+  aspect-ratio: 9/16; border-radius: var(--radius-sm);
+  background: linear-gradient(160deg, #1b1f2b, #0b0d12);
+  border: 1px solid var(--border-subtle);
+  position: relative; overflow: hidden;
+  display: grid; place-items: center; color: var(--text-muted);
+  font-size: 0.72rem;
+}
+.preview-card::after {
+  content: "▶"; position: absolute; font-size: 1.4rem; opacity: 0.45;
+  top: 46%; left: 50%; transform: translate(-50%, -50%);
+}
+.preview-card .tag {
+  position: absolute; bottom: 8px; left: 8px; right: 8px;
+  text-align: center; font-size: 0.68rem; color: var(--text-secondary);
+}
+
+/* O card que toca video real. Opaco so com data-live="1": enquanto o arquivo
+   nao tiver frame decodificado (ausente, codec que o navegador nao abre, clone
+   sem ele) o gradiente e o ▶ continuam sendo o card — assim a falta do video
+   nunca vira icone de midia quebrada. */
+.preview-video {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; display: block; opacity: 0;
+  transition: opacity var(--motion-fast) ease;
+}
+.preview-card[data-live="1"] .preview-video { opacity: 1; }
+.preview-card[data-live="1"]::after { display: none; }
+/* Sobre o frame o rotulo precisa vencer a imagem, nao sumir nela. */
+.preview-card[data-live="1"] .tag {
+  color: var(--text-primary); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+}
+
+/* ---------- LAYOUT PRINCIPAL ---------- */
+.main-grid {
+  display: grid; grid-template-columns: 1fr 360px; gap: 28px;
+  padding-bottom: 60px;
+}
+@media (max-width: 960px) {
+  .hero { grid-template-columns: 1fr; }
+  .main-grid { grid-template-columns: 1fr; }
+  .hero-visual { order: -1; }
+}
+
+/* ---------- CARTÕES ---------- */
+.card {
+  position: relative; /* ancora o z-index do dropdown aberto */
+  background: var(--bg-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md); padding: 24px;
+  backdrop-filter: blur(6px); box-shadow: var(--shadow-card);
+  transition: var(--transition);
+  margin-bottom: 24px;
+}
+/* backdrop-filter cria stacking context, isolando o z-index do painel;
+   elevar o card inteiro enquanto um dropdown está aberto faz o painel
+   pintar por cima dos cards vizinhos */
+.card.dropdown-open { z-index: 80; }
+.card:hover { border-color: var(--border-strong); }
+.card h2 {
+  font-size: 1.15rem; font-weight: 600; margin-bottom: 18px;
+  display: flex; align-items: center; gap: 10px;
+}
+.card h2 .ico {
+  width: 26px; height: 26px; border-radius: 6px;
+  background: rgba(99, 102, 241, 0.14); color: var(--accent-soft);
+  display: grid; place-items: center; font-size: 0.9rem;
+}
+.section-title {
+  font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em;
+  margin-bottom: 10px;
+}
+.section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.section-head .section-title { margin-bottom: 10px; }
+/* item vindo da pasta de saida: nome de arquivo no lugar do score */
+.clip-item.library .clip-meta .file-name {
+  color: var(--text-primary); font-weight: 600; font-size: 0.66rem;
+  display: block; word-break: break-all; line-height: 1.25;
+}
+.clip-item.library .clip-meta .time { color: var(--text-secondary); }
+.section-sub { color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 22px; }
+
+/* ---------- FORMULÁRIO ---------- */
+.form-section { margin-bottom: 26px; }
+.form-section:last-child { margin-bottom: 0; }
+.form-section h3 {
+  font-size: 0.95rem; font-weight: 600; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 14px;
+}
+.field-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px;
+}
+.field-row.triple { grid-template-columns: repeat(3, 1fr); }
+.field-row.single { grid-template-columns: 1fr; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label {
+  font-size: 0.85rem; font-weight: 500; color: var(--text-secondary);
+}
+.field input, .field select {
+  background: rgba(0, 0, 0, 0.35); border: 1px solid var(--border-subtle);
+  color: var(--text-primary); font-family: inherit; font-size: 0.92rem;
+  padding: 10px 12px; border-radius: var(--radius-sm); transition: var(--transition);
+  width: 100%;
+}
+.field input:focus, .field select:focus {
+  outline: none; border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.field .hint { font-size: 0.78rem; color: var(--text-muted); }
+.field textarea {
+  background: rgba(0, 0, 0, 0.35); border: 1px solid var(--border-subtle);
+  color: var(--text-primary); font-family: inherit; font-size: 0.88rem;
+  line-height: 1.5; padding: 10px 12px; border-radius: var(--radius-sm);
+  width: 100%; resize: vertical; min-height: 120px; transition: var(--transition);
+}
+.field textarea:focus {
+  outline: none; border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.field textarea::placeholder { color: var(--text-muted); }
+.row-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+
+/* ---------- PREVIA DA TRANSCRICAO ORGANIZADA ---------- */
+.cue-preview {
+  margin-top: 16px; border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); background: rgba(0, 0, 0, 0.25); overflow: hidden;
+}
+.cue-stats {
+  padding: 10px 14px; font-size: 0.78rem; color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle); background: rgba(99, 102, 241, 0.06);
+}
+.cue-table-wrap { max-height: 320px; overflow-y: auto; }
+.cue-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.cue-table thead th {
+  position: sticky; top: 0; z-index: 1; text-align: left;
+  font-size: 0.72rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--text-muted); background: rgba(20, 23, 31, 0.96);
+  padding: 8px 12px; border-bottom: 1px solid var(--border-subtle);
+}
+.cue-table td { padding: 8px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.04); vertical-align: top; }
+.cue-table tr:last-child td { border-bottom: none; }
+.cue-table tr:hover td { background: rgba(255, 255, 255, 0.03); }
+.cue-table .cue-time {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  color: var(--accent-soft); font-weight: 600; white-space: nowrap; width: 1%;
+}
+.cue-table .cue-dur { color: var(--text-muted); white-space: nowrap; width: 1%; }
+.cue-table .cue-text { color: var(--text-primary); }
+
+/* ---------- RELATORIO DE VIRALIZACAO ---------- */
+.viral-list { display: flex; flex-direction: column; gap: 18px; }
+.viral-item {
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
+  padding: 18px; background: rgba(0, 0, 0, 0.22); transition: var(--transition);
+}
+.viral-item:hover { border-color: var(--border-strong); }
+.viral-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.viral-head h3 { font-size: 1rem; font-weight: 700; letter-spacing: 0.01em; }
+.viral-head h3 .vn { color: var(--accent-soft); }
+.viral-head .viral-time { font-size: 0.78rem; color: var(--text-muted); }
+.viral-potential {
+  display: inline-flex; align-items: center; gap: 8px;
+  border-radius: 999px; padding: 5px 14px; font-weight: 700; font-size: 0.82rem;
+  background: rgba(52, 211, 153, 0.12); color: var(--success);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+.viral-potential.mid { background: rgba(251, 191, 36, 0.12); color: var(--accent-warm); border-color: rgba(251, 191, 36, 0.3); }
+.viral-potential.low { background: rgba(248, 113, 113, 0.12); color: var(--danger); border-color: rgba(248, 113, 113, 0.3); }
+.viral-field { margin: 6px 0; font-size: 0.86rem; color: var(--text-secondary); }
+.viral-field strong { color: var(--text-primary); font-weight: 600; }
+.viral-quote {
+  border-left: 2px solid var(--accent-primary); padding-left: 12px;
+  color: var(--text-secondary); font-style: italic; margin: 10px 0;
+}
+.viral-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 14px; }
+.metric { display: flex; flex-direction: column; gap: 6px; }
+.metric .m-top { display: flex; justify-content: space-between; font-size: 0.76rem; color: var(--text-secondary); }
+.metric .m-top strong { color: var(--text-primary); }
+.metric-track { height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
+.metric-bar { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent-primary), var(--accent-soft)); transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1); }
+@media (max-width: 720px) { .viral-metrics { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---------- SELECT RICO (dropdown custom) ---------- */
+.select-rich { position: relative; }
+/* o select nativo segue no form como fonte de verdade, invisível */
+.select-rich select.select-native {
+  position: absolute; width: 1px; height: 1px; opacity: 0;
+  pointer-events: none; border: none; padding: 0;
+}
+.select-trigger {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; text-align: left; font-family: inherit;
+  background: rgba(0, 0, 0, 0.35); border: 1px solid var(--border-subtle);
+  color: var(--text-primary); padding: 8px 12px;
+  border-radius: var(--radius-sm); cursor: pointer; transition: var(--transition);
+}
+.select-trigger:hover { border-color: var(--border-strong); background: rgba(0, 0, 0, 0.5); }
+.select-rich.open .select-trigger, .select-trigger:focus-visible {
+  border-color: var(--accent-primary); box-shadow: 0 0 0 3px var(--accent-glow);
+  outline: none;
+}
+.select-trigger .sel-text { display: flex; flex-direction: column; min-width: 0; }
+.select-trigger .sel-title { font-size: 0.92rem; font-weight: 600; }
+.select-trigger .sel-desc {
+  font-size: 0.74rem; color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.select-trigger .sel-arrow {
+  flex-shrink: 0; color: var(--text-secondary); font-size: 0.8rem;
+  transition: transform var(--transition);
+}
+.select-rich.open .sel-arrow { transform: rotate(180deg); }
+
+.select-panel {
+  position: fixed; top: 0; left: 0; z-index: 90;
+  background: rgba(20, 23, 31, 0.97); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); padding: 6px;
+  box-shadow: var(--shadow-card); backdrop-filter: blur(12px);
+  max-height: 290px; overflow-y: auto;
+  opacity: 0; transform: translateY(-6px) scale(0.985); pointer-events: none;
+  transition: opacity 160ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* o painel vive no <body> (portal): nenhum stacking context dos cards o
+     isola; left/top/width vêm do JS via getBoundingClientRect do trigger */
+}
+.select-panel.open { opacity: 1; transform: none; pointer-events: auto; }
+.select-option {
+  width: 100%; display: flex; flex-direction: column; gap: 1px;
+  text-align: left; font-family: inherit; position: relative;
+  background: transparent; border: none; color: var(--text-primary);
+  padding: 9px 12px; border-radius: 7px; cursor: pointer;
+  transition: background 120ms ease;
+}
+.select-option:hover, .select-option:focus-visible { background: rgba(255, 255, 255, 0.06); outline: none; }
+.select-option .opt-title { font-size: 0.88rem; font-weight: 600; }
+.select-option .opt-desc { font-size: 0.75rem; color: var(--text-secondary); }
+.select-option.selected { background: rgba(99, 102, 241, 0.14); }
+.select-option.selected .opt-title { color: var(--accent-soft); }
+.select-option.selected::after {
+  content: "✓"; position: absolute; right: 12px; top: 50%;
+  transform: translateY(-50%); color: var(--accent-soft);
+  font-size: 0.85rem; font-weight: 700;
+}
+
+/* ---------- PREVIA DOS MODELOS DE LEGENDA ---------- */
+/* o dropdown de preset mostra a legenda como ela vai sair no video */
+.cap-stage {
+  margin-top: 8px; border-radius: 7px; overflow: hidden;
+  background: linear-gradient(160deg, #2b3142, #11141d);
+  padding: 12px 14px; display: flex; justify-content: center; align-items: center;
+  min-height: 44px;
+}
+.cap-demo {
+  display: inline-block; font-size: 0.98rem; line-height: 1.35;
+  padding: 2px 8px; text-align: center;
+}
+.cap-demo em { font-style: normal; }
+/* o trigger do select reflete o preset escolhido */
+.select-trigger.cap-trigger .sel-title { letter-spacing: 0.01em; }
+
+.toggle-wrap {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 0; border-bottom: 1px solid var(--border-subtle);
+}
+.toggle-wrap:last-child { border-bottom: none; }
+.toggle-wrap .tw-label { font-size: 0.88rem; }
+.toggle {
+  position: relative; width: 44px; height: 24px; background: rgba(255,255,255,0.08);
+  border-radius: 999px; cursor: pointer; transition: var(--transition);
+  flex-shrink: 0; border: none;
+}
+.toggle.active { background: var(--accent-primary); }
+.toggle::after {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 18px; height: 18px; background: white; border-radius: 50%;
+  transition: var(--transition);
+}
+.toggle.active::after { transform: translateX(20px); }
+
+/* ---------- ESTADO / QUEUE ---------- */
+.status-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 0.8rem; font-weight: 600;
+  padding: 6px 12px; border-radius: 999px;
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+.status-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+.status-pill.running .dot { background: var(--accent-primary); animation: pulse 1.4s infinite; }
+.status-pill.done .dot { background: var(--success); }
+.status-pill.error .dot { background: var(--danger); }
+.status-pill.running { color: var(--accent-soft); border-color: var(--accent-primary); }
+
+.progress {
+  height: 6px; background: rgba(255,255,255,0.06); border-radius: 999px;
+  overflow: hidden; margin: 14px 0 6px;
+}
+.progress-bar {
+  height: 100%; width: 0%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-soft));
+  transition: width 400ms ease;
+}
+.progress-bar.done { background: var(--success); }
+
+.log-box {
+  background: rgba(0,0,0,0.4); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); padding: 12px;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 0.78rem; color: var(--text-secondary);
+  max-height: 180px; overflow-y: auto; margin-top: 12px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.log-box .ln-ok { color: var(--success); }
+.log-box .ln-err { color: var(--danger); }
+.log-box .ln-warn { color: var(--accent-warm); }
+
+.queue-list { display: flex; flex-direction: column; gap: 10px; }
+.job {
+  display: flex; align-items: center; gap: 12px;
+  background: rgba(0,0,0,0.2); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); padding: 11px 13px;
+}
+.job-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+.job-dot.running { background: var(--accent-primary); box-shadow: 0 0 10px var(--accent-glow); animation: pulse 1.4s infinite; }
+.job-dot.done { background: var(--success); }
+.job-dot.fail { background: var(--danger); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.job-info { flex: 1; min-width: 0; }
+.job-url {
+  font-size: 0.84rem; font-weight: 500; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.job-meta { font-size: 0.76rem; color: var(--text-muted); margin-top: 2px; }
+.empty-state {
+  text-align: center; padding: 28px 12px; color: var(--text-muted); font-size: 0.88rem;
+}
+
+/* ---------- OUTPUT GALLERY ---------- */
+.gallery {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px;
+}
+.clip-item {
+  aspect-ratio: 9/16; border-radius: var(--radius-sm);
+  background: linear-gradient(160deg, #1b1f2b, #0b0d12);
+  border: 1px solid var(--border-subtle);
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  cursor: pointer; transition: var(--transition);
+}
+.clip-item:hover { transform: translateY(-3px); border-color: var(--accent-primary); box-shadow: 0 14px 30px -12px var(--accent-glow); }
+.clip-item video, .clip-item img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+}
+.clip-item .overlay {
+  position: absolute; inset: 0;
+  background: linear-gradient(transparent 40%, rgba(0,0,0,0.85));
+}
+.clip-meta { position: relative; z-index: 1; padding: 10px; font-size: 0.72rem; color: white; }
+.clip-meta .score {
+  display: inline-block; background: var(--accent-primary); color: white;
+  border-radius: 999px; padding: 2px 8px; font-weight: 700; font-size: 0.68rem;
+  margin-bottom: 4px;
+}
+.clip-meta .time { color: rgba(255,255,255,0.75); }
+.clip-item .play-hint {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 1; font-size: 1.8rem; opacity: 0; transition: var(--transition);
+}
+.clip-item:hover .play-hint { opacity: 0.85; }
+/* corte apenas analisado (plan-only): existe na lista, não existe no disco */
+.clip-item.analysis-only { border-style: dashed; }
+.clip-item.analysis-only .overlay {
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.12), rgba(0, 0, 0, 0.6));
+}
+.clip-item.analysis-only .play-hint { opacity: 0.5; font-size: 1.35rem; }
+.clip-meta .pending {
+  color: var(--accent-warm); font-size: 0.62rem; letter-spacing: 0.02em;
+}
+
+/* ---------- FOOTER ---------- */
+footer {
+  border-top: 1px solid var(--border-subtle);
+  padding: 24px 0;
+  color: var(--text-muted); font-size: 0.82rem;
+}
+.footer-inner {
+  display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+}
+
+/* ---------- TOAST ---------- */
+.toast-zone {
+  position: fixed; bottom: 20px; right: 20px; z-index: 100;
+  display: flex; flex-direction: column; gap: 10px; max-width: 340px;
+}
+.toast {
+  background: var(--bg-surface); border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--accent-primary);
+  border-radius: var(--radius-sm); padding: 12px 16px;
+  font-size: 0.86rem; box-shadow: var(--shadow-card);
+  animation: toastIn 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.toast.ok { border-left-color: var(--success); }
+.toast.err { border-left-color: var(--danger); }
+@keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+
+/* ---------- RESPONSIVO ---------- */
+/* Abaixo de 920px nao cabe rail + conteudo: os destinos viram menu no header. */
+@media (max-width: 920px) {
+  body { padding-left: 0; }
+  .rail { display: none; }
+  .rail-dropdown { display: block; }
+  .wrap { padding: 0 18px; }
+}
+
+@media (max-width: 640px) {
+  .field-row, .field-row.triple { grid-template-columns: 1fr; }
+  .header-inner { height: 60px; }
+  .hero { padding: 40px 0 32px; }
+  .gallery { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+  .wrap { padding: 0 16px; }
+  .nav-actions .btn, .menu-btn { padding: 9px 11px; font-size: 0.84rem; }
+}
+
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent-soft); outline-offset: 2px;
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}

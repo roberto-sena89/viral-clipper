@@ -77,6 +77,11 @@ class Zone:
     # square; ffmpeg has no cheap rounded-rect crop, so a rounded zone is drawn
     # by compositing the still over a colour plate with an alpha mask.
     corner_radius: float = 0.0
+    # Manual reframe inside a still band (image/frame): zoom >= 1 magnifies
+    # around the pan point; pan 0..1 slides the crop window. None = layout.
+    zoom: float | None = None
+    pan_x: float | None = None
+    pan_y: float | None = None
 
     def validate(self, index: int) -> None:
         where = f"zona {index} ({self.kind})"
@@ -99,6 +104,12 @@ class Zone:
             raise ClipperError(f"{where}: frame_at nao pode ser negativo.")
         if self.corner_radius < 0:
             raise ClipperError(f"{where}: corner_radius nao pode ser negativo.")
+        if self.zoom is not None and self.zoom < 1:
+            raise ClipperError(f"{where}: zoom precisa ser 1 ou maior.")
+        for axis in ("pan_x", "pan_y"):
+            value = getattr(self, axis)
+            if value is not None and not 0.0 <= value <= 1.0:
+                raise ClipperError(f"{where}: {axis} precisa ficar entre 0 e 1.")
         total_margin = self.margin_top + self.margin_bottom
         if total_margin >= 1.0:
             raise ClipperError(
@@ -123,6 +134,13 @@ class Template:
     caption_preset: str | None = None
     layout: str | None = None
     headline_seconds: float | None = None
+    headline_align: str | None = None
+    headline_font_size: int | None = None
+    headline_margin_side: int | None = None
+    reframe_zoom: float | None = None
+    reframe_pan_x: float | None = None
+    reframe_pan_y: float | None = None
+    caption_box_theme: str | None = None
     progress_bar: bool | None = None
     # Background painted before any zone is drawn. Only visible where a zone
     # uses ``contain`` or carries a margin.
@@ -166,6 +184,32 @@ class Template:
             raise ClipperError(
                 f"Template '{self.name}': as zonas somam {total:.4f} da altura; "
                 "precisam somar exatamente 1.0."
+            )
+        if self.headline_align is not None and self.headline_align not in {"left", "center", "right"}:
+            raise ClipperError(
+                f"Template '{self.name}': headline_align precisa ser left, center ou right."
+            )
+        if self.headline_font_size is not None and self.headline_font_size <= 0:
+            raise ClipperError(
+                f"Template '{self.name}': headline_font_size precisa ser maior que zero."
+            )
+        if self.headline_margin_side is not None and self.headline_margin_side < 0:
+            raise ClipperError(
+                f"Template '{self.name}': headline_margin_side nao pode ser negativo."
+            )
+        if self.reframe_zoom is not None and self.reframe_zoom < 1:
+            raise ClipperError(
+                f"Template '{self.name}': reframe_zoom precisa ser 1 ou maior."
+            )
+        for axis in ("reframe_pan_x", "reframe_pan_y"):
+            value = getattr(self, axis)
+            if value is not None and not 0.0 <= value <= 1.0:
+                raise ClipperError(
+                    f"Template '{self.name}': {axis} precisa ficar entre 0 e 1."
+                )
+        if self.caption_box_theme is not None and self.caption_box_theme not in {"light", "dark"}:
+            raise ClipperError(
+                f"Template '{self.name}': caption_box_theme precisa ser light ou dark."
             )
 
     @property
@@ -329,6 +373,15 @@ def scale_into(band: Band, zone: Zone, label_in: str) -> str:
             f"[{label_in}]scale={w}:{h}:force_original_aspect_ratio=decrease,"
             f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color={zone.color},setsar=1"
         )
+    zoom = zone.zoom or 1.0
+    pan_x = zone.pan_x if zone.pan_x is not None else 0.5
+    pan_y = zone.pan_y if zone.pan_y is not None else 0.5
+    if zoom != 1 or pan_x != 0.5 or pan_y != 0.5:
+        scaled_w, scaled_h = int(round(w * zoom)), int(round(h * zoom))
+        return (
+            f"[{label_in}]scale={scaled_w}:{scaled_h}:force_original_aspect_ratio=increase,"
+            f"crop={w}:{h}:x=(in_w-out_w)*{pan_x:g}:y=(in_h-out_h)*{pan_y:g},setsar=1"
+        )
     return (
         f"[{label_in}]scale={w}:{h}:force_original_aspect_ratio=increase,"
         f"crop={w}:{h},setsar=1"
@@ -482,6 +535,13 @@ def from_dict(data: dict[str, Any], *, name: str | None = None) -> Template:
         "caption_preset",
         "layout",
         "headline_seconds",
+        "headline_align",
+        "headline_font_size",
+        "headline_margin_side",
+        "reframe_zoom",
+        "reframe_pan_x",
+        "reframe_pan_y",
+        "caption_box_theme",
         "progress_bar",
         "background",
     }
@@ -509,6 +569,9 @@ def from_dict(data: dict[str, Any], *, name: str | None = None) -> Template:
             "margin_left",
             "margin_right",
             "corner_radius",
+            "zoom",
+            "pan_x",
+            "pan_y",
         }
         zone_unknown = sorted(set(entry) - zone_known)
         if zone_unknown:
@@ -528,6 +591,13 @@ def from_dict(data: dict[str, Any], *, name: str | None = None) -> Template:
         caption_preset=data.get("caption_preset"),
         layout=data.get("layout"),
         headline_seconds=data.get("headline_seconds"),
+        headline_align=data.get("headline_align"),
+        headline_font_size=data.get("headline_font_size"),
+        headline_margin_side=data.get("headline_margin_side"),
+        reframe_zoom=data.get("reframe_zoom"),
+        reframe_pan_x=data.get("reframe_pan_x"),
+        reframe_pan_y=data.get("reframe_pan_y"),
+        caption_box_theme=data.get("caption_box_theme"),
         progress_bar=data.get("progress_bar"),
         background=str(data.get("background") or "black"),
     )
@@ -596,6 +666,20 @@ def apply_to_config(config, template: Template):
         overrides["layout"] = template.layout
     if template.headline_seconds is not None:
         overrides["headline_seconds"] = template.headline_seconds
+    if template.headline_align is not None:
+        overrides["headline_align"] = template.headline_align
+    if template.headline_font_size is not None:
+        overrides["headline_font_size"] = template.headline_font_size
+    if template.headline_margin_side is not None:
+        overrides["headline_margin_side"] = template.headline_margin_side
+    if template.reframe_zoom is not None:
+        overrides["reframe_zoom"] = template.reframe_zoom
+    if template.reframe_pan_x is not None:
+        overrides["reframe_pan_x"] = template.reframe_pan_x
+    if template.reframe_pan_y is not None:
+        overrides["reframe_pan_y"] = template.reframe_pan_y
+    if template.caption_box_theme is not None:
+        overrides["caption_box_theme"] = template.caption_box_theme
     if template.progress_bar is not None:
         overrides["progress_bar"] = template.progress_bar
     if not overrides:

@@ -32,6 +32,20 @@ HEADLINE_MAX_WORDS = 12
 HEADLINE_FAD_IN_MS = 120
 HEADLINE_FAD_OUT_MS = 300
 
+# ASS top-row alignment digits for the burned headline.
+HEADLINE_ALIGN = {"left": 7, "center": 8, "right": 9}
+
+# Bottom share of the frame kept clear of captions: TikTok and Instagram
+# Reels both stack their own UI there (progress bar, video caption, like /
+# comment / share rail). Text placed lower gets covered on one network or
+# the other, so the margin is lifted to clear it on both.
+SOCIAL_BOTTOM_SAFE = 0.16
+
+# Share of the video band the captions float above its bottom edge. Viral
+# retention lives in the lower third of the footage, right above the
+# platform UI — not glued to the canvas bottom and not carried to the top.
+SPLIT_CAPTION_LIFT = 0.12
+
 # WrapStyle 0 = smart wrapping: libass breaks long lines at word boundaries
 # inside the style margins. Style 2 (the previous value) never wraps, which is
 # why a headline wider than the frame ran off both edges instead of breaking
@@ -46,7 +60,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default,{font},{size},{primary},&H000000FF,{outline_c},{back},{bold},{italic},0,0,100,100,0,0,{border_style},{outline_w},{shadow},2,90,90,{margin_v},1
-Style: Headline,{font},{headline_size},{highlight},&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,5,2,8,60,60,60,1
+Style: Headline,{font},{headline_size},{highlight},&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,5,2,{headline_align},{headline_margin_l},{headline_margin_r},60,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -216,6 +230,13 @@ def build_captions(
         shadow=f"{style.shadow_depth:g}",
         margin_v=margin_v,
         headline_size=config.headline_font_size or 100,
+        headline_align=HEADLINE_ALIGN[config.headline_align],
+        headline_margin_l=config.headline_margin_side
+        if config.headline_margin_side is not None
+        else 60,
+        headline_margin_r=config.headline_margin_side
+        if config.headline_margin_side is not None
+        else 60,
         highlight=style.highlight_color,
     )
     destination.write_text(header + "\n".join(events) + "\n", encoding="utf-8")
@@ -257,23 +278,32 @@ def extract_frame(
 
 
 def _caption_margin_for_band(config: ClipConfig, style, template) -> int:
-    """Caption bottom margin that keeps the text inside the video band.
+    """Caption bottom margin that keeps the text on the video band.
 
-    ``margin_v`` is measured from the bottom of the canvas, but on a split
-    template the captions belong to the *video* band, which ends well above the
-    bottom. Without this the text lands on top of the image zone. The preset's
-    own margin is kept as a floor so a template with a full-height video band
-    behaves exactly as before.
+    ``margin_v`` is measured from the bottom of the canvas. On a split
+    template the captions belong to the *video* band: they hug its bottom
+    edge (12% of the band height above it), where viral retention lives —
+    right above the platform UI, never on top of a lower zone and never
+    carried up to the top of the band. The social safe floor still applies,
+    so bottom-anchored bands never slide under the networks' own UI. A
+    full-height video band behaves exactly as before.
     """
+    floor = _social_safe_floor(config)
     if template is None:
-        return style.margin_v
+        return max(style.margin_v, floor)
     video_zone = template.video_zone
     if video_zone is None or video_zone.fraction >= 1.0:
-        return style.margin_v
-    below = config.height - int(round(config.height * video_zone.fraction))
-    # The preset's margin is a bottom gutter inside a full-height frame; carry
-    # the same gutter up to the band edge.
-    return below + style.margin_v
+        return max(style.margin_v, floor)
+    pixel = [z for z in template.zones if z.kind != "captions"]
+    index = next(i for i, z in enumerate(pixel) if z.kind == "video")
+    below_px = int(round(config.height * sum(z.fraction for z in pixel[index + 1:])))
+    band_px = int(round(config.height * video_zone.fraction))
+    return max(below_px + int(round(band_px * SPLIT_CAPTION_LIFT)), floor)
+
+
+def _social_safe_floor(config: ClipConfig) -> int:
+    """Lowest caption margin that clears the TikTok/Reels bottom UI."""
+    return int(round(config.height * SOCIAL_BOTTOM_SAFE))
 
 
 def _layout_filter(
@@ -309,6 +339,21 @@ def _layout_filter(
             f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1"
         )
     # "center" and "focus" share the geometry; only the offset differs.
+    # A manual reframe wins over the face offset: the user framed it by hand.
+    if (
+        config.reframe_zoom is not None
+        or config.reframe_pan_x is not None
+        or config.reframe_pan_y is not None
+    ):
+        zoom = config.reframe_zoom or 1.0
+        pan_x = config.reframe_pan_x if config.reframe_pan_x is not None else 0.5
+        pan_y = config.reframe_pan_y if config.reframe_pan_y is not None else 0.5
+        scaled_w, scaled_h = int(round(width * zoom)), int(round(height * zoom))
+        return (
+            f"scale={scaled_w}:{scaled_h}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height}:"
+            f"x=(in_w-out_w)*{pan_x:g}:y=(in_h-out_h)*{pan_y:g},setsar=1"
+        )
     if crop_x is not None:
         return (
             f"scale={width}:{height}:force_original_aspect_ratio=increase,"

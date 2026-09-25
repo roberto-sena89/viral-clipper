@@ -13,8 +13,10 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 from viralclipper import report
+from viralclipper.ig_profile import ProfileItem, ProfileListing
 from viralclipper.util import ClipperError
 from web import server
 from web.server import resolve_within
@@ -165,6 +167,23 @@ class LibraryListingTests(unittest.TestCase):
         self.assertEqual(server.list_library(self.tmp / "nao_existe"), [])
 
 
+def page_source(name: str) -> str:
+    """A page plus its external CSS and JS, as one string.
+
+    Each page keeps markup in the ``.html`` and styles/script in sibling
+    files. The contract tests below care about the effective page — which
+    class name or helper it exposes — not about which file that lands in, so
+    they read all three here.
+    """
+    base = server.WEB_DIR / name
+    parts = [base.read_text(encoding="utf-8")]
+    for suffix in (".css", ".js"):
+        asset = base.with_suffix(suffix)
+        if asset.exists():
+            parts.append(asset.read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+
 class ScrapPageTests(unittest.TestCase):
     """The Scrap page: one link, or a whole profile.
 
@@ -175,10 +194,12 @@ class ScrapPageTests(unittest.TestCase):
     """
 
     def setUp(self):
-        self.page = server.WEB_DIR / "scrap.html"
+        self.page = page_source("scrap.html")
 
     def test_the_page_exists(self):
-        self.assertTrue(self.page.exists(), "web/scrap.html is missing")
+        self.assertTrue(
+            (server.WEB_DIR / "scrap.html").exists(), "web/scrap.html is missing"
+        )
 
     def test_the_route_serves_the_page(self):
         """do_GET must have a /scrap branch, not fall through to 404."""
@@ -198,18 +219,18 @@ class ScrapPageTests(unittest.TestCase):
         self.assertLess(scrap_at, guard_at, "POST /scrap ficou atras do guard")
 
     def test_the_page_offers_both_modes(self):
-        body = self.page.read_text(encoding="utf-8")
+        body = self.page
         self.assertIn('data-mode="link"', body)
         self.assertIn('data-mode="profile"', body)
 
     def test_the_page_hands_off_to_the_panel(self):
         """The pick has to lead somewhere, or the page is a dead end."""
-        body = self.page.read_text(encoding="utf-8")
+        body = self.page
         self.assertIn('encodeURIComponent(picked.url)', body)
         self.assertIn('"/?url="', body)
 
     def test_the_panel_accepts_the_handoff(self):
-        panel = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        panel = page_source("index.html")
         self.assertIn("URLSearchParams(window.location.search)", panel)
         self.assertIn("params.get('url')", panel)
 
@@ -220,7 +241,7 @@ class ScrapPageTests(unittest.TestCase):
         ``renderMode`` hides for ``mode === "link"``. Link mode therefore had no
         way to authenticate at all, and its searches failed permanently.
         """
-        body = self.page.read_text(encoding="utf-8")
+        body = self.page
         fieldset_at = body.index('id="perfil-opts"')
         fieldset_close = body.index("</fieldset>", fieldset_at)
         selector_at = body.index('id="scrap-cookies"')
@@ -236,7 +257,7 @@ class ScrapPageTests(unittest.TestCase):
         When it lived inside ``if (mode === "profile")``, link mode never sent
         them, so every Instagram reel search failed with no way to fix it.
         """
-        body = self.page.read_text(encoding="utf-8")
+        body = self.page
         handler_at = body.index("async function search")
         snippet = body[handler_at:handler_at + 2000]
         cookies_at = snippet.index("const cookies = ")
@@ -515,7 +536,7 @@ class ScrapCardTests(unittest.TestCase):
     """
 
     def setUp(self):
-        self.page = (server.WEB_DIR / "scrap.html").read_text(encoding="utf-8")
+        self.page = page_source("scrap.html")
 
     def test_the_card_shows_a_thumbnail_slot(self):
         self.assertIn("result-thumb", self.page)
@@ -626,7 +647,7 @@ class ScrapThumbRouteTests(unittest.TestCase):
     def test_the_page_points_the_image_at_the_proxy(self):
         """The CSP allows images from this origin only, so a raw CDN URL in
         ``src`` is blocked and the thumbnail silently never appears."""
-        page = (server.WEB_DIR / "scrap.html").read_text(encoding="utf-8")
+        page = page_source("scrap.html")
         self.assertIn('"/scrap/thumb?i="', page)
         # The item's own ``thumb`` field is a foreign CDN URL and must not be
         # assigned to src directly.
@@ -1116,7 +1137,7 @@ class ArchiveLogPageTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.html = (server.REPO_ROOT / "web" / "scrap.html").read_text(encoding="utf-8")
+        cls.html = page_source("scrap.html")
 
     def test_the_log_panel_markup_is_wired_to_the_progress_box(self):
         for fragment in (
@@ -1145,7 +1166,7 @@ class ViralOptionPageTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.html = (server.REPO_ROOT / "web" / "scrap.html").read_text(encoding="utf-8")
+        cls.html = page_source("scrap.html")
 
     def test_the_option_exists_on_search_and_archive(self):
         for fragment in (
@@ -1164,7 +1185,7 @@ class SearchLoadingTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.html = (server.REPO_ROOT / "web" / "scrap.html").read_text(encoding="utf-8")
+        cls.html = page_source("scrap.html")
 
     def test_the_search_state_is_a_skeleton(self):
         for fragment in (
@@ -1186,7 +1207,7 @@ class ScrapSelectionPageTests(unittest.TestCase):
     """A selecao em lote, do lado da pagina: os ids e a rota tem de casar."""
 
     def setUp(self):
-        self.page = (server.WEB_DIR / "scrap.html").read_text(encoding="utf-8")
+        self.page = page_source("scrap.html")
         self.source = (server.WEB_DIR / "server.py").read_text(encoding="utf-8")
 
     def test_the_page_offers_select_all_and_download(self):
@@ -1243,6 +1264,214 @@ class YtdlpArgvTests(unittest.TestCase):
         )
 
 
+class CookiesFileFromArgsTests(unittest.TestCase):
+    """ig_profile reads a jar from disk, so only ``--cookies`` is of use to it."""
+
+    def test_the_long_form_is_read(self):
+        self.assertEqual(
+            server._cookies_file_from_args(["--cookies", "cookies.txt"]), "cookies.txt"
+        )
+
+    def test_the_equals_form_is_read(self):
+        self.assertEqual(
+            server._cookies_file_from_args(["--cookies=C:/x/cookies.txt"]),
+            "C:/x/cookies.txt",
+        )
+
+    def test_it_finds_the_flag_among_others(self):
+        self.assertEqual(
+            server._cookies_file_from_args(["-f", "bv*", "--cookies", "c.txt", "-S", "res"]),
+            "c.txt",
+        )
+
+    def test_the_browser_form_is_not_a_file(self):
+        """That route is sealed by App-Bound Encryption on Chrome 127+ anyway."""
+        self.assertEqual(
+            server._cookies_file_from_args(["--cookies-from-browser", "chrome"]), ""
+        )
+
+    def test_nothing_at_all(self):
+        self.assertEqual(server._cookies_file_from_args([]), "")
+        self.assertEqual(server._cookies_file_from_args(["--cookies"]), "")
+
+
+class IgProfileRoutingTests(unittest.TestCase):
+    """An Instagram profile must reach the GraphQL lister, never yt-dlp.
+
+    ``InstagramUserIE`` is disabled upstream, so the flat-playlist route answers
+    "Unable to extract data" for an account that is reachable in a browser. The
+    whole feature is invisible if this diversion regresses — and the failure
+    looks like "the account is empty", which is plausible enough to be missed.
+    """
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(prefix="vc_route_"))
+
+    def _route(self, url, *, extra_ytdlp_args=None):
+        calls = {"ig": None, "ytdlp": None}
+
+        def fake_ig(username, payload, cookies_file, argv):
+            calls["ig"] = {
+                "username": username, "cookies_file": cookies_file, "argv": list(argv),
+            }
+            return [{"index": 1, "id": "A", "folder": "reels"}], username, 0
+
+        def fake_meta(target, config):
+            calls["ytdlp"] = target
+            return {"entries": [], "title": ""}
+
+        payload = {"url": url, "mode": "profile", "limit": 5}
+        if extra_ytdlp_args is not None:
+            payload["extra_ytdlp_args"] = extra_ytdlp_args
+        with mock.patch.object(server, "_ig_profile_results", side_effect=fake_ig), \
+             mock.patch.object(server.download_mod, "fetch_metadata", side_effect=fake_meta), \
+             mock.patch.object(server.download_mod, "repair_view_counts",
+                               side_effect=lambda *a, **k: None):
+            results, _title, _removed = server._scrap_results(payload)
+        return calls, results
+
+    def test_a_profile_url_goes_to_the_graphql_lister(self):
+        calls, results = self._route(
+            "https://www.instagram.com/salmareis/",
+            extra_ytdlp_args=["--cookies", "cookies.txt"],
+        )
+        self.assertIsNone(calls["ytdlp"], "o yt-dlp nao devia nem ser chamado")
+        self.assertEqual(calls["ig"]["username"], "salmareis")
+        self.assertEqual(calls["ig"]["cookies_file"], "cookies.txt")
+        self.assertEqual(results[0]["folder"], "reels")
+
+    def test_a_reel_url_stays_with_yt_dlp(self):
+        """A code is not an account; diverting it would answer "0 itens"."""
+        calls, _ = self._route("https://www.instagram.com/reel/ABC123/")
+        self.assertIsNone(calls["ig"])
+        self.assertEqual(calls["ytdlp"], "https://www.instagram.com/reel/ABC123/")
+
+    def test_a_post_url_stays_with_yt_dlp(self):
+        calls, _ = self._route("https://www.instagram.com/p/ABC123/")
+        self.assertIsNone(calls["ig"])
+
+    def test_a_youtube_channel_is_untouched(self):
+        """The diversion must not swallow the path that already worked."""
+        calls, _ = self._route("https://www.youtube.com/@NASA/videos")
+        self.assertIsNone(calls["ig"])
+        self.assertEqual(calls["ytdlp"], "https://www.youtube.com/@NASA/videos")
+
+    def test_the_cookies_travel_with_the_item(self):
+        """The row thumbnail is fetched later and needs the same credential."""
+        calls, _ = self._route(
+            "https://www.instagram.com/salmareis/",
+            extra_ytdlp_args=["--cookies", "cookies.txt"],
+        )
+        self.assertEqual(calls["ig"]["argv"], ["--cookies", "cookies.txt"])
+
+
+class IgProfileListingTests(unittest.TestCase):
+    """The mapping from a ProfileItem to the row the page renders."""
+
+    def _listing(self, items, username="alvo"):
+        return ProfileListing(username=username, items=items, pages=1)
+
+    def _run(self, items, **payload):
+        with mock.patch.object(
+            server.ig_profile_mod, "list_profile", return_value=self._listing(items)
+        ):
+            return server._ig_profile_results(
+                "alvo", payload, "cookies.txt", ["--cookies", "cookies.txt"]
+            )
+
+    def test_a_missing_cookies_file_is_named(self):
+        with self.assertRaises(ClipperError) as ctx:
+            server._ig_profile_results("alvo", {}, "", [])
+        self.assertIn("cookies.txt", str(ctx.exception))
+
+    def test_a_caption_becomes_a_single_capped_line(self):
+        """The panel gives the title one line; captions are paragraphs."""
+        items = [ProfileItem(code="A", url="u", folder="reels", kind="reel",
+                             caption="\n\n  Bom dia  \nsegunda linha\n")]
+        results, _title, _removed = self._run(items)
+        self.assertEqual(results[0]["title"], "Bom dia")
+
+    def test_an_empty_caption_falls_back_to_the_code(self):
+        items = [ProfileItem(code="A", url="u", folder="reels", kind="reel")]
+        results, _title, _removed = self._run(items)
+        self.assertEqual(results[0]["title"], "A")
+
+    def test_a_reel_reports_plays_and_a_post_reports_likes(self):
+        items = [
+            ProfileItem(code="R", url="u", folder="reels", kind="reel",
+                        media_type=2, play_count=900, like_count=10),
+            ProfileItem(code="P", url="u", folder="posts", kind="post",
+                        media_type=1, play_count=None, like_count=42),
+        ]
+        results, _title, _removed = self._run(items)
+        self.assertEqual(results[0]["view_count"], 900)
+        self.assertEqual(results[1]["view_count"], 42)
+
+    def test_a_photo_is_flagged_as_having_no_video(self):
+        """The row can say so instead of failing with "no video in this post"."""
+        items = [
+            ProfileItem(code="P", url="u", folder="posts", kind="post", media_type=1),
+            ProfileItem(code="R", url="u", folder="reels", kind="reel", media_type=2),
+        ]
+        results, _title, _removed = self._run(items)
+        self.assertFalse(results[0]["has_video"])
+        self.assertTrue(results[1]["has_video"])
+
+    def test_viral_ranks_before_the_cap(self):
+        items = [
+            ProfileItem(code="velho", url="u", folder="reels", kind="reel",
+                        media_type=2, play_count=1),
+            ProfileItem(code="viral", url="u", folder="reels", kind="reel",
+                        media_type=2, play_count=999),
+        ]
+        results, _title, _removed = self._run(items, limit=1, viral=True)
+        self.assertEqual([r["id"] for r in results], ["viral"])
+
+    def test_the_username_is_the_title(self):
+        items = [ProfileItem(code="A", url="u", folder="reels", kind="reel")]
+        _results, title, removed = self._run(items)
+        self.assertEqual(title, "alvo")
+        self.assertEqual(removed, 0)
+
+
+class FakeResponse:
+    def __init__(self, payload: bytes):
+        self.payload = payload
+
+    def read(self, _size=None):
+        return self.payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+
+class ThumbFetchTests(unittest.TestCase):
+    """A stored CDN URL must not cost an extra extraction per row."""
+
+    def test_a_stored_thumb_is_used_without_asking_yt_dlp(self):
+        """300 items would otherwise pay 300 extractions just for decoration."""
+        item = {"url": "https://www.instagram.com/reel/A/", "thumb": "https://cdn/a.jpg"}
+        with mock.patch.object(server.download_mod, "fetch_metadata",
+                               side_effect=AssertionError("extraiu de novo")), \
+             mock.patch.object(server, "urlopen", return_value=FakeResponse(b"img")):
+            self.assertEqual(server._fetch_thumb_bytes(item), b"img")
+
+    def test_without_a_stored_thumb_it_falls_back_to_yt_dlp(self):
+        item = {"url": "https://youtu.be/x", "thumb": ""}
+        meta = {"thumbnail": "https://cdn/b.jpg"}
+        with mock.patch.object(server.download_mod, "fetch_metadata",
+                               return_value=meta) as fetch, \
+             mock.patch.object(server, "urlopen", return_value=FakeResponse(b"img2")):
+            self.assertEqual(server._fetch_thumb_bytes(item), b"img2")
+        fetch.assert_called_once()
+
+    def test_no_url_means_no_bytes(self):
+        self.assertIsNone(server._fetch_thumb_bytes({"thumb": "https://cdn/a.jpg"}))
+
+
 class TemplatesPageTests(unittest.TestCase):
     """The wizard page holds its own copy of the preset catalog for the preview.
 
@@ -1252,15 +1481,18 @@ class TemplatesPageTests(unittest.TestCase):
     """
 
     def setUp(self):
-        self.page = server.WEB_DIR / "templates.html"
+        self.page = page_source("templates.html")
 
     def test_the_page_exists(self):
-        self.assertTrue(self.page.exists(), "web/templates.html is missing")
+        self.assertTrue(
+            (server.WEB_DIR / "templates.html").exists(),
+            "web/templates.html is missing",
+        )
 
     def test_the_page_lists_every_shipped_preset(self):
         from viralclipper import caption_presets
 
-        body = self.page.read_text(encoding="utf-8")
+        body = self.page
         missing = [name for name in caption_presets.PRESETS if f'"{name}"' not in body]
         self.assertEqual(
             missing, [], f"presets ausentes na pagina de templates: {missing}"
@@ -1271,7 +1503,7 @@ class TemplatesPageTests(unittest.TestCase):
 
         from viralclipper import caption_presets
 
-        body = self.page.read_text(encoding="utf-8")
+        body = self.page
         block = re.search(r"var PRESETS = \{(.*?)\n  \};", body, re.S)
         self.assertIsNotNone(block, "bloco PRESETS nao encontrado na pagina")
         keys = set(re.findall(r'^\s*"([a-z0-9-]+)":', block.group(1), re.M))
@@ -1283,12 +1515,12 @@ class TemplatesPageTests(unittest.TestCase):
     def test_the_page_offers_every_zone_kind(self):
         from viralclipper import template as template_mod
 
-        body = self.page.read_text(encoding="utf-8")
+        body = self.page
         missing = [kind for kind in template_mod.ZONE_KINDS if f"{kind}:" not in body]
         self.assertEqual(missing, [], f"tipos de zona ausentes na pagina: {missing}")
 
     def test_the_panel_links_to_the_templates_page(self):
-        panel = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        panel = page_source("index.html")
         self.assertIn('href="/templates"', panel)
 class RailNavigationTests(unittest.TestCase):
     """The page picker on the lateral rail.
@@ -1410,7 +1642,7 @@ class RailNavigationTests(unittest.TestCase):
         # Both pages must hide the rail and reveal the fallback at the same
         # width, or one of them breaks silently.
         for name in self.PAGES:
-            css = self.body(name)
+            css = page_source(name)
             with self.subTest(page=name):
                 self.assertIn("max-width: 920px", css)
                 self.assertIn("body { padding-left: 0; }", css)
@@ -1424,7 +1656,7 @@ class RailNavigationTests(unittest.TestCase):
         so a formatting change on one page cannot fail this test.
         """
         for name in self.PAGES:
-            body = self.body(name)
+            body = page_source(name)
             match = re.search(
                 r"""\b(?:const|var|let)\s+PAGES\s*=\s*\{(.*?)\n\s*\};""", body, re.S
             )
@@ -1439,7 +1671,7 @@ class RailNavigationTests(unittest.TestCase):
     def test_the_current_page_is_marked_by_the_js(self):
         """aria-current must be derived, never hardcoded to one page."""
         for name in self.PAGES:
-            body = self.body(name)
+            body = page_source(name)
             with self.subTest(page=name):
                 code = body.replace("'", '"')
                 self.assertIn('setAttribute("aria-current", "page")', code)
@@ -1487,7 +1719,7 @@ class RailNavigationTests(unittest.TestCase):
         rail to sit above the helpers as long as it does not touch them.
         """
         for name in self.PAGES:
-            body = self.body(name)
+            body = page_source(name)
             start = body.index("// ---------- rail lateral")
             end = body.index("// ----------", start + 10)
             block = body[start:end]
@@ -1512,7 +1744,7 @@ class TemplatesGeometryTests(unittest.TestCase):
     """The wizard recomputes band pixels; the numbers must agree with the engine."""
 
     def setUp(self):
-        self.page = server.WEB_DIR / "templates.html"
+        self.page = page_source("templates.html")
 
     def test_the_geometry_rule_matches_the_engine(self):
         """Both implementations are compared on the same input.
@@ -1522,7 +1754,7 @@ class TemplatesGeometryTests(unittest.TestCase):
         """
         from viralclipper import template as template_mod
 
-        body = self.page.read_text(encoding="utf-8")
+        body = self.page
         # The page absorbs the rounding remainder into the last pixel band, the
         # same way plan_bands does. Assert the shared constants are present so a
         # rewrite cannot quietly drop the rule.
@@ -1532,6 +1764,70 @@ class TemplatesGeometryTests(unittest.TestCase):
         builtin = template_mod.BUILTIN["split-card"]
         bands = template_mod.plan_bands(builtin, 1080, 1920)
         self.assertEqual([b.kind for b in bands], ["video", "frame", "captions"])
+
+
+class TemplatesPreviewFidelityTests(unittest.TestCase):
+    """A prévia tem de medir o frame do mesmo jeito que o motor o desenha.
+
+    Duas famílias de defeito já passaram por aqui, e nenhuma delas aparece num
+    teste por nome de classe: a legenda pousava dentro da zona de baixo (por
+    cento de ``margin-bottom`` resolve contra a LARGURA, não contra a altura) e
+    o corpo da fonte saía quase 44% menor. Os testes abaixo leem a página
+    efetiva e travam a regra, porque a prévia que mente sobre o render é pior
+    do que não ter prévia.
+    """
+
+    def setUp(self):
+        self.page = page_source("templates.html")
+
+    def test_vertical_measures_are_a_fraction_of_the_height(self):
+        """``cqh``, nunca ``cqw``: o motor conta px de um frame de 1920."""
+        self.assertIn('state.height * 100) + "cqh"', self.page)
+
+    def test_the_caption_anchors_from_the_base(self):
+        """``bottom`` resolve contra a ALTURA; ``margin-bottom`` contra a largura."""
+        self.assertIn("el.style.bottom = (marginV / state.height * 100)", self.page)
+        self.assertNotIn("marginBottom = (marginV", self.page)
+
+    def test_the_headline_margin_matches_the_engine(self):
+        """``render.py`` fixa o MarginV do estilo Headline; a prévia copia.
+
+        Um número copiado à mão e sem trava é o que já divergiu antes. Aqui o
+        valor é lido do próprio ``render.py``, então mudar lá sem mudar cá
+        quebra o teste em vez de quebrar a prévia.
+        """
+        source = (server.WEB_DIR.parent / "viralclipper" / "render.py").read_text(
+            encoding="utf-8"
+        )
+        match = re.search(r"^Style: Headline,(.+)$", source, re.MULTILINE)
+        self.assertIsNotNone(match, "o estilo ASS do headline sumiu do render.py")
+        # Os campos depois de `Style: Headline,`, com os nomes que o `Format:`
+        # logo acima declara. Nomeados, e nao contados por posicao: contar de
+        # cabeca errou por um campo (leu o Encoding como MarginV). O terceiro e
+        # o PrimaryColour, que a linha de estilo escreve como `{highlight}`.
+        fields = [
+            "fontname", "fontsize", "primary", "secondary", "outline", "back",
+            "bold", "italic", "underline", "strikeout", "scaleX", "scaleY",
+            "spacing", "angle", "borderstyle", "outlinew", "shadow",
+            "alignment", "marginL", "marginR", "marginV", "encoding",
+        ]
+        style = match.group(1).split(",")
+        self.assertEqual(len(style), len(fields), "a linha de estilo mudou de forma")
+        engine_margin_v = dict(zip(fields, style))["marginV"]
+        self.assertEqual(engine_margin_v, "60", "o MarginV do headline mudou")
+
+        declared = re.search(r"HEADLINE_TOP_PX\s*=\s*(\d+)", self.page)
+        self.assertIsNotNone(declared, "a prévia não declara a margem do headline")
+        self.assertEqual(declared.group(1), engine_margin_v)
+
+    def test_the_safe_area_number_is_shared_with_the_guide(self):
+        """Uma fonte só: o guia desenhado e a decoração não podem discordar."""
+        self.assertIn("SAFE_TOP_PCT = 4", self.page)
+        self.assertIn("top: 4%", self.page)
+
+    def test_the_pov_anchors_to_the_safe_area_not_the_headline_margin(self):
+        """O notch pinta por cima do conteúdo e engolia a primeira linha."""
+        self.assertIn("pov.style.top = SAFE_TOP_PCT", self.page)
 
 
 class PortParsingTests(unittest.TestCase):
@@ -1551,6 +1847,153 @@ class PortParsingTests(unittest.TestCase):
         self.assertEqual(server._parse_port(["--port", "0"]), server.PORT)
         self.assertEqual(server._parse_port(["--port", "70000"]), server.PORT)
         self.assertEqual(server._parse_port(["--port"]), server.PORT)
+
+
+class PhrasesRouteTests(unittest.TestCase):
+    """/phrases sugere ganchos via o LLM do ranker, sem config nova."""
+
+    def setUp(self):
+        self.sent: dict = {}
+        self.handler = object.__new__(server.Handler)
+        self.handler._send_json = lambda payload, code=200: self.sent.update(payload, _code=code)
+
+    def test_missing_idea_is_rejected(self):
+        server.Handler._handle_phrases(self.handler, {})
+        self.assertEqual(self.sent["_code"], 400)
+
+    def test_phrases_come_back_as_a_list(self):
+        from unittest import mock
+
+        with mock.patch.object(server, "_suggest_phrases", return_value=["Um", "Dois"]):
+            server.Handler._handle_phrases(self.handler, {"idea": "fuga de moto", "count": 2})
+        self.assertEqual(self.sent["phrases"], ["Um", "Dois"])
+
+    def test_count_is_clamped_to_ten(self):
+        from unittest import mock
+
+        seen = {}
+
+        def record(idea, count):
+            seen["count"] = count
+            return ["x"]
+
+        with mock.patch.object(server, "_suggest_phrases", side_effect=record):
+            server.Handler._handle_phrases(self.handler, {"idea": "fuga de moto", "count": 999})
+        self.assertEqual(seen["count"], 10)
+
+    def test_suggest_phrases_cleans_bullets_and_quotes(self):
+        from unittest import mock
+
+        class FakeProvider:
+            def complete(self, system, user):
+                return '- "Primeira frase"\n2. Segunda frase\n\n'
+
+        with mock.patch("viralclipper.ranker.build_provider", return_value=FakeProvider()):
+            phrases = server._suggest_phrases("fuga de moto", 5)
+        self.assertEqual(phrases, ["Primeira frase", "Segunda frase"])
+
+
+class AssetContentTypeTests(unittest.TestCase):
+    """Static assets need their real type, because nosniff is on.
+
+    The pages used to be single files with everything inline; once the CSS and
+    JS moved into siblings the suffix map became load-bearing, and the hero
+    preview video made it wider still: a video served as
+    ``application/octet-stream`` is a card that never plays, and nothing
+    anywhere reports an error.
+    """
+
+    def test_video_suffix_is_a_video_type(self):
+        self.assertEqual(server.asset_content_type(Path("1.mp4")), "video/mp4")
+
+    def test_text_assets_keep_their_charset(self):
+        self.assertTrue(
+            server.asset_content_type(Path("index.css")).startswith("text/css")
+        )
+        self.assertTrue(
+            server.asset_content_type(Path("index.js")).startswith("text/javascript")
+        )
+
+    def test_images_are_images(self):
+        self.assertEqual(server.asset_content_type(Path("capa.jpg")), "image/jpeg")
+
+    def test_lookup_ignores_the_case_of_the_suffix(self):
+        """On Windows the suffix comes back in whatever case the file has."""
+        self.assertEqual(server.asset_content_type(Path("CLIP.MP4")), "video/mp4")
+
+    def test_unknown_suffix_stays_opaque(self):
+        """Guessing a type would turn any stray asset into a script host."""
+        self.assertEqual(
+            server.asset_content_type(Path("dados.bin")),
+            "application/octet-stream",
+        )
+
+    def test_the_route_serves_assets_through_the_helper(self):
+        source = (server.WEB_DIR / "server.py").read_text(encoding="utf-8")
+        self.assertIn("ctype = asset_content_type(asset)", source)
+
+
+class HeroPreviewTests(unittest.TestCase):
+    """The hero preview stack: one real clip, two placeholders.
+
+    The page is the product demo, so the first card plays an actual 9:16 clip
+    instead of the schematic. What can break silently is the degradation path:
+    the video sits in the repo's own ``web/`` folder and is gitignored, so a
+    fresh clone has no file at all and the card has to look exactly as it did
+    before — not show a broken media icon.
+    """
+
+    def setUp(self):
+        self.page = page_source("index.html")
+        self.markup = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+
+    def test_the_first_card_loads_the_clip(self):
+        self.assertIn('src="/1.mp4"', self.markup)
+        self.assertIn('class="preview-video"', self.markup)
+
+    def test_the_clip_is_a_silent_loopable_inline_preview(self):
+        """No audio, no controls: it is a background, not a player."""
+        video = self.markup.split("preview-video", 1)[1].split("</video>", 1)[0]
+        for attribute in ("muted", "playsinline", "loop", "autoplay"):
+            self.assertIn(attribute, video, f"falta {attribute} no preview do hero")
+        self.assertNotIn("controls", video)
+
+    def test_the_card_starts_as_the_placeholder(self):
+        """``data-live="0"`` is the start state; only the script lights it."""
+        self.assertIn('id="preview-live" data-live="0"', self.markup)
+
+    def test_the_script_lights_the_card_only_after_a_frame_decodes(self):
+        self.assertIn("'loadeddata'", self.page)
+        self.assertIn("'data-live'", self.page)
+
+    def test_the_script_steps_back_when_the_file_fails(self):
+        self.assertIn("addEventListener('error'", self.page)
+
+    def test_the_clip_is_never_paused(self):
+        """The card is a campaign: a frozen frame reads as a broken image.
+
+        An earlier version paused the clip when the machine asked for reduced
+        motion, and on exactly those machines the card looked static. Playback
+        wins here: the element is decorative (``aria-hidden``) and muted, so a
+        still frame is the only outcome nobody asked for.
+        """
+        self.assertNotIn("video.pause()", self.page)
+        self.assertIn("video.play()", self.page)
+
+    def test_playback_is_retried_after_a_refused_autoplay(self):
+        """Muted autoplay is allowed, not guaranteed; a gesture unlocks it."""
+        for hook in ("'canplay'", "'pointerdown'", "'visibilitychange'"):
+            self.assertIn(hook, self.page, f"falta o gancho {hook} para o play")
+
+    def test_the_preload_is_eager_so_the_loop_starts_on_frames(self):
+        self.assertIn('preload="auto"', self.markup)
+
+    def test_the_css_only_reveals_the_clip_when_live(self):
+        self.assertIn('.preview-card[data-live="1"] .preview-video', self.page)
+        self.assertIn('.preview-card[data-live="1"]::after', self.page)
+
+    def test_only_the_first_card_has_a_video(self):
+        self.assertEqual(self.markup.count("<video"), 1)
 
 
 if __name__ == "__main__":  # pragma: no cover

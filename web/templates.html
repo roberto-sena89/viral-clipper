@@ -7,639 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
-<style>
-/* A camada de tokens e identica a do index.html de proposito: as duas paginas
-   sao o mesmo produto, e um token duplicado com valor diferente seria duas
-   verdades. Se mudar um valor aqui, mude la tambem. */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
-  --bg-deep: #0b0d12;
-  --bg-surface: #14171f;
-  --bg-card: rgba(22, 26, 35, 0.72);
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-strong: rgba(255, 255, 255, 0.10);
-  --accent-primary: #6366f1;
-  --accent-glow: rgba(99, 102, 241, 0.28);
-  --accent-soft: #818cf8;
-  --accent-warm: #fbbf24;
-  --success: #34d399;
-  --danger: #f87171;
-
-  --text-2xs: 0.6875rem;
-  --text-2xs-lh: 1.35;
-  --text-caption: 0.78125rem;
-  --text-caption-lh: 1.45;
-  --text-body-sm: 0.84375rem;
-  --text-body-sm-lh: 1.5;
-  --text-body: 0.875rem;
-  --text-body-lh: 1.5;
-  --text-cta: 0.90625rem;
-  --text-cta-lh: 1.4;
-  --text-subtitle: 0.9375rem;
-  --text-title: 1.0625rem;
-  --text-title-lh: 1.35;
-  --text-heading-sm: 1.375rem;
-  --text-heading-sm-lh: 1.25;
-  --text-heading: 1.5rem;
-  --text-heading-lh: 1.2;
-  --text-display: clamp(2.2rem, 5vw, 3.4rem);
-  --text-display-lh: 1.12;
-
-  --content-bg: var(--bg-deep);
-  --shell-bg: #0e1017;
-  --shell-surface: var(--bg-surface);
-  --shell-border: var(--border-subtle);
-  --active-tint: rgba(99, 102, 241, 0.10);
-  --well-bg: rgba(0, 0, 0, 0.35);
-
-  --text-ink: #f3f4f6;
-  --text-ink-muted: #9ca3af;
-  --text-ink-subtle: #6b7280;
-
-  --grad: #ff4fae;
-  --grad-ink: #1c1024;
-
-  --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 22px;
-  --shadow-card: 0 18px 40px -14px rgba(0, 0, 0, 0.6);
-
-  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --motion-instant: 0.1s;
-  --motion-fast: 0.2s;
-  --motion-base: 0.3s;
-  --transition: var(--motion-fast) var(--ease-out-expo);
-
-  --text-primary: var(--text-ink);
-  --text-secondary: var(--text-ink-muted);
-  --text-muted: var(--text-ink-subtle);
-}
-
-html { scroll-behavior: smooth; }
-
-body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: var(--bg-deep);
-  color: var(--text-primary);
-  line-height: 1.55;
-  min-height: 100vh;
-  background-image:
-    radial-gradient(1200px 600px at 80% -10%, rgba(99, 102, 241, 0.10), transparent 60%),
-    radial-gradient(900px 500px at 10% 110%, rgba(251, 191, 36, 0.05), transparent 60%);
-  background-attachment: fixed;
-  -webkit-font-smoothing: antialiased;
-}
-
-.wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
-
-/* ---------- UTILITARIOS ---------- */
-.pressable {
-  transition:
-    transform var(--motion-fast) var(--ease-spring),
-    background-color var(--motion-fast) ease,
-    border-color var(--motion-fast) ease,
-    color var(--motion-fast) ease,
-    box-shadow var(--motion-fast) ease,
-    opacity var(--motion-fast) ease;
-}
-.pressable:active {
-  transition-duration: var(--motion-instant);
-  transition-timing-function: ease-out;
-  transform: scale(0.97);
-}
-.pressable:disabled { cursor: not-allowed; }
-.pressable:disabled:active { transform: none; }
-.pressable:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) {
-  .pressable { transition: none; }
-  .pressable:active { transform: none; }
-}
-
-/* ---------- RAIL LATERAL ----------
-   Mesma coluna do index.html. As duas paginas sao servidas soltas (sem
-   build), entao a duplicacao e deliberada: um @import custaria uma requisicao
-   extra e um arquivo a mais para manter sincronizado. Se mexer aqui, mexa la
-   tambem — RailNavigationTests em tests/test_web_server.py trava a deriva. */
-:root {
-  --rail-w: 244px;
-}
-body { padding-left: var(--rail-w); }
-
-.rail {
-  position: fixed; top: 0; left: 0; bottom: 0; width: var(--rail-w); z-index: 60;
-  display: flex; flex-direction: column;
-  background: linear-gradient(180deg, var(--bg-surface), var(--bg-deep));
-  border-right: 1px solid var(--border-subtle);
-  padding: 18px 14px;
-}
-.rail-brand {
-  display: flex; align-items: center; gap: 10px;
-  font-weight: 600; font-size: 1rem; letter-spacing: -0.02em;
-  padding: 0 6px 16px; border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: 14px;
-}
-.rail-brand .brand-mark { width: 30px; height: 30px; border-radius: 9px; font-size: 0.9rem; flex: none; }
-.rail-brand small { display: block; color: var(--text-muted); font-weight: 400; font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; }
-
-.rail-label {
-  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
-  color: var(--text-muted); padding: 0 10px; margin: 4px 0 8px;
-}
-
-/* A lista de destinos. <nav> + lista de links: um leitor de tela anuncia
-   "navegacao, 2 itens" e cada link diz para onde vai. O menu anterior
-   precisava de role=listbox/option para se comportar como widget; uma lista
-   estatica de links nao precisa de nada disso. */
-.rail-menu {
-  display: flex; flex-direction: column; gap: 2px;
-  list-style: none; margin: 0; padding: 0;
-}
-/* O rail nao usa os papeis de listbox; o fallback do header (mais abaixo)
-   tambem e uma lista de links, entao herda o mesmo tratamento. */
-.rail-menu[hidden] { display: none; }
-
-.rail-item {
-  display: flex; align-items: flex-start; gap: 11px;
-  padding: 10px 11px; border-radius: var(--radius-sm);
-  border: 1px solid transparent; background: transparent;
-  color: var(--text-primary); font-family: inherit; font-size: 0.86rem;
-  text-align: left; cursor: pointer; text-decoration: none;
-}
-.rail-item:hover { background: rgba(255, 255, 255, 0.04); border-color: var(--border-subtle); }
-/* O item da pagina atual fica marcado. aria-current e a fonte da verdade
-   para o leitor de tela; a cor e a contraparte visual. */
-.rail-item[aria-current="page"] {
-  background: var(--active-tint); border-color: var(--accent-primary); color: var(--accent-soft);
-}
-.rail-item[aria-current="page"] .ri-desc { color: var(--text-secondary); }
-.rail-item .ri-ico { font-size: 1.05rem; line-height: 1.3; width: 20px; text-align: center; flex: none; }
-.rail-item .ri-title { display: block; font-weight: 600; }
-.rail-item .ri-desc { display: block; font-size: 0.73rem; color: var(--text-muted); line-height: 1.4; }
-
-.rail-foot { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--border-subtle); }
-.rail-foot span { display: block; font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; }
-
-/* ---------- MENU DO HEADER (<=920px) ----------
-   Substitui o rail quando nao ha largura para ele. Mesmo padrao de botao +
-   painel sobreposto, mas aqui o menu PRECISA de widget semantics: ele abre e
-   fecha, entao aria-expanded e o estado tem que existir. */
-.rail-dropdown { position: relative; display: none; }
-
-.menu-btn {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-family: inherit; font-size: var(--text-cta); font-weight: 600;
-  border: 1px solid var(--border-strong); background: var(--bg-surface);
-  color: var(--text-primary); padding: 10px 14px; border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.menu-btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }
-.menu-btn .mb-bars { font-size: 1rem; line-height: 1; }
-.menu-btn .mb-caret { color: var(--accent-soft); font-size: 0.75rem; transition: transform var(--transition); }
-.menu-btn[aria-expanded="true"] .mb-caret { transform: rotate(180deg); }
-
-.rail-dropdown .rail-menu {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 70; min-width: 258px;
-  background: var(--bg-surface); border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md); box-shadow: var(--shadow-card);
-  padding: 6px;
-  animation: railMenuIn 180ms var(--ease-out-expo);
-}
-@keyframes railMenuIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) {
-  .rail-dropdown .rail-menu { animation: none; }
-}
-
-/* ---------- HEADER ---------- */
-header {
-  position: sticky; top: 0; z-index: 50;
-  backdrop-filter: blur(14px) saturate(180%);
-  background: rgba(11, 13, 18, 0.72);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.header-inner {
-  display: flex; align-items: center; justify-content: space-between;
-  height: 68px;
-}
-.brand {
-  display: flex; align-items: center; gap: 12px;
-  font-weight: 600; letter-spacing: -0.02em; font-size: 1.25rem;
-  color: var(--text-primary); text-decoration: none;
-}
-.brand-mark {
-  width: 36px; height: 36px; border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-soft));
-  display: grid; place-items: center;
-  box-shadow: 0 8px 20px -6px var(--accent-glow);
-  color: white; font-weight: 700; font-size: 1.1rem;
-}
-.nav-actions { display: flex; gap: 10px; align-items: center; }
-.btn {
-  font-family: inherit; font-size: var(--text-cta); font-weight: 600;
-  border: 1px solid var(--border-strong); background: var(--bg-surface);
-  color: var(--text-primary); padding: 10px 16px; border-radius: var(--radius-sm);
-  cursor: pointer; text-decoration: none;
-  display: inline-flex; align-items: center; gap: 8px;
-}
-.btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }
-.btn:disabled { opacity: 0.5; }
-.btn:disabled:focus-visible { outline: none; }
-.btn-primary {
-  background: var(--grad);
-  border-color: transparent; color: var(--grad-ink);
-  box-shadow: 0 8px 20px -8px var(--accent-glow);
-}
-.btn-primary:hover { filter: brightness(1.06); border-color: transparent; }
-.btn-sm { padding: 7px 11px; font-size: var(--text-body-sm); }
-.btn-ghost { background: transparent; }
-
-/* ---------- CHIPS ---------- */
-.chip {
-  background: var(--bg-card); border: 1px solid var(--border-subtle);
-  padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; color: var(--text-secondary);
-  display: inline-block;
-}
-.chip strong { color: var(--text-primary); font-weight: 600; }
-.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
-
-/* ---------- STEELS (indicador de passos) ---------- */
-.steps-bar {
-  display: flex; align-items: center; gap: 4px;
-  padding: 18px 0 0; overflow-x: auto; scrollbar-width: thin;
-}
-.step-pip {
-  flex: 1 1 0; min-width: 92px;
-  display: flex; flex-direction: column; gap: 7px;
-  background: none; border: 0; font-family: inherit; text-align: left;
-  cursor: pointer; padding: 8px 6px; border-radius: var(--radius-sm);
-  color: var(--text-muted);
-}
-.step-pip:hover { background: rgba(255,255,255,0.03); }
-.step-pip .pip-track {
-  height: 3px; border-radius: 999px; background: rgba(255,255,255,0.08);
-  overflow: hidden; position: relative;
-}
-.step-pip .pip-track::after {
-  content: ""; position: absolute; inset: 0;
-  background: var(--grad); transform: scaleX(0); transform-origin: left;
-  transition: transform var(--motion-base) var(--ease-out-expo);
-}
-.step-pip[data-state="done"] .pip-track::after { transform: scaleX(1); }
-.step-pip[data-state="active"] .pip-track::after { transform: scaleX(0.5); }
-.step-pip .pip-num {
-  font-size: var(--text-2xs); font-weight: 700; letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.step-pip[data-state="active"] { color: var(--text-ink); }
-.step-pip[data-state="done"] { color: var(--text-secondary); }
-.step-pip .pip-label {
-  font-size: var(--text-caption); font-weight: 600; line-height: 1.3;
-}
-.step-pip:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
-
-/* ---------- LAYOUT ---------- */
-.wizard-grid {
-  display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 28px;
-  padding: 22px 0 60px; align-items: start;
-}
-/* Abaixo de 920px o rail nao cabe ao lado do wizard; os destinos viram menu
-   no header. */
-@media (max-width: 920px) {
-  body { padding-left: 0; }
-  .rail { display: none; }
-  .rail-dropdown { display: block; }
-}
-
-@media (max-width: 1040px) {
-  .wizard-grid { grid-template-columns: 1fr; }
-  .preview-col { order: -1; }
-}
-
-.card {
-  position: relative;
-  background: var(--bg-card); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md); padding: 24px;
-  backdrop-filter: blur(6px); box-shadow: var(--shadow-card);
-  transition: var(--transition);
-  margin-bottom: 24px;
-}
-.card:hover { border-color: var(--border-strong); }
-.card h2 {
-  font-size: 1.15rem; font-weight: 600; margin-bottom: 6px;
-  display: flex; align-items: center; gap: 10px;
-}
-.card h2 .ico {
-  width: 26px; height: 26px; border-radius: 6px;
-  background: rgba(99, 102, 241, 0.14); color: var(--accent-soft);
-  display: grid; place-items: center; font-size: 0.9rem;
-}
-.card .card-sub {
-  color: var(--text-secondary); font-size: var(--text-body-sm);
-  margin-bottom: 20px; max-width: 62ch;
-}
-
-/* ---------- FORM ---------- */
-.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-.field label {
-  font-size: 0.85rem; font-weight: 500; color: var(--text-secondary);
-}
-.field .hint { font-size: 0.78rem; color: var(--text-muted); }
-.field input, .field select, .field textarea {
-  background: var(--well-bg); border: 1px solid var(--border-subtle);
-  color: var(--text-primary); font-family: inherit; font-size: 0.92rem;
-  padding: 10px 12px; border-radius: var(--radius-sm); transition: var(--transition);
-  width: 100%;
-}
-.field textarea { line-height: 1.5; resize: vertical; font-size: 0.88rem; }
-.field input:focus, .field select:focus, .field textarea:focus {
-  outline: none; border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
-.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.field-row.triple { grid-template-columns: repeat(3, 1fr); }
-@media (max-width: 620px) { .field-row, .field-row.triple { grid-template-columns: 1fr; } }
-
-input[type="range"] {
-  -webkit-appearance: none; appearance: none;
-  height: 5px; border-radius: 999px; background: rgba(255,255,255,0.10);
-  padding: 0; cursor: pointer;
-}
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; appearance: none;
-  width: 17px; height: 17px; border-radius: 50%;
-  background: var(--grad); border: 2px solid var(--bg-deep);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.5); cursor: grab;
-}
-input[type="range"]::-moz-range-thumb {
-  width: 15px; height: 15px; border-radius: 50%;
-  background: var(--grad); border: 2px solid var(--bg-deep); cursor: grab;
-}
-.check {
-  display: flex; align-items: center; gap: 9px;
-  font-size: var(--text-body); color: var(--text-secondary); cursor: pointer;
-  padding: 7px 0;
-}
-.check input { width: 16px; height: 16px; accent-color: var(--accent-primary); }
-
-/* ---------- BOTOES DE ESCOLHA (chips selecionaveis) ---------- */
-.pick-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.pick {
-  font-family: inherit; font-size: var(--text-body-sm); font-weight: 500;
-  background: var(--well-bg); color: var(--text-secondary);
-  border: 1px solid var(--border-subtle); border-radius: 999px;
-  padding: 7px 14px; cursor: pointer;
-}
-.pick:hover { border-color: var(--border-strong); color: var(--text-primary); }
-.pick[data-on="1"] {
-  background: var(--active-tint); border-color: var(--accent-primary);
-  color: var(--text-ink);
-}
-
-/* ---------- LISTA DE ZONAS ---------- */
-.zone-list { display: flex; flex-direction: column; gap: 12px; }
-.zone-item {
-  border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
-  background: rgba(0,0,0,0.18); padding: 14px;
-  transition: var(--transition);
-}
-.zone-item:hover { border-color: var(--border-strong); }
-.zone-head {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; margin-bottom: 12px;
-}
-.zone-kind {
-  display: flex; align-items: center; gap: 8px;
-  font-size: var(--text-body-sm); font-weight: 600;
-}
-.zone-swatch {
-  width: 12px; height: 12px; border-radius: 3px;
-  border: 1px solid rgba(255,255,255,0.16); flex: none;
-}
-.zone-share {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: var(--text-caption); color: var(--accent-soft);
-}
-.zone-tools { display: flex; gap: 4px; }
-.icon-btn {
-  width: 27px; height: 27px; border-radius: 6px; flex: none;
-  background: var(--well-bg); border: 1px solid var(--border-subtle);
-  color: var(--text-secondary); cursor: pointer; font-size: 0.82rem;
-  display: grid; place-items: center; font-family: inherit; line-height: 1;
-}
-.icon-btn:hover:not(:disabled) { border-color: var(--accent-primary); color: var(--text-primary); }
-.icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-.zone-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.zone-fields .full { grid-column: 1 / -1; }
-.mini-label {
-  font-size: var(--text-2xs); font-weight: 600; color: var(--text-muted);
-  text-transform: uppercase; letter-spacing: 0.06em;
-  display: flex; justify-content: space-between; align-items: baseline;
-}
-.mini-label span { color: var(--accent-soft); font-family: ui-monospace, monospace; }
-
-/* ---------- PREVIA 9:16 ---------- */
-.preview-col { position: sticky; top: 88px; }
-.preview-shell {
-  background: var(--bg-card); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md); padding: 18px;
-  box-shadow: var(--shadow-card); backdrop-filter: blur(6px);
-}
-.preview-head {
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: 10px; margin-bottom: 14px;
-}
-.preview-head h3 { font-size: var(--text-title); font-weight: 600; }
-.preview-head .dims {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: var(--text-caption); color: var(--text-muted);
-}
-
-/* O palco mantem 9:16 com aspect-ratio e o canvas interno usa container
-   queries: assim todo texto/raio escala com a largura do frame, e a previa
-   continua fiel quando o layout encolhe. */
-.stage {
-  position: relative; width: 100%; max-width: 300px; margin: 0 auto;
-  aspect-ratio: 9 / 16; border-radius: var(--radius-sm); overflow: hidden;
-  background: #000; border: 1px solid var(--border-strong);
-  container-type: inline-size;
-}
-.canvas { position: absolute; inset: 0; }
-.band {
-  position: absolute; left: 0; right: 0;
-  display: grid; place-items: center;
-  overflow: hidden;
-  outline: 1px solid rgba(99, 102, 241, 0.30);
-  outline-offset: -1px;
-}
-.band .band-tag {
-  font-size: 3.4cqw; font-weight: 600; color: rgba(255,255,255,0.72);
-  background: rgba(0,0,0,0.42); padding: 1cqw 2.4cqw; border-radius: 1cqw;
-  letter-spacing: 0.03em;
-}
-.band .media {
-  position: absolute; inset: 0;
-  background-size: cover; background-position: center;
-  display: grid; place-items: center;
-}
-/* Os tres padroes de midia sao propositalmente abstratos: e um esquema de
-   layout, nao uma tentativa de adivinhar o conteudo do video. */
-.media.video {
-  background:
-    repeating-linear-gradient(115deg, #1d2330 0 12px, #232a3a 12px 24px);
-}
-.media.video::after {
-  content: "VIDEO"; font-size: 3.6cqw; font-weight: 700;
-  color: rgba(255,255,255,0.30); letter-spacing: 0.14em;
-}
-.media.frame { background: linear-gradient(150deg, #2b2f45, #171a26); }
-.media.frame::after {
-  content: "FRAME"; font-size: 3.6cqw; font-weight: 700;
-  color: rgba(255,255,255,0.34); letter-spacing: 0.14em;
-}
-.media.image { background: linear-gradient(150deg, #33304a, #1a1722); }
-.media.image::after {
-  content: "IMAGEM"; font-size: 3.6cqw; font-weight: 700;
-  color: rgba(255,255,255,0.34); letter-spacing: 0.14em;
-}
-.media.img-thumb {
-  background-size: cover; background-position: center;
-}
-.media.img-thumb::after { content: none; }
-.caption-band {
-  position: absolute; left: 0; right: 0;
-  display: grid; place-items: center; pointer-events: none;
-  z-index: 5;
-}
-.caption-text {
-  font-weight: 700; text-align: center; line-height: 1.15;
-  text-transform: uppercase; letter-spacing: 0.01em;
-  padding: 0 5cqw;
-}
-.headline-preview {
-  position: absolute; top: 3cqw; left: 0; right: 0;
-  text-align: center; font-weight: 800; font-size: 5.2cqw;
-  line-height: 1.15; z-index: 6; padding: 0 4cqw;
-  text-shadow: 0 0.4cqw 1.6cqw rgba(0,0,0,0.85);
-}
-.progress-preview {
-  position: absolute; top: 0; left: 0; height: 1cqw;
-  background: var(--accent-warm); z-index: 7;
-}
-.stage-guides {
-  position: absolute; inset: 0; z-index: 8; pointer-events: none;
-  opacity: 0;
-}
-.stage.show-guides .stage-guides { opacity: 1; }
-.stage-guides .safe {
-  position: absolute; left: 5%; right: 5%; top: 4%; bottom: 4%;
-  border: 1px dashed rgba(255,255,255,0.20); border-radius: 2px;
-}
-
-.preview-foot {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; margin-top: 14px;
-  font-size: var(--text-caption); color: var(--text-muted);
-}
-
-/* ---------- SAIDA (TOML / COMANDO) ---------- */
-.out-block { margin-bottom: 18px; }
-.out-block:last-child { margin-bottom: 0; }
-.out-head {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; margin-bottom: 8px;
-}
-.out-head h4 {
-  font-size: var(--text-2xs); font-weight: 700; color: var(--text-muted);
-  text-transform: uppercase; letter-spacing: 0.07em;
-}
-pre.code {
-  background: var(--well-bg); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm); padding: 13px 15px;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: var(--text-caption); line-height: 1.6;
-  color: var(--text-primary); overflow-x: auto;
-  white-space: pre; tab-size: 2;
-}
-pre.code.bad { border-color: rgba(248,113,113,0.35); color: var(--danger); }
-
-/* ---------- ALERTAS ---------- */
-.alert {
-  display: flex; gap: 10px; align-items: flex-start;
-  padding: 11px 13px; border-radius: var(--radius-sm);
-  font-size: var(--text-body-sm); line-height: 1.5;
-  border: 1px solid var(--border-subtle); background: var(--well-bg);
-  margin-bottom: 16px;
-}
-.alert .mark { flex: none; font-size: 0.95rem; line-height: 1.45; }
-.alert.warn { border-color: rgba(251,191,36,0.30); background: rgba(251,191,36,0.07); }
-.alert.warn .mark { color: var(--accent-warm); }
-.alert.bad { border-color: rgba(248,113,113,0.30); background: rgba(248,113,113,0.07); }
-.alert.bad .mark { color: var(--danger); }
-.alert.ok { border-color: rgba(52,211,153,0.28); background: rgba(52,211,153,0.07); }
-.alert.ok .mark { color: var(--success); }
-
-/* ---------- VARIACOES (matriz) ---------- */
-.matrix {
-  border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
-  overflow: hidden; margin-top: 14px;
-}
-.matrix table { width: 100%; border-collapse: collapse; font-size: var(--text-body-sm); }
-.matrix th, .matrix td {
-  padding: 9px 13px; text-align: left;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.matrix th {
-  font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--text-muted); background: rgba(255,255,255,0.02); font-weight: 700;
-}
-.matrix tr:last-child td { border-bottom: 0; }
-.matrix td.mono {
-  font-family: ui-monospace, monospace; font-size: var(--text-caption);
-  color: var(--text-secondary);
-}
-.matrix .total td {
-  background: rgba(99,102,241,0.07); font-weight: 600;
-}
-.axis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-@media (max-width: 620px) { .axis-grid { grid-template-columns: 1fr; } }
-
-/* ---------- NAV DE PASSO ---------- */
-.step-nav {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; margin-top: 6px;
-}
-.step-nav .spacer { flex: 1; }
-
-/* ---------- TOAST ---------- */
-#toast-zone {
-  position: fixed; bottom: 22px; right: 22px; z-index: 200;
-  display: flex; flex-direction: column; gap: 9px; align-items: flex-end;
-}
-.toast {
-  background: var(--shell-surface); border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm); padding: 11px 15px;
-  font-size: var(--text-body-sm); box-shadow: var(--shadow-card);
-  animation: toast-in var(--motion-base) var(--ease-out-expo);
-  max-width: 340px;
-}
-.toast.ok { border-color: rgba(52,211,153,0.4); }
-.toast.bad { border-color: rgba(248,113,113,0.4); }
-@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
-@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
-
-footer {
-  border-top: 1px solid var(--border-subtle);
-  padding: 26px 0 40px; color: var(--text-muted); font-size: var(--text-caption);
-}
-a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
-  outline: 2px solid var(--accent-soft); outline-offset: 2px;
-}
-.sr-only {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
-}
-</style>
+<link rel="stylesheet" href="/templates.css">
 </head>
 <body>
 
@@ -732,7 +100,8 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
         </ul>
       </div>
       <button class="btn pressable" id="btn-preset-split">Carregar split-card</button>
-      <button class="btn pressable btn-primary" id="btn-download">Baixar .toml</button>
+      <button class="btn pressable" id="btn-download">Baixar .toml</button>
+      <button class="btn pressable btn-primary" id="btn-save-continue">Salvar e continuar</button>
     </div>
   </div>
 </header>
@@ -740,6 +109,21 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 <div class="wrap">
 
   <nav class="steps-bar" id="steps-bar" aria-label="Passos do template"></nav>
+
+  <!-- GALERIA — ponto de partida, fora do wizard: sempre visível.
+         "Usar" preenche nome, preset e zonas e leva ao Passo 1; as etapas
+         2–7 personalizam frases, mídia, estilo, variações e geram o .toml. -->
+    <section class="card" id="gallery" aria-labelledby="h-gallery">
+      <h2 id="h-gallery"><span class="ico">▣</span> Escolha um template</h2>
+      <p class="card-sub">
+        Três formatos prontos de edição. O botão <strong>Usar</strong> carrega
+        as zonas e a legenda — as etapas abaixo personalizam o resto.
+      </p>
+      <div class="gal-grid" id="gallery-grid"></div>
+    </section>
+
+
+
 
   <div class="wizard-grid">
 
@@ -755,37 +139,78 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
           <code>margin_v</code> do preset precisam concordar.
         </p>
 
-        <div class="field-row">
+        <div class="ap-grid">
+          <div class="ap-col">
           <div class="field">
             <label for="tpl-name">Nome do template</label>
             <input id="tpl-name" type="text" value="meu-canal" spellcheck="false">
             <span class="hint">Vira o nome do arquivo .toml e o sufixo das variacoes.</span>
           </div>
           <div class="field">
-            <label for="tpl-canvas">Canvas</label>
-            <select id="tpl-canvas">
+            <span class="field-label" id="tpl-canvas-label" style="font-size:0.85rem;font-weight:500;color:var(--text-secondary)">Canvas</span>
+            <div class="tseg cols-3" role="radiogroup" aria-labelledby="tpl-canvas-label" id="canvas-seg">
+              <button type="button" class="tseg-btn pressable" role="radio" data-value="1080x1920" aria-checked="true" aria-label="Padrão 1080 por 1920" title="1080 x 1920 (9:16 padrão)"><span class="tseg-ico" aria-hidden="true"><svg width="13" height="20" viewBox="0 0 9 16"><rect x="1" y="1" width="7" height="14" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span><strong>Padrão</strong><small>1080×1920</small></button>
+              <button type="button" class="tseg-btn pressable" role="radio" data-value="720x1280" aria-checked="false" tabindex="-1" aria-label="Leve 720 por 1280" title="720 x 1280 (leve)"><span class="tseg-ico" aria-hidden="true"><svg width="13" height="20" viewBox="0 0 9 16"><rect x="1" y="1" width="7" height="14" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.55"/></svg></span><strong>Leve</strong><small>720×1280</small></button>
+              <button type="button" class="tseg-btn pressable" role="radio" data-value="1440x2560" aria-checked="false" tabindex="-1" aria-label="Alta 1440 por 2560" title="1440 x 2560 (alta)"><span class="tseg-ico" aria-hidden="true"><svg width="13" height="20" viewBox="0 0 9 16"><rect x="1" y="1" width="7" height="14" rx="1.2" fill="currentColor" opacity="0.85"/></svg></span><strong>Alta</strong><small>1440×2560</small></button>
+            </div>
+            <select id="tpl-canvas" class="sr-only-select" tabindex="-1" aria-hidden="true">
               <option value="1080x1920" selected>1080 x 1920 (9:16 padrao)</option>
               <option value="720x1280">720 x 1280 (leve)</option>
               <option value="1440x2560">1440 x 2560 (alta)</option>
             </select>
           </div>
-        </div>
-
-        <div class="field">
-          <label for="tpl-preset">Preset de legenda</label>
-          <select id="tpl-preset"></select>
-          <span class="hint" id="preset-hint"></span>
-        </div>
-
-        <div class="field-row">
           <div class="field">
             <label for="tpl-bg">Cor de fundo do canvas</label>
             <input id="tpl-bg" type="text" value="black" spellcheck="false">
             <span class="hint">Aparece nas margens e no <em>contain</em>.</span>
           </div>
+          </div>
+          <div class="ap-col">
+        <div class="field">
+          <span class="field-label" id="tpl-preset-label" style="font-size:0.85rem;font-weight:500;color:var(--text-secondary)">Preset de legenda</span>
+          <select id="tpl-preset" class="sr-only-select" tabindex="-1" aria-hidden="true"></select>
+          <div class="combo" id="preset-combo">
+            <button type="button" class="combo-btn pressable" id="preset-combo-btn"
+                    aria-haspopup="listbox" aria-expanded="false" aria-labelledby="tpl-preset-label preset-combo-name">
+              <span class="combo-swatch" id="preset-combo-swatch" aria-hidden="true">A</span>
+              <span class="combo-text">
+                <strong id="preset-combo-name">social</strong>
+                <small id="preset-combo-desc"></small>
+              </span>
+              <span class="combo-caret" aria-hidden="true">▾</span>
+            </button>
+            <div class="combo-panel" id="preset-combo-panel" hidden>
+              <input type="text" id="preset-combo-search" placeholder="Buscar preset…" autocomplete="off"
+                     aria-label="Buscar preset de legenda">
+              <div class="combo-list" role="listbox" id="preset-combo-list" aria-label="Presets de legenda"></div>
+            </div>
+          </div>
+          <span class="hint" id="preset-hint"></span>
+          <div class="preset-prev" id="preset-prev" aria-hidden="true">
+            <div class="pp-text" id="preset-prev-text">Todo dia um corte novo</div>
+            <div class="pp-sub" id="preset-prev-sub"></div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="mini-label">Tema</div>
+          <div class="tseg cols-2" role="radiogroup" aria-label="Tema da caixa da legenda" id="theme-seg">
+            <button type="button" class="tseg-btn pressable" role="radio" data-value="light" aria-checked="false" tabindex="-1" aria-label="Tema claro" title="Caixa clara, texto escuro"><span class="tseg-ico" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg></span><strong>Claro</strong></button>
+            <button type="button" class="tseg-btn pressable" role="radio" data-value="dark" aria-checked="false" tabindex="-1" aria-label="Tema escuro" title="Caixa escura, texto branco"><span class="tseg-ico" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"></path></svg></span><strong>Escuro</strong></button>
+          </div>
+          <span class="hint">Vazio = cores do preset. Clique no ativo de novo para voltar ao preset.</span>
+        </div>
+
           <div class="field">
-            <label for="tpl-layout">Layout do video (fallback)</label>
-            <select id="tpl-layout">
+            <span class="field-label" id="tpl-layout-label" style="font-size:0.85rem;font-weight:500;color:var(--text-secondary)">Layout do video (fallback)</span>
+            <div class="tseg cols-5" role="radiogroup" aria-labelledby="tpl-layout-label" id="layout-seg">
+              <button type="button" class="tseg-btn pressable" role="radio" data-value="" aria-checked="true" aria-label="Não sobrescrever" title="Não sobrescrever"><span class="tseg-ico" aria-hidden="true">◇</span><strong>Auto</strong><small>manter</small></button>
+              <button type="button" class="tseg-btn pressable" role="radio" data-value="focus" aria-checked="false" tabindex="-1" aria-label="Focus, recorte guiado por rosto" title="focus — recorte guiado por rosto"><span class="tseg-ico" aria-hidden="true">◉</span><strong>Rosto</strong><small>focus</small></button>
+              <button type="button" class="tseg-btn pressable" role="radio" data-value="center" aria-checked="false" tabindex="-1" aria-label="Center, recorte central" title="center — recorte central"><span class="tseg-ico" aria-hidden="true">◎</span><strong>Centro</strong><small>center</small></button>
+              <button type="button" class="tseg-btn pressable" role="radio" data-value="blur" aria-checked="false" tabindex="-1" aria-label="Blur, fundo desfocado" title="blur — fundo desfocado"><span class="tseg-ico" aria-hidden="true">≈</span><strong>Blur</strong><small>fundo</small></button>
+              <button type="button" class="tseg-btn pressable" role="radio" data-value="fit" aria-checked="false" tabindex="-1" aria-label="Fit, letterbox" title="fit — letterbox"><span class="tseg-ico" aria-hidden="true">▭</span><strong>Fit</strong><small>letterbox</small></button>
+            </div>
+            <select id="tpl-layout" class="sr-only-select" tabindex="-1" aria-hidden="true">
               <option value="">(nao sobrescrever)</option>
               <option value="focus">focus — recorte guiado por rosto</option>
               <option value="center">center — recorte central</option>
@@ -794,8 +219,11 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
             </select>
             <span class="hint">Usado quando ha <strong>uma</strong> zona de video.</span>
           </div>
+          </div>
         </div>
       </section>
+
+      
 
       <!-- PASSO 2 — ZONAS -->
       <section class="card" data-step="1" hidden>
@@ -841,6 +269,23 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
             <textarea id="hl-text" rows="2" placeholder="derive automaticamente do inicio do corte"
                       style="min-height:64px"></textarea>
           </div>
+          <div class="field">
+            <div class="mini-label">Tamanho e espaçamento</div>
+            <p class="hint" style="margin:0 0 2px">Altura da tipografia e respiro lateral do headline.</p>
+            <div class="mini-label">Tamanho da frase <span id="hl-size-hint">100px</span></div>
+            <input id="hl-size" type="range" min="26" max="120" step="2" value="100">
+            <div class="mini-label" style="margin-top:10px">Espaçamento lateral <span id="hl-margin-hint">60px</span></div>
+            <input id="hl-margin" type="range" min="0" max="200" step="5" value="60">
+          </div>
+          <div class="field">
+            <div class="mini-label">Alinhamento do texto</div>
+            <div class="tseg cols-3" role="radiogroup" aria-label="Alinhamento do headline" id="hl-align-seg">
+              <button type="button" class="tseg-btn tseg-btn--icon pressable" role="radio" data-value="left" aria-checked="false" tabindex="-1" aria-label="Alinhar à esquerda" title="Alinhar à esquerda (ASS 7)"><span class="tseg-ico" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 5H3"></path><path d="M15 12H3"></path><path d="M17 19H3"></path></svg></span></button>
+              <button type="button" class="tseg-btn tseg-btn--icon pressable" role="radio" data-value="center" aria-checked="true" aria-label="Centralizar" title="Centralizar (ASS 8)"><span class="tseg-ico" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 5H3"></path><path d="M17 12H7"></path><path d="M19 19H5"></path></svg></span></button>
+              <button type="button" class="tseg-btn pressable tseg-btn--icon" role="radio" data-value="right" aria-checked="false" tabindex="-1" aria-label="Alinhar à direita" title="Alinhar à direita (ASS 9)"><span class="tseg-ico" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 5H3"></path><path d="M21 12H9"></path><path d="M21 19H7"></path></svg></span></button>
+            </div>
+            <span class="hint">Queimado no render junto com o headline.</span>
+          </div>
         </div>
 
         <label class="check">
@@ -860,6 +305,31 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
             </div>
           </div>
         </div>
+
+        <div class="tool-box ph-box">
+          <div class="mini-label">Gerar automaticamente <span class="ph-badge">Recomendado</span></div>
+          <p class="hint" style="margin:0">Descreva a ideia do vídeo. Geramos frases curtas e fiéis ao que você escreveu — sem inventar história.</p>
+          <textarea id="ph-idea" rows="2" placeholder="Ex.: fuga da polícia de moto, clutch 1v4 no heist, NPC bugado no RP"></textarea>
+          <div class="ph-row">
+            <input id="ph-count" type="number" min="1" max="10" value="5">
+            <span class="hint" style="margin:0">sugestões</span>
+            <button class="btn pressable" id="btn-phrases" type="button">Gerar</button>
+          </div>
+          <div class="pick-row" id="phrase-list"></div>
+          <div class="mini-label" style="margin-top:12px">Escrever frase</div>
+          <p class="hint" style="margin:0">Até 280 caracteres. Vira o headline e o texto do tweet.</p>
+          <div class="ph-row">
+            <textarea id="ph-custom" rows="2" maxlength="280" placeholder="Ex.: Ninguém tava pronto pra isso"></textarea>
+            <button class="btn pressable btn-primary" id="btn-phrase-add" type="button" aria-label="Usar frase">+</button>
+          </div>
+        </div>
+
+        <div class="tool-box ph-list-box">
+          <div class="mini-label">Frases do projeto <span id="phrase-count">(0)</span></div>
+          <p class="hint" style="margin:0">Depois você sobe a mídia e define o estilo tipográfico com o vídeo em loop.</p>
+          <p class="ph-empty" id="phrase-empty">Nenhuma frase ainda. Escreva ou gere automaticamente acima.</p>
+          <div id="project-phrases"></div>
+        </div>
       </section>
 
       <!-- PASSO 4 — MIDIA -->
@@ -871,6 +341,17 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
           <strong>imagem</strong> aponta para um arquivo seu.
         </p>
         <div id="media-list"></div>
+
+        <div class="field" style="margin-top:16px">
+          <div class="mini-label">Ajustar enquadramento</div>
+          <p class="hint" style="margin:0 0 2px">Zoom e posição do recorte da zona de vídeo (layouts center/focus).</p>
+          <div class="mini-label">Zoom <span id="rf-zoom-hint">1.00x</span></div>
+          <input id="rf-zoom" class="rf-slide" type="range" min="1" max="3" step="0.05" value="1" style="--p:0%">
+          <div class="mini-label" style="margin-top:10px">Horizontal <span id="rf-panx-hint">50%</span></div>
+          <input id="rf-panx" class="rf-slide" type="range" min="0" max="1" step="0.01" value="0.5" style="--p:50%">
+          <div class="mini-label" style="margin-top:10px">Vertical <span id="rf-pany-hint">50%</span></div>
+          <input id="rf-pany" class="rf-slide" type="range" min="0" max="1" step="0.01" value="0.5" style="--p:50%">
+        </div>
       </section>
 
       <!-- PASSO 5 — ESTILO -->
@@ -969,9 +450,22 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
           <span class="dims" id="preview-dims">1080 x 1920</span>
         </div>
 
-        <div class="stage show-guides" id="stage">
-          <div class="canvas" id="canvas"></div>
-          <div class="stage-guides"><div class="safe"></div></div>
+        <div class="stage show-guides" id="stage" data-platform="tiktok">
+          <div class="phone-screen">
+            <div class="platform-chrome" aria-hidden="true"><span id="platform-name">TikTok</span></div>
+            <div class="canvas" id="canvas"></div>
+            <div class="stage-guides"><div class="safe"></div></div>
+          </div>
+          <span class="phone-notch" aria-hidden="true"></span>
+          <span class="phone-home" aria-hidden="true"></span>
+        </div>
+
+        <div class="platform-row">
+          <span class="mini-label">Ver como fica em:</span>
+          <div class="tseg cols-2 platform-seg" role="radiogroup" aria-label="Plataforma da prévia" id="platform-seg">
+            <button type="button" class="tseg-btn pressable" role="radio" data-value="tiktok" aria-checked="true" aria-label="Prévia no TikTok" title="Prévia no TikTok"><span class="tseg-ico" aria-hidden="true">♪</span><strong>TikTok</strong></button>
+            <button type="button" class="tseg-btn pressable" role="radio" data-value="instagram" aria-checked="false" tabindex="-1" aria-label="Prévia no Instagram" title="Prévia no Instagram"><span class="tseg-ico" aria-hidden="true">◉</span><strong>Instagram</strong></button>
+          </div>
         </div>
 
         <div class="preview-foot">
@@ -1000,1014 +494,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 
 <div id="toast-zone" aria-live="polite"></div>
 
-<script>
-(function () {
-  "use strict";
-
-  // ---------- rail lateral (menu principal) ----------
-  // A lista de destinos vive no HTML: uma vez no rail fixo, e uma copia no
-  // menu do header que aparece abaixo de 920px. Aqui so marcamos qual e a
-  // pagina atual — derivado de location.pathname, nunca escrito a mao, para
-  // que adicionar uma pagina nova nao exija mexer em estado.
-  const PAGES = {
-    "/":          "Cortes",
-    "/templates": "Templates",
-    "/scrap":     "Scrap",
-  };
-
-  (function initRail() {
-    // Nao usa os helpers $ / $$ do wizard: eles sao declarados mais abaixo
-    // neste arquivo, e `var` sofre hoisting como undefined — a chamada
-    // estouraria aqui. O rail busca o que precisa direto.
-    const q = function (sel) { return document.querySelector(sel); };
-
-    const path = window.location.pathname.replace(/\/index\.html$/, "/");
-    const norm = path.endsWith("/") ? path : path + "/";
-    const key = PAGES[path] ? path : (PAGES[norm] ? norm : "/");
-    const title = PAGES[key];
-
-    document.title = `${title} · Viral Clipper`;
-
-    // Cada instancia da lista (rail + menu do header) marca o seu proprio item.
-    document.querySelectorAll("[data-rail-page]").forEach((item) => {
-      if (item.getAttribute("data-rail-page") === key) {
-        item.setAttribute("aria-current", "page");
-      }
-    });
-
-    // O menu do header e o unico componente com estado aqui: abre e fecha.
-    const menu = q("[data-rail-menu]");
-    const btn = q("[data-rail-picker] .menu-btn");
-    if (!menu || !btn) return;
-
-    const setOpen = (open) => {
-      menu.hidden = !open;
-      btn.setAttribute("aria-expanded", String(open));
-    };
-
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const willOpen = menu.hidden;
-      setOpen(willOpen);
-      if (willOpen) {
-        const first = menu.querySelector(".rail-item");
-        if (first) first.focus({ preventScroll: true });
-      }
-    });
-
-    // O painel fica sobre o conteudo; sem isto um clique nele fecharia o menu
-    // E dispararia a acao do elemento por baixo.
-    menu.addEventListener("click", (e) => {
-      if (e.target.closest(".rail-item")) setOpen(false);
-    });
-
-    document.addEventListener("click", () => setOpen(false));
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        const wasOpen = !menu.hidden;
-        setOpen(false);
-        // Devolve o foco ao botao, senao ele some para o body e o usuario de
-        // teclado perde a posicao.
-        if (wasOpen) btn.focus({ preventScroll: true });
-      }
-    });
-  })();
-
-
-  // ---------- catalogo ----------
-  // Espelha viralclipper/caption_presets.py. Manter em sincronia e responsabilidade
-  // do teste tests/test_web_server.py, que compara as chaves.
-  var PRESETS = {
-    "karaoke":      { desc: "Karaoke classico — branco com destaque amarelo", font: "Arial Black", size: 84,  color: "#ffffff", accent: "#ffff00", box: null,      margin: 640 },
-    "block-dark":   { desc: "Bloco escuro, texto branco",                      font: "Arial Black", size: 80,  color: "#ffffff", accent: "#ffe066", box: "#141414", margin: 620 },
-    "blood":        { desc: "Vermelho sangue, impacto maximo",                 font: "Impact",      size: 92,  color: "#ff2b2b", accent: "#ffffff", box: null,      margin: 650 },
-    "bold-box":     { desc: "Texto branco sobre caixa escura",                 font: "Arial Black", size: 80,  color: "#ffffff", accent: "#ffd400", box: "#1a1a1a", margin: 620 },
-    "bubble":       { desc: "Caixa clara arredondada",                         font: "Arial Black", size: 78,  color: "#101010", accent: "#7c3aed", box: "#f2f2f2", margin: 600 },
-    "candy":        { desc: "Caixa clara com texto escuro",                    font: "Arial Black", size: 78,  color: "#141414", accent: "#ff4fae", box: "#f4f4f4", margin: 600 },
-    "cobalt":       { desc: "Azul cobalto, tom corporativo",                   font: "Arial Black", size: 82,  color: "#ffffff", accent: "#4da3ff", box: "#0b2a5b", margin: 630 },
-    "cyan-pop":     { desc: "Ciano neon sobre escuro",                         font: "Arial Black", size: 84,  color: "#00f0ff", accent: "#ffffff", box: null,      margin: 640 },
-    "fire":         { desc: "Laranja fogo, energia alta",                      font: "Impact",      size: 90,  color: "#ff8a00", accent: "#ffd400", box: null,      margin: 645 },
-    "gold-box":     { desc: "Caixa dourada, ar premium",                       font: "Arial Black", size: 78,  color: "#1c1c1c", accent: "#8a6a00", box: "#ffd700", margin: 610 },
-    "ice-blue":     { desc: "Azul gelo, tom calmo",                            font: "Arial Black", size: 82,  color: "#dff3ff", accent: "#7fd4ff", box: null,      margin: 635 },
-    "lime-hit":     { desc: "Verde limao, alto contraste",                     font: "Arial Black", size: 86,  color: "#c6ff00", accent: "#ffffff", box: null,      margin: 640 },
-    "magenta-pop":  { desc: "Magenta vibrante",                                font: "Arial Black", size: 84,  color: "#ff4fae", accent: "#ffffff", box: null,      margin: 640 },
-    "minimal":      { desc: "Minimalista, caixa discreta",                     font: "Helvetica",   size: 66,  color: "#ffffff", accent: "#ffffff", box: "#000000", margin: 580 },
-    "mono":         { desc: "Monoespacado, tom tecnico",                       font: "Courier New", size: 70,  color: "#ffffff", accent: "#00ff9d", box: "#0d0d0d", margin: 600 },
-    "neon":         { desc: "Verde neon, glow de rua",                         font: "Arial Black", size: 84,  color: "#39ff14", accent: "#ffffff", box: null,      margin: 640 },
-    "pop-box":      { desc: "Caixa magenta, pop maximo",                       font: "Arial Black", size: 80,  color: "#ffffff", accent: "#ffd400", box: "#ff0090", margin: 620 },
-    "slim":         { desc: "Magra e discreta",                                font: "Helvetica",   size: 62,  color: "#ffffff", accent: "#ffd400", box: null,      margin: 560 },
-    "sunset":       { desc: "Por do sol, quente e suave",                      font: "Arial Black", size: 82,  color: "#ffd9a0", accent: "#ff5e62", box: null,      margin: 635 },
-    "ultra-impact": { desc: "Impact gigante, duas palavras",                   font: "Impact",      size: 108, color: "#ffffff", accent: "#ff2b2b", box: null,      margin: 660 },
-    "violet-vibe":  { desc: "Violeta moderno",                                 font: "Arial Black", size: 84,  color: "#c9b6ff", accent: "#ffffff", box: null,      margin: 640 },
-
-    // --- familia por FONTE (espelho dos presets de fonte do backend) ---
-    // Mesmo formato dos acima; o que muda de um para o outro e a familia
-    // tipografica. As cores vem do &HAABBGGRR do ASS, ja convertidas.
-    "roboto-bold":        { desc: "Roboto — padrão dos shorts e do YouTube, destaque ciano", font: "Roboto", size: 80, color: "#ffffff", accent: "#ffe500", box: null, margin: 640 },
-    "inter-bold":         { desc: "Inter — legibilidade máxima em tela pequena, destaque lima", font: "Inter", size: 78, color: "#ffffff", accent: "#00ffcc", box: null, margin: 640 },
-    "poppins-bold":       { desc: "Poppins — geométrica e redonda, destaque magenta", font: "Poppins", size: 80, color: "#ffffff", accent: "#cc00ff", box: null, margin: 640 },
-    "montserrat-bold":    { desc: "Montserrat — estilo TikTok, destaque dourado", font: "Montserrat", size: 80, color: "#ffffff", accent: "#00d7ff", box: null, margin: 640 },
-    "dm-sans":            { desc: "DM Sans — minimalismo suíço, destaque laranja", font: "DM Sans", size: 76, color: "#ffffff", accent: "#0055ff", box: null, margin: 640 },
-    "cabin-bold":         { desc: "Cabin — aberta e amigável, destaque ciano claro", font: "Cabin", size: 78, color: "#ffffff", accent: "#ffe500", box: null, margin: 640 },
-    "verdana-bold":       { desc: "Verdana — x-height gigante, destaque amarelo", font: "Verdana", size: 74, color: "#ffffff", accent: "#00ffff", box: null, margin: 640 },
-    "trebuchet-bold":     { desc: "Trebuchet MS — humanista e limpa, destaque vermelho", font: "Trebuchet MS", size: 78, color: "#ffffff", accent: "#2d2dff", box: null, margin: 640 },
-    "tahoma-bold":        { desc: "Tahoma — estreita e legível, destaque ciano", font: "Tahoma", size: 78, color: "#ffffff", accent: "#ffe500", box: null, margin: 640 },
-    "calibri-bold":       { desc: "Calibri — clara e moderna, destaque lima", font: "Calibri", size: 78, color: "#ffffff", accent: "#00ffcc", box: null, margin: 640 },
-    "franklin-bold":      { desc: "Franklin Gothic — condensada clássica, destaque fogo", font: "Franklin Gothic Medium", size: 80, color: "#ffffff", accent: "#0055ff", box: null, margin: 640 },
-    "segoe-black":        { desc: "Segoe UI — moderna nativa, destaque violeta", font: "Segoe UI", size: 80, color: "#ffffff", accent: "#ff6bb2", box: null, margin: 640 },
-    "helvetica-classic":  { desc: "Helvetica — o amarelo clássico do cinema", font: "Helvetica", size: 80, color: "#ffffff", accent: "#00ffff", box: null, margin: 640 },
-    "merriweather-black": { desc: "Merriweather — serifada editorial para ritmo lento", font: "Merriweather", size: 78, color: "#ffffff", accent: "#00d7ff", box: null, margin: 640 },
-    "arvo-bold":          { desc: "Arvo — serifada de telão para entrevistas", font: "Arvo", size: 78, color: "#ffffff", accent: "#00ffff", box: null, margin: 640 }
-  };
-
-  var KINDS = {
-    video:    { label: "Video",    color: "#6366f1" },
-    frame:    { label: "Frame do video", color: "#fbbf24" },
-    image:    { label: "Imagem",   color: "#34d399" },
-    solid:    { label: "Cor solida", color: "#f87171" },
-    captions: { label: "Legenda",  color: "#ff4fae" }
-  };
-
-  var STEPS = [
-    { key: "aparencia",  label: "Aparencia" },
-    { key: "zonas",      label: "Zonas" },
-    { key: "frases",     label: "Frases" },
-    { key: "midia",      label: "Midia" },
-    { key: "estilo",     label: "Estilo" },
-    { key: "variacoes",  label: "Variacoes" },
-    { key: "gerar",      label: "Gerar" }
-  ];
-
-  // ---------- estado ----------
-  var state = {
-    step: 0,
-    name: "meu-canal",
-    width: 1080,
-    height: 1920,
-    preset: "karaoke",
-    background: "black",
-    layout: "",
-    headlineOn: false,
-    headlineSeconds: 3,
-    headlineText: "",
-    progressOn: false,
-    progressHeight: 10,
-    progressColor: "yellow",
-    variantPresets: [],
-    variantLayouts: [],
-    zones: [
-      { kind: "video", fraction: 0.62, fit: "cover", frameAt: 0, source: "",
-        marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0, radius: 3.5, color: "black" },
-      { kind: "frame", fraction: 0.38, fit: "cover", frameAt: 0, source: "",
-        marginTop: 1.2, marginBottom: 1.2, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" }
-    ],
-    hasCaptions: true
-  };
-
-  var $ = function (sel) { return document.querySelector(sel); };
-  var $$ = function (sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); };
-
-  function esc(text) {
-    return String(text).replace(/[&<>"]/g, function (ch) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch];
-    });
-  }
-
-  function toast(message, kind) {
-    var node = document.createElement("div");
-    node.className = "toast " + (kind || "");
-    node.textContent = message;
-    $("#toast-zone").appendChild(node);
-    setTimeout(function () { node.remove(); }, 2600);
-  }
-
-  // ---------- geometria (espelha plan_bands do motor) ----------
-  // A previa tem que concordar com o render, entao isto e uma traducao das
-  // mesmas regras: fracao -> pixel, sobras absorvidas na ultima faixa, e
-  // margin_* como fracao do CANVAS (nao da faixa).
-  function planBands() {
-    var H = state.height, W = state.width;
-    var pixel = state.zones.filter(function (z) { return z.kind !== "captions"; });
-    var total = pixel.reduce(function (sum, z) { return sum + z.fraction; }, 0);
-    var bands = [];
-    var cursor = 0;
-
-    state.zones.forEach(function (zone) {
-      if (zone.kind === "captions") {
-        bands.push({ zone: zone, kind: "captions", y: 0, height: H, innerX: 0, innerY: 0,
-                     innerW: W, innerH: H, share: 0 });
-        return;
-      }
-      var bandH = Math.round(H * zone.fraction);
-      var innerX = Math.round(W * (zone.marginLeft / 100));
-      var innerY = cursor + Math.round(H * (zone.marginTop / 100));
-      var innerW = Math.max(2, W - innerX - Math.round(W * (zone.marginRight / 100)));
-      var innerH = Math.max(2, bandH - Math.round(H * ((zone.marginTop + zone.marginBottom) / 100)));
-      bands.push({ zone: zone, kind: zone.kind, y: cursor, height: bandH,
-                   innerX: innerX, innerY: innerY, innerW: innerW, innerH: innerH,
-                   share: total > 0 ? zone.fraction / total : 0 });
-      cursor += bandH;
-    });
-
-    // A sobra de arredondamento vai para a ultima faixa com altura, senao vira
-    // uma costura preta de 1px contra fundo claro.
-    if (cursor !== H) {
-      for (var i = bands.length - 1; i >= 0; i--) {
-        if (bands[i].kind !== "captions") { bands[i].height += (H - cursor); break; }
-      }
-    }
-    return bands;
-  }
-
-  // ---------- render da previa ---------- //
-  function renderPreview() {
-    var bands = planBands();
-    var canvas = $("#canvas");
-    canvas.innerHTML = "";
-
-    bands.forEach(function (band) {
-      var el = document.createElement("div");
-      el.className = "band";
-      el.style.top = (band.y / state.height * 100) + "%";
-      el.style.height = (band.height / state.height * 100) + "%";
-
-      if (band.kind === "captions") {
-        // A faixa de legenda e posicionada por margin_v a partir da BASE DO
-        // CANVAS. Numa composicao de varias zonas ela pertence a faixa de
-        // video, entao a margem sobe para a borda dela.
-        var preset = PRESETS[state.preset] || PRESETS.karaoke;
-        var marginV = captionMargin(bands);
-        el.className = "band caption-band";
-        el.style.top = "auto";
-        el.style.bottom = "0";
-        el.style.height = "auto";
-        el.style.marginBottom = (marginV / state.height * 100) + "%";
-        var text = document.createElement("div");
-        text.className = "caption-text";
-        text.style.fontFamily = "'" + preset.font + "', sans-serif";
-        text.style.fontSize = (preset.size / state.height * 100) + "cqw";
-        text.style.color = preset.color;
-        text.style.fontStyle = "normal";
-        if (preset.box) {
-          text.style.background = preset.box;
-          text.style.borderRadius = "1.2cqw";
-          text.style.padding = "0.8cqw 2.4cqw";
-        } else {
-          text.style.textShadow =
-            "0 0 1.2cqw rgba(0,0,0,0.95), 0 0 0.4cqw rgba(0,0,0,0.95)";
-        }
-        text.innerHTML = "SEGREDO QUE NINGUEM <span style='color:" + preset.accent + "'>CONTA</span>";
-        el.appendChild(text);
-      } else {
-        el.style.top = (band.y / state.height * 100) + "%";
-        el.style.height = (band.height / state.height * 100) + "%";
-        var media = document.createElement("div");
-        var thumb = state.zones.indexOf(band.zone) >= 0 ? band.zone.source : "";
-        var isThumb = band.kind === "image" && thumb;
-        media.className = "media " + (isThumb ? "img-thumb" : band.kind);
-        media.style.left = (band.innerX / state.width * 100) + "%";
-        media.style.right = ((state.width - band.innerX - band.innerW) / state.width * 100) + "%";
-        media.style.top = ((band.innerY - band.y) / band.height * 100) + "%";
-        media.style.bottom = ((band.height - (band.innerY - band.y) - band.innerH) / band.height * 100) + "%";
-        if (band.zone.radius > 0) {
-          media.style.borderRadius = (band.zone.radius / 100 * state.width / state.width * 100 * (state.width / 100)) + "px";
-          media.style.borderRadius = (band.zone.radius * state.width / 100) + "px";
-        }
-        if (band.kind === "solid") {
-          media.style.background = band.zone.color || "#333";
-          media.className = "media";
-        }
-        if (isThumb) media.style.backgroundImage = "url('" + thumb.replace(/['"]/g, "") + "')";
-        el.appendChild(media);
-      }
-      canvas.appendChild(el);
-    });
-
-    if (state.progressOn) {
-      var bar = document.createElement("div");
-      bar.className = "progress-preview";
-      bar.style.width = "38%";
-      bar.style.height = (state.progressHeight / state.height * 100) + "cqw";
-      bar.style.background = state.progressColor;
-      canvas.appendChild(bar);
-    }
-
-    if (state.headlineOn) {
-      var head = document.createElement("div");
-      head.className = "headline-preview";
-      head.style.color = (PRESETS[state.preset] || PRESETS.karaoke).accent;
-      head.textContent = (state.headlineText || "O ERRO QUE CUSTA CARO").toUpperCase();
-      canvas.appendChild(head);
-    }
-
-    $("#preview-dims").textContent = state.width + " x " + state.height;
-
-    // O rodape mostra quanta altura e conteudo vs legenda.
-    var pixelShare = state.zones
-      .filter(function (z) { return z.kind !== "captions"; })
-      .reduce(function (s, z) { return s + z.fraction; }, 0);
-    $("#preview-share").textContent = Math.round(pixelShare * 100) + "% conteudo";
-  }
-
-  function captionMargin(bands) {
-    var preset = PRESETS[state.preset] || PRESETS.karaoke;
-    var video = state.zones.filter(function (z) { return z.kind === "video"; })[0];
-    if (!video || video.fraction >= 1) return preset.margin;
-    var below = state.height - Math.round(state.height * video.fraction);
-    return below + preset.margin;
-  }
-
-  function renderGeometry() {
-    var bands = planBands();
-    var rows = bands.map(function (band) {
-      if (band.kind === "captions") {
-        return "<tr><td>" + KINDS.captions.label + "</td><td class='mono'>full canvas</td>" +
-               "<td class='mono'>posicionado pelo libass</td></tr>";
-      }
-      return "<tr><td><span class='zone-swatch' style='background:" +
-        (KINDS[band.kind] || {}).color + ";display:inline-block;margin-right:7px'></span>" +
-        (KINDS[band.kind] || {}).label + "</td>" +
-        "<td class='mono'>y=" + band.y + " h=" + band.height + "</td>" +
-        "<td class='mono'>" + band.innerW + "x" + band.innerH + " @ (" + band.innerX + "," + band.innerY + ")</td></tr>";
-    }).join("");
-
-    $("#geom-out").innerHTML =
-      "<div class='matrix'><table>" +
-      "<thead><tr><th>Zona</th><th>Faixa</th><th>Area interna</th></tr></thead>" +
-      "<tbody>" + rows + "</tbody></table></div>";
-  }
-
-  // ---------- validacao (as mesmas regras do Template.validate) ---------- //
-  function validate() {
-    var problems = [];
-    var pixel = state.zones.filter(function (z) { return z.kind !== "captions"; });
-    var total = pixel.reduce(function (s, z) { return s + z.fraction; }, 0);
-
-    if (!state.name.trim()) problems.push("O template precisa de um nome.");
-    if (!/^[A-Za-z0-9._-]+$/.test(state.name.trim()))
-      problems.push("O nome so pode ter letras, numeros, ponto, hifen e underline.");
-    if (!pixel.length) problems.push("O template precisa de pelo menos uma zona que ocupe altura.");
-    if (pixel.length && Math.abs(total - 1) > 1e-6)
-      problems.push("As zonas somam " + (total * 100).toFixed(1) +
-        "% da altura; precisam somar exatamente 100%.");
-
-    var videos = state.zones.filter(function (z) { return z.kind === "video"; });
-    if (videos.length > 1) problems.push("No maximo uma zona de video.");
-
-    var caps = state.zones.filter(function (z) { return z.kind === "captions"; });
-    if (caps.length > 1) problems.push("No maximo uma zona de legenda.");
-    if (caps.length && state.zones[state.zones.length - 1].kind !== "captions")
-      problems.push("A zona de legenda precisa ser a ultima.");
-
-    state.zones.forEach(function (zone, index) {
-      var where = "Zona " + (index + 1) + " (" + (KINDS[zone.kind] || {}).label + ")";
-      if (zone.kind !== "captions" && (zone.fraction < 0.02 || zone.fraction > 1))
-        problems.push("Zona " + (index + 1) + ": a fracao precisa ficar entre 2% e 100%.");
-      if (zone.kind === "image" && !zone.source.trim())
-        problems.push(where + ": uma zona de imagem precisa de um caminho.");
-      if (zone.marginTop + zone.marginBottom >= 100)
-        problems.push(where + ": as margens verticais consomem a faixa inteira.");
-    });
-
-    return problems;
-  }
-
-  // ---------- geracao do arquivo ---------- //
-  function toToml() {
-    var lines = [];
-    lines.push('name = "' + state.name.trim() + '"');
-    lines.push('caption_preset = "' + state.preset + '"');
-    if (state.layout) lines.push('layout = "' + state.layout + '"');
-    if (state.background && state.background !== "black")
-      lines.push('background = "' + state.background + '"');
-    if (state.headlineOn) {
-      lines.push("headline_seconds = " + fmtNum(state.headlineSeconds));
-      if (state.headlineText.trim())
-        lines.push('headline_text = "' + state.headlineText.trim().replace(/"/g, '\\"') + '"');
-    }
-    if (state.progressOn) lines.push("progress_bar = true");
-    lines.push("");
-
-    state.zones.forEach(function (zone) {
-      lines.push("[[zones]]");
-      lines.push('kind = "' + zone.kind + '"');
-      lines.push("fraction = " + fmtNum(round4(zone.fraction)));
-      if (zone.kind === "image") lines.push('source = "' + zone.source.trim() + '"');
-      if (zone.kind === "frame" && zone.frameAt > 0)
-        lines.push("frame_at = " + fmtNum(zone.frameAt));
-      if (zone.kind === "solid") lines.push('color = "' + (zone.color || "black") + '"');
-      if (zone.kind !== "captions" && zone.kind !== "solid") {
-        if (zone.fit !== "cover") lines.push('fit = "' + zone.fit + '"');
-      }
-      if (zone.marginTop) lines.push("margin_top = " + fmtNum(zone.marginTop / 100));
-      if (zone.marginBottom) lines.push("margin_bottom = " + fmtNum(zone.marginBottom / 100));
-      if (zone.marginLeft) lines.push("margin_left = " + fmtNum(zone.marginLeft / 100));
-      if (zone.marginRight) lines.push("margin_right = " + fmtNum(zone.marginRight / 100));
-      if (zone.radius > 0 && (zone.kind === "image" || zone.kind === "frame"))
-        lines.push("corner_radius = " + fmtNum(zone.radius / 100));
-      lines.push("");
-    });
-
-    return lines.join("\n").replace(/\n+$/, "\n");
-  }
-
-  function round4(value) { return Math.round(value * 10000) / 10000; }
-  function fmtNum(value) {
-    if (Number.isInteger(value)) return String(value);
-    return String(Number(value.toFixed(4)));
-  }
-
-  function variantCount() {
-    var presets = state.variantPresets.length || 1;
-    var layouts = state.variantLayouts.length || 1;
-    return presets * layouts;
-  }
-
-  function toCommand() {
-    var parts = ["python -m viralclipper", '"COLE_A_URL_AQUI"'];
-    // Um template embutido vai pelo nome; um template salvo vai pelo caminho.
-    // Mandar o nome de um arquivo que nao existe e o erro mais facil de cometer.
-    parts.push("--template", "./templates/" + state.name.trim() + ".toml");
-    if (state.variantPresets.length)
-      parts.push("--variant-presets", state.variantPresets.join(","));
-    if (state.variantLayouts.length)
-      parts.push("--variant-layouts", state.variantLayouts.join(","));
-    parts.push("--output", "output");
-    return parts.join(" ");
-  }
-
-  function renderOutputs() {
-    var problems = validate();
-    var count = variantCount();
-
-    var alertHtml;
-    if (problems.length) {
-      alertHtml = "<div class='alert bad'><span class='mark'>!</span><div>" +
-        "<strong>O template ainda nao e valido.</strong><ul style='margin:6px 0 0 18px'>" +
-        problems.map(function (p) { return "<li>" + esc(p) + "</li>"; }).join("") +
-        "</ul></div></div>";
-    } else {
-      var renders = count;
-      alertHtml = "<div class='alert ok'><span class='mark'>v</span><div>" +
-        "<strong>Pronto para renderizar.</strong> Cada corte sai em " +
-        "<strong>" + renders + "</strong> arquivo" + (renders > 1 ? "s" : "") +
-        (renders > 1 ? " — a secao e baixada uma vez por janela." : ".") +
-        "</div></div>";
-    }
-    $("#validate-out").innerHTML = alertHtml;
-
-    var toml = toToml();
-    $("#out-toml").textContent = toml;
-    $("#out-toml").className = "code" + (problems.length ? " bad" : "");
-    $("#out-toml-title").textContent = "Template .toml  (templates/" + state.name.trim() + ".toml)";
-    $("#out-cmd").textContent = toCommand();
-    $("#btn-download").disabled = problems.length > 0;
-  }
-
-  // ---------- editor de zonas ----------
-  function renderZones() {
-    var list = $("#zone-list");
-    list.innerHTML = "";
-
-    var pixel = state.zones.filter(function (z) { return z.kind !== "captions"; });
-    var total = pixel.reduce(function (s, z) { return s + z.fraction; }, 0);
-    var ok = Math.abs(total - 1) <= 1e-6;
-    var missing = Math.max(0, 1 - total);
-
-    $("#zone-summary").innerHTML =
-      "<div class='alert " + (ok ? "ok" : "warn") + "'>" +
-      "<span class='mark'>" + (ok ? "v" : "!") + "</span><div>" +
-      "Zonas com altura somam <strong>" + (total * 100).toFixed(1) + "%</strong>." +
-      (ok ? " Fechado." :
-        " Faltam <strong>" + (missing * 100).toFixed(1) + "%</strong> — use " +
-        "<em>Balancear 100%</em> ou ajuste as fracoes.") +
-      "</div></div>";
-
-    state.zones.forEach(function (zone, index) {
-      var item = document.createElement("div");
-      item.className = "zone-item";
-      var isPixel = zone.kind !== "captions";
-      var swatch = (KINDS[zone.kind] || {}).color || "#888";
-
-      var kindOptions = Object.keys(KINDS).map(function (key) {
-        return "<option value='" + key + "'" + (key === zone.kind ? " selected" : "") + ">" +
-          KINDS[key].label + "</option>";
-      }).join("");
-
-      item.innerHTML =
-        "<div class='zone-head'>" +
-          "<div class='zone-kind'>" +
-            "<span class='zone-swatch' style='background:" + swatch + "'></span>" +
-            "Zona " + (index + 1) +
-          "</div>" +
-          "<div class='zone-tools'>" +
-            "<span class='zone-share'>" +
-              (isPixel ? (zone.fraction * 100).toFixed(0) + "%" : "—") + "</span>" +
-            "<button class='icon-btn pressable' data-act='up' data-i='" + index + "'" +
-              (index === 0 ? " disabled" : "") + " title='Subir'>&#8593;</button>" +
-            "<button class='icon-btn pressable' data-act='down' data-i='" + index + "'" +
-              (index === state.zones.length - 1 ? " disabled" : "") + " title='Descer'>&#8595;</button>" +
-            "<button class='icon-btn pressable' data-act='del' data-i='" + index + "'" +
-              " title='Remover'>&#10005;</button>" +
-          "</div>" +
-        "</div>" +
-        "<div class='zone-fields'>" +
-          "<div class='full'>" +
-            "<div class='mini-label'>Tipo</div>" +
-            "<select data-act='kind' data-i='" + index + "' style='width:100%'>" + kindOptions + "</select>" +
-          "</div>" +
-          (isPixel ?
-            "<div class='full'>" +
-              "<div class='mini-label'>Altura <span>" + (zone.fraction * 100).toFixed(1) + "%</span></div>" +
-              "<input type='range' min='2' max='100' step='0.5' value='" + (zone.fraction * 100) + "'" +
-                " data-act='fraction' data-i='" + index + "'>" +
-            "</div>" : "") +
-          (zone.kind === "image" ?
-            "<div class='full'>" +
-              "<div class='mini-label'>Arquivo</div>" +
-              "<input type='text' value='" + esc(zone.source) + "' placeholder='logo.png'" +
-                " data-act='source' data-i='" + index + "'>" +
-            "</div>" : "") +
-          (zone.kind === "frame" ?
-            "<div class='full'>" +
-              "<div class='mini-label'>Segundo do video <span>" + zone.frameAt.toFixed(1) + "s</span></div>" +
-              "<input type='range' min='0' max='10' step='0.5' value='" + zone.frameAt + "'" +
-                " data-act='frameAt' data-i='" + index + "'>" +
-            "</div>" : "") +
-          (zone.kind === "solid" ?
-            "<div class='full'>" +
-              "<div class='mini-label'>Cor</div>" +
-              "<input type='text' value='" + esc(zone.color) + "' data-act='color' data-i='" + index + "'>" +
-            "</div>" : "") +
-          (isPixel && zone.kind !== "solid" ?
-            "<div class='full'>" +
-              "<div class='mini-label'>Encaixe</div>" +
-              "<select data-act='fit' data-i='" + index + "' style='width:100%'>" +
-                "<option value='cover'" + (zone.fit === "cover" ? " selected" : "") + ">cover — preenche e corta</option>" +
-                "<option value='contain'" + (zone.fit === "contain" ? " selected" : "") + ">contain — encaixa inteiro</option>" +
-              "</select>" +
-            "</div>" : "") +
-          (isPixel ?
-            "<div><div class='mini-label'>Margem topo %</div>" +
-              "<input type='number' min='0' max='50' step='0.1' value='" + zone.marginTop + "' data-act='marginTop' data-i='" + index + "'></div>" +
-            "<div><div class='mini-label'>Margem base %</div>" +
-              "<input type='number' min='0' max='50' step='0.1' value='" + zone.marginBottom + "' data-act='marginBottom' data-i='" + index + "'></div>" +
-            "<div><div class='mini-label'>Margem esq %</div>" +
-              "<input type='number' min='0' max='40' step='0.1' value='" + zone.marginLeft + "' data-act='marginLeft' data-i='" + index + "'></div>" +
-            "<div><div class='mini-label'>Margem dir %</div>" +
-              "<input type='number' min='0' max='40' step='0.1' value='" + zone.marginRight + "' data-act='marginRight' data-i='" + index + "'></div>" : "") +
-          ((zone.kind === "image" || zone.kind === "frame") ?
-            "<div class='full'>" +
-              "<div class='mini-label'>Raio de canto <span>" + zone.radius.toFixed(1) + "%</span></div>" +
-              "<input type='range' min='0' max='12' step='0.5' value='" + zone.radius + "'" +
-                " data-act='radius' data-i='" + index + "'>" +
-            "</div>" : "") +
-        "</div>" +
-        "<div class='step-nav' style='margin-top:10px'>" +
-          "<button class='btn pressable btn-sm btn-ghost' data-act='dup' data-i='" + index + "'>Duplicar tipo</button>" +
-        "</div>";
-
-      list.appendChild(item);
-    });
-  }
-
-  function renderMedia() {
-    var target = $("#media-list");
-    target.innerHTML = "";
-    var pixel = state.zones.filter(function (z) { return z.kind !== "captions"; });
-
-    if (!pixel.length) {
-      target.innerHTML = "<div class='alert warn'><span class='mark'>!</span>" +
-        "<div>Nenhuma zona de midia ainda. Adicione uma no passo <strong>Zonas</strong>.</div></div>";
-      return;
-    }
-
-    pixel.forEach(function (zone, index) {
-      var realIndex = state.zones.indexOf(zone);
-      var block = document.createElement("div");
-      block.className = "field";
-      var label = (KINDS[zone.kind] || {}).label;
-
-      if (zone.kind === "video") {
-        block.innerHTML =
-          "<div class='mini-label'>Zona " + (realIndex + 1) + " — " + label + "</div>" +
-          "<div class='alert' style='margin-bottom:0'><span class='mark'>&#9654;</span>" +
-          "<div>O corte selecionado, recortado para esta faixa " +
-          "(" + (zone.fit === "cover" ? "preenche e corta as sobras" : "encaixa inteiro com letterbox") + ").</div></div>";
-      } else if (zone.kind === "frame") {
-        block.innerHTML =
-          "<div class='mini-label'>Zona " + (realIndex + 1) + " — " + label + "</div>" +
-          "<div class='alert' style='margin-bottom:0'><span class='mark'>&#9635;</span>" +
-          "<div>Um quadro extraido do proprio video, " + zone.frameAt.toFixed(1) +
-          "s apos o inicio do corte. <strong>Nenhum arquivo externo</strong> — se a extracao " +
-          "falhar o render degrada para o video em vez de quebrar.</div></div>";
-      } else if (zone.kind === "image") {
-        block.innerHTML =
-          "<div class='mini-label'>Zona " + (realIndex + 1) + " — " + label + "</div>" +
-          "<div class='zone-fields'><div class='full'>" +
-          "<input type='text' value='" + esc(zone.source) + "' placeholder='logo.png ou caminho/para/logo.png'" +
-          " data-act='source' data-i='" + realIndex + "'>" +
-          "<div class='hint' style='margin-top:6px'>Relativo a pasta de saida, ou um caminho absoluto.</div>" +
-          "</div></div>";
-      } else {
-        block.innerHTML =
-          "<div class='mini-label'>Zona " + (realIndex + 1) + " — " + label + "</div>" +
-          "<div class='zone-fields'><div class='full'>" +
-          "<input type='text' value='" + esc(zone.color) + "' data-act='color' data-i='" + realIndex + "'>" +
-          "</div></div>";
-      }
-      target.appendChild(block);
-    });
-  }
-
-  function renderStyle() {
-    var notes = state.zones.filter(function (z) { return z.kind !== "captions"; })
-      .map(function (zone) {
-        var index = state.zones.indexOf(zone);
-        return "<tr><td>Zona " + (index + 1) + "</td><td>" + ((KINDS[zone.kind] || {}).label) +
-          "</td><td class='mono'>" + (zone.kind === "solid" ? "—" :
-          (zone.fit === "cover" ? "preenche" : "encaixa")) + "</td></tr>";
-      }).join("");
-
-    $("#style-notes").innerHTML =
-      "<div class='mini-label' style='margin-bottom:10px'>Estado atual</div>" +
-      "<div class='matrix' style='margin-top:0'><table><thead><tr><th>Zona</th><th>Tipo</th><th>Encaixe</th></tr></thead>" +
-      "<tbody>" + notes + "</tbody></table></div>";
-  }
-
-  function renderVariants() {
-    var presetKeys = Object.keys(PRESETS).sort();
-    $("#variant-presets").innerHTML = presetKeys.map(function (key) {
-      var on = state.variantPresets.indexOf(key) >= 0 ? "1" : "0";
-      return "<button class='pick pressable' data-on='" + on + "' data-axis='preset' data-key='" +
-        key + "'>" + key + "</button>";
-    }).join("");
-
-    var layouts = ["center", "blur", "fit", "focus"];
-    $("#variant-layouts").innerHTML = layouts.map(function (key) {
-      var on = state.variantLayouts.indexOf(key) >= 0 ? "1" : "0";
-      return "<button class='pick pressable' data-on='" + on + "' data-axis='layout' data-key='" +
-        key + "'>" + key + "</button>";
-    }).join("");
-
-    $("#preset-count").textContent = state.variantPresets.length;
-    $("#layout-count").textContent = state.variantLayouts.length;
-
-    var presets = state.variantPresets.length ? state.variantPresets : ["(preset do template)"];
-    var layoutList = state.variantLayouts.length ? state.variantLayouts : ["(layout do template)"];
-    var rows = [];
-    presets.forEach(function (preset) {
-      layoutList.forEach(function (layout) {
-        rows.push("<tr><td class='mono'>" + esc(preset) + "</td><td class='mono'>" +
-          esc(layout) + "</td><td class='mono'>" + state.name.trim() + "__" +
-          (preset === "(preset do template)" ? "" : preset + "-") +
-          (layout === "(layout do template)" ? "" : layout) + "_000010.mp4</td></tr>");
-      });
-    });
-
-    $("#matrix-out").innerHTML =
-      "<div class='matrix'><table>" +
-      "<thead><tr><th>Preset</th><th>Layout</th><th>Arquivo por corte</th></tr></thead>" +
-      "<tbody>" + rows.join("") +
-      "<tr class='total'><td colspan='2'>Total por corte</td><td class='mono'>" +
-      variantCount() + " arquivo" + (variantCount() > 1 ? "s" : "") + "</td></tr>" +
-      "</tbody></table></div>";
-  }
-
-  function renderSteps() {
-    $("#steps-bar").innerHTML = STEPS.map(function (step, index) {
-      var stateName = index === state.step ? "active" : (index < state.step ? "done" : "todo");
-      return "<button class='step-pip pressable' data-state='" + stateName + "' data-goto='" + index + "'" +
-        (index === state.step ? " aria-current='step'" : "") + ">" +
-        "<span class='pip-track'></span>" +
-        "<span class='pip-num'>Passo " + (index + 1) + "</span>" +
-        "<span class='pip-label'>" + step.label + "</span>" +
-        "</button>";
-    }).join("");
-  }
-
-  function showStep(index) {
-    state.step = Math.max(0, Math.min(STEPS.length - 1, index));
-    $$("[data-step]").forEach(function (card) {
-      card.hidden = Number(card.dataset.step) !== state.step;
-    });
-    $("#btn-prev").disabled = state.step === 0;
-    $("#btn-next").textContent = state.step === STEPS.length - 1 ? "Concluir" : "Proximo";
-    renderSteps();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function renderAll() {
-    renderZones();
-    renderMedia();
-    renderStyle();
-    renderVariants();
-    renderPreview();
-    renderGeometry();
-    renderOutputs();
-  }
-
-  // ---------- interacoes ----------
-  function updateZone(index, patch) {
-    state.zones[index] = Object.assign({}, state.zones[index], patch);
-  }
-
-  document.addEventListener("click", function (event) {
-    var target = event.target.closest("[data-act], [data-goto], [data-axis], [data-copy]");
-    if (!target) return;
-
-    if (target.dataset.goto !== undefined) {
-      showStep(Number(target.dataset.goto));
-      return;
-    }
-
-    if (target.dataset.axis) {
-      var axis = target.dataset.axis === "preset" ? "variantPresets" : "variantLayouts";
-      var key = target.dataset.key;
-      var list = state[axis];
-      var at = list.indexOf(key);
-      if (at >= 0) list.splice(at, 1); else list.push(key);
-      renderVariants();
-      renderOutputs();
-      return;
-    }
-
-    if (target.dataset.copy) {
-      var which = target.dataset.copy === "cmd" ? "#out-cmd" : "#out-toml";
-      navigator.clipboard.writeText($(which).textContent).then(function () {
-        toast("Copiado.", "ok");
-      }, function () {
-        toast("O navegador bloqueou a area de transferencia.", "bad");
-      });
-      return;
-    }
-
-    var index = Number(target.dataset.i);
-    var act = target.dataset.act;
-
-    if (act === "up" && index > 0) {
-      var above = state.zones[index - 1];
-      state.zones[index - 1] = state.zones[index];
-      state.zones[index] = above;
-      // A legenda precisa continuar por ultimo; reordenar pode violar isso.
-      var caps = state.zones.filter(function (z) { return z.kind === "captions"; });
-      if (caps.length) {
-        state.zones = state.zones.filter(function (z) { return z.kind !== "captions"; });
-        state.zones.push(caps[0]);
-      }
-    } else if (act === "down" && index < state.zones.length - 1) {
-      var below = state.zones[index + 1];
-      state.zones[index + 1] = state.zones[index];
-      state.zones[index] = below;
-      var caps2 = state.zones.filter(function (z) { return z.kind === "captions"; });
-      if (caps2.length) {
-        state.zones = state.zones.filter(function (z) { return z.kind !== "captions"; });
-        state.zones.push(caps2[0]);
-      }
-    } else if (act === "del") {
-      state.zones.splice(index, 1);
-    } else if (act === "dup") {
-      var copy = Object.assign({}, state.zones[index]);
-      state.zones.splice(index + 1, 0, copy);
-    }
-
-    renderAll();
-  });
-
-  // Os controles de faixa precisam de feedback ao vivo, por isso 'input' e nao
-  // 'change': com 'change' a previa so atualizaria ao soltar o controle.
-  document.addEventListener("input", function (event) {
-    var target = event.target;
-    var act = target.dataset.act;
-    if (!act) return;
-    var index = Number(target.dataset.i);
-
-    if (act === "fraction") updateZone(index, { fraction: Number(target.value) / 100 });
-    else if (act === "frameAt") updateZone(index, { frameAt: Number(target.value) });
-    else if (act === "radius") updateZone(index, { radius: Number(target.value) });
-    else if (act === "marginTop") updateZone(index, { marginTop: Number(target.value) });
-    else if (act === "marginBottom") updateZone(index, { marginBottom: Number(target.value) });
-    else if (act === "marginLeft") updateZone(index, { marginLeft: Number(target.value) });
-    else if (act === "marginRight") updateZone(index, { marginRight: Number(target.value) });
-    else if (act === "source") updateZone(index, { source: target.value });
-    else if (act === "color") updateZone(index, { color: target.value });
-
-    renderPreview();
-    renderGeometry();
-    if (act === "fraction" || act === "marginTop" || act === "marginBottom" ||
-        act === "marginLeft" || act === "marginRight") {
-      renderZones();
-    }
-    renderOutputs();
-  });
-
-  document.addEventListener("change", function (event) {
-    var target = event.target;
-    var act = target.dataset.act;
-    if (!act) return;
-
-    if (act === "kind") {
-      var index = Number(target.dataset.i);
-      var kind = target.value;
-      updateZone(index, { kind: kind });
-      renderAll();
-    } else if (act === "fit") {
-      updateZone(Number(target.dataset.i), { fit: target.value });
-      renderAll();
-    } else if (target.id === "tpl-canvas") {
-      var parts = target.value.split("x");
-      state.width = Number(parts[0]);
-      state.height = Number(parts[1]);
-      renderAll();
-    } else if (target.id === "tpl-preset") {
-      state.preset = target.value;
-      renderPresetHint();
-      renderAll();
-    } else if (target.id === "tpl-layout") {
-      state.layout = target.value;
-      renderOutputs();
-    } else if (target.id === "hl-on") {
-      state.headlineOn = target.checked;
-      $("#hl-fields").hidden = !target.checked;
-      renderPreview();
-      renderOutputs();
-    } else if (target.id === "pb-on") {
-      state.progressOn = target.checked;
-      $("#pb-fields").hidden = !target.checked;
-      renderPreview();
-      renderOutputs();
-    } else if (target.id === "show-guides") {
-      $("#stage").classList.toggle("show-guides", target.checked);
-    }
-  });
-
-  document.addEventListener("input", function (event) {
-    var target = event.target;
-    if (target.id === "tpl-name") {
-      state.name = target.value;
-      renderOutputs();
-    } else if (target.id === "tpl-bg") {
-      state.background = target.value;
-      renderOutputs();
-    } else if (target.id === "hl-secs") {
-      state.headlineSeconds = Number(target.value);
-      $("#hl-secs-hint").textContent = state.headlineSeconds.toFixed(1) + "s de headline";
-    } else if (target.id === "hl-text") {
-      state.headlineText = target.value;
-      renderPreview();
-      renderOutputs();
-    } else if (target.id === "pb-height") {
-      state.progressHeight = Number(target.value) || 10;
-      renderPreview();
-    } else if (target.id === "pb-color") {
-      state.progressColor = target.value;
-      renderPreview();
-    } else if (target.id === "st-gap") {
-      var gap = Number(target.value);
-      $("#st-gap-hint").textContent = "Margem vertical de " + gap.toFixed(1) + "% em cada midia";
-    } else if (target.id === "st-radius") {
-      var radius = Number(target.value);
-      $("#st-radius-hint").textContent = "Raio de " + radius.toFixed(1) + "% da largura (" +
-        Math.round(radius * state.width / 100) + "px neste canvas)";
-    }
-  });
-
-  function renderPresetHint() {
-    var preset = PRESETS[state.preset] || PRESETS.karaoke;
-    $("#preset-hint").textContent = preset.desc + " · " + preset.font + " " + preset.size +
-      (preset.box ? " · caixa " + preset.box : " · contorno");
-  }
-
-  // ---------- acoes ----------
-  function addZone() {
-    var hasVideo = state.zones.some(function (z) { return z.kind === "video"; });
-    var kind = hasVideo ? "image" : "video";
-    var insertAt = state.zones.length;
-    for (var i = 0; i < state.zones.length; i++) {
-      if (state.zones[i].kind === "captions") { insertAt = i; break; }
-    }
-    state.zones.splice(insertAt, 0, {
-      kind: kind, fraction: 0.25, fit: "cover", frameAt: 0, source: "",
-      marginTop: 1.2, marginBottom: 1.2, marginLeft: 3, marginRight: 3,
-      radius: kind === "solid" ? 0 : 3.5, color: "black"
-    });
-    renderAll();
-    toast("Zona adicionada. Ajuste a fracao para fechar 100%.", "");
-  }
-
-  function balance() {
-    var pixel = state.zones.filter(function (z) { return z.kind !== "captions"; });
-    if (!pixel.length) return;
-    // Redistribui proporcionalmente: dividir igualmente apagaria a intencao do
-    // usuario (a zona de video quase nunca deve ter a mesma altura da de imagem).
-    var total = pixel.reduce(function (s, z) { return s + z.fraction; }, 0);
-    if (total <= 0) {
-      pixel.forEach(function (z) { z.fraction = 1 / pixel.length; });
-    } else {
-      var factor = 1 / total;
-      pixel.forEach(function (z) { z.fraction = round4(z.fraction * factor); });
-      // A soma em ponto flutuante raramente fecha exata; o residuo vai para a
-      // maior zona, onde e imperceptivel.
-      var sum = pixel.reduce(function (s, z) { return s + z.fraction; }, 0);
-      var biggest = pixel.reduce(function (a, b) { return a.fraction >= b.fraction ? a : b; });
-      biggest.fraction = round4(biggest.fraction + (1 - sum));
-    }
-    renderAll();
-    toast("Fracoes balanceadas para 100%.", "ok");
-  }
-
-  function applyStyle() {
-    var gap = Number($("#st-gap").value);
-    var radius = Number($("#st-radius").value);
-    state.zones.forEach(function (zone) {
-      if (zone.kind === "captions") return;
-      zone.marginTop = gap;
-      zone.marginBottom = gap;
-      if (zone.kind === "image" || zone.kind === "frame") zone.radius = radius;
-    });
-    renderAll();
-    toast("Estilo aplicado a todas as midias.", "ok");
-  }
-
-  function addCaptionsZone() {
-    if (state.zones.some(function (z) { return z.kind === "captions"; })) return;
-    state.zones.push({
-      kind: "captions", fraction: 0, fit: "cover", frameAt: 0, source: "",
-      marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0,
-      radius: 0, color: "black"
-    });
-  }
-
-  function loadSplitCard() {
-    state.name = "split-card";
-    state.zones = [
-      { kind: "video", fraction: 0.62, fit: "cover", frameAt: 0, source: "",
-        marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0, radius: 0, color: "black" },
-      { kind: "frame", fraction: 0.38, fit: "cover", frameAt: 0, source: "",
-        marginTop: 1.2, marginBottom: 1.2, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" }
-    ];
-    state.preset = "karaoke";
-    state.variantPresets = [];
-    state.variantLayouts = [];
-    addCaptionsZone();
-    $("#tpl-name").value = state.name;
-    $("#tpl-preset").value = state.preset;
-    $("#tpl-canvas").value = state.width + "x" + state.height;
-    $("#hl-on").checked = false; $("#hl-fields").hidden = true;
-    $("#pb-on").checked = false; $("#pb-fields").hidden = true;
-    state.headlineOn = false; state.progressOn = false;
-    renderPresetHint();
-    renderAll();
-    toast("Template split-card carregado.", "ok");
-  }
-
-  function download() {
-    var problems = validate();
-    if (problems.length) {
-      toast("Corrija a validacao antes de baixar.", "bad");
-      return;
-    }
-    var blob = new Blob([toToml()], { type: "text/plain;charset=utf-8" });
-    var url = URL.createObjectURL(blob);
-    var link = document.createElement("a");
-    link.href = url;
-    link.download = state.name.trim() + ".toml";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-    toast("Baixado. Coloque em templates/ e rode o comando.", "ok");
-  }
-
-  // ---------- boot ----------
-  function init() {
-    $("#tpl-preset").innerHTML = Object.keys(PRESETS).sort().map(function (key) {
-      return "<option value='" + key + "'>" + key + " — " + PRESETS[key].desc + "</option>";
-    }).join("");
-    $("#tpl-preset").value = state.preset;
-    renderPresetHint();
-
-    addCaptionsZone();
-
-    $("#btn-add-zone").addEventListener("click", addZone);
-    $("#btn-balance").addEventListener("click", balance);
-    $("#btn-apply-style").addEventListener("click", applyStyle);
-    $("#btn-prev").addEventListener("click", function () { showStep(state.step - 1); });
-    $("#btn-next").addEventListener("click", function () { showStep(state.step + 1); });
-    $("#btn-download").addEventListener("click", download);
-    $("#btn-preset-split").addEventListener("click", loadSplitCard);
-
-    $("#st-gap").dispatchEvent(new Event("input", { bubbles: true }));
-    $("#st-radius").dispatchEvent(new Event("input", { bubbles: true }));
-    $("#hl-secs").dispatchEvent(new Event("input", { bubbles: true }));
-
-    showStep(0);
-    renderAll();
-  }
-
-  init();
-})();
-</script>
+<script src="/templates.js"></script>
 
 </body>
 </html>

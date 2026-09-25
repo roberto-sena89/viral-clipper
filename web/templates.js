@@ -139,6 +139,7 @@
     frame:    { label: "Frame do video", color: "#fbbf24" },
     image:    { label: "Imagem",   color: "#34d399" },
     solid:    { label: "Cor solida", color: "#f87171" },
+    text:     { label: "Texto",    color: "#38bdf8" },
     captions: { label: "Legenda",  color: "#ff4fae" }
   };
 
@@ -158,9 +159,17 @@
     },
     meme: {
       label: "Meme", name: "meme-pov", preset: "ultra-impact", layout: "", mock: "meme",
-      desc: "Texto POV gigante sobre o vídeo + barra de identidade embaixo.",
+      desc: "Faixa de texto POV em fundo preto no topo, vídeo reduzido e barra de identidade embaixo.",
       zones: [
-        { kind: "video", fraction: 0.74, fit: "cover", frameAt: 0, source: "",
+        // A faixa de texto vem PRIMEIRO e fora do video: ela e altura propria, e
+        // por isso o video encolhe para 58%. Antes o POV era sobreposto ao video
+        // (74%) e so existia como desenho na pagina — o render nao o queimava.
+        { kind: "text", fraction: 0.16, fit: "cover", frameAt: 0, source: "",
+          marginTop: 0.8, marginBottom: 0.8, marginLeft: 5, marginRight: 5, radius: 0, color: "black",
+          text: "POV: Você usou o formato de meme e VIRALIZOU com 3x mais!",
+          textSize: 3.8, textColor: "#ffffff", textAlign: "center", textValign: "middle",
+          textBold: true, textUppercase: false, textOutline: 0, textOff: { x: 0, y: 0 } },
+        { kind: "video", fraction: 0.58, fit: "cover", frameAt: 0, source: "",
           marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0, radius: 0, color: "black" },
         { kind: "image", fraction: 0.26, fit: "cover", frameAt: 0, source: "",
           marginTop: 1.2, marginBottom: 1.2, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" }
@@ -208,8 +217,32 @@
     reframeZoom: 1,
     reframePanX: 0.5,
     reframePanY: 0.5,
-    // Texto do tweet no formato X (vazio = texto de exemplo do mock).
+    // Texto do tweet no formato X (vazio = texto de exemplo do mock). Escrito
+    // por DUAS portas: o passo Aparencia (campo proprio) e o passo Frases, onde
+    // "escrever frase" vira headline + texto do tweet. As duas leem o mesmo
+    // estado, e paintTweetFields() repinta os campos quando a outra escreve.
     tweetText: "",
+    // Titulo e @handle do cartao (vazio = exemplo do modelo).
+    tweetName: "",
+    tweetHandle: "",
+    // Posicao fina de cada item do cartao, em px do QUADRO (negativo sobe e vai
+    // para a esquerda). UMA fonte para os seis sliders do passo Aparencia e para o
+    // arraste na previa: os dois escrevem aqui, e o `paintTweetFields` devolve o
+    // numero para os campos. `body` so existe no formato X (o Meme nao desenha
+    // texto de tweet); avatar e titulo valem nos dois.
+    tweetOffset: {
+      avatar: { x: 0, y: 0 },
+      name: { x: 0, y: 0 },
+      body: { x: 0, y: 0 }
+    },
+    // Foto do avatar do cartao: SO previa. Guarda o object URL do arquivo
+    // escolhido no computador — mesma ideia dos `previewVideos` e pelo mesmo
+    // motivo: o objeto vive na sessao da pagina e o arquivo nao sobe para
+    // servidor nenhum. Nao e data URL (o .toml e o estado da pagina nao devem
+    // carregar megabyte de base64) e nao e caminho de disco (o navegador nao
+    // le o disco). Vazio = a letra do titulo.
+    tweetAvatar: "",
+    tweetAvatarName: "",
     // Vídeos de referência só para a prévia (object URLs locais).
     previewVideos: [],
     // Biblioteca de frases do projeto (Passo 3).
@@ -286,38 +319,605 @@
     return bands;
   }
 
-  // Tweet da prévia no formato X: mesmo conteúdo do mock da galeria,
-  // escalado em cqw junto com o palco.
+  // Tweet da prévia no formato X: mesmo componente do mock da galeria, com o
+  // título, o @handle e o texto do estado (passo Aparencia) e o ajuste fino de
+  // posição de cada item (arraste na prévia ou os sliders H/V do passo).
   function tweetMock() {
     var tweet = document.createElement("div");
     tweet.className = "pv-tweet";
+    paintTweetOffsets(tweet, ["avatar", "name", "body"]);
     tweet.innerHTML =
-      "<div class='pv-tweet-row'><span class='pv-avatar'>S</span>" +
-      "<span class='pv-id'><strong>Seu Nome " +
-      "<svg viewBox='0 0 24 24' width='10' height='10' aria-hidden='true'><path fill='#1d9bf0' d='M12 2l2.4 2.4 3.4-.5 1 3.3 3.2 1.2-1.4 3.1 1.4 3.1-3.2 1.2-1 3.3-3.4-.5L12 22l-2.4-2.4-3.4.5-1-3.3-3.2-1.2L3.4 12 2 8.9l3.2-1.2 1-3.3 3.4.5z'/><path fill='none' stroke='#fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' d='M8.5 12.5l2.5 2.5 4.5-5'/></svg>" +
-      "</strong><small>@seuhandle</small></span></div>" +
-      "<p class='pv-body'>" + esc(tweetText()) + "</p>";
+      "<div class='pv-tweet-row'>" + avatarMarkup("pv") +
+      "<span class='pv-id' data-edit='name'><strong data-txt='name'>" +
+        esc(tweetName()) + " " + VERIFIED_BADGE + "</strong>" +
+      "<small data-txt='handle'>" + esc(tweetHandle()) + "</small></span></div>" +
+      "<p class='pv-body' data-edit='body' data-txt='text'>" + esc(tweetText()) + "</p>";
     return tweet;
   }
 
-  // POV sobre o vídeo + barra de identidade (formato Meme na prévia).
-  function memePov() {
-    var pov = document.createElement("p");
-    pov.className = "pv-pov";
-    // Sem `top` daqui: o recuo e o fundo do recorte do aparelho, medido em px de
-    // tela pelo CSS. O notch e moldura, pinta por cima do conteudo e engolia a
-    // primeira linha do POV — enquanto a conta viveu aqui, cada mudanca de zona
-    // movia o texto para dentro ou para fora do recorte.
-    pov.textContent = "POV: Você usou o formato de meme e VIRALIZOU com 3x mais!";
-    return pov;
+  // Avatar do perfil, em QUALQUER formato que desenhe o cartao (X e Meme, na
+  // janela e na vitrine): a foto escolhida no passo Aparencia, se houver; senao a
+  // letra do titulo. `prefix` e "pv" (janela) ou "gal" (vitrine) — os dois
+  // desenham o mesmo perfil, com nomes de classe diferentes. A letra continua no
+  // HTML mesmo com a imagem: ela e o estado do modelo e o que reaparece quando o
+  // arquivo e removido; o CSS esconde (`color: transparent`), nao apaga.
+  function avatarMarkup(prefix, extra) {
+    var base = prefix === "gal" ? "gal-avatar" : "pv-avatar";
+    var cls = base + (extra ? " " + extra : "");
+    // `data-edit` so na janela: e o que o arraste pega. Na vitrine o cartao e
+    // esquema, nao area de edicao.
+    var drag = prefix === "gal" ? "" : " data-edit='avatar'";
+    if (!state.tweetAvatar) {
+      return "<span class='" + cls + "'" + drag + ">" + esc(tweetAvatarLetter()) + "</span>";
+    }
+    var withImage = prefix === "gal" ? "gal-avatar--img" : "pv-avatar--img";
+    return "<span class='" + cls + " " + withImage + "'" + drag + " role='img'" +
+      " aria-label='Foto do avatar'" +
+      " style='background-image:url(" + esc(state.tweetAvatar) + ")'>" +
+      esc(tweetAvatarLetter()) + "</span>";
   }
 
+  // px do QUADRO -> cqh do palco (mesma conversao do headline). Zero nao escreve
+  // unidade nenhuma: a posicao fica com o padrao do modelo.
+  function twOffsetY(px) {
+    var value = Number(px) || 0;
+    if (!value) return "0px";
+    return (value / state.height * 100).toFixed(3) + "cqh";
+  }
+
+  // px do QUADRO -> numero puro: o CSS multiplica por `--framepx` (1 px do quadro
+  // em px de TELA, medido em `paintFrameScale`).
+  function twOffsetX(px) {
+    return String(Math.round(Number(px) || 0));
+  }
+
+  function clampOffset(px) {
+    var value = Math.round(Number(px) || 0);
+    return Math.max(-TW_OFF_MAX, Math.min(TW_OFF_MAX, value));
+  }
+
+  // As seis variaveis do cartao de uma vez: mudar so uma deixaria o item com o
+  // X antigo quando o outro eixo chega novo.
+  function paintTweetOffsets(host, items) {
+    items.forEach(function (item) {
+      var off = tweetOffsetOf(item);
+      host.style.setProperty("--tw-off-x-" + item, twOffsetX(off.x));
+      host.style.setProperty("--tw-off-y-" + item, twOffsetY(off.y));
+    });
+  }
+
+  // 1 px do QUADRO em px de TELA. O CSS precisa disso para o X: `cqw` nao serve
+  // dentro do cartao (ele e `container-type: inline-size`, e mediria o conteudo do
+  // cartao, nao a largura do quadro — o mesmo numero valeria outra coisa em cada
+  // formato). O Y continua em `cqh` porque a tela do palco e `container-type: size`.
+  // Reescrito no render E no resize: encolher a janela com um offset aplicado
+  // deixaria o item fora de escala se o numero ficasse congelado.
+  function paintFrameScale() {
+    var screen = $(".phone-screen");
+    if (!screen || !state.width) return;
+    screen.style.setProperty("--framepx", (screen.clientWidth / state.width).toFixed(5) + "px");
+  }
+
+  // ---------- EDITOR DA PREVIA (passo Aparencia) ----------
+  // Arrastar o item na janela solta ele em qualquer ponto; clique duplo edita o
+  // texto ali mesmo; as setas ajustam de 1 em 1 px (com Shift, 10); o ponto cruz
+  // marca o centro do item e prende no centro da tela.
+  //
+  // Duas regras que o codigo respeita para nao perder o trabalho de quem edita:
+  //   * durante o ARRASTE nada e redesenhado — so as variaveis `--tw-off-*` do
+  //     cartao mudam. Um `renderPreview()` aqui trocaria o no que esta com a
+  //     captura do ponteiro, e o arraste morreria no primeiro pixel;
+  //   * durante a DIGITACAO tambem nao: o cursor iria embora a cada tecla. Os
+  //     campos do passo seguem por `paintTweetFields` (que so escreve em inputs) e
+  //     a vitrine por `renderGallery` — nenhum dos dois toca no canvas.
+  var TW_OFF_MAX = 480;    // px do quadro: o limite do slider e do arraste
+  var TW_SNAP_PX = 6;      // px de TELA: distancia em que o centro prende na guia
+  var TW_NUDGE_PX = 1;     // setas: 1 px do quadro (com Shift, 10)
+  var TW_NUDGE_FAST = 10;
+  // `pov` entra na mesma lista dos itens do cartao: o POV e um texto de uma zona
+  // e o cartao e um texto de uma imagem, mas para quem edita os dois sao a mesma
+  // coisa — arrastar, empurrar com as setas e prender no ponto cruz.
+  var TW_ITEMS = ["avatar", "name", "body", "pov"];
+
+  // Texto que da para editar NO LUGAR: onde mora no estado e o limite de
+  // caracteres. Os limites sao os do formulario (o `maxlength` do textarea);
+  // `contenteditable` nao tem `maxlength`, entao quem corta e `inlineValue`.
+  //
+  // `key` le e escreve `state[key]`; `get`/`set` existem para o texto que NAO mora
+  // no estado de topo — o do POV mora na zona, porque e a zona que o motor
+  // queima. Sem esta indirecao, o texto editado na previa nao chegaria ao .toml.
+  var TW_INLINE = {
+    name: { key: "tweetName", max: 60, single: true },
+    handle: { key: "tweetHandle", max: 40, single: true },
+    text: { key: "tweetText", max: 280, single: false },
+    pov: {
+      max: 160, single: false,
+      get: function () { var z = povZone(); return z ? (z.text || "") : ""; },
+      set: function (value) { var z = povZone(); if (z) z.text = value; }
+    }
+  };
+
+  function inlineGet(spec) {
+    if (spec.get) return spec.get();
+    return state[spec.key] || "";
+  }
+
+  function inlineSet(spec, value) {
+    if (spec.set) spec.set(value);
+    else state[spec.key] = value;
+  }
+
+  // A zona de texto do formato Meme. E o alvo de tudo que se refere ao POV: o
+  // arraste, os campos e o proprio desenho. Devolver a ZONA (e nao o no do DOM)
+  // e o que mantem uma fonte so — o canvas e reescrito a cada render e o no
+  // morreria junto.
+  function povZone() {
+    for (var i = 0; i < state.zones.length; i++) {
+      if (state.zones[i].kind === "text") return state.zones[i];
+    }
+    return null;
+  }
+
+  var twSelected = "";   // item selecionado na janela: "avatar" | "name" | "body" | "pov"
+  var twDrag = null;     // arraste em curso
+  var twEditBase = "";   // texto de antes da edicao (o Escape devolve)
+
+  function tweetOffsetOf(item) {
+    // O POV guarda o deslocamento NA PROPRIA ZONA (o `text_dx`/`text_dy` do
+    // motor sai daqui). Devolver o objeto aninhado e nao uma copia e o que faz
+    // o arraste, as setas e os sliders escreverem no mesmo lugar — todos mutam
+    // o retorno. `updateZone` troca o objeto da zona por um raso, mas o aninhado
+    // sobrevive, entao a referencia continua valendo.
+    if (item === "pov") {
+      var zone = povZone();
+      if (!zone) return { x: 0, y: 0 };
+      if (!zone.textOff) zone.textOff = { x: 0, y: 0 };
+      return zone.textOff;
+    }
+    if (!state.tweetOffset[item]) state.tweetOffset[item] = { x: 0, y: 0 };
+    return state.tweetOffset[item];
+  }
+
+  function tweetHost() { return $(".pv-tweet") || $(".pv-idbar"); }
+
+  function tweetItemNode(item) {
+    return document.querySelector("#canvas [data-edit='" + item + "']");
+  }
+
+  // Onde as variaveis `--tw-off-*` do item sao escritas. No cartao e o HOST (as
+  // regras de transform vivem em `.pv-avatar`/`.pv-id`/`.pv-body`, que sao filhos
+  // dele); no POV o proprio no, porque nao ha cartao em volta.
+  function offsetHostFor(item) {
+    return item === "pov" ? tweetItemNode("pov") : tweetHost();
+  }
+
+  function frameScale() {
+    var screen = $(".phone-screen");
+    var scale = screen && screen.clientWidth ? screen.clientWidth / state.width : 1;
+    return scale || 1;
+  }
+
+  // Escala do eixo VERTICAL: o X do arraste e em px do quadro convertido pela
+  // LARGURA (é o que o CSS multiplica por `--framepx`), mas o V vira `cqh` e se
+  // resolve contra a ALTURA do palco. Com uma escala só, o eixo vertical andava
+  // na proporção errada (o palco tem moldura: 280/1080 ≠ 589/1920).
+  function frameScaleY() {
+    var screen = $(".phone-screen");
+    var scale = screen && screen.clientHeight ? screen.clientHeight / state.height : 1;
+    return scale || 1;
+  }
+
+  // Escreve SO as variaveis do item — e o que o arraste faz a cada movimento.
+  function applyTweetOffset(item) {
+    var host = offsetHostFor(item);
+    if (!host) return;
+    var off = tweetOffsetOf(item);
+    host.style.setProperty("--tw-off-x-" + item, twOffsetX(off.x));
+    host.style.setProperty("--tw-off-y-" + item, twOffsetY(off.y));
+  }
+
+  // Selecao + ponto cruz. A selecao e guardada pela CHAVE, nao pelo no: o canvas e
+  // reescrito a cada render, e um no guardado morreria junto com o desenho.
+  function paintTweetSelection() {
+    $$("#canvas [data-edit]").forEach(function (node) {
+      node.classList.toggle("is-selected", node.getAttribute("data-edit") === twSelected);
+    });
+    if (!twSelected) return hideEditGuides();
+    showEditGuides(tweetItemNode(twSelected));
+  }
+
+  function selectTweetItem(item) {
+    twSelected = item || "";
+    // O campo que estava com o foco fica com as SETAS (os sliders usam as mesmas
+    // teclas): tirar o foco e o que entrega as setas para o item selecionado.
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    paintTweetSelection();
+  }
+
+  function hideEditGuides() {
+    var guides = $("#edit-guides");
+    if (guides) guides.hidden = true;
+  }
+
+  // O ponto cruz segue o CENTRO do item: "esta no centro" passa a ser uma
+  // afirmacao sobre o que o olho ve, e nao sobre um numero do estado.
+  function showEditGuides(node) {
+    var screen = $(".phone-screen");
+    var guides = $("#edit-guides");
+    if (!screen || !guides || !node || !node.getBoundingClientRect) return hideEditGuides();
+    var s = screen.getBoundingClientRect();
+    var box = node.getBoundingClientRect();
+    if (!box.width && !box.height) return hideEditGuides();
+    var cx = box.left + box.width / 2 - s.left;
+    var cy = box.top + box.height / 2 - s.top;
+    var off = twSelected ? tweetOffsetOf(twSelected) : { x: 0, y: 0 };
+    var v = guides.querySelector(".eg-v"), h = guides.querySelector(".eg-h");
+    var dot = guides.querySelector(".eg-dot"), read = $("#eg-readout");
+    guides.hidden = false;
+    // Cada linha recebe SÓ o eixo que a posiciona: `.eg-v` estica de topo a base
+    // (escrever `top` nela cortaria a linha na metade) e `.eg-h` de borda a borda
+    // (escrever `left` a transformaria no pedaço da direita). O ponto e a leitura
+    // ficam no cruzamento, com os dois eixos.
+    if (v) v.style.left = cx.toFixed(1) + "px";
+    if (h) h.style.top = cy.toFixed(1) + "px";
+    [dot, read].forEach(function (el) {
+      if (!el) return;
+      el.style.left = cx.toFixed(1) + "px";
+      el.style.top = cy.toFixed(1) + "px";
+    });
+    if (read) read.textContent = "H " + off.x + " · V " + off.y + " px";
+    // Linha quente = o item esta EXATAMENTE no eixo central da tela (o snap leva
+    // ate la; a cor confirma sem precisar ler o numero).
+    if (v) v.classList.toggle("is-center", Math.abs(cx - s.width / 2) <= 1);
+    if (h) h.classList.toggle("is-center", Math.abs(cy - s.height / 2) <= 1);
+  }
+
+  // Snap: chegando perto do centro da tela, o centro do item prende nele. A caixa
+  // e lida DEPOIS do deslocamento cru, entao os dois eixos se resolvem na mesma
+  // passada — e o snap de um nao desfaz o do outro.
+  //
+  // No eixo V o alvo nao e so o centro da tela: a faixa que CONTEM o item tambem
+  // oferece o proprio centro, e vence o mais proximo. E o alinhamento que importa
+  // num banner — "no meio da faixa de texto" — e sem ele um POV numa faixa do topo
+  // so poderia ser centrado na tela inteira, que ali quer dizer fora do lugar.
+  function snapTweetOffset(drag) {
+    var off = tweetOffsetOf(drag.item);
+    var box = drag.node.getBoundingClientRect();
+    var centreY = box.top + box.height / 2 - drag.screen.top;
+    var dx = drag.screen.width / 2 - (box.left + box.width / 2 - drag.screen.left);
+    if (Math.abs(dx) <= TW_SNAP_PX) off.x = clampOffset(off.x + dx / drag.scaleX);
+    var targets = [drag.screen.height / 2];
+    var band = drag.node.closest ? drag.node.closest(".band") : null;
+    if (band) {
+      var rect = band.getBoundingClientRect();
+      targets.push(rect.top + rect.height / 2 - drag.screen.top);
+    }
+    var best = null;
+    targets.forEach(function (target) {
+      var delta = target - centreY;
+      if (Math.abs(delta) <= TW_SNAP_PX && (best === null || Math.abs(delta) < Math.abs(best))) {
+        best = delta;
+      }
+    });
+    if (best !== null) off.y = clampOffset(off.y + best / drag.scaleY);
+    applyTweetOffset(drag.item);
+  }
+
+  // ---------- arraste ----------
+  function startTweetDrag(event) {
+    if (event.button !== 0) return;
+    var node = event.target.closest ? event.target.closest("#canvas [data-edit]") : null;
+    if (!node) { selectTweetItem(""); return; }
+    // Texto em edicao: o ponteiro pertence ao cursor (colocar o caret, selecionar
+    // palavra). Sem esta guarda o primeiro clique no texto moveria o item.
+    var leaf = event.target.closest("[data-txt]");
+    if (leaf && leaf.isContentEditable) return;
+    var item = node.getAttribute("data-edit");
+    selectTweetItem(item);
+    twDrag = {
+      item: item, node: node, pointerId: event.pointerId,
+      scaleX: frameScale(), scaleY: frameScaleY(),
+      startX: event.clientX, startY: event.clientY,
+      baseX: tweetOffsetOf(item).x, baseY: tweetOffsetOf(item).y,
+      screen: $(".phone-screen").getBoundingClientRect(), moved: false
+    };
+    if (node.setPointerCapture) {
+      try { node.setPointerCapture(event.pointerId); } catch (e) {}
+    }
+    event.preventDefault();
+  }
+
+  function moveTweetDrag(event) {
+    if (!twDrag || event.pointerId !== twDrag.pointerId) return;
+    if (!twDrag.moved) {
+      // 3 px de tela antes de considerar arraste: um clique para selecionar nao
+      // pode mexer o item. Ao passar o limiar a base e REANCORADA — senao o item
+      // pularia esses 3 px de uma vez.
+      if (Math.abs(event.clientX - twDrag.startX) < 3 &&
+          Math.abs(event.clientY - twDrag.startY) < 3) return;
+      twDrag.moved = true;
+      twDrag.startX = event.clientX;
+      twDrag.startY = event.clientY;
+      twDrag.baseX = tweetOffsetOf(twDrag.item).x;
+      twDrag.baseY = tweetOffsetOf(twDrag.item).y;
+      return;
+    }
+    var off = tweetOffsetOf(twDrag.item);
+    off.x = clampOffset(twDrag.baseX + (event.clientX - twDrag.startX) / twDrag.scaleX);
+    off.y = clampOffset(twDrag.baseY + (event.clientY - twDrag.startY) / twDrag.scaleY);
+    applyTweetOffset(twDrag.item);
+    snapTweetOffset(twDrag);
+    paintTweetFields();
+    showEditGuides(twDrag.node);
+    event.preventDefault();
+  }
+
+  function endTweetDrag(event) {
+    if (!twDrag) return;
+    if (event && event.pointerId !== twDrag.pointerId) return;
+    var node = twDrag.node;
+    var item = twDrag.item;
+    if (node.releasePointerCapture) {
+      try { node.releasePointerCapture(twDrag.pointerId); } catch (e) {}
+    }
+    twDrag = null;
+    // Nao redesenha a PREVIA aqui: as variaveis ja estao certas e o no segue
+    // selecionado. Os OUTPUTS, sim, quando o item e o POV — o deslocamento dele
+    // vai para o .toml (`text_dx`/`text_dy`), e sem esta linha o usuario arrastava,
+    // baixava o template e o arquivo saia sem o ajuste que ele acabou de fazer.
+    if (item === "pov") renderOutputs();
+  }
+
+  // ---------- texto no lugar ----------
+  // O que sai do `contenteditable` e `textContent`, nunca `innerHTML`: o texto
+  // volta para o HTML do cartao por `esc()`, e deixar markup do usuario entrar ali
+  // seria a unica porta de HTML da pagina.
+  function inlineValue(text, spec) {
+    var value = String(text == null ? "" : text).replace(/[^\S\n]+/g, " ");
+    if (spec.single) value = value.replace(/\s+/g, " ");
+    else value = value.replace(/\n{3,}/g, "\n\n");
+    return value.trim().slice(0, spec.max);
+  }
+
+  function placeCaretAtEnd(el) {
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    var sel = window.getSelection();
+    if (!sel) return;
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function startTweetEdit(node) {
+    var leaf = node && node.matches("[data-txt]") ? node : (node ? node.querySelector("[data-txt]") : null);
+    if (!leaf) return;
+    var spec = TW_INLINE[leaf.getAttribute("data-txt")];
+    if (!spec) return;
+    twEditBase = inlineGet(spec);
+    leaf.setAttribute("contenteditable", "true");
+    leaf.setAttribute("spellcheck", "false");
+    leaf.focus();
+    // Tudo selecionado: digitar substitui, como no campo do passo. O clique duplo
+    // ja marcou uma palavra; sem isto a selecao parcial ficaria e a primeira tecla
+    // so trocaria a palavra.
+    var range = document.createRange();
+    range.selectNodeContents(leaf);
+    var sel = window.getSelection();
+    if (!sel) return;
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function stopTweetEdit(leaf, commit) {
+    if (!leaf || !leaf.isContentEditable) return;
+    var spec = TW_INLINE[leaf.getAttribute("data-txt")];
+    if (spec && commit) inlineSet(spec, inlineValue(leaf.textContent, spec));
+    leaf.removeAttribute("contenteditable");
+    leaf.removeAttribute("spellcheck");
+    paintTweetFields();
+    renderGallery();
+    renderPreview();   // normaliza: letra do avatar, limite de linhas, `esc()`
+  }
+
+  function onTweetEditInput(event) {
+    var leaf = event.target;
+    if (!leaf || !leaf.getAttribute || leaf.getAttribute("contenteditable") !== "true") return;
+    var spec = TW_INLINE[leaf.getAttribute("data-txt")];
+    if (!spec) return;
+    if ((leaf.textContent || "").length > spec.max) {
+      // `contenteditable` nao tem `maxlength`: o corte acontece aqui, e recolocar o
+      // caret no fim e o que impede de travar no limite com uma letra.
+      leaf.textContent = inlineValue(leaf.textContent, spec);
+      placeCaretAtEnd(leaf);
+    }
+    inlineSet(spec, inlineValue(leaf.textContent, spec));
+    // Campo do passo e vitrine acompanham tecla a tecla; o canvas NAO e redesenhado
+    // (o cursor ficaria num no que acabou de sair do DOM).
+    paintTweetFields();
+    renderGallery();
+  }
+
+  function onTweetEditKey(event) {
+    var leaf = document.activeElement;
+    if (!leaf || !leaf.isContentEditable || !leaf.getAttribute) return;
+    var spec = TW_INLINE[leaf.getAttribute("data-txt")];
+    if (!spec) return;
+    if (event.key === "Enter" && spec.single) {
+      stopTweetEdit(leaf, true);
+      event.preventDefault();
+    } else if (event.key === "Escape") {
+      // Escape devolve o texto como estava: e o que se espera de um editor, e
+      // `contenteditable` nao tem desfazer proprio quando o valor mora no estado.
+      inlineSet(spec, twEditBase);
+      stopTweetEdit(leaf, false);
+      event.preventDefault();
+    }
+  }
+
+  // ---------- teclado ----------
+  function onTweetKey(event) {
+    if (!twSelected || twDrag) return;
+    var active = document.activeElement;
+    // Campo em foco manda nas setas (os sliders do passo usam as mesmas teclas).
+    if (active && active.closest && active.closest("input, textarea, select, [contenteditable='true']")) return;
+    if (event.key === "Escape") { selectTweetItem(""); return; }
+    if (event.key === "Enter") { startTweetEdit(tweetItemNode(twSelected)); event.preventDefault(); return; }
+    if (!event.key || event.key.indexOf("Arrow") !== 0) return;
+    var step = event.shiftKey ? TW_NUDGE_FAST : TW_NUDGE_PX;
+    var off = tweetOffsetOf(twSelected);
+    if (event.key === "ArrowLeft") off.x = clampOffset(off.x - step);
+    else if (event.key === "ArrowRight") off.x = clampOffset(off.x + step);
+    else if (event.key === "ArrowUp") off.y = clampOffset(off.y - step);
+    else if (event.key === "ArrowDown") off.y = clampOffset(off.y + step);
+    applyTweetOffset(twSelected);
+    paintTweetFields();
+    showEditGuides(tweetItemNode(twSelected));
+    // Mesma regra do slider e do arraste: so o POV tem deslocamento no .toml.
+    if (twSelected === "pov") renderOutputs();
+    event.preventDefault();
+  }
+
+  function resetTweetOffsets() {
+    TW_ITEMS.forEach(function (item) {
+      // O POV guarda o deslocamento na zona; os outros tres, no estado do cartao.
+      var off = tweetOffsetOf(item);
+      off.x = 0;
+      off.y = 0;
+    });
+    paintTweetFields();
+    renderPreview();
+    renderOutputs();
+    toast("Posições de volta ao modelo.", "");
+  }
+
+  function initTweetEditor() {
+    var canvas = $("#canvas");
+    if (!canvas) return;
+    canvas.addEventListener("pointerdown", startTweetDrag);
+    canvas.addEventListener("pointermove", moveTweetDrag);
+    canvas.addEventListener("pointerup", endTweetDrag);
+    canvas.addEventListener("pointercancel", endTweetDrag);
+    canvas.addEventListener("dblclick", function (event) {
+      var node = event.target.closest ? event.target.closest("#canvas [data-edit]") : null;
+      if (!node) return;
+      startTweetEdit(node);
+      event.preventDefault();
+    });
+    canvas.addEventListener("input", onTweetEditInput);
+    // `blur` nao borbulha: captura para ouvir a saida do texto em edicao. O commit
+    // e o que grava — sem isto, editar e clicar fora perderia o texto.
+    canvas.addEventListener("blur", function (event) {
+      if (event.target && event.target.getAttribute &&
+          event.target.getAttribute("contenteditable") === "true") {
+        stopTweetEdit(event.target, true);
+      }
+    }, true);
+    document.addEventListener("keydown", onTweetEditKey);
+    document.addEventListener("keydown", onTweetKey);
+    var reset = $("#tw-reset-pos");
+    if (reset) reset.addEventListener("click", resetTweetOffsets);
+    paintFrameScale();
+    // `--framepx` e um comprimento em px de TELA: sem reescrever no resize, um item
+    // deslocado sairia fora de escala quando o palco encolhesse.
+    if (window.ResizeObserver) {
+      new ResizeObserver(function () { paintFrameScale(); }).observe($(".phone-screen"));
+    }
+  }
+
+  // Faixa de texto na prévia: placa + texto. Espelha o que o motor faz — a zona
+  // pinta a placa (o `color` dela, preto por padrão) e o libass queima o texto
+  // ancorado na área interna.
+  //
+  // Ela pinta a faixa JÁ POSICIONADA pelo laço, não cria uma segunda: duas
+  // `.band` aninhadas davam DUAS alturas para a mesma zona — a de fora com a
+  // geometria do motor e a de dentro com a altura do conteúdo — e a placa preta
+  // vazava sobre o vídeo, que era exatamente o que o usuário pediu para não
+  // acontecer.
+  //
+  // Medidas verticais em `cqh` e horizontais em `cqw`, nunca em porcentagem de
+  // padding: porcentagem de padding resolve contra a LARGURA do bloco contentor,
+  // então `padding-top: 5%` daria 5% da largura e a área interna deixaria de ser a
+  // que `plan_bands` calcula. É a mesma armadilha que já tinha aparecido na
+  // margem da legenda.
+  function paintTextZone(el, band) {
+    var zone = band.zone;
+    el.className = "band band--text";
+    el.style.background = zone.color || "#000";
+    el.style.paddingTop = ((band.innerY - band.y) / state.height * 100) + "cqh";
+    el.style.paddingBottom =
+      ((band.height - (band.innerY - band.y) - band.innerH) / state.height * 100) + "cqh";
+    el.style.paddingLeft = (band.innerX / state.width * 100) + "cqw";
+    el.style.paddingRight =
+      ((state.width - band.innerX - band.innerW) / state.width * 100) + "cqw";
+    // `border-box`: o padding é a área interna, não altura a mais. Sem isto a
+    // faixa mediria margem + altura e o texto sairia fora da zona declarada.
+    el.style.boxSizing = "border-box";
+    // O alinhamento é o do motor: a área interna é o quadrante e o texto se ancora
+    // nele. `flex` em vez do `place-items: center` do `.band` porque aqui o
+    // alinhamento é dado, não fixo.
+    el.style.display = "flex";
+    el.style.justifyContent = zone.textAlign === "left" ? "flex-start" :
+      zone.textAlign === "right" ? "flex-end" : "center";
+    el.style.alignItems = zone.textValign === "top" ? "flex-start" :
+      zone.textValign === "bottom" ? "flex-end" : "center";
+
+    var pov = document.createElement("p");
+    pov.className = "pv-pov";
+    // `data-edit` é o que o arraste pega; `data-txt` é o que o duplo clique edita.
+    // Sem os dois o texto seria só desenho — foi o que ele foi até agora.
+    pov.setAttribute("data-edit", "pov");
+    pov.style.textAlign = zone.textAlign || "center";
+    // `textSize` é porcentagem da ALTURA do quadro — a unidade do motor
+    // (`text_size`). Na prévia ele vira `cqw` pela razão de aspecto do QUADRO, e
+    // não `cqh` direto, porque o palco não tem a mesma razão do quadro (o mock do
+    // celular é 9:18,4, o quadro 9:16): em `cqh` o texto fica ~18% maior em
+    // relação à largura disponível e quebra em QUATRO linhas onde o motor queima
+    // duas — o usuário olha a prévia, vê o texto estourando a faixa preta e não
+    // tem como saber que o render sai certo.
+    //
+    // O que a prévia precisa acertar aqui é a CONTAGEM DE LINHAS, que é uma razão
+    // entre o corpo da fonte e a largura. A legenda usa `cqh` porque o alvo dela é
+    // outro (o corpo em si, com duas palavras que nunca quebram).
+    pov.style.fontSize = (zone.textSize * (state.height / state.width)) + "cqw";
+    pov.style.color = zone.textColor || "#ffffff";
+    pov.style.fontWeight = zone.textBold === false ? "500" : "800";
+    pov.style.textTransform = zone.textUppercase ? "uppercase" : "none";
+    if (zone.textOutline > 0) {
+      var halo = zone.textOutline + "cqh";
+      pov.style.textShadow =
+        "0 0 " + halo + " #000, 0 0 " + halo + " #000, 0 0 " + halo + " #000";
+    }
+    // O deslocamento fino vai no PRÓPRIO nó (não há cartão em volta), e é escrito
+    // aqui e não por `applyTweetOffset`: o nó ainda não está no DOM, então a busca
+    // por `#canvas [data-edit='pov']` acharia o anterior.
+    var off = tweetOffsetOf("pov");
+    pov.style.setProperty("--tw-off-x-pov", twOffsetX(off.x));
+    pov.style.setProperty("--tw-off-y-pov", twOffsetY(off.y));
+
+    var leaf = document.createElement("span");
+    leaf.setAttribute("data-txt", "pov");
+    leaf.textContent = zone.text || "";
+    pov.appendChild(leaf);
+    el.appendChild(pov);
+    return el;
+  }
+
+  // Barra de identidade do formato Meme na janela: o mesmo perfil do cartao do X
+  // (avatar + nome + @handle), com os MESMOS campos do passo Aparencia. Antes era
+  // "Seu Nome" fixo e a secao nao editava este template.
   function memeIdBar() {
     var bar = document.createElement("div");
     bar.className = "pv-idbar";
+    // Avatar e nome respondem aos sliders e ao arraste, como no cartao do X — os
+    // dois itens que este formato desenha (nao ha texto de tweet aqui: os campos
+    // de Texto valem so para o X).
+    paintTweetOffsets(bar, ["avatar", "name"]);
     bar.innerHTML =
-      "<span class='pv-avatar pv-avatar--dark'>S</span>" +
-      "<span class='pv-id'><strong>Seu Nome</strong><small>@seuhandle</small></span>";
+      avatarMarkup("pv", "pv-avatar--dark") +
+      "<span class='pv-id' data-edit='name'><strong data-txt='name'>" +
+        esc(tweetName()) + "</strong>" +
+      "<small data-txt='handle'>" + esc(tweetHandle()) + "</small></span>";
     return bar;
   }
 
@@ -332,10 +932,6 @@
 
   // ---------- render da previa ---------- //
   function renderPreview() {
-    var bands = planBands();
-    var canvas = $("#canvas");
-    canvas.innerHTML = "";
-
     var bands = planBands();
     var canvas = $("#canvas");
     canvas.innerHTML = "";
@@ -388,6 +984,13 @@
         el.style.top = (band.y / state.height * 100) + "%";
         el.style.height = (band.height / state.height * 100) + "%";
         var mockKey = state.previewMock || "";
+        // Zona de texto: a faixa e a placa (o `color` da zona, preto por padrao) e
+        // o texto vive dentro da AREA INTERNA dela. Nao passa pelo caminho de
+        // midia: nao ha fonte de pixel nenhuma aqui — e por isso ela pinta `el`,
+        // a faixa que o laco ja posicionou, em vez de criar outra.
+        if (band.kind === "text") {
+          paintTextZone(el, band);
+        } else
         // Formato X: a banda de imagem vira o tweet, igual ao mock da galeria.
         if (mockKey === "x" && band.kind === "image") {
           el.appendChild(tweetMock());
@@ -459,8 +1062,9 @@
           }
         }
         el.appendChild(media);
-        // Formato Meme: POV sobre o vídeo. Formato Viral: gancho na base.
-        if (mockKey === "meme" && band.kind === "video") el.appendChild(memePov());
+        // Formato Viral: gancho na base do vídeo. (O POV do Meme deixou de ser
+        // sobreposição: ele é uma zona de texto com faixa própria, desenhada por
+        // `paintTextZone` — a mesma que o motor queima.)
         if (mockKey === "viral" && band.kind === "video") el.appendChild(viralHook());
         }
       }
@@ -503,6 +1107,12 @@
       .filter(function (z) { return z.kind !== "captions"; })
       .reduce(function (s, z) { return s + z.fraction; }, 0);
     $("#preview-share").textContent = Math.round(pixelShare * 100) + "% conteudo";
+
+    // `--framepx` e a escala da tela (o X dos offsets depende dela) e a selecao
+    // e guardada pela chave: o canvas novo recebe o mesmo item selecionado, com o
+    // ponto cruz reposicionado no no acabou de nascer.
+    paintFrameScale();
+    paintTweetSelection();
   }
 
   // Mesma conta do motor (_caption_margin_for_band): em template dividido
@@ -614,9 +1224,31 @@
       if (zone.kind === "image") lines.push('source = "' + zone.source.trim() + '"');
       if (zone.kind === "frame" && zone.frameAt > 0)
         lines.push("frame_at = " + fmtNum(zone.frameAt));
-      if (zone.kind === "solid") lines.push('color = "' + (zone.color || "black") + '"');
-      if (zone.kind !== "captions" && zone.kind !== "solid") {
+      if (zone.kind === "solid" || zone.kind === "text")
+        lines.push('color = "' + (zone.color || "black") + '"');
+      if (zone.kind !== "captions" && zone.kind !== "solid" && zone.kind !== "text") {
         if (zone.fit !== "cover") lines.push('fit = "' + zone.fit + '"');
+      }
+      if (zone.kind === "text") {
+        // O texto vai entre aspas com as internas escapadas; o `\\n` do campo vira
+        // quebra de linha de verdade no motor (`\\N` do ASS), entao ele e preservado.
+        lines.push('text = "' + String(zone.text || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n") + '"');
+        lines.push("text_size = " + fmtNum(round4((zone.textSize || 3.8) / 100)));
+        if ((zone.textColor || "#ffffff").toLowerCase() !== "#ffffff")
+          lines.push('text_color = "' + zone.textColor + '"');
+        if ((zone.textAlign || "center") !== "center")
+          lines.push('text_align = "' + zone.textAlign + '"');
+        if ((zone.textValign || "middle") !== "middle")
+          lines.push('text_valign = "' + zone.textValign + '"');
+        if (zone.textBold === false) lines.push("text_bold = false");
+        if (zone.textUppercase === true) lines.push("text_uppercase = true");
+        if (zone.textOutline) lines.push("text_outline = " + fmtNum(round4(zone.textOutline / 100)));
+        // Os deslocamentos sao px do QUADRO na pagina e fracao do canvas no motor:
+        // a conversao tem de ser a mesma dos dois eixos que o motor separa (x pela
+        // largura, y pela altura).
+        var offX = textOffsetOf(zone, "x"), offY = textOffsetOf(zone, "y");
+        if (offX) lines.push("text_dx = " + fmtNum(round4(offX / state.width)));
+        if (offY) lines.push("text_dy = " + fmtNum(round4(offY / state.height)));
       }
       if (zone.marginTop) lines.push("margin_top = " + fmtNum(zone.marginTop / 100));
       if (zone.marginBottom) lines.push("margin_bottom = " + fmtNum(zone.marginBottom / 100));
@@ -698,6 +1330,41 @@
   }
 
   // ---------- editor de zonas ----------
+
+  // Padroes de uma zona de texto. Existem porque os campos abaixo precisam de um
+  // valor para MOSTRAR quando a zona acabou de nascer, e o motor tem os mesmos
+  // defaults: sem isto o painel mostraria vazio e o .toml sairia com o padrao do
+  // motor — o usuario veria uma coisa e renderizaria outra.
+  var TEXT_ZONE_DEFAULTS = {
+    text: "POV: o texto que aparece na faixa",
+    textSize: 3.8, textColor: "#ffffff", textAlign: "center", textValign: "middle",
+    textBold: true, textUppercase: false, textOutline: 0, textOff: { x: 0, y: 0 }
+  };
+
+  // Os dois liga/desliga tem padrao DIFERENTE (negrito ligado, maiusculas
+  // desligado) e a ausencia do campo significa o padrao, nao "falso".
+  function textFlag(zone, key) {
+    if (key === "textBold") return zone.textBold !== false;
+    return zone.textUppercase === true;
+  }
+
+  function textOffsetOf(zone, axis) {
+    return zone.textOff ? (zone.textOff[axis] || 0) : 0;
+  }
+
+  // Chips de um conjunto fechado: alinhamento (string) e os dois liga/desliga
+  // (booleano). `flagKey` distingue os casos — sem ele o valor e comparado como
+  // string, com ele o estado vem de `textFlag`.
+  function textAlignChips(zone, index, act, options, flagKey) {
+    return options.map(function (pair) {
+      var value = pair[0];
+      var on = flagKey ? textFlag(zone, act) === (value === "1") : (zone[act] || "") === value;
+      return "<button type='button' class='chip pressable' role='radio' data-act='" + act +
+        "' data-value='" + value + "' data-i='" + index + "' aria-checked='" + (on ? "true" : "false") + "'" +
+        (on ? "" : " tabindex='-1'") + ">" + pair[1] + "</button>";
+    }).join("");
+  }
+
   function renderZoneSummary() {
     var pixel = state.zones.filter(function (z) { return z.kind !== "captions"; });
     var total = pixel.reduce(function (s, z) { return s + z.fraction; }, 0);
@@ -808,12 +1475,58 @@
                 " style='--p:" + (zone.frameAt * 10) + "%'" +
                 " data-act='frameAt' data-i='" + index + "'>" +
             "</div>" : "") +
-          (zone.kind === "solid" ?
+          ((zone.kind === "solid" || zone.kind === "text") ?
             "<div class='full'>" +
-              "<div class='mini-label'>Cor</div>" +
+              "<div class='mini-label'>" + (zone.kind === "text" ? "Cor da faixa" : "Cor") + "</div>" +
               "<input type='text' value='" + esc(zone.color) + "' data-act='color' data-i='" + index + "'>" +
             "</div>" : "") +
-          (isPixel && zone.kind !== "solid" ?
+          (zone.kind === "text" ?
+            "<div class='full'>" +
+              "<div class='mini-label'>Texto da faixa</div>" +
+              "<textarea rows='2' maxlength='160' data-act='text' data-i='" + index + "'" +
+                " placeholder='POV: ...'>" + esc(zone.text || "") + "</textarea>" +
+            "</div>" +
+            "<div class='full'>" +
+              "<div class='mini-label'>Tamanho <span>" + (zone.textSize || 0).toFixed(1) + "% da altura</span></div>" +
+              "<input type='range' min='1' max='12' step='0.1' value='" + (zone.textSize || 3.8) + "'" +
+                " style='--p:" + (((zone.textSize || 3.8) - 1) / 11 * 100) + "%'" +
+                " data-act='textSize' data-i='" + index + "'>" +
+            "</div>" +
+            "<div><div class='mini-label'>Cor do texto</div>" +
+              "<input type='color' value='" + esc(zone.textColor || "#ffffff") + "'" +
+                " data-act='textColor' data-i='" + index + "' aria-label='Cor do texto'></div>" +
+            "<div><div class='mini-label'>Contorno <span>" + (zone.textOutline || 0).toFixed(1) + "%</span></div>" +
+              "<input type='range' min='0' max='1.5' step='0.05' value='" + (zone.textOutline || 0) + "'" +
+                " style='--p:" + ((zone.textOutline || 0) / 1.5 * 100) + "%'" +
+                " data-act='textOutline' data-i='" + index + "'></div>" +
+            "<div class='full'>" +
+              "<div class='mini-label'>Alinhamento na faixa</div>" +
+              "<div class='chips' role='radiogroup' aria-label='Alinhamento horizontal do texto'>" +
+                textAlignChips(zone, index, "textAlign",
+                  [["left", "Esq"], ["center", "Centro"], ["right", "Dir"]]) +
+              "</div>" +
+            "</div>" +
+            "<div class='full'>" +
+              "<div class='mini-label'>Altura na faixa</div>" +
+              "<div class='chips' role='radiogroup' aria-label='Alinhamento vertical do texto'>" +
+                textAlignChips(zone, index, "textValign",
+                  [["top", "Topo"], ["middle", "Meio"], ["bottom", "Base"]]) +
+              "</div>" +
+            "</div>" +
+            "<div class='full'>" +
+              "<div class='mini-label'>Peso</div>" +
+              "<div class='chips' role='radiogroup' aria-label='Peso e caixa do texto'>" +
+                textAlignChips(zone, index, "textBold", [["1", "Negrito"], ["0", "Normal"]], "textBold") +
+                textAlignChips(zone, index, "textUppercase", [["1", "MAIÚSC."], ["0", "Como escrito"]], "textUppercase") +
+              "</div>" +
+            "</div>" +
+            "<div><div class='mini-label'>Desloc. H</div><div class='num-wrap'>" +
+              "<input type='number' min='-480' max='480' step='1' value='" + textOffsetOf(zone, "x") + "'" +
+                " data-act='textOffX' data-i='" + index + "' aria-label='Deslocamento horizontal do texto em px do quadro'><span>px</span></div></div>" +
+            "<div><div class='mini-label'>Desloc. V</div><div class='num-wrap'>" +
+              "<input type='number' min='-480' max='480' step='1' value='" + textOffsetOf(zone, "y") + "'" +
+                " data-act='textOffY' data-i='" + index + "' aria-label='Deslocamento vertical do texto em px do quadro'><span>px</span></div></div>" : "") +
+          (isPixel && zone.kind !== "solid" && zone.kind !== "text" ?
             "<div class='full'>" +
               "<div class='mini-label'>Encaixe</div>" +
               "<div class='chips' role='radiogroup' aria-label='Encaixe da zona " + (index + 1) + "'>" +
@@ -1095,13 +1808,32 @@
       var copy = Object.assign({}, state.zones[index]);
       state.zones.splice(index + 1, 0, copy);
       state.previewMock = "";
-    } else if ((act === "kind" || act === "fit") && target.dataset.value !== undefined) {
-      // Chips de tipo/encaixe: o valor vem no data-value (clique), nao num
-      // select. O change handler continua existindo para compatibilidade.
+    } else if ((act === "kind" || act === "fit" || act === "textAlign" || act === "textValign") &&
+               target.dataset.value !== undefined) {
+      // Chips de tipo/encaixe/alinhamento: o valor vem no data-value (clique), nao
+      // num select. O change handler continua existindo para compatibilidade.
       var patch = {};
       patch[act] = target.dataset.value;
+      if (act === "kind" && target.dataset.value === "text") {
+        // Uma zona que acabou de virar texto precisa dos campos preenchidos: os
+        // controles abaixo leem `zone.textSize` etc., e sem isto o painel mostraria
+        // vazio enquanto o motor aplicaria o proprio default.
+        Object.keys(TEXT_ZONE_DEFAULTS).forEach(function (key) {
+          if (state.zones[index][key] !== undefined) return;
+          var value = TEXT_ZONE_DEFAULTS[key];
+          // `textOff` e um objeto: copiar a referencia faria todas as zonas de
+          // texto dividirem o mesmo deslocamento.
+          patch[key] = value && typeof value === "object" ? { x: value.x, y: value.y } : value;
+        });
+      }
       updateZone(index, patch);
       if (act === "kind") state.previewMock = "";
+    } else if (act === "textBold" || act === "textUppercase") {
+      // Liga/desliga: chip com data-value 1 ou 0, nao um checkbox — o resto da
+      // lista de zonas usa chips e um controle de outro tipo destoaria.
+      var flags = {};
+      flags[act] = target.dataset.value === "1";
+      updateZone(index, flags);
     }
 
     renderAll();
@@ -1144,12 +1876,26 @@
       if (box) box.textContent = label;
     }
     else if (act === "radius") updateZone(index, { radius: Number(target.value) });
+    else if (act === "text") updateZone(index, { text: target.value });
+    else if (act === "textSize") updateZone(index, { textSize: Number(target.value) });
+    else if (act === "textColor") updateZone(index, { textColor: target.value });
+    else if (act === "textOutline") updateZone(index, { textOutline: Number(target.value) });
     else if (act === "marginTop") updateZone(index, { marginTop: Number(target.value) });
     else if (act === "marginBottom") updateZone(index, { marginBottom: Number(target.value) });
     else if (act === "marginLeft") updateZone(index, { marginLeft: Number(target.value) });
     else if (act === "marginRight") updateZone(index, { marginRight: Number(target.value) });
     else if (act === "source") updateZone(index, { source: target.value });
     else if (act === "color") updateZone(index, { color: target.value });
+    else if (act === "textOffX" || act === "textOffY") {
+      // O numero escreve o MESMO objeto que o arraste move (o `textOff` da zona),
+      // entao os dois controles nunca ficam fora de sincronia. Mutar o aninhado em
+      // vez de passar por `updateZone` e o que preserva a referencia que
+      // `tweetOffsetOf("pov")` devolve.
+      var textZone = state.zones[index];
+      if (!textZone.textOff) textZone.textOff = { x: 0, y: 0 };
+      textZone.textOff[act === "textOffX" ? "x" : "y"] = clampOffset(target.value);
+      paintTweetFields();
+    }
 
     renderPreview();
     renderGeometry();
@@ -1265,6 +2011,52 @@
       var radius = Number(target.value);
       $("#st-radius-hint").textContent = "Raio de " + radius.toFixed(1) + "% da largura (" +
         Math.round(radius * state.width / 100) + "px neste canvas)";
+    } else if (target.id === "tw-name") {
+      state.tweetName = target.value;
+      renderPreview();
+      // A vitrine tambem desenha o perfil (cartao do X e barra do Meme): sem
+      // isto o card da galeria ficava com o nome anterior enquanto a janela ja
+      // mostrava o novo.
+      renderGallery();
+    } else if (target.id === "tw-handle") {
+      state.tweetHandle = target.value;
+      renderPreview();
+      renderGallery();
+    } else if (target.id === "tw-text") {
+      state.tweetText = target.value;
+      renderPreview();
+      renderGallery();
+    } else if (target.id === "pov-text") {
+      // Escreve na ZONA, que e de onde o motor le o texto no render. O campo e o
+      // passo de Zonas leem o mesmo lugar, entao os dois nunca divergem.
+      var povTarget = povZone();
+      if (povTarget) {
+        povTarget.text = target.value;
+        renderPreview();
+        renderGallery();
+        renderOutputs();
+      }
+    } else if (target.id.indexOf("tw-pos-") === 0) {
+      // Slider do grid de posicao: `tw-pos-<item>-<eixo>`. O arraste e esta rota
+      // escrevem o MESMO `state.tweetOffset`, entao os dois controles nunca ficam
+      // fora de sincronia — `paintTweetFields` repinta o outro lado.
+      var posParts = target.id.split("-");   // tw-pos-<item>-<axis>
+      var posItem = posParts[2], posAxis = posParts[3];
+      if ((posAxis === "x" || posAxis === "y")) {
+        // `tweetOffsetOf` e a porta unica: para o POV ele devolve o objeto guardado
+        // na ZONA, para os itens do cartao o do estado. Escrever em
+        // `state.tweetOffset[posItem]` deixaria o POV sem controle por slider.
+        tweetOffsetOf(posItem)[posAxis] = clampOffset(target.value);
+        var posHint = document.getElementById(target.id + "-hint");
+        if (posHint) posHint.textContent = tweetOffsetOf(posItem)[posAxis] + "px";
+        paintSlideFill(target);
+        renderPreview();
+        // O POV é o único item cujo deslocamento CHEGA ao .toml (`text_dx`/
+        // `text_dy`); os do cartão são só da prévia. Sem esta linha o usuário
+        // ajustava o slider e baixava um arquivo sem o ajuste — e o slider dispara
+        // a cada `input`, então a repintura fica restrita a quem ela muda.
+        if (posItem === "pov") renderOutputs();
+      }
     }
   });
 
@@ -1419,7 +2211,13 @@
     state.headlineOn = false; state.progressOn = false;
     state.headlineAlign = "center";
     state.captionTheme = "";
+    // O TEXTO e conteudo do projeto e nao vaza para o template novo. O perfil
+    // (titulo, @handle, foto) fica: os campos do passo Aparencia editam TODOS os
+    // formatos que desenham o cartao, entao trocar de formato nao pode devolver
+    // "Seu Nome" para quem acabou de escrever o seu.
     state.tweetText = "";
+    paintTweetFields();
+
     var phIdea = $("#ph-idea");
     if (phIdea) phIdea.value = "";
     var phCustom = $("#ph-custom");
@@ -1449,8 +2247,172 @@
   }
 
   // ---------- galeria ----------
+  // Exemplos do modelo: campo vazio cai neles. Ficam ao lado do `tweetText`
+  // porque e o mesmo padrao que o cartao da vitrine desenha — quem edita o tweet
+  // da janela no passo Aparencia esta editando a SUA previa, nao o modelo.
   var TWEET_DEFAULT = "Olha só o que rolou nesse servidor 👀";
+  var TWEET_NAME_DEFAULT = "Seu Nome";
+  var TWEET_HANDLE_DEFAULT = "@seuhandle";
+  var VERIFIED_BADGE =
+    "<svg viewBox='0 0 24 24' width='10' height='10' aria-hidden='true'>" +
+    "<path fill='#1d9bf0' d='M12 2l2.4 2.4 3.4-.5 1 3.3 3.2 1.2-1.4 3.1 1.4 3.1-3.2 1.2-1 3.3-3.4-.5L12 22l-2.4-2.4-3.4.5-1-3.3-3.2-1.2L3.4 12 2 8.9l3.2-1.2 1-3.3 3.4.5z'/>" +
+    "<path fill='none' stroke='#fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' d='M8.5 12.5l2.5 2.5 4.5-5'/></svg>";
+
   function tweetText() { return state.tweetText || TWEET_DEFAULT; }
+  function tweetName() { return state.tweetName || TWEET_NAME_DEFAULT; }
+  function tweetHandle() { return state.tweetHandle || TWEET_HANDLE_DEFAULT; }
+
+  // A letra do avatar segue o titulo: "Cortes do Sena" deixa "C".
+  function tweetAvatarLetter() {
+    var letter = tweetName().replace(/[^0-9A-Za-z\u00C0-\u017F]/g, "").charAt(0);
+    return letter ? letter.toUpperCase() : "S";
+  }
+
+  // ---------- foto do avatar (passo Aparencia) ----------
+  // Arquivo local, so previa: o render desenha a imagem que a zona de imagem
+  // aponta, entao esta foto nao viaja para o motor nem para o .toml — ela existe
+  // para a janela mostrar o cartao como ele vai sair, com a sua cara.
+  //
+  // A foto entra REDUZIDA a TWEET_AVATAR_PX de lado e guardada como data URL, por
+  // duas razoes que se somam:
+  //   * o CSP da pagina e `img-src 'self' data:`, SEM `blob:`. Object URL nao
+  //     serve nem para pintar a janela nem como ponte para o canvas: `img-src`
+  //     vale para TODA imagem, inclusive `new Image()`, e o bloqueio e silencioso
+  //     (o circulo do avatar fica vazio e o console nao acusa). `media-src` tem
+  //     `blob:`, e so por isso o video de referencia pode usar object URL.
+  //     `data:` esta no img-src: o caminho e FileReader -> Image -> canvas.
+  //   * o avatar aparece com ~48px no cartao: guardar o original (foto de 5 MB)
+  //     seria carregar megabyte de base64 no estado e recopia-lo para dentro do
+  //     HTML a cada tecla digitada no titulo. 256px da 4x de sobra na tela.
+  var TWEET_AVATAR_PX = 256;
+
+  function addTweetAvatar(file) {
+    if (!file) return;
+    if (!file.type || file.type.indexOf("image/") !== 0) {
+      toast("Escolha um arquivo de imagem (PNG, JPEG, WebP ou GIF).", "bad");
+      return;
+    }
+    var reader = new FileReader();
+    reader.onerror = function () { toast("Não consegui ler o arquivo.", "bad"); };
+    reader.onload = function () {
+      var img = new Image();
+      img.onerror = function () {
+        toast("O arquivo não é uma imagem que eu consiga abrir.", "bad");
+      };
+      img.onload = function () {
+        var small = downscaleAvatar(img);
+        if (!small) {
+          toast("Não consegui preparar a imagem.", "bad");
+          return;
+        }
+        state.tweetAvatar = small;
+        state.tweetAvatarName = file.name || "imagem";
+        paintTweetFields();
+        renderPreview();
+        // A foto vale para o cartao da janela E para os cards da vitrine (X e
+        // Meme desenham perfil): a galeria e reescrita, senao o card continuava
+        // com a letra antiga.
+        renderGallery();
+        toast("Avatar da prévia: " + state.tweetAvatarName, "ok");
+      };
+      img.src = String(reader.result || "");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Reduz a foto ao quadrado de TWEET_AVATAR_PX, com o mesmo enquadramento do CSS
+  // (`cover`: o maior quadrado central), e devolve um data URL JPEG. O estado
+  // guarda alguns KB, nao a foto inteira.
+  function downscaleAvatar(img) {
+    if (!img.naturalWidth || !img.naturalHeight) return "";
+    var side = TWEET_AVATAR_PX;
+    var canvas = document.createElement("canvas");
+    canvas.width = side;
+    canvas.height = side;
+    var ctx = canvas.getContext("2d");
+    var scale = Math.max(side / img.naturalWidth, side / img.naturalHeight);
+    var w = img.naturalWidth * scale;
+    var h = img.naturalHeight * scale;
+    ctx.drawImage(img, (side - w) / 2, (side - h) / 2, w, h);
+    try { return canvas.toDataURL("image/jpeg", 0.86); } catch (e) { return ""; }
+  }
+
+  // Volta ao modelo. Silencioso de proposito: os resets (carregar o split-card,
+  // trocar o mock da galeria) chamam esta, sem toast de "removi o seu arquivo".
+  function clearTweetAvatar() {
+    state.tweetAvatar = "";
+    state.tweetAvatarName = "";
+  }
+
+  function removeTweetAvatar() {
+    if (!state.tweetAvatar) return;
+    clearTweetAvatar();
+    paintTweetFields();
+    renderPreview();
+    renderGallery();
+    toast("Avatar do modelo restaurado (letra do título).", "");
+  }
+
+  // ---------- campos do tweet (passo Aparencia) ----------
+  // Uma porta de entrada para o estado. O texto tem DUAS portas — este campo e o
+  // passo Frases, onde "escrever frase" vira headline + texto do tweet —, entao
+  // quem escreve por la repinta os campos com esta funcao: sem isso a janela
+  // ficava com o texto antigo enquanto o cartao da galeria ja mostrava o novo.
+  // A foto do avatar tambem e repintada aqui: o chip do campo, o nome do arquivo
+  // e o botao Remover existem so para dizer o que a janela esta desenhando.
+  function paintTweetFields() {
+    [["tw-name", "tweetName"], ["tw-handle", "tweetHandle"], ["tw-text", "tweetText"]]
+      .forEach(function (pair) {
+        var el = document.getElementById(pair[0]);
+        if (el) el.value = state[pair[1]] || "";
+      });
+    [["tw-pos-avatar-x", "avatar", "x"], ["tw-pos-avatar-y", "avatar", "y"],
+     ["tw-pos-name-x", "name", "x"], ["tw-pos-name-y", "name", "y"],
+     ["tw-pos-body-x", "body", "x"], ["tw-pos-body-y", "body", "y"],
+     ["tw-pos-pov-x", "pov", "x"], ["tw-pos-pov-y", "pov", "y"]]
+      .forEach(function (trip) {
+        var el = document.getElementById(trip[0]);
+        var value = clampOffset(tweetOffsetOf(trip[1])[trip[2]]);
+        if (el) { el.value = value; paintSlideFill(el); }
+        var hint = document.getElementById(trip[0] + "-hint");
+        if (hint) hint.textContent = value + "px";
+      });
+    paintTweetAvatar();
+    paintPovFields();
+  }
+
+  // O painel da faixa de texto so existe quando ha uma zona de texto. Escondido
+  // nao basta: um campo visivel escrevendo num lugar que o motor nao le e o defeito
+  // que o usuario nao consegue diagnosticar.
+  function paintPovFields() {
+    var zone = povZone();
+    var box = document.getElementById("pov-box");
+    if (box) box.hidden = !zone;
+    var text = document.getElementById("pov-text");
+    if (text && zone) text.value = zone.text || "";
+  }
+
+  function paintTweetAvatar() {
+    var has = !!state.tweetAvatar;
+    var chip = document.getElementById("tw-avatar-chip");
+    if (chip) {
+      chip.textContent = tweetAvatarLetter();
+      chip.classList.toggle("tw-avatar-chip--img", has);
+      chip.style.backgroundImage = has ? "url(" + state.tweetAvatar + ")" : "";
+    }
+    var state_label = document.getElementById("tw-avatar-state");
+    if (state_label) {
+      state_label.textContent = has ? state.tweetAvatarName : "letra do título";
+    }
+    var hint = document.getElementById("tw-avatar-hint");
+    if (hint) {
+      hint.textContent = has
+        ? "A prévia desenha esta imagem no cartão. O arquivo não sobe para o servidor."
+        : "Sem arquivo, a prévia desenha a letra do título.";
+    }
+    var clear = document.getElementById("tw-avatar-clear");
+    if (clear) clear.hidden = !has;
+  }
 
   // Ícones do placeholder de mídia (traço, estilo lucide): câmera para
   // video/frame, moldura para imagem, quadrado para cor sólida.
@@ -1458,29 +2420,39 @@
     video: "<path d='m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5'/><rect x='2' y='6' width='14' height='12' rx='2'/>",
     frame: "<path d='m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5'/><rect x='2' y='6' width='14' height='12' rx='2'/>",
     image: "<rect width='18' height='18' x='3' y='3' rx='2' ry='2'/><circle cx='9' cy='9' r='2'/><path d='m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21'/>",
-    solid: "<rect x='4' y='4' width='16' height='16' rx='4'/>"
+    solid: "<rect x='4' y='4' width='16' height='16' rx='4'/>",
+    text: "<path d='M4 7V4h16v3'/><path d='M9 20h6'/><path d='M12 4v16'/>"
   };
-  var GAL_SHORT = { video: "Vídeo", frame: "Frame", image: "Imagem", solid: "Cor" };
+  var GAL_SHORT = { video: "Vídeo", frame: "Frame", image: "Imagem", solid: "Cor", text: "Texto" };
 
-  // POV do card Meme: irmão das faixas, dentro da TELA. O motor queima o texto
-  // em coordenadas do frame, não da zona, e o recorte do aparelho também é da
-  // tela — como filho da faixa de vídeo o `top` era lido contra ela, e era
-  // preciso converter a área segura em fração da faixa (a conta errava toda vez
-  // que a zona de vídeo mudava de tamanho).
-  function povOverlay() {
-    return "<span class='gal-pov'>POV: Você usou o formato de meme e " +
-      "VIRALIZOU com 3x mais!</span>";
+  // POV do card Meme: agora e uma FAIXA, como no modelo e como no motor. Antes era
+  // uma sobreposição na tela porque o POV não era zona nenhuma — existia só como
+  // desenho da página, e o render não o queimava. Virou zona de texto, então o card
+  // desenha a faixa dela com a fração declarada e o texto do modelo.
+  //
+  // A escala tipográfica do card continua fixa (`0.6rem`): `.gal-screen` não é
+  // `container-type`, então `cqh` aqui mediria o container de fora. A proporção das
+  // faixas é o contrato do card; o tamanho exato do texto é o contrato da prévia.
+  function galTextBand(z) {
+    var align = z.textAlign || "center";
+    return "<div class='gal-band gal-text-band' style='flex-grow:" + (z.fraction * 100).toFixed(1) +
+        ";background:" + (z.color || "#000") + "'>" +
+        "<span class='gal-pov' style='text-align:" + align + ";color:" +
+          (z.textColor || "#ffffff") + ";font-weight:" + (z.textBold === false ? "500" : "800") +
+          ";text-transform:" + (z.textUppercase ? "uppercase" : "none") + "'>" +
+          esc(z.text || "") + "</span>" +
+        "<span class='gal-pct gal-pct--corner'>" + Math.round(z.fraction * 100) + "%</span></div>";
   }
 
   function galleryCard(key, g) {
-    // As frações das zonas mandam em tudo: cada zona vira UMA faixa, e as
-    // decorações de formato (o POV) são sobrepostas na tela.
+    // As frações das zonas mandam em tudo: cada zona vira UMA faixa. Nenhuma
+    // decoração de formato é mais sobreposta na tela — o que existe é a zona.
     var bands = g.mock === "meme" ? memeBands(g) :
       g.mock === "viral" ? viralBands(g) : g.zones.map(function (z) {
       if (z.mock === "tweet") return tweetBand(z);
       return mediaBand(z);
     }).join("");
-    var overlay = g.mock === "meme" ? povOverlay() : "";
+    var overlay = "";
 
   // Placeholder genérico de mídia: ícone + nome + % na cor do tipo. A
   // legenda mora na faixa de vídeo: é ali que o motor a queima (margem do
@@ -1497,27 +2469,31 @@
         (z.kind === "video" ? "<span class='gal-cap'>Legenda</span>" : "") + "</div>";
   }
 
-  // Composição Meme: a zona de vídeo carrega o POV SOBREPOSTO — é assim que o
-  // motor queima o texto e é assim que a prévia desenha. A zona de imagem vira
-  // a barra de identidade escura.
-  //
-  // O POV era uma faixa irmã de 30% da zona de vídeo: como faixa ele consumia
-  // altura, e o card passava a mostrar [30, 43, 26] onde as zonas declaradas são
-  // [74, 26]. Sobreposto, o card passa a bater com o modelo. Quem emite a
-  // sobreposição é `povOverlay`, na tela — aqui só saem as zonas.
+  // Composição Meme: faixa de texto no topo (fundo preto), vídeo reduzido e a barra
+  // de identidade escura embaixo. Cada faixa sai da zona declarada, na ordem — é o
+  // que faz o card prometer exatamente o layout que o motor monta.
   function memeBands(g) {
-    var v = 0, img = 0;
-    g.zones.forEach(function (z) {
-      if (z.kind === "video") v = z.fraction * 100;
-      if (z.kind === "image") img = z.fraction * 100;
-    });
-    return "<div class='gal-band' style='flex-grow:" + v.toFixed(1) + "'>" +
+    return g.zones.map(function (z) {
+      if (z.kind === "text") return galTextBand(z);
+      if (z.kind === "image") return galIdBand(z);
+      return galVideoBand(z);
+    }).join("");
+  }
+
+  function galVideoBand(z) {
+    return "<div class='gal-band' style='flex-grow:" + (z.fraction * 100).toFixed(1) + "'>" +
         "<svg viewBox='0 0 24 24' fill='none' stroke='#6366f1' stroke-width='1.8'" +
           " stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>" + GAL_ICONS.video + "</svg>" +
-        "<span class='gal-kind'>Vídeo</span><span class='gal-cap'>Legenda</span></div>" +
-      "<div class='gal-band gal-meme-id' style='flex-grow:" + img.toFixed(1) + "'>" +
-        "<span class='gal-avatar gal-avatar--dark'>S</span>" +
-        "<span class='gal-id-text'><strong>Seu Nome</strong><small>@seuhandle</small></span></div>";
+        "<span class='gal-kind'>Vídeo</span><span class='gal-cap'>Legenda</span>" +
+        "<span class='gal-pct gal-pct--corner'>" + Math.round(z.fraction * 100) + "%</span></div>";
+  }
+
+  function galIdBand(z) {
+    return "<div class='gal-band gal-meme-id' style='flex-grow:" + (z.fraction * 100).toFixed(1) + "'>" +
+        avatarMarkup("gal", "gal-avatar--dark") +
+        "<span class='gal-id-text'><strong>" + esc(tweetName()) + "</strong>" +
+        "<small>" + esc(tweetHandle()) + "</small></span>" +
+        "<span class='gal-pct gal-pct--corner'>" + Math.round(z.fraction * 100) + "%</span></div>";
   }
     return "<article class='gal-card'>" +
       "<div class='gal-prev' aria-hidden='true'><div class='gal-screen'>" + bands + overlay +
@@ -1553,15 +2529,16 @@
   }
 
   // Faixa "print do tweet" (tema claro): avatar + nome + verificado +
-  // handle + texto — o que a zona de imagem do formato X representa.
+  // handle + texto — o que a zona de imagem do formato X representa. O perfil
+  // (avatar, nome, @handle) vem do passo Aparencia: os campos da secao editam
+  // este cartao tambem, e nao so a janela de previa.
   function tweetBand(z) {
     return "<div class='gal-band gal-tweet-band' style='flex-grow:" + (z.fraction * 100).toFixed(1) + "'>" +
       "<div class='gal-tweet'>" +
         "<div class='gal-tweet-row'>" +
-          "<span class='gal-avatar'>S</span>" +
-          "<span class='gal-tweet-id'><strong>Seu Nome " +
-            "<svg viewBox='0 0 24 24' width='10' height='10' aria-hidden='true'><path fill='#1d9bf0' d='M12 2l2.4 2.4 3.4-.5 1 3.3 3.2 1.2-1.4 3.1 1.4 3.1-3.2 1.2-1 3.3-3.4-.5L12 22l-2.4-2.4-3.4.5-1-3.3-3.2-1.2L3.4 12 2 8.9l3.2-1.2 1-3.3 3.4.5z'/><path fill='none' stroke='#fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' d='M8.5 12.5l2.5 2.5 4.5-5'/></svg>" +
-          "</strong><small>@seuhandle</small></span>" +
+          avatarMarkup("gal") +
+          "<span class='gal-tweet-id'><strong>" + esc(tweetName()) + " " + VERIFIED_BADGE +
+          "</strong><small>" + esc(tweetHandle()) + "</small></span>" +
         "</div>" +
         "<p class='gal-tweet-body'>" + esc(tweetText()) + "</p>" +
       "</div>" +
@@ -1589,6 +2566,12 @@
       // "mock" é só visual da galeria: nunca entra no estado nem no .toml.
       var clean = Object.assign({}, z);
       delete clean.mock;
+      // O clone acima e RASO: "textOff" e um objeto aninhado e continuaria
+      // sendo o MESMO objeto do catalogo. Arrastar o POV no editor mexeria no
+      // card da galeria (que se redesenha a partir de GALLERY). Clona fundo.
+      if (clean.textOff) {
+        clean.textOff = { x: clean.textOff.x || 0, y: clean.textOff.y || 0 };
+      }
       return clean;
     });
     state.variantPresets = [];
@@ -1606,7 +2589,11 @@
     state.headlineOn = false; state.progressOn = false;
     state.headlineAlign = "center";
     state.captionTheme = "";
+    // Igual ao Carregar split-card: o texto sai, o perfil fica (a secao Aparencia
+    // edita todos os formatos, e o perfil e do usuario, nao do template).
     state.tweetText = "";
+    paintTweetFields();
+
     var phIdea = $("#ph-idea");
     if (phIdea) phIdea.value = "";
     var phCustom = $("#ph-custom");
@@ -1723,8 +2710,12 @@
     }
     setHeadlineText(text);
     state.tweetText = text;
+    paintTweetFields();
     addProjectPhrase(text);
     renderGallery();
+    // A janela tambem mostra o texto: sem isto a frase entrava no cartao da
+    // galeria e a previa continuava com o texto antigo.
+    renderPreview();
     toast("Frase aplicada ao headline e ao tweet.", "ok");
   }
 
@@ -1765,6 +2756,10 @@
     $("#btn-preset-split").addEventListener("click", loadSplitCard);
     $("#btn-phrases").addEventListener("click", generatePhrases);
     $("#btn-phrase-add").addEventListener("click", useCustomPhrase);
+    // A foto do avatar e da PREVIA: o botao so existe na pagina (a tile de upload
+    // e estatica), entao o ouvinte entra no init junto dos outros.
+    var clearAvatar = $("#tw-avatar-clear");
+    if (clearAvatar) clearAvatar.addEventListener("click", removeTweetAvatar);
     $("#phrase-list").addEventListener("click", function (event) {
       var chip = event.target.closest("[data-phrase]");
       if (!chip) return;
@@ -1805,6 +2800,11 @@
       var el = document.getElementById(id);
       if (el) el.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    paintTweetFields();
+
+    // Editor da previa: arraste, clique duplo, setas e `--framepx`. Depois do
+    // boot porque ele mede a tela e liga ouvintes no #canvas ja renderizado.
+    initTweetEditor();
 
     showStep(0);
     renderGallery();
@@ -2132,7 +3132,14 @@
     });
     document.addEventListener("change", function (event) {
       var t = event.target;
-      if (t.classList && t.classList.contains("pv-upload-input")) {
+      if (!t.classList) return;
+      // A foto do avatar e um arquivo local do cartao, nao um video de referencia:
+      // mesma delegacao (o passo Aparencia nao e recriado, mas o handler que ja
+      // existe evita um segundo listener para a mesma coisa), outro destino.
+      if (t.classList.contains("tw-avatar-input")) {
+        addTweetAvatar(t.files && t.files[0]);
+        t.value = "";
+      } else if (t.classList.contains("pv-upload-input")) {
         addPreviewVideos(t.files);
         t.value = "";
       }

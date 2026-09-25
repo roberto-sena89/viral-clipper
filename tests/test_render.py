@@ -446,6 +446,153 @@ class TemplateCaptionBandTests(unittest.TestCase):
         )
 
 
+def _text_template(**overrides):
+    """O formato Meme: faixa de texto preta no topo, vídeo reduzido, barra embaixo.
+
+    As três frações somam 1.00 — a faixa de texto ocupa altura de verdade, e é
+    por isso que o vídeo é 0.58 e não o 0.74 de antes dela existir.
+    """
+    fields = {
+        "text": "POV: voce usou o formato de meme",
+        "fraction": 0.16,
+        "margin_top": 0.008,
+        "margin_bottom": 0.008,
+        "margin_left": 0.05,
+        "margin_right": 0.05,
+        "color": "black",
+    }
+    fields.update(overrides)
+    return tpl.Template(
+        name="meme",
+        zones=(
+            tpl.Zone(kind="text", **fields),
+            tpl.Zone(kind="video", fraction=0.58),
+            tpl.Zone(kind="image", fraction=0.26, source="id.png"),
+        ),
+    )
+
+
+class TextZoneCaptionTests(unittest.TestCase):
+    """A faixa de texto no ASS: o ``Style`` e o ``Dialogue`` ancorado.
+
+    É aqui que o número do motor encontra o libass. O ``text_anchor`` que a
+    prévia do painel desenha tem de ser exatamente o ``\\pos`` do arquivo — se
+    divergirem, o usuário ajusta o texto na janela e ele sai em outro lugar no
+    vídeo, sem nenhum erro no meio do caminho.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="vc_render_txt_")
+
+    def _ass(self, template, duration: float | None = None, **overrides) -> str:
+        path = Path(self.tmp) / "captions.ass"
+        render.build_captions(
+            [make_word(10.0, 10.4, "ola.")],
+            10.0,
+            path,
+            make_config(**overrides),
+            template,
+            duration,
+        )
+        return path.read_text(encoding="utf-8")
+
+    def test_the_style_is_named_after_the_zone_and_wears_the_caption_font(self):
+        # O nome é o que o `Dialogue` procura: repetido ou trocado, o libass
+        # aborta com "Unable to find style" e o clipe sai sem a faixa. A fonte
+        # vem do preset das legendas porque um banner com outra família lê como
+        # dois desenhos brigando no mesmo quadro.
+        body = self._ass(_text_template())
+        config = make_config()
+        font = render.caption_presets.resolve(config).font
+        size = round(config.height * 0.05)  # o default de `text_size`
+        self.assertIn(f"Style: Zona1,{font},{size},&H00FFFFFF,", body)
+        self.assertIn(",Zona1,,", body)
+
+    def test_the_position_is_the_anchor_the_engine_resolved(self):
+        body = self._ass(_text_template())
+        config = make_config()
+        band = tpl.plan_bands(_text_template(), config.width, config.height)[0]
+        x, y, an = tpl.text_anchor(band, band.zone, config.width, config.height)
+        self.assertIn(rf"{{\an{an}\pos({x},{y})}}", body)
+
+    def test_the_colour_is_byte_reversed_for_ass(self):
+        # ASS guarda a cor invertida (BBGGRR) com o alfa na frente: escrever
+        # `#facc15` direto daria azul — e nenhum erro.
+        self.assertIn(",&H0015CCFA,", self._ass(_text_template(text_color="#facc15")))
+        # Quem já escreveu sintaxe ASS passa direto, sem ser "consertado".
+        self.assertIn(",&H00FF00FF,", self._ass(_text_template(text_color="&H00FF00FF")))
+
+    def test_the_banner_keeps_the_authors_line_breaks(self):
+        # `\N` é a quebra dura do ASS. Numa legenda o `\n` vira espaço de
+        # propósito (a linha é remontada por tempo); num banner não — o usuário
+        # quebrou a linha no campo de texto e espera duas linhas no vídeo.
+        body = self._ass(_text_template(text="POV: voce usou\no formato de meme"))
+        self.assertIn(r"POV: voce usou\No formato de meme", body)
+
+    def test_uppercase_is_applied_at_burn_time(self):
+        body = self._ass(_text_template(text="pov: olha isso", text_uppercase=True))
+        self.assertIn("POV: OLHA ISSO", body)
+        # Desligado, o texto sai como foi escrito — inclusive as minúsculas.
+        self.assertIn("pov: olha isso", self._ass(_text_template(text="pov: olha isso")))
+
+    def test_the_outline_and_the_weight_reach_the_style(self):
+        # Contorno é fração da ALTURA, a mesma medida da fonte: assim o peso
+        # relativo das letras não muda quando o canvas troca de resolução.
+        height = make_config().height
+        body = self._ass(_text_template(text_outline=0.004, text_bold=False))
+        self.assertIn(
+            f"&H00000000,0,0,0,0,100,100,0,0,1,{round(height * 0.004)},0,5,0,0,0,1", body
+        )
+        self.assertIn(
+            "&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1",
+            self._ass(_text_template()),
+        )
+
+    def test_the_banner_comes_before_the_captions_on_the_same_layer(self):
+        # Numa mesma camada o libass desenha os eventos POSTERIORES por cima. O
+        # banner é emitido antes para que, se os dois se cruzarem, a palavra
+        # falada ganhe — ela é o conteúdo, o banner é a moldura.
+        body = self._ass(_text_template())
+        line = [row for row in body.splitlines() if ",Zona1,," in row][0]
+        self.assertTrue(line.startswith("Dialogue: 0,"), line)
+        self.assertLess(body.index(",Zona1,,"), body.index(",Default,,"))
+
+    def test_the_banner_runs_to_the_end_of_the_clip(self):
+        # Ele é parte da composição, não um momento: aparece no primeiro quadro
+        # e fica. Com a duração em mãos, o fim é o número real; sem ela, o evento
+        # fica aberto e o libass o corta no fim do vídeo — a mesma resposta.
+        self.assertIn("0:00:00.00,0:00:12.50,Zona1", self._ass(_text_template(), 12.5))
+        self.assertIn(f"0:00:00.00,{render.OPEN_END},Zona1", self._ass(_text_template()))
+
+    def test_a_template_without_a_text_zone_adds_nothing(self):
+        # O caminho sem zona de texto tem de continuar o de antes: o placeholder
+        # `{zone_styles}` vazio não pode deixar uma linha em branco a mais no
+        # cabeçalho. O libass tolera, mas o arquivo deixaria de ser comparável
+        # com o que a versão anterior escrevia.
+        body = self._ass(tpl.SPLIT_CARD)
+        self.assertNotIn("Zona", body)
+        self.assertIn("Style: Headline,", body)
+        self.assertNotIn("\n\n\n", body.split("[Events]", 1)[0])
+
+    def test_two_text_zones_get_two_styles(self):
+        # Duas faixas de texto no mesmo template é o que o editor permite ao
+        # acrescentar zona. Nomes repetidos fariam a segunda herdar a primeira e
+        # o libass abortaria.
+        two = tpl.Template(
+            name="dois",
+            zones=(
+                tpl.Zone(kind="text", fraction=0.15, text="gancho do topo"),
+                tpl.Zone(kind="video", fraction=0.6),
+                tpl.Zone(kind="text", fraction=0.25, text="chamada de baixo"),
+            ),
+        )
+        body = self._ass(two)
+        self.assertIn("Style: Zona1,", body)
+        self.assertIn("Style: Zona3,", body)
+        self.assertIn("gancho do topo", body)
+        self.assertIn("chamada de baixo", body)
+
+
 class TemplateComposeIntegrationTests(unittest.TestCase):
     """``render_clip`` must build a zone graph only when a template needs one."""
 

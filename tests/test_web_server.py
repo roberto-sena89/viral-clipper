@@ -184,6 +184,20 @@ def page_source(name: str) -> str:
     return "\n".join(parts)
 
 
+def fn_body(page: str, name: str) -> str:
+    """O corpo da função ``name`` do JS da página.
+
+    O corte é em ``\\n  function `` (declaração de topo, dois espaços de
+    indentação), e não em ``function `` solto: as funções daqui chamam callbacks
+    anônimos (``zones.forEach(function (z) {``), e o corte solto terminava o corpo
+    na primeira linha em que a palavra aparecia.
+
+    Mora no módulo porque mais de uma classe lê o corpo de uma função, e duas
+    cópias do mesmo corte divergiriam na primeira vez que alguém ajustasse uma.
+    """
+    return page.split("function " + name + "(", 1)[1].split("\n  function ", 1)[0]
+
+
 class ScrapPageTests(unittest.TestCase):
     """The Scrap page: one link, or a whole profile.
 
@@ -1691,6 +1705,22 @@ class TemplatesPageTests(unittest.TestCase):
         missing = [kind for kind in template_mod.ZONE_KINDS if f"{kind}:" not in body]
         self.assertEqual(missing, [], f"tipos de zona ausentes na pagina: {missing}")
 
+    def test_the_kind_catalog_is_the_engine_list(self):
+        """O catálogo de tipos do wizard é IGUAL ao do motor — nem a mais, nem a menos.
+
+        A checagem por substring acima deixa passar um tipo a mais (``txt:``
+        digitado errado não é denunciado por nada) e um tipo a menos que apareça
+        em outro contexto. Comparar os CONJUNTOS é o que trava a deriva: uma zona
+        que o painel oferece e o motor não conhece só falha no render, e uma que o
+        motor conhece e o painel esconde é um recurso que ninguém acha.
+        """
+        from viralclipper import template as template_mod
+
+        block = re.search(r"var KINDS = \{(.*?)\n  \};", self.page, re.S)
+        self.assertIsNotNone(block, "bloco KINDS nao encontrado na pagina")
+        keys = set(re.findall(r"^\s*([a-z]+):", block.group(1), re.M))
+        self.assertEqual(keys, set(template_mod.ZONE_KINDS))
+
     def test_the_panel_links_to_the_templates_page(self):
         panel = page_source("index.html")
         self.assertIn('href="/templates"', panel)
@@ -2032,22 +2062,672 @@ class TemplatesPreviewFidelityTests(unittest.TestCase):
             self.assertIn("top: var(--notch-top)", drawn)
             self.assertIn("height: var(--notch-h)", drawn)
 
-    def test_the_pov_starts_below_the_notch(self):
-        """O POV é ilustração do modelo, e o recorte pinta por cima do conteúdo.
+    def test_the_pov_is_a_band_of_its_own_outside_the_video(self):
+        """O POV é uma ZONA de texto, não uma sobreposição sobre o vídeo.
 
-        A âncora é o FUNDO do recorte, não a área segura do motor: os dois
-        números são reais e conflitam (o 4% do guia fica acima do recorte), e
-        quem manda no POV é o recorte. Também não há ``top`` vindo do JS — era
-        daí que vinha a conta de converter a área segura em fração da faixa, que
-        errava sempre que a zona de vídeo mudava de tamanho.
+        Ele era um absoluto ancorado no FUNDO do recorte e morava dentro da faixa
+        de vídeo: cobria o clipe e só existia naquela posição. Como zona ``text``
+        ele ganha faixa própria — fundo preto, fora da área do vídeo — e a posição
+        sai de ``text_anchor``, o mesmo número que o motor queima.
+
+        O deslocamento fino continua vindo do JS, mas por ``transform``: escrever
+        ``top``/``left`` mexeria no layout da faixa, e a âncora do ASS (que é
+        absoluta no quadro) deixaria de bater com o que a prévia desenha.
         """
         for pov in (".pv-pov", ".gal-pov"):
-            self.assertIn(
-                "top: calc(var(--notch-top) + var(--notch-h)",
-                self._rule(pov),
-                f"{pov} não está ancorado no fundo do recorte",
-            )
+            block = self._rule(pov)
+            self.assertNotIn("position: absolute", block, f"{pov} voltou a ser sobreposição")
+            self.assertNotIn("top:", block, f"{pov} voltou a se ancorar no recorte")
+        self.assertIn(
+            "translate(calc(var(--tw-off-x-pov, 0) * var(--framepx, 0px))",
+            self._rule(".pv-pov"),
+            "o deslocamento do POV não chega por transform",
+        )
         self.assertNotIn("pov.style.top", self.page)
+        # A faixa do texto é pintada pela cor da ZONA (preta no Meme), não por CSS:
+        # no motor ela é o mesmo `solid`, e é ele que dá o fundo preto.
+        self.assertIn("function paintTextZone", self.page)
+        self.assertIn("el.style.background = zone.color", self.page)
+
+    def test_the_text_band_is_painted_in_place(self):
+        """Uma faixa por zona — a de texto inclusive.
+
+        Ela pintava um SEGUNDO elemento dentro do que o laço já tinha posicionado:
+        duas ``.band`` aninhadas davam duas alturas para a mesma zona (a de fora com
+        a geometria do motor, a de dentro com a altura do conteúdo), e a placa preta
+        vazava sobre o vídeo. O usuário vê isso como "o fundo preto invadiu o vídeo",
+        que é exatamente o que ele pediu para não acontecer.
+        """
+        preview = fn_body(self.page, "renderPreview")
+        self.assertIn("paintTextZone(el, band)", preview)
+        self.assertNotIn("appendChild(textZoneBox", preview)
+        self.assertNotIn("appendChild(paintTextZone", preview)
+        # E quem pinta não cria faixa nova: recebe a que já está posicionada.
+        painter = fn_body(self.page, "paintTextZone")
+        self.assertNotIn('createElement("div")', painter)
+
+    def test_the_tweet_fills_its_whole_band(self):
+        """A faixa de imagem do formato X é branca de ponta a ponta.
+
+        O mock era um cartão de 90% centralizado: os 10% de sobra pintavam o
+        preto do palco, então a prévia mostrava uma zona com margem que o motor
+        não desenha — `.band .media` preenche a faixa inteira com `scale`+`crop`.
+        O que define o branco é o fundo da ZONA, logo ele ancora em `inset: 0`,
+        sem largura declarada, sem centralização e sem canto arredondado (zona é
+        retângulo).
+        """
+        block = self._rule(".pv-tweet")
+        self.assertIn("inset: 0", block)
+        self.assertNotIn("width:", block)
+        self.assertNotIn("justify-self", block)
+        self.assertNotIn("border-radius", block)
+        self.assertIn('tweet.className = "pv-tweet"', self.page)
+
+    def test_both_mocks_of_the_tweet_read_the_same_measures(self):
+        """Galeria e prévia desenham o MESMO tweet, com as mesmas medidas.
+
+        O cartão do modelo e a janela de prévia declaravam os tamanhos em duas
+        listas escritas à mão — uma em px, outra em cqw — e as duas divergiram: o
+        selo de verificado media 18px na vitrine (herdado de ``.gal-band svg``,
+        que existe para os ícones de TIPO) e 10px na prévia (o atributo do SVG),
+        o ``@handle`` não cortava com reticências e o texto não tinha limite de
+        linhas. Agora as medidas moram num bloco só, como fração da largura da
+        faixa, e os dois lados consomem os mesmos nomes.
+        """
+        spec = self._rule(".gal-tweet-band, .pv-tweet")
+        for measure in (
+            "--tw-avatar", "--tw-name", "--tw-handle",
+            "--tw-body", "--tw-gap-row", "--tw-gap-block",
+        ):
+            self.assertIn(measure, spec, f"a medida {measure} sumiu da fonte única")
+
+        consumers = (
+            ".gal-avatar", ".gal-tweet-row", ".gal-tweet-id strong",
+            ".gal-tweet-id small", ".gal-tweet-band p.gal-tweet-body",
+            ".pv-avatar", ".pv-tweet-row", ".pv-id strong", ".pv-id small", ".pv-body",
+        )
+        for selector in consumers:
+            self.assertIn(
+                "var(--tw-", self._rule(selector),
+                f"{selector} voltou a declarar tamanho próprio",
+            )
+
+    def test_the_verified_badge_follows_the_name(self):
+        """1,25em nos dois lados: o selo é do NOME, não dos ícones da faixa.
+
+        ``.gal-band svg`` fixa 18px para os ícones de tipo (câmera, moldura) e o
+        selo herdava esse número — saía maior que o próprio nome na vitrine,
+        enquanto na prévia ficava preso no ``width="10"`` do SVG.
+        """
+        for badge in (".gal-tweet-id strong svg", ".pv-id strong svg"):
+            self.assertIn("1.25em", self._rule(badge))
+
+    def test_the_tweet_starts_below_the_notch(self):
+        """O recorte do aparelho pinta por cima do conteúdo.
+
+        A faixa de imagem começa na BORDA DE CIMA da tela, então o nome e o selo
+        nasciam atrás do notch — nas duas janelas, vitrine e prévia. A âncora é a
+        mesma do POV (``--notch-top`` + ``--notch-h``) e pela mesma razão: o
+        número é do recorte do aparelho, não da zona.
+        """
+        self.assertIn("--tw-pad-top", self._rule(".gal-tweet-band, .pv-tweet"))
+        for selector in (".gal-tweet", ".pv-tweet"):
+            self.assertIn(
+                "var(--tw-pad-top)", self._rule(selector),
+                f"{selector} voltou a nascer atrás do recorte",
+            )
+
+
+class TweetEditorTests(unittest.TestCase):
+    """O passo Aparencia edita o tweet do modelo: título, @handle, texto, posição.
+
+    O cartão do formato X é uma prévia — o render usa a imagem que a zona aponta —
+    mas é a prévia que o usuário olha para decidir. Dois defeitos silenciosos
+    possíveis: o campo existir na página e não estar ligado ao estado (digita e
+    nada muda) e a posição ser escrita em px de TELA em vez de px do QUADRO, o que
+    faria o mesmo ``-20`` valer outra coisa em 1080x1920 e em 720x1280.
+    """
+
+    def setUp(self):
+        self.page = page_source("templates.html")
+        self.markup = (server.WEB_DIR / "templates.html").read_text(encoding="utf-8")
+        # O passo Aparencia e o card data-step="0".
+        self.step = self.markup.split('data-step="0"', 1)[1].split("</section>", 1)[0]
+
+    def _fn_body(self, name: str) -> str:
+        """O corpo da função ``name`` do JS da página (ver :func:`fn_body`)."""
+        return fn_body(self.page, name)
+
+    def test_the_fields_live_in_the_aparencia_step(self):
+        for field in ("tw-name", "tw-handle", "tw-text"):
+            self.assertIn(f'id="{field}"', self.step, f"{field} fora do passo Aparencia")
+        # Seis sliders: H e V de cada item do cartao.
+        for item in ("avatar", "name", "body"):
+            for axis in ("x", "y"):
+                field = f"tw-pos-{item}-{axis}"
+                self.assertIn(f'id="{field}"', self.step, f"{field} fora do passo Aparencia")
+        self.assertIn('id="tw-reset-pos"', self.step)
+
+    def test_the_group_sits_right_below_the_step_title(self):
+        """O grupo fica no topo do passo, acima das duas colunas de campos.
+
+        Pedido de quem usa a tela: o cartao e a primeira coisa que se olha, entao
+        vem logo abaixo do titulo "Aparencia" e da descricao — nao depois do
+        preset e do layout de video.
+        """
+        self.assertLess(self.step.index("tw-box"), self.step.index('class="ap-grid"'))
+
+    def test_every_item_of_the_card_has_its_own_position(self):
+        """Avatar, título e texto: um par de eixos por item, não um só para o bloco.
+
+        Um número só por item não bastava: mover o avatar para o centro exige H e
+        V, e o slider antigo só mexia o eixo vertical.
+        """
+        for item in ("avatar", "name", "body"):
+            for axis in ("x", "y"):
+                self.assertIn(f'id="tw-pos-{item}-{axis}"', self.step)
+                self.assertIn(f'id="tw-pos-{item}-{axis}-hint"', self.step)
+
+    def test_the_page_reads_and_writes_the_state(self):
+        for key in ("tweetName", "tweetHandle", "tweetText",
+                    "tweetAvatar", "tweetAvatarName"):
+            self.assertIn(f"state.{key}", self.page, f"{key} não é usado pela página")
+        # Os offsets viraram um objeto por item (H e V), não um número por item.
+        self.assertIn("state.tweetOffset", self.page,
+                      "o estado não guarda mais os offsets por item")
+        for item in ("avatar", "name", "body"):
+            self.assertIn(f'"{item}"', self.page, f"o item {item} saiu do editor")
+        self.assertIn("function paintTweetFields", self.page)
+        self.assertIn("function paintTweetAvatar", self.page)
+
+    def test_empty_field_falls_back_to_the_example(self):
+        """Vazio = exemplo do modelo, e o exemplo é um só (o mesmo da vitrine)."""
+        for expr in ("state.tweetName || TWEET_NAME_DEFAULT",
+                     "state.tweetHandle || TWEET_HANDLE_DEFAULT",
+                     "state.tweetText || TWEET_DEFAULT"):
+            self.assertIn(expr, self.page)
+
+    def test_the_offset_is_frame_pixels_not_screen_pixels(self):
+        """px do QUADRO -> ``cqh`` do palco, a mesma conversão do headline.
+
+        Em px de tela o ajuste valeria 20/1920 do quadro numa janela e 20/280 na
+        outra, e o modelo sairia diferente em 1080x1920 e em 720x1280.
+        """
+        self.assertIn('(value / state.height * 100).toFixed(3) + "cqh"', self.page)
+        # O eixo H não pode usar `cqw`: dentro do cartão ele mediria o CONTEÚDO do
+        # cartão (container-type: inline-size), e o mesmo número valeria outra
+        # coisa em cada formato. O número puro é multiplicado por `--framepx`,
+        # medido na tela do palco — ver `paintFrameScale`.
+        self.assertIn("function paintFrameScale", self.page)
+        self.assertIn("screen.clientWidth / state.width", self.page)
+
+    def test_the_css_moves_each_item_with_its_own_variable(self):
+        """Cada item carrega duas variáveis (H e V) e as duas entram no ``translate``.
+
+        H vem como número puro e o CSS multiplica por ``--framepx``; V já chega em
+        ``cqh``. Zerar uma só das duas deixaria o item no eixo antigo.
+        """
+        for rule, item in ((".pv-avatar", "avatar"), (".pv-id", "name"),
+                           (".pv-body", "body")):
+            body = self._rule(rule, "tw-off-x")
+            self.assertIn("transform: translate(calc(", body,
+                          f"{rule} não desloca por translate")
+            self.assertIn(f"var(--tw-off-x-{item}, 0)", body,
+                          f"{rule} não consome --tw-off-x-{item}")
+            self.assertIn(f"var(--tw-off-y-{item}, 0px)", body,
+                          f"{rule} não consome --tw-off-y-{item}")
+            self.assertIn("var(--framepx, 0px)", body,
+                          f"{rule} não escala o H por --framepx")
+
+    def _rule(self, selector: str, containing: str | None = None) -> str:
+        """O bloco de declarações de ``selector`` no CSS da página.
+
+        Vários seletores aparecem mais de uma vez (``.pv-avatar`` primeiro define
+        o tamanho e depois o deslocamento); com ``containing`` fica o bloco que
+        tem aquela declaração.
+        """
+        blocks = re.findall(
+            r"^" + re.escape(selector) + r"\s*\{([^}]*)\}", self.page, re.MULTILINE
+        )
+        for block in blocks:
+            if containing is None or containing in block:
+                return block
+        self.fail(f"a regra {selector} com {containing!r} sumiu do CSS")
+
+    def test_the_avatar_comes_from_a_file_on_the_computer(self):
+        """Foto do avatar por arquivo local: botão, input e o aceite de imagem.
+
+        O cartão desenhava só a letra do título. O controle é o mesmo da página
+        para arquivo local (a tile tracejada dos vídeos de referência) e o input
+        mora DENTRO do botão, porque quem abre o seletor é a delegação de clique
+        que já existe — um input solto na página ficaria sem ninguém para clicá-lo.
+        """
+        for needed in ('id="tw-avatar-file"', 'type="file"', "pv-upload-btn",
+                       'id="tw-avatar-clear"', 'id="tw-avatar-chip"'):
+            self.assertIn(needed, self.step, f"{needed} fora do grupo do tweet")
+        self.assertIn('accept="image/png,image/jpeg,image/webp,image/gif"', self.step)
+
+    def test_the_photo_is_a_small_data_url_because_the_policy_forbids_blob(self):
+        """A foto entra por ``canvas.toDataURL``, reduzida, e não por object URL.
+
+        Duas razões que se somam, e a primeira é invisível:
+
+        * o CSP da página é ``img-src 'self' data:``, SEM ``blob:`` — uma imagem
+          de object URL é bloqueada em silêncio (o círculo do avatar fica vazio,
+          nada no console). ``media-src`` tem ``blob:``, e é por isso que o vídeo
+          de referência pode usar object URL e a foto não pode.
+        * o avatar aparece com ~48px no cartão: guardar o original seria carregar
+          megabyte de base64 no estado e recopiá-lo para dentro do HTML a cada
+          tecla digitada no título.
+        """
+        img_src = server.Handler.CSP.split("img-src", 1)[1].split(";", 1)[0]
+        self.assertIn("data:", img_src, "sem `data:` o avatar não pinta")
+        self.assertNotIn("blob:", img_src)
+        self.assertIn("TWEET_AVATAR_PX = 256", self.page)
+        self.assertIn("function downscaleAvatar", self.page)
+        photo_fn = self.page.split("function addTweetAvatar", 1)[1].split(
+            "function downscaleAvatar", 1)[0]
+        # A ponte para o canvas é o FileReader: nem object URL (bloqueado) nem
+        # caminho de disco (o navegador não lê).
+        self.assertIn("reader.readAsDataURL(file)", photo_fn)
+        self.assertNotIn("createObjectURL", photo_fn)
+        self.assertIn('canvas.toDataURL("image/jpeg"', self.page)
+
+    def test_the_photo_paints_in_the_window_and_in_the_gallery(self):
+        """Com arquivo a janela desenha a imagem; sem, a letra do título.
+
+        A letra não sai do HTML quando entra a foto: ela é o estado do modelo e o
+        que reaparece ao remover. Quem esconde é o CSS, com ``color: transparent``
+        — ``visibility``/``display`` apagariam a letra e um PNG de fundo
+        transparente deixaria o vazio aparecer no lugar dela.
+
+        A regra cobre janela e vitrine (``.pv-`` e ``.gal-``) e vem DEPOIS das
+        variantes escuras do Meme: elas usam o atalho ``background``, que redefine
+        ``background-size`` para ``auto`` — com a regra antes delas, a foto do Meme
+        entrava no tamanho natural (256px) dentro de um círculo de ~48px.
+        """
+        self.assertIn("function avatarMarkup", self.page)
+        img_rule = ".pv-avatar--img, .gal-avatar--img {"
+        rule = self.page.split(img_rule, 1)[1].split("}", 1)[0]
+        self.assertIn("background-size: cover", rule)
+        self.assertIn("color: transparent", rule)
+        position = self.page.index(img_rule)
+        for dark in (".pv-avatar--dark { background", ".gal-avatar--dark { background"):
+            self.assertLess(self.page.index(dark), position,
+                            "a regra da foto precisa vir depois das variantes escuras")
+
+    def test_the_file_name_keeps_its_own_case(self):
+        """O nome do arquivo não vai a maiúsculas com o rótulo.
+
+        ``.mini-label`` é uppercase; subir a caixa de ``foto_de_perfil.JPG``
+        mostraria outro nome — e é o nome que o usuário usa para saber qual
+        arquivo está na janela.
+        """
+        self.assertIn("text-transform: none", self._rule(".mini-label #tw-avatar-state"))
+
+    def test_every_template_with_a_profile_uses_the_identity_of_the_step(self):
+        """Os campos da seção valem para X e Meme, na janela e na vitrine.
+
+        O Meme desenhava "Seu Nome", "@seuhandle" e "S" na unha, nos dois lugares:
+        os campos do passo Aparência não editavam aquele template, e a vitrine
+        ficava com o exemplo do modelo mesmo depois de o usuário escrever o nome
+        dele. O que a seção edita é o PERFIL do cartão, então os quatro pontos que
+        desenham perfil leem a mesma fonte.
+        """
+        for fn, where in (("tweetMock", "janela do X"), ("memeIdBar", "janela do Meme"),
+                          ("tweetBand", "vitrine do X"), ("galIdBand", "vitrine do Meme")):
+            body = self._fn_body(fn)
+            for helper, label in (("avatarMarkup(", "avatar"), ("tweetName()", "título"),
+                                  ("tweetHandle()", "@handle")):
+                self.assertIn(helper, body, f"{where} não usa o {label} da seção")
+        # A vitrine do Meme desenha a barra por DELEGAÇÃO: `memeBands` só escolhe o
+        # desenho de cada zona. Sem esta linha o teste cobriria o desenhista e
+        # deixaria a ROTA solta — trocá-la por um mock genérico devolveria "Seu
+        # Nome" ao card sem nenhum teste reclamar.
+        self.assertIn(
+            "return galIdBand(z)",
+            self._fn_body("memeBands"),
+            "a vitrine do Meme não roteia a imagem para a barra de identidade",
+        )
+
+    def test_no_profile_is_hardcoded_in_a_mock(self):
+        """Nenhum mock volta a escrever o exemplo na unha.
+
+        O exemplo do modelo mora em ``TWEET_NAME_DEFAULT``/``TWEET_HANDLE_DEFAULT``
+        (e nos placeholders do formulário). Escrito direto no mock, ele ignora os
+        campos — foi assim que o Meme ficou de fora.
+        """
+        for fn in ("tweetMock", "memeIdBar", "tweetBand", "memeBands"):
+            body = self._fn_body(fn)
+            self.assertNotIn("Seu Nome", body, f"{fn} tem o nome de exemplo na unha")
+            self.assertNotIn("@seuhandle", body, f"{fn} tem o handle de exemplo na unha")
+
+    def test_the_position_sliders_reach_the_meme_bar(self):
+        """A barra de identidade do Meme recebe os MESMOS offsets do cartão do X.
+
+        O formato não tem texto de tweet: o eixo de Texto vale só para o X, e é o
+        hint do grupo que diz isso. Sem os offsets aqui, o arraste e os sliders de
+        Avatar e Título pareciam mortos naquele formato.
+        """
+        bar = self._fn_body("memeIdBar")
+        self.assertIn('paintTweetOffsets(bar, ["avatar", "name"])', bar)
+
+    def _gallery_block(self, key: str) -> str:
+        """O bloco de uma entrada de ``GALLERY``, da abertura até a chave seguinte."""
+        return self.page.split(f"{key}: {{", 1)[1].split("\n    }", 1)[0]
+
+    def test_the_meme_template_is_a_real_three_zone_template(self):
+        """O POV é uma ZONA, e as três frações somam 100% como manda o motor.
+
+        Antes ele era desenho da página sobreposto à faixa de vídeo: o render não
+        o queimava e a altura do vídeo não o contava. Agora ocupa altura própria —
+        por isso o vídeo caiu de 74% para 58%. Uma zona nova aqui sem reequilibrar
+        as outras é o defeito que só apareceria no render, acusado pelo motor.
+        """
+        block = self._gallery_block("meme")
+        fractions = [float(value) for value in re.findall(r"fraction: ([0-9.]+)", block)]
+        self.assertEqual(len(fractions), 3, "o Meme deixou de ter três zonas")
+        self.assertAlmostEqual(sum(fractions), 1.0, places=6)
+        for kind in ("text", "video", "image"):
+            self.assertIn(f'kind: "{kind}"', block, f"o Meme perdeu a zona {kind}")
+
+    def test_the_text_zone_comes_before_the_video(self):
+        """A ordem das zonas é a ordem das faixas: o POV é o TOPO do quadro.
+
+        Declarado depois do vídeo, a faixa preta iria para o rodapé — e o usuário
+        veria o POV embaixo enquanto pediu "fora da área do vídeo, no topo".
+        """
+        block = self._gallery_block("meme")
+        self.assertLess(block.index('kind: "text"'), block.index('kind: "video"'))
+
+    def test_the_meme_template_carries_the_words(self):
+        """O catálogo traz o texto: zona de texto vazia é faixa preta e o motor a recusa."""
+        block = self._gallery_block("meme")
+        self.assertRegex(block, r'text: "[^"]+"', "a zona de texto do Meme está sem palavras")
+        self.assertIn('color: "black"', block, "a faixa do POV perdeu o fundo preto")
+
+    def test_the_pov_field_and_the_drag_write_the_same_place(self):
+        """Campo, sliders e arraste do POV escrevem no MESMO objeto.
+
+        O POV não é um item do cartão do X: o deslocamento mora na ZONA
+        (``textOff``), porque é ela que o motor lê, via ``text_dx``/``text_dy``.
+        Com cada controle guardando o seu, arrastar e digitar o número
+        divergiriam — e é o número que vai para o .toml.
+        """
+        resolver = self._fn_body("tweetOffsetOf")
+        self.assertIn('item === "pov"', resolver)
+        self.assertIn("return zone.textOff", resolver)
+        # O arraste, os sliders e o "Zerar posições" passam pelo resolvedor.
+        self.assertIn("tweetOffsetOf(drag.item)", self._fn_body("snapTweetOffset"))
+        self.assertIn("tweetOffsetOf(item)", self._fn_body("paintTweetOffsets"))
+        self.assertIn("tweetOffsetOf(item)", self._fn_body("resetTweetOffsets"))
+        # O campo de texto escreve o `text` da zona, não uma variável paralela.
+        self.assertIn('target.id === "pov-text"', self.page)
+        self.assertIn("povTarget.text = target.value", self.page)
+        # E o número em px muta o aninhado, preservando a referência.
+        self.assertIn('act === "textOffX" || act === "textOffY"', self.page)
+        self.assertIn("textZone.textOff[", self.page)
+
+    def test_the_pov_can_be_dragged_and_gets_the_crosshair(self):
+        """O nó do POV é arrastável e o ponto cruz o encontra.
+
+        O ponto cruz e o arraste procuram ``#canvas [data-edit='<item>']``: sem o
+        atributo no nó desenhado, o POV existiria na tela e seria o único item do
+        editor que não responde ao mouse.
+        """
+        box = self._fn_body("paintTextZone")
+        self.assertIn('pov.setAttribute("data-edit", "pov")', box)
+        self.assertIn("function tweetItemNode", self.page)
+        self.assertIn("#canvas [data-edit='\" + item + \"']", self.page)
+        # O item entra na lista que o editor percorre.
+        items = self.page.split("TW_ITEMS = [", 1)[1].split("]", 1)[0]
+        self.assertIn('"pov"', items)
+        self.assertIn("showEditGuides(tweetItemNode(twSelected))", self.page)
+
+    def test_the_pov_offset_reaches_the_toml_from_every_control(self):
+        """Mexeu no POV por qualquer controle, o `.toml` é reescrito.
+
+        O deslocamento do POV é o único que SAI no arquivo (``text_dx``/``text_dy``);
+        os itens do cartão do X são só da prévia. Sem a repintura em cada caminho, o
+        usuário arrastava (ou usava as setas, ou o slider), baixava o template e o
+        arquivo saía sem o ajuste que ele acabou de fazer — um defeito que só
+        apareceria no render, longe do gesto.
+        """
+        # Slider do passo: só o POV repinta os outputs (o slider dispara a cada
+        # `input`, então a repintura fica restrita a quem ela muda).
+        self.assertIn('if (posItem === "pov") renderOutputs()', self.page)
+        # Arraste: no fim do gesto, uma vez.
+        self.assertIn('if (item === "pov") renderOutputs()', self._fn_body("endTweetDrag"))
+        # Setas do teclado.
+        self.assertIn('if (twSelected === "pov") renderOutputs()', self._fn_body("onTweetKey"))
+        # "Zerar posições".
+        self.assertIn("renderOutputs()", self._fn_body("resetTweetOffsets"))
+
+    def test_the_pov_has_its_own_position_fields_in_the_step(self):
+        """Os sliders do POV vivem no passo, com o mesmo par H/V dos outros itens."""
+        for axis in ("x", "y"):
+            field = f"tw-pos-pov-{axis}"
+            self.assertIn(f'id="{field}"', self.step, f"{field} fora do passo Aparencia")
+        self.assertIn('id="pov-box"', self.step)
+        self.assertIn('id="pov-text"', self.step)
+        # O painel some quando o formato não tem faixa de texto: um campo visível
+        # escrevendo num lugar que o motor não lê é o defeito que ninguém acha.
+        self.assertIn("box.hidden = !zone", self._fn_body("paintPovFields"))
+
+    def test_the_gallery_never_invents_an_asset_path(self):
+        """Nenhum card traz um caminho de imagem pronto — o asset é do usuário.
+
+        O motor exige ``source`` numa zona ``image``, então o card abre com "Zona N
+        (Imagem): uma zona de imagem precisa de um caminho" até o usuário escolher o
+        arquivo. É o mesmo estado nos dois cards que têm imagem (X e Meme), e é
+        deliberado: um caminho inventado aqui viraria um render falhando depois de
+        baixar o template — pior do que o aviso que a própria página já dá.
+        """
+        for key in ("x", "meme"):
+            self.assertRegex(
+                self._gallery_block(key),
+                r'source: ""',
+                f"o card {key} inventou um caminho de imagem",
+            )
+
+    def test_the_meme_gallery_numbers_survive_the_engine(self):
+        """Os números do card, passados pelo motor, produzem um template VÁLIDO.
+
+        O wizard trabalha em POR CENTO (``textSize: 3.8``, ``marginLeft: 5``) e o
+        motor em FRAÇÃO (``text_size = 0.038``, ``margin_left = 0.05``). É a
+        conversão que o ``toToml`` faz e que ninguém confere até baixar o arquivo.
+        Aqui os mesmos números atravessam o motor de verdade: um valor fora da
+        faixa, ou uma fração que não fecha, vira falha de teste em vez de erro no
+        meio do render — quando o usuário já clicou em "Usar este template".
+
+        O caminho do asset entra como o card o traz (vazio) mais um palpite: a zona
+        de identidade vem sem arquivo, e é a única coisa que impede o card de ser
+        válido de saída — ver ``test_the_gallery_never_invents_an_asset_path``.
+        """
+        from viralclipper import template as template_mod
+
+        block = self._gallery_block("meme")
+        fractions = [float(v) for v in re.findall(r"fraction: ([0-9.]+)", block)]
+        size = float(re.search(r"textSize: ([0-9.]+)", block).group(1)) / 100
+        gap = float(re.search(r"marginTop: ([0-9.]+)", block).group(1)) / 100
+        side = float(re.search(r"marginLeft: ([0-9.]+)", block).group(1)) / 100
+        source = re.search(r'source: "([^"]*)"', block).group(1) or "id.png"
+        template = template_mod.Template(
+            name="meme",
+            zones=(
+                template_mod.Zone(
+                    kind="text", fraction=fractions[0], text="POV: teste",
+                    text_size=size, color="black",
+                    margin_top=gap, margin_bottom=gap, margin_left=side, margin_right=side,
+                ),
+                template_mod.Zone(kind="video", fraction=fractions[1]),
+                template_mod.Zone(kind="image", fraction=fractions[2], source=source),
+            ),
+        )
+        template.validate()  # o "Usar este template" + "Baixar" não pode gerar isto inválido
+        band = template_mod.plan_bands(template, 1080, 1920)[0]
+        self.assertEqual(band.kind, "text")
+        x, y, an = template_mod.text_anchor(band, band.zone, 1080, 1920)
+        self.assertTrue(0 <= x <= 1080, f"âncora fora do quadro: {x}")
+        self.assertTrue(0 <= y <= 1920, f"âncora fora do quadro: {y}")
+        self.assertIn(an, range(1, 10))
+        # E a linha do `describe` confere com o que a prévia desenha.
+        self.assertIn(f"({x},{y}) an={an}", template_mod.describe(template, 1080, 1920))
+
+    def test_the_meme_bar_sizes_the_avatar_like_the_model(self):
+        """A barra do Meme declara as mesmas ``--tw-*`` do cartão do X.
+
+        As variáveis do tweet são declaradas em ``.gal-tweet-band, .pv-tweet``, então
+        na barra ``width: var(--tw-avatar)`` era inválido e o círculo ficava do
+        tamanho da LETRA. Com "S" isso passava por um avatar pequeno; com a FOTO —
+        letra invisível, mas ainda ocupando espaço — o avatar virava uma pílula
+        estreita. Foi a foto que revelou o defeito.
+
+        Frações do modelo (``gal-meme-id``): 18px de avatar, 9,3px de nome, 8,3px de
+        handle e 6px de respiro numa caixa de conteúdo de 120px.
+        """
+        bar = self._rule(".pv-idbar")
+        self.assertIn("container-type: inline-size", bar)
+        for declaration in ("--tw-avatar: 15cqw", "--tw-name: 7.73cqw",
+                            "--tw-handle: 6.93cqw", "--tw-gap-row: 5cqw"):
+            self.assertIn(declaration, bar, f"{declaration} faltando na barra")
+
+    def test_the_profile_survives_a_template_switch(self):
+        """Trocar de template limpa o TEXTO e mantém o perfil.
+
+        O texto é conteúdo do projeto e não vaza para o formato novo. O perfil é do
+        usuário: a seção edita todos os formatos, então quem escreveu o nome e
+        escolheu a foto não pode receber "Seu Nome" de volta ao usar o Meme.
+        """
+        for fn in ("loadSplitCard", "loadGallery"):
+            body = self._fn_body(fn)
+            self.assertIn('state.tweetText = ""', body, f"{fn} não limpa o texto")
+            self.assertNotIn("clearTweetAvatar", body, f"{fn} apaga o perfil")
+            self.assertNotIn("state.tweetName =", body, f"{fn} apaga o título")
+            self.assertNotIn("state.tweetHandle =", body, f"{fn} apaga o @handle")
+
+    def test_the_group_says_it_edits_every_template(self):
+        """O texto do grupo diz o alcance: X e Meme, janela e vitrine.
+
+        Antes dizia "Vale para o formato Twitter / X" — e, na prática, o Meme
+        ignorava os campos. O rótulo também sai de "Tweet do modelo" porque o grupo
+        edita o PERFIL (a barra do Meme não é um tweet).
+        """
+        for text in ("Perfil do modelo", "Meme", "vitrine", "Vídeo Viral"):
+            self.assertIn(text, self.step, f"o grupo não fala de {text!r}")
+
+    def test_the_preview_is_editable_in_place(self):
+        """Os três itens da janela são arrastáveis e o texto é editável no lugar.
+
+        O contrato é de atributos: ``data-edit`` diz o que o ponteiro pega (e
+        serve de chave no estado), ``data-txt`` diz qual texto o duplo clique abre.
+        Sem eles o arraste precisaria adivinhar a hierarquia de cada template.
+        """
+        for fn, items in (("tweetMock", ("data-edit='name'", "data-edit='body'",
+                                         "data-txt='name'", "data-txt='handle'",
+                                         "data-txt='text'")),
+                          ("memeIdBar", ("data-edit='name'", "data-txt='name'",
+                                         "data-txt='handle'"))):
+            body = self._fn_body(fn)
+            for marker in items:
+                self.assertIn(marker, body, f"{fn} sem {marker}")
+        # O avatar entra pelo mesmo contrato, mas só na janela: a vitrine é
+        # esquema, não área de edição.
+        avatar = self._fn_body("avatarMarkup")
+        self.assertIn('prefix === "gal" ? "" : " data-edit=\'avatar\'"', avatar)
+        self.assertIn('leaf.setAttribute("contenteditable", "true")', self.page)
+        # O texto sai por textContent e volta por esc(): nenhuma porta de HTML.
+        self.assertIn("nunca `innerHTML`", self.page)
+
+    def test_the_drag_never_redraws_the_preview(self):
+        """Durante o arraste só as variáveis do cartão mudam.
+
+        Um ``renderPreview()`` ali reescreveria o nó que está com a captura do
+        ponteiro e o arraste morreria no primeiro pixel.
+        """
+        body = self._fn_body("moveTweetDrag")
+        self.assertNotIn("renderPreview(", body)
+        self.assertIn("applyTweetOffset(", body)
+        self.assertIn("snapTweetOffset(", body)
+        # O caminho de largar o texto também não redesenha a cada tecla: senão o
+        # cursor voltava para o começo a cada caractere digitado.
+        typing = self._fn_body("onTweetEditInput")
+        self.assertNotIn("renderPreview(", typing)
+        self.assertIn("paintTweetFields()", typing)
+
+    def test_the_crosshair_lives_outside_the_canvas(self):
+        """O ponto cruz fica ao lado do ``#canvas``, nunca dentro dele.
+
+        O canvas é reescrito inteiro a cada render; dentro dele o guia sumiria no
+        meio do arraste (que justamente não redesenha).
+        """
+        canvas_at = self.markup.index('id="canvas"')
+        guides_at = self.markup.index('id="edit-guides"')
+        self.assertGreater(guides_at, canvas_at, "o guia ficou antes do canvas")
+        # O canvas fecha (linha própria, vazia) e o guia nasce DELE: dentro dele,
+        # o render seguinte apagaria o overlay no meio do arraste.
+        canvas_line = self.markup[canvas_at:].split("\n", 1)[0]
+        self.assertNotIn("edit-guides", canvas_line)
+        for marker in ('class="eg-line eg-v"', 'class="eg-line eg-h"',
+                       'class="eg-dot"', 'id="eg-readout"'):
+            self.assertIn(marker, self.markup, f"{marker} fora do overlay")
+        # O overlay não captura ponteiro: o arraste continua indo para o item.
+        css = self._rule(".edit-guides")
+        self.assertIn("pointer-events: none", css)
+        self.assertIn("function showEditGuides", self.page)
+        self.assertIn("hidden = false", self.page)
+
+    def test_the_arrows_nudge_and_the_arrows_of_a_field_are_left_alone(self):
+        """Setas movem o item selecionado em 1 px (Shift: 10); campo manda nelas.
+
+        Os sliders do passo usam as mesmas teclas: enquanto um deles está com o
+        foco, a seta é do slider — entregar o item e o campo ao mesmo tempo faria
+        os dois se moverem.
+        """
+        body = self._fn_body("onTweetKey")
+        for key in ("ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"):
+            self.assertIn(key, body, f"set {key} não move o item")
+        self.assertIn('event.shiftKey ? TW_NUDGE_FAST : TW_NUDGE_PX', body)
+        self.assertIn('TW_NUDGE_FAST = 10', self.page)
+        self.assertIn("input, textarea, select, [contenteditable='true']", body)
+
+    def test_the_reset_button_restores_the_model_positions(self):
+        """"Zerar posições" volta os quatro itens para o zero do modelo.
+
+        O POV guarda o deslocamento na ZONA (é ela que o motor lê, via
+        ``text_dx``/``text_dy``); os outros três, no estado do cartão. Zerar pelo
+        MESMO resolvedor que o arraste usa é o que mantém os dois lados no mesmo
+        lugar — escrevendo ``state.tweetOffset[item]`` na mão, o POV ficaria
+        parado onde estava e o botão pareceria quebrado só naquele item.
+        """
+        self.assertIn('id="tw-reset-pos"', self.step)
+        items = self.page.split("TW_ITEMS = [", 1)[1].split("]", 1)[0]
+        for item in ("avatar", "name", "body", "pov"):
+            self.assertIn(f'"{item}"', items, f"TW_ITEMS não cobre {item}")
+        body = self._fn_body("resetTweetOffsets")
+        self.assertIn("tweetOffsetOf(item)", body)
+        self.assertIn("off.x = 0", body)
+        self.assertIn("off.y = 0", body)
+        # O resolvedor é quem sabe ONDE cada item mora — e é ele que o arraste, as
+        # setas e os campos também usam.
+        resolver = self._fn_body("tweetOffsetOf")
+        self.assertIn('item === "pov"', resolver)
+        self.assertIn("return zone.textOff", resolver)
+        self.assertIn("function initTweetEditor", self.page)
+        self.assertIn('$("#tw-reset-pos")', self.page)
+
+    def test_the_editor_state_never_reaches_the_toml(self):
+        """Título, @handle, posição e foto são da PRÉVIA: o .toml não os carrega.
+
+        O ``toToml()`` escreve campo por campo, então a trava é o campo novo não
+        aparecer lá — um dia alguém pode "exportar tudo" e o arquivo passaria a
+        ter chave que o motor não conhece (no caso da foto, também um object URL
+        de sessão, que não quer dizer nada fora da aba).
+        """
+        toml = self.page.split("function toToml()", 1)[1].split("function round4", 1)[0]
+        for key in ("tweetName", "tweetHandle", "tweetText", "tweetPos",
+                    "tweetAvatar", "tweetAvatarName"):
+            self.assertNotIn(key, toml, f"{key} vazou para o .toml")
 
 
 class PortParsingTests(unittest.TestCase):

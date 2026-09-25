@@ -139,6 +139,165 @@
           <code>margin_v</code> do preset precisam concordar.
         </p>
 
+        <!-- Perfil do modelo (X e Meme). Edita o cartao que a janela desenha e o
+             que a vitrine mostra: titulo, @handle, texto, foto do avatar e a
+             posicao fina de cada item. E previa, nao render — a zona de imagem do
+             motor usa o arquivo do passo Midia. -->
+        <div class="tool-box tw-box">
+          <div class="mini-label">Perfil do modelo <span class="ph-badge">Prévia</span></div>
+          <p class="hint" style="margin:0 0 10px">
+            Vale para <strong>todos</strong> os templates que desenham o perfil —
+            <strong>Twitter / X</strong> e <strong>Meme</strong> —, na janela e na
+            vitrine. O <strong>Vídeo Viral</strong> não desenha perfil: o texto dele é
+            o gancho, no passo Frases. Vazio = exemplo do modelo.
+            A posição de cada item vale só na <strong>janela</strong> e é em px do
+            <strong>quadro</strong> (negativo sobe) — o mesmo número vale em
+            1080×1920 e em 720×1280.
+          </p>
+          <div class="field-row">
+            <div class="field">
+              <label for="tw-name">Título</label>
+              <input id="tw-name" type="text" spellcheck="false" placeholder="Seu Nome">
+            </div>
+            <div class="field">
+              <label for="tw-handle">@handle</label>
+              <input id="tw-handle" type="text" spellcheck="false" placeholder="@seuhandle">
+            </div>
+          </div>
+          <div class="field">
+            <label for="tw-text">Texto do tweet</label>
+            <textarea id="tw-text" rows="2" maxlength="280" spellcheck="false"
+                      placeholder="Olha só o que rolou nesse servidor 👀"
+                      style="min-height:56px"></textarea>
+          </div>
+          <!-- Foto do avatar (SO previa): o mesmo controle de arquivo local dos
+               videos de referencia. O arquivo e lido no navegador e vira uma
+               imagem da janela no lugar da letra do titulo; nao sobe para o
+               servidor e nao vai para o .toml. -->
+          <div class="field">
+            <div class="mini-label">Foto do avatar <span id="tw-avatar-state">letra do título</span></div>
+            <div class="pv-stack">
+              <button type="button" class="pv-upload-btn pressable"
+                      aria-label="Escolher uma imagem do computador para o avatar">
+                <input type="file" class="pv-upload-input tw-avatar-input" id="tw-avatar-file"
+                       accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+                <span class="pv-upload-ico" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span>Escolher imagem</button>
+              <div class="tw-avatar-side">
+                <span class="tw-avatar-chip" id="tw-avatar-chip" aria-hidden="true">S</span>
+                <p class="hint" id="tw-avatar-hint" style="margin:0">
+                  Sem arquivo, a prévia desenha a letra do título.
+                </p>
+                <button type="button" class="btn btn-sm btn-ghost pressable" id="tw-avatar-clear" hidden>
+                  Remover
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <div class="mini-label">Posição de cada item <span id="tw-pos-unit">px do quadro</span></div>
+            <p class="hint" style="margin:0 0 10px">
+              Arraste o item <strong>na prévia</strong> para soltar em qualquer ponto da
+              janela; <strong>clique duas vezes</strong> nele para editar o texto ali
+              mesmo. As <strong>setas</strong> ajustam de 1 em 1 px (com Shift, 10) e o
+              ponto cruz mostra o centro do item, prendendo no centro da tela.
+            </p>
+            <div class="tw-pos-grid">
+              <div class="field">
+                <div class="mini-label">Avatar</div>
+                <div class="tw-axis">
+                  <label class="tw-pos-tag" for="tw-pos-avatar-x">H</label>
+                  <input class="tw-slide" id="tw-pos-avatar-x" type="range" min="-480" max="480" step="2" value="0"
+                         aria-label="Posição horizontal do avatar, em px do quadro">
+                  <span class="hint" id="tw-pos-avatar-x-hint">0px</span>
+                </div>
+                <div class="tw-axis">
+                  <label class="tw-pos-tag" for="tw-pos-avatar-y">V</label>
+                  <input class="tw-slide" id="tw-pos-avatar-y" type="range" min="-480" max="480" step="2" value="0"
+                         aria-label="Posição vertical do avatar, em px do quadro">
+                  <span class="hint" id="tw-pos-avatar-y-hint">0px</span>
+                </div>
+              </div>
+              <div class="field">
+                <div class="mini-label">Título</div>
+                <div class="tw-axis">
+                  <label class="tw-pos-tag" for="tw-pos-name-x">H</label>
+                  <input class="tw-slide" id="tw-pos-name-x" type="range" min="-480" max="480" step="2" value="0"
+                         aria-label="Posição horizontal do título, em px do quadro">
+                  <span class="hint" id="tw-pos-name-x-hint">0px</span>
+                </div>
+                <div class="tw-axis">
+                  <label class="tw-pos-tag" for="tw-pos-name-y">V</label>
+                  <input class="tw-slide" id="tw-pos-name-y" type="range" min="-480" max="480" step="2" value="0"
+                         aria-label="Posição vertical do título, em px do quadro">
+                  <span class="hint" id="tw-pos-name-y-hint">0px</span>
+                </div>
+              </div>
+              <div class="field tw-pos-wide">
+                <div class="mini-label">Texto do tweet</div>
+                <div class="tw-axis">
+                  <label class="tw-pos-tag" for="tw-pos-body-x">H</label>
+                  <input class="tw-slide" id="tw-pos-body-x" type="range" min="-480" max="480" step="2" value="0"
+                         aria-label="Posição horizontal do texto, em px do quadro">
+                  <span class="hint" id="tw-pos-body-x-hint">0px</span>
+                </div>
+                <div class="tw-axis">
+                  <label class="tw-pos-tag" for="tw-pos-body-y">V</label>
+                  <input class="tw-slide" id="tw-pos-body-y" type="range" min="-480" max="480" step="2" value="0"
+                         aria-label="Posição vertical do texto, em px do quadro">
+                  <span class="hint" id="tw-pos-body-y-hint">0px</span>
+                </div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-ghost pressable" id="tw-reset-pos">
+              Zerar posições
+            </button>
+          </div>
+        </div>
+
+        <!-- Faixa de texto (o POV do formato Meme). Aparece só quando existe uma
+             zona de texto: sem ela o campo escreveria num lugar que o motor não
+             lê, e o usuário acharia que o texto sumiu. -->
+        <div class="tool-box tw-box" id="pov-box" hidden>
+          <div class="mini-label">Faixa de texto <span class="ph-badge">Fundo preto</span></div>
+          <p class="hint" style="margin:0 0 10px">
+            É uma <strong>zona própria</strong>, fora do vídeo: o vídeo encolhe para
+            ela caber. O texto é queimado pelo motor no render, então o que está aqui
+            é o que sai no clipe. Clique duas vezes nele <strong>na prévia</strong>
+            para editar ali mesmo, ou arraste para posicionar.
+          </p>
+          <div class="field">
+            <label for="pov-text">Texto</label>
+            <textarea id="pov-text" rows="2" maxlength="160" spellcheck="false"
+                      placeholder="POV: Você usou o formato de meme e VIRALIZOU com 3x mais!"
+                      style="min-height:56px"></textarea>
+          </div>
+          <div class="field">
+            <div class="mini-label">Posição do texto <span id="pov-pos-unit">px do quadro</span></div>
+            <p class="hint" style="margin:0 0 10px">
+              O <strong>ponto cruz</strong> marca o centro do texto e prende no centro
+              da faixa (e no da tela). As <strong>setas</strong> ajustam de 1 em 1 px,
+              com Shift de 10 em 10.
+            </p>
+            <div class="tw-pos-grid">
+              <div class="field tw-pos-wide">
+                <div class="mini-label">Texto do POV</div>
+                <div class="tw-axis">
+                  <label class="tw-pos-tag" for="tw-pos-pov-x">H</label>
+                  <input class="tw-slide" id="tw-pos-pov-x" type="range" min="-480" max="480" step="2" value="0"
+                         aria-label="Posição horizontal do texto do POV, em px do quadro">
+                  <span class="hint" id="tw-pos-pov-x-hint">0px</span>
+                </div>
+                <div class="tw-axis">
+                  <label class="tw-pos-tag" for="tw-pos-pov-y">V</label>
+                  <input class="tw-slide" id="tw-pos-pov-y" type="range" min="-480" max="480" step="2" value="0"
+                         aria-label="Posição vertical do texto do POV, em px do quadro">
+                  <span class="hint" id="tw-pos-pov-y-hint">0px</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="ap-grid">
           <div class="ap-col">
           <div class="field">
@@ -454,6 +613,16 @@
           <div class="phone-screen">
             <div class="platform-chrome" aria-hidden="true"><span id="platform-name">TikTok</span></div>
             <div class="canvas" id="canvas"></div>
+            <!-- Ponto cruz do editor da previa (passo Aparencia): duas linhas
+                 cheias no centro do item que esta sendo arrastado + o cruzamento.
+                 Fica FORA de `#canvas` de proposito: a previa e reescrita inteira
+                 a cada render, e dentro dela o guia sumiria no meio do arraste. -->
+            <div class="edit-guides" id="edit-guides" hidden aria-hidden="true">
+              <span class="eg-line eg-v"></span>
+              <span class="eg-line eg-h"></span>
+              <span class="eg-dot"></span>
+              <span class="eg-readout" id="eg-readout"></span>
+            </div>
             <div class="stage-guides"><div class="safe"></div></div>
             <!-- O recorte fica DENTRO da tela: e ele que define onde o conteudo
                  pode comecar, e o POV se ancora no fundo dele. Como irmao da

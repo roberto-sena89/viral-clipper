@@ -35,6 +35,16 @@ HEADLINE_FAD_OUT_MS = 300
 # ASS top-row alignment digits for the burned headline.
 HEADLINE_ALIGN = {"left": 7, "center": 8, "right": 9}
 
+# Every text zone gets its own style, named after its position in the zone list.
+# The name has to be stable and unique because the Dialogue that draws it refers
+# back by name.
+TEXT_ZONE_STYLE = "Zona{}"
+
+# Text zones are emitted before the caption events and on the same layer, so a
+# caption that drifts into the banner still wins: within one layer libass draws
+# the later event on top, and the spoken word outranks decoration.
+TEXT_ZONE_LAYER = 0
+
 # Bottom share of the frame kept clear of captions: TikTok and Instagram
 # Reels both stack their own UI there (progress bar, video caption, like /
 # comment / share rail). Text placed lower gets covered on one network or
@@ -61,10 +71,29 @@ ScaledBorderAndShadow: yes
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default,{font},{size},{primary},&H000000FF,{outline_c},{back},{bold},{italic},0,0,100,100,0,0,{border_style},{outline_w},{shadow},2,90,90,{margin_v},1
 Style: Headline,{font},{headline_size},{highlight},&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,5,2,{headline_align},{headline_margin_l},{headline_margin_r},60,1
-
+{zone_styles}
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
+
+
+def _ass_color(value: str) -> str:
+    """Convert a ``#RRGGBB`` colour to ASS ``&H00BBGGRR``.
+
+    ASS stores colours byte-reversed and with an alpha prefix, which is exactly
+    the kind of detail that silently produces the wrong colour instead of an
+    error. ``&H00`` is fully opaque. Anything that is not a 6-digit hex is passed
+    through untouched so an author who already wrote ASS syntax is not fought.
+    """
+    text = (value or "").strip()
+    if not text.startswith("#") or len(text) != 7:
+        return text or "&H00FFFFFF"
+    try:
+        red, green, blue = (int(text[i : i + 2], 16) for i in (1, 3, 5))
+    except ValueError:
+        return "&H00FFFFFF"
+    return f"&H00{blue:02X}{green:02X}{red:02X}"
+
 
 
 def _highlight_on(style) -> str:
@@ -91,6 +120,70 @@ def _escape_ass(text: str) -> str:
     cleaned = text.replace("\\", "/").replace("{", "(").replace("}", ")")
     cleaned = cleaned.replace("\r", " ").replace("\n", " ")
     return " ".join(cleaned.split())
+
+
+def _escape_ass_multiline(text: str) -> str:
+    """Escape a text-zone string, keeping the author's line breaks.
+
+    ``\\N`` is ASS's hard line break. A banner is a deliberate two-line block
+    ("POV: voce usou o formato de meme" / "e VIRALIZOU com 3x mais!"), so a
+    newline typed in the wizard has to survive as a break instead of collapsing
+    into a space the way a caption's does.
+    """
+    parts = [_escape_ass(line) for line in text.replace("\r\n", "\n").split("\n")]
+    return "\\N".join(part for part in parts if part) or _escape_ass(text)
+
+
+# An open-ended event: the text zone belongs to the composition, not to a moment,
+# so it is on screen for the whole clip. When the caller knows the duration it
+# writes the real end; without one, libass clamps this at the end of the video,
+# which is the same answer.
+OPEN_END = "9:59:59.99"
+
+
+def _text_zone_events(
+    template, config: ClipConfig, clip_duration: float | None, font: str
+) -> tuple[list[str], list[str]]:
+    """Build the ``Style`` and ``Dialogue`` lines for every ``text`` zone.
+
+    Returns ``([], [])`` when there is no template or no text zone, so the
+    identity path writes exactly the file it wrote before text zones existed.
+
+    ``font`` is the caption preset's family: a banner that does not match the
+    captions reads as two different designs fighting on the same frame.
+    """
+    if template is None:
+        return [], []
+    bands = template_mod.plan_bands(template, config.width, config.height)
+    styles: list[str] = []
+    events: list[str] = []
+    end = util.ass_timestamp(clip_duration) if clip_duration else OPEN_END
+    for index, band in enumerate(bands, start=1):
+        zone = band.zone
+        if band.kind != "text":
+            continue
+        name = TEXT_ZONE_STYLE.format(index)
+        size = max(1, int(round(config.height * zone.text_size)))
+        # ``text_outline`` is a share of the canvas height, the same measure the
+        # font size uses, so the outline keeps its weight relative to the letters
+        # at any resolution. ``Shadow`` stays 0: on a flat plate a shadow is
+        # mud, and the plate is what guarantees legibility.
+        outline = max(0, int(round(config.height * zone.text_outline)))
+        styles.append(
+            f"Style: {name},{font},{size},{_ass_color(zone.text_color)},"
+            f"&H000000FF,&H00000000,&H00000000,"
+            f"{-1 if zone.text_bold else 0},0,0,0,100,100,0,0,1,{outline},0,"
+            f"5,0,0,0,1"
+        )
+        text = zone.text
+        if zone.text_uppercase:
+            text = text.upper()
+        x, y, an = template_mod.text_anchor(band, zone, config.width, config.height)
+        events.append(
+            f"Dialogue: {TEXT_ZONE_LAYER},{util.ass_timestamp(0.0)},{end},{name},,"
+            f"0,0,0,,{{\\an{an}\\pos({x},{y})}}{_escape_ass_multiline(text)}"
+        )
+    return styles, events
 
 
 def _group_words(words: list[Word], words_per_line: int) -> list[list[Word]]:
@@ -149,18 +242,32 @@ def build_captions(
     destination: Path,
     config: ClipConfig,
     template=None,
+    clip_duration: float | None = None,
 ) -> Path | None:
-    """Write the ASS file: karaoke captions plus the opening headline.
+    """Write the ASS file: karaoke captions, the opening headline, the text zones.
 
     The headline does not depend on the caption style: even a ``none`` run
     still gets the on-screen hook, because the two solve different problems
     (readability vs. first-two-seconds retention).
+
+    ``clip_duration`` is how long the composed clip runs, and it is what the
+    ``text`` zones of the template are drawn for - a POV banner is part of the
+    composition, not a moment. ``None`` leaves the event open-ended and libass
+    clamps it at the end of the video, which is the same answer; the caller
+    knows the real number, so it passes it.
     """
     events: list[str] = []
     style = caption_presets.resolve(config)
     # On a split template the captions belong to the video band, not to the
     # canvas bottom, so the margin is lifted to the band edge.
     margin_v = _caption_margin_for_band(config, style, template)
+
+    # Text zones come first, on the same layer as the captions: within one layer
+    # libass draws later events on top, so the spoken word wins any collision.
+    zone_styles, zone_events = _text_zone_events(
+        template, config, clip_duration, style.font
+    )
+    events.extend(zone_events)
 
     headline = _headline_text(words, config, style)
     if headline:
@@ -238,6 +345,10 @@ def build_captions(
         if config.headline_margin_side is not None
         else 60,
         highlight=style.highlight_color,
+        # A blank line separates the last Style from ``[Events]``; with no text
+        # zone the placeholder is empty and the template's own newline provides
+        # it, so the file is byte-identical to what it was before.
+        zone_styles="\n".join(zone_styles) + "\n" if zone_styles else "",
     )
     destination.write_text(header + "\n".join(events) + "\n", encoding="utf-8")
     return destination
@@ -597,7 +708,7 @@ def render_clip(
     duration = max(0.1, window_end - window_start)
 
     caption_path = build_captions(
-        words or [], clip_start, work / CAPTION_FILE, config, template
+        words or [], clip_start, work / CAPTION_FILE, config, template, duration
     )
     source_width, source_height = util.probe_video_size(ffprobe, source, logger)
     audio_available = has_audio_stream(ffprobe, source, logger)

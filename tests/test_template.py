@@ -17,6 +17,38 @@ from viralclipper.util import ClipperError
 from ._fixtures import make_config
 
 
+def _text_template(**overrides):
+    """O formato Meme: faixa de texto preta, vídeo reduzido, barra de identidade.
+
+    As três frações somam 1.00 exatamente — é a mesma divisão que o wizard
+    carrega da galeria, e é por isso que o vídeo é 0.58 e não o 0.74 de antes:
+    a faixa de texto ocupa altura de verdade.
+    """
+    fields = {
+        "text": "POV: voce usou o formato de meme e viralizou",
+        "fraction": 0.16,
+        "margin_top": 0.008,
+        "margin_bottom": 0.008,
+        "margin_left": 0.05,
+        "margin_right": 0.05,
+        "color": "black",
+    }
+    fields.update(overrides)
+    return tpl.Template(
+        name="meme",
+        zones=(
+            tpl.Zone(kind="text", **fields),
+            tpl.Zone(kind="video", fraction=0.58),
+            tpl.Zone(kind="image", fraction=0.26, source="id.png"),
+        ),
+    )
+
+
+def _text_band(**overrides):
+    """A faixa (com margens já em pixels) da zona de texto do formato Meme."""
+    return tpl.plan_bands(_text_template(**overrides), 1080, 1920)[0]
+
+
 class ZoneValidationTests(unittest.TestCase):
     def test_unknown_kind_is_refused(self):
         with self.assertRaises(ClipperError) as ctx:
@@ -37,6 +69,46 @@ class ZoneValidationTests(unittest.TestCase):
     def test_margins_may_not_swallow_the_band(self):
         with self.assertRaises(ClipperError):
             tpl.Zone(kind="video", fraction=1.0, margin_top=0.6, margin_bottom=0.5).validate(1)
+
+    def test_text_zone_without_words_is_refused(self):
+        # Faixa preta sem nada é indistinguível de um defeito no renderizador: o
+        # usuário olharia o vídeo, veria um retângulo preto e não saberia se o
+        # texto sumiu ou se ele nunca foi escrito.
+        for empty in ("", "   ", "\n\t "):
+            with self.subTest(text=repr(empty)):
+                with self.assertRaises(ClipperError) as ctx:
+                    tpl.Zone(kind="text", fraction=1.0, text=empty).validate(1)
+                self.assertIn("text", str(ctx.exception))
+
+    def test_text_zone_refuses_a_size_that_would_not_fit(self):
+        # `text_size` é fração da ALTURA do quadro (medida vertical). Acima de
+        # 0.4 uma linha sozinha já não cabe na faixa; zero é texto invisível.
+        for size in (0.0, 0.4 + 1e-9, 0.9, -0.1):
+            with self.subTest(size=size):
+                with self.assertRaises(ClipperError):
+                    tpl.Zone(kind="text", fraction=1.0, text="oi", text_size=size).validate(1)
+
+    def test_text_zone_refuses_an_unknown_alignment(self):
+        # O alinhamento vira o dígito do `\an`: um valor fora da lista não tem
+        # âncora, e o libass desenharia no canto por conta própria.
+        with self.assertRaises(ClipperError) as ctx:
+            tpl.Zone(kind="text", fraction=1.0, text="oi", text_align="justify").validate(1)
+        self.assertIn("justify", str(ctx.exception))
+        with self.assertRaises(ClipperError) as ctx:
+            tpl.Zone(kind="text", fraction=1.0, text="oi", text_valign="baseline").validate(1)
+        self.assertIn("baseline", str(ctx.exception))
+
+    def test_text_zone_refuses_an_offset_beyond_the_canvas(self):
+        # O deslocamento é fração do quadro: 1.0 já é o quadro inteiro. Passar
+        # disso é sempre engano de unidade (px colado no campo de fração).
+        for axis in ("text_dx", "text_dy"):
+            with self.subTest(axis=axis):
+                with self.assertRaises(ClipperError):
+                    tpl.Zone(kind="text", fraction=1.0, text="oi", **{axis: 1.5}).validate(1)
+
+    def test_text_zone_refuses_a_negative_outline(self):
+        with self.assertRaises(ClipperError):
+            tpl.Zone(kind="text", fraction=1.0, text="oi", text_outline=-0.01).validate(1)
 
 
 class TemplateValidationTests(unittest.TestCase):
@@ -90,6 +162,23 @@ class TemplateValidationTests(unittest.TestCase):
         with self.assertRaises(ClipperError):
             tpl.Template(name="empty", zones=()).validate()
 
+    def test_a_text_zone_counts_in_the_sum(self):
+        # A faixa de texto é PIXEL: o motor pinta a placa, então ela ocupa altura
+        # como qualquer outra zona. Só `captions` fica de fora da soma — quem a
+        # posiciona é o libass, não o compositor. Deixá-la fora aqui faria a faixa
+        # preta comer a altura do vídeo sem que ninguém reclamasse.
+        _text_template().validate()  # 0.16 + 0.58 + 0.26 = 1.00, não levanta
+        short = tpl.Template(
+            name="curto",
+            zones=(
+                tpl.Zone(kind="text", fraction=0.16, text="oi"),
+                tpl.Zone(kind="video", fraction=0.58),
+            ),
+        )
+        with self.assertRaises(ClipperError) as ctx:
+            short.validate()
+        self.assertIn("0.7400", str(ctx.exception))
+
 
 class PlanBandsTests(unittest.TestCase):
     def test_full_frame_is_exactly_the_canvas(self):
@@ -138,6 +227,109 @@ class PlanBandsTests(unittest.TestCase):
         self.assertEqual(bands[-1].height, 1920)
 
 
+class TextZoneTests(unittest.TestCase):
+    """Onde as palavras de uma zona ``text`` caem no quadro, em pixels.
+
+    É o único número que a prévia do painel e o libass compartilham: o ``\\an``
+    sozinho não diz onde o texto para (ele só diz QUAL PONTO do bloco as
+    coordenadas nomeiam), então a âncora resolvida é o que precisa de trava.
+    """
+
+    # `\an` é o dígito do teclado numérico: a coluna vem do alinhamento
+    # horizontal, a linha do vertical contada DE BAIXO. Trocar os dois é o erro
+    # natural — e o texto passaria a crescer para o lado oposto.
+    ANCHORS = {
+        ("left", "bottom"): 1, ("center", "bottom"): 2, ("right", "bottom"): 3,
+        ("left", "middle"): 4, ("center", "middle"): 5, ("right", "middle"): 6,
+        ("left", "top"): 7, ("center", "top"): 8, ("right", "top"): 9,
+    }
+
+    def test_every_alignment_gets_its_numpad_anchor(self):
+        for (align, valign), an in self.ANCHORS.items():
+            with self.subTest(align=align, valign=valign):
+                band = _text_band(text_align=align, text_valign=valign)
+                self.assertEqual(tpl.text_anchor(band, band.zone, 1080, 1920)[2], an)
+
+    def test_the_anchor_sits_on_the_edge_the_alignment_names(self):
+        # O alinhamento nomeia a borda do RETÂNGULO INTERNO: é ele que o texto
+        # encosta. Ancorar na borda da faixa colaria as palavras na emenda com a
+        # zona de baixo e a margem deixaria de ser goteira.
+        for align, valign, x, y in (
+            ("left", "top", "inner_x", "inner_y"),
+            ("right", "bottom", "right", "bottom"),
+            ("center", "middle", "center_x", "center_y"),
+        ):
+            with self.subTest(align=align, valign=valign):
+                band = _text_band(text_align=align, text_valign=valign)
+                got_x, got_y, _ = tpl.text_anchor(band, band.zone, 1080, 1920)
+                self.assertEqual(
+                    (got_x, got_y),
+                    (_edge(band, x), _edge(band, y)),
+                    f"{align}/{valign} não ancorou na borda interna",
+                )
+
+    def test_the_offsets_are_a_share_of_the_canvas(self):
+        # Fração do QUADRO, não da faixa: é a unidade que sobrevive a mudar a
+        # altura da faixa, e é a que os campos em px do painel convertem.
+        base = _text_band()
+        moved = _text_band(text_dx=0.1, text_dy=-0.05)
+        x0, y0, _ = tpl.text_anchor(base, base.zone, 1080, 1920)
+        x1, y1, _ = tpl.text_anchor(moved, moved.zone, 1080, 1920)
+        self.assertEqual(x1 - x0, 108)
+        self.assertEqual(y1 - y0, -96)
+
+    def test_the_offsets_compose_with_the_alignment(self):
+        # O deslocamento é um AJUSTE por cima da âncora, não um substituto: com
+        # os dois eixos zerados a âncora tem de continuar onde o alinhamento diz.
+        for align in ("left", "center", "right"):
+            with self.subTest(align=align):
+                plain = _text_band(text_align=align)
+                zero = _text_band(text_align=align, text_dx=0.0, text_dy=0.0)
+                self.assertEqual(
+                    tpl.text_anchor(plain, plain.zone, 1080, 1920),
+                    tpl.text_anchor(zero, zero.zone, 1080, 1920),
+                )
+
+    def test_the_anchor_is_whole_pixels(self):
+        # `\pos` aceita fração, mas o painel mostra inteiro e a leitura em px do
+        # ponto cruz compara com este número: um float aqui faria os dois
+        # discordarem no último dígito.
+        band = _text_band()
+        for value in tpl.text_anchor(band, band.zone, 1080, 1920):
+            self.assertIsInstance(value, int)
+
+    def test_the_text_band_is_planned_like_any_other(self):
+        # A zona de texto entra no empilhamento normal: a faixa tem topo e altura
+        # reais e as margens viram o retângulo interno, igual ao `solid`.
+        bands = tpl.plan_bands(_text_template(), 1080, 1920)
+        self.assertEqual([b.kind for b in bands], ["text", "video", "image"])
+        band = bands[0]
+        self.assertEqual((band.y, band.height), (0, round(1920 * 0.16)))
+        self.assertEqual(band.inner_x, round(1080 * 0.05))
+        self.assertEqual(band.inner_y, round(1920 * 0.008))
+        # As bandas continuam ladrilhando: nada de fresta preta entre elas.
+        cursor = 0
+        for item in bands:
+            self.assertEqual(item.y, cursor)
+            cursor += item.height
+        self.assertEqual(cursor, 1920)
+
+
+def _edge(band, which: str) -> int:
+    """A coordenada nomeada do retângulo interno da faixa, em pixels."""
+    if which == "inner_x":
+        return band.inner_x
+    if which == "inner_y":
+        return band.inner_y
+    if which == "right":
+        return band.inner_x + band.inner_width
+    if which == "bottom":
+        return band.inner_y + band.inner_height
+    if which == "center_x":
+        return band.inner_x + band.inner_width / 2
+    return band.inner_y + band.inner_height / 2
+
+
 class ComposeTests(unittest.TestCase):
     def test_full_frame_needs_no_overlay(self):
         graph, label = tpl.compose(tpl.FULL_FRAME, 1080, 1920)
@@ -157,6 +349,34 @@ class ComposeTests(unittest.TestCase):
         graph, _ = tpl.compose(tpl.SPLIT_CARD, 1080, 1920)
         # The frame band's scale stage must be fed by the still input, not [c0].
         self.assertNotIn("[c0]scale=", graph)
+
+    def test_a_video_zone_below_another_zone_still_reads_the_clip(self):
+        """O clipe alimenta a zona de vídeo ONDE ela estiver na pilha.
+
+        Com a fonte vinda do composto, um vídeo ABAIXO de outra zona — o caso de
+        uma faixa de texto no topo, que é a razão de a zona ``text`` existir —
+        desenhava o fundo do template na própria faixa e o clipe saía do grafo: o
+        render virava um retângulo colorido, sem a filmagem em lugar nenhum, e
+        nada reclamava. Pior: o composto passava a alimentar dois filtros ao mesmo
+        tempo, e para essa forma o split implícito do ffmpeg liga a entrada
+        principal do ``overlay`` ao stream errado (medido: as linhas que o
+        overlay não cobre saem com a cor do input 0, não do composto).
+        """
+        graph, _ = tpl.compose(_text_template(), 1080, 1920)
+        # 58% de 1920 = 1114: a faixa de vídeo, e ela lê o clipe.
+        self.assertIn("[0:v]scale=1080:1114", graph)
+        self.assertEqual(graph.count("[0:v]"), 1)
+        # O composto alimenta UM filtro (o overlay), nunca dois.
+        self.assertNotIn("[c0]scale=", graph)
+
+    def test_every_template_with_a_video_zone_uses_the_clip(self):
+        # Um grafo que não referencia o clipe monta um quadro bonito sem a
+        # filmagem dentro. Nada no render reclama disso — o clipe simplesmente
+        # não aparece —, então a trava tem de ser aqui.
+        for name, template in (("split-card", tpl.SPLIT_CARD), ("meme", _text_template())):
+            with self.subTest(template=name):
+                graph, _ = tpl.compose(template, 1080, 1920)
+                self.assertIn("[0:v]", graph, f"{name} não usa o clipe")
 
     def test_image_zone_consumes_the_next_input(self):
         with_image = tpl.Template(
@@ -221,6 +441,17 @@ class ComposeTests(unittest.TestCase):
         )
         graph, _ = tpl.compose(solid, 1080, 1920)
         self.assertIn("color=c=0x112233", graph)
+
+    def test_text_zone_paints_a_plate_and_takes_no_input(self):
+        # A placa é o que dá legibilidade sobre qualquer coisa, e é o MESMO
+        # caminho do `solid`: as palavras entram depois, pelo libass, que é a
+        # única etapa que conhece fonte. Se a zona de texto pedisse um input
+        # próprio, todos os seguintes andariam um para a frente e a barra de
+        # identidade passaria a ler o arquivo errado.
+        graph, _ = tpl.compose(_text_template(), 1080, 1920)
+        self.assertIn("color=c=black:s=972x276", graph)  # a faixa interna, não a do quadro
+        self.assertEqual(graph.count("[1:v]"), 1)
+        self.assertIn("[1:v]scale=1080:499", graph)  # o still da identidade, não o texto
 
     def test_caption_only_template_is_a_passthrough(self):
         only = tpl.Template(name="caps", zones=(tpl.Zone(kind="captions", fraction=0.0),))
@@ -296,6 +527,26 @@ class FromDictTests(unittest.TestCase):
         data = self._payload(zones=[{"kind": "video", "fraction": 1.0}])
         del data["name"]
         self.assertEqual(tpl.from_dict(data, name="do_arquivo").name, "do_arquivo")
+
+    def test_a_text_zone_round_trips_its_own_keys(self):
+        # O wizard escreve estes nomes no .toml; se um deles não voltasse pelo
+        # `from_dict`, o arquivo baixado descreveria outra coisa que não a prévia.
+        parsed = tpl.from_dict(self._payload(zones=[
+            {"kind": "text", "fraction": 0.2, "text": "POV: olha isso",
+             "text_size": 0.04, "text_color": "#facc15", "text_align": "left",
+             "text_valign": "top", "text_dx": 0.02, "text_dy": -0.01,
+             "text_bold": False, "text_uppercase": True, "text_outline": 0.003},
+            {"kind": "video", "fraction": 0.8},
+        ]))
+        zone = parsed.zones[0]
+        self.assertEqual(zone.text, "POV: olha isso")
+        self.assertEqual(zone.text_size, 0.04)
+        self.assertEqual(zone.text_color, "#facc15")
+        self.assertEqual((zone.text_align, zone.text_valign), ("left", "top"))
+        self.assertEqual((zone.text_dx, zone.text_dy), (0.02, -0.01))
+        self.assertFalse(zone.text_bold)
+        self.assertTrue(zone.text_uppercase)
+        self.assertEqual(zone.text_outline, 0.003)
 
 
 class TemplateFileTests(unittest.TestCase):
@@ -564,6 +815,17 @@ class DescribeTests(unittest.TestCase):
         self.assertIn("frame", text)
         self.assertIn("captions", text)
         self.assertIn("1080x1920", text)
+
+    def test_the_description_names_where_the_text_lands(self):
+        # O `\an` sozinho não diz onde o texto para — ele só diz qual ponto do
+        # bloco as coordenadas nomeiam. A linha resolve a âncora em px, que é o
+        # MESMO número que a prévia do painel desenha: é assim que se confere a
+        # janela contra o motor sem gravar um vídeo.
+        text = tpl.describe(_text_template(), 1080, 1920)
+        band = _text_band()
+        x, y, an = tpl.text_anchor(band, band.zone, 1080, 1920)
+        self.assertIn(f"texto ancorado em ({x},{y}) an={an}", text)
+        self.assertIn("text", text)
 
 
 if __name__ == "__main__":

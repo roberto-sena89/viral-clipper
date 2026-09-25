@@ -301,7 +301,30 @@ height fractions sum to 1.0:
 | `frame` | a still **extracted from the clip** (`frame_at` seconds in) |
 | `image` | a still from your own file (`source`), for a logo or channel card |
 | `solid` | a flat colour band |
+| `text` | a flat colour band with **words burned into it** |
 | `captions` | the caption band (positioned by libass; carries fraction 0) |
+
+A `text` zone is a band of its own, not an overlay: it takes its fraction like
+any other zone, and the video band shrinks to make room. The plate comes from
+the zone's `color` and the words are burned by libass — the same stage that
+burns the captions, so the fade, the wrap and the preset's font come for free.
+The anchor is resolved against the band's *inner* rectangle (after the margins)
+and written as an absolute `\pos` + `\an`, so what `--describe-template` prints
+is where the words land:
+
+```toml
+[[zones]]
+kind = "text"
+fraction = 0.16
+color = "#000000"
+text = "POV: você usou o formato de meme e VIRALIZOU com 3x mais!"
+text_size = 0.038          # share of the frame HEIGHT
+text_color = "#ffffff"
+text_align = "center"      # left | center | right
+text_valign = "middle"     # top | middle | bottom
+text_dx = 0.0              # nudge, share of the frame WIDTH
+text_dy = 0.0              # nudge, share of the frame HEIGHT
+```
 
 Built-ins ship with the tool:
 
@@ -348,7 +371,11 @@ re-scored: the section download happens once per window and only the encode
 repeats.
 
 A browser wizard for building templates (with a live 9:16 preview) is served at
-`http://127.0.0.1:7755/templates` when the web UI is running.
+`http://127.0.0.1:7755/templates` when the web UI is running. The preview is
+editable: drag an item to move it, arrow keys nudge it by 1 px (Shift = 10), and
+a crosshair follows its centre and snaps to the band centre and the frame
+centre. For the `text` zone every path writes the same `text_dx`/`text_dy` the
+engine reads, so a nudge in the preview survives into the downloaded `.toml`.
 
 Run `python -m viralclipper --help` for the full list.
 
@@ -593,7 +620,9 @@ The server serves `web/index.html` and exposes:
   editor with a live 9:16 preview that writes a `.toml` and the matching
   command. The preview recomputes the zone geometry with the same rules as
   `template.plan_bands`, and `tests/test_web_server.py` fails if the page's
-  catalog drifts from the engine's.
+  catalog drifts from the engine's. Its canvas is an editor: items are dragged
+  in place, nudged with the arrow keys or the H/V fields, and a `text` zone is
+  typed straight onto the preview.
 - `GET /templates/catalog` — the presets, zone kinds and built-in templates, read
   from `viralclipper` rather than duplicated in the page.
 - `GET /scrap` — the scrap page (`web/scrap.html`): expand a link or an account

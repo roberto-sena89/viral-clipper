@@ -13,12 +13,22 @@ final canvas with a height fraction and a content source:
     image   a still (a logo, a channel card, a movie-poster frame)
     frame   a still extracted from the clip itself, at a chosen timestamp
     solid   a flat coloured band (a separator, a low-third plate)
+    text    a flat coloured band carrying burned text (a POV banner, a lower third)
     captions the caption band; always the last zone, always full width
 
 Zones stack top to bottom and their fractions must sum to 1.0. The default
 template is a single ``video`` zone covering the whole canvas, which reproduces
 the pre-template rendering exactly: enabling templates must not silently change
 what the tool already produced.
+
+A ``text`` zone is the one kind whose *content* is not a pixel source: the band
+is painted as a flat plate (its ``color``, black by default) by the composer, and
+the words are burned by libass in the caption stage, which is the only stage that
+knows about fonts. :func:`text_anchor` resolves where - the band decides the
+region, ``text_align``/``text_valign`` pick the anchor inside it, and
+``text_dx``/``text_dy`` nudge it from there. Keeping that arithmetic here (and
+not in the renderer) is what makes it testable without ffmpeg, and it is the same
+number the web preview has to draw.
 
 Everything here is pure string building and dataclass validation, so the whole
 module is testable without ffmpeg. The one function that touches disk is
@@ -36,14 +46,27 @@ from .util import ClipperError
 
 # Zone kinds. ``frame`` and ``image`` both resolve to a still; they differ only
 # in where the still comes from, which the renderer decides, not the composer.
-ZONE_KINDS = ("video", "image", "frame", "solid", "captions")
+ZONE_KINDS = ("video", "image", "frame", "solid", "text", "captions")
 
 # How a still is fitted inside its band.
 FIT_MODES = ("cover", "contain")
 
+# Where the burned text of a ``text`` zone sits inside its band.
+TEXT_ALIGNS = ("left", "center", "right")
+TEXT_VALIGNS = ("top", "middle", "bottom")
+
 # A zone fraction is meaningless below this; refusing it early beats producing a
 # 2-pixel band that ffmpeg crops to nothing.
 MIN_ZONE_FRACTION = 0.02
+
+# ``text_size`` is a share of the CANVAS height, so a template keeps its
+# proportions at any resolution: 0.05 is 96 px at 1920 and 64 px at 1280.
+MIN_TEXT_SIZE = 0.005
+MAX_TEXT_SIZE = 0.4
+# ``text_dx``/``text_dy`` are shares of the canvas too. A full canvas of travel in
+# each direction is the useful ceiling: past that the text is off-frame, and the
+# validator refusing it is a better answer than a render with nothing visible.
+MAX_TEXT_OFFSET = 1.0
 
 
 @dataclass(frozen=True)
@@ -82,6 +105,21 @@ class Zone:
     zoom: float | None = None
     pan_x: float | None = None
     pan_y: float | None = None
+    # ``text``: the words burned into the band, and how they sit in it.
+    # ``text_size`` and ``text_outline`` are shares of the canvas HEIGHT (a
+    # vertical measurement, so the canvas height is what they scale with);
+    # ``text_dx``/``text_dy`` are shares of the canvas width/height and are the
+    # fine positioning, applied on top of the alignment.
+    text: str = ""
+    text_size: float = 0.05
+    text_color: str = "#ffffff"
+    text_align: str = "center"
+    text_valign: str = "middle"
+    text_dx: float = 0.0
+    text_dy: float = 0.0
+    text_bold: bool = True
+    text_uppercase: bool = False
+    text_outline: float = 0.0
 
     def validate(self, index: int) -> None:
         where = f"zona {index} ({self.kind})"
@@ -102,6 +140,39 @@ class Zone:
             raise ClipperError(f"{where}: image exige um caminho em 'source'.")
         if self.kind == "frame" and self.frame_at < 0:
             raise ClipperError(f"{where}: frame_at nao pode ser negativo.")
+        if self.kind == "text":
+            # An empty text zone is a black band with nothing in it. That is
+            # never what someone meant to write, and on screen it is
+            # indistinguishable from a bug in the renderer.
+            if not self.text.strip():
+                raise ClipperError(f"{where}: zona 'text' exige o texto em 'text'.")
+            if not MIN_TEXT_SIZE <= self.text_size <= MAX_TEXT_SIZE:
+                raise ClipperError(
+                    f"{where}: text_size deve ficar entre {MIN_TEXT_SIZE} e "
+                    f"{MAX_TEXT_SIZE} (fracao da altura), recebido {self.text_size}."
+                )
+            if self.text_align not in TEXT_ALIGNS:
+                known = ", ".join(TEXT_ALIGNS)
+                raise ClipperError(
+                    f"{where}: text_align deve ser {known}, recebido {self.text_align!r}."
+                )
+            if self.text_valign not in TEXT_VALIGNS:
+                known = ", ".join(TEXT_VALIGNS)
+                raise ClipperError(
+                    f"{where}: text_valign deve ser {known}, recebido {self.text_valign!r}."
+                )
+            for axis in ("text_dx", "text_dy"):
+                value = getattr(self, axis)
+                if not -MAX_TEXT_OFFSET <= value <= MAX_TEXT_OFFSET:
+                    raise ClipperError(
+                        f"{where}: {axis} precisa ficar entre "
+                        f"{-MAX_TEXT_OFFSET} e {MAX_TEXT_OFFSET}, recebido {value}."
+                    )
+            if self.text_outline < 0:
+                raise ClipperError(
+                    f"{where}: text_outline nao pode ser negativo, "
+                    f"recebido {self.text_outline}."
+                )
         if self.corner_radius < 0:
             raise ClipperError(f"{where}: corner_radius nao pode ser negativo.")
         if self.zoom is not None and self.zoom < 1:
@@ -357,8 +428,46 @@ def plan_bands(template: Template, width: int, height: int) -> list[Band]:
     return bands
 
 
-# --- filtergraph ----------------------------------------------------------
+# ASS numpad alignment digits: the column is 1..3 from the left, the row is 0/3/6
+# from the bottom, so ``top``+``right`` is 9 and ``bottom``+``left`` is 1.
+_AN_COLUMN = {"left": 1, "center": 2, "right": 3}
+_AN_ROW = {"bottom": 0, "middle": 3, "top": 6}
 
+
+def text_anchor(band: Band, zone: Zone, width: int, height: int) -> tuple[int, int, int]:
+    """Resolve the text of a ``text`` zone to ``(x, y, an)``, in frame pixels.
+
+    ``an`` is the ASS numpad digit that names which point of the text block the
+    coordinates refer to, so the text grows away from its anchor instead of
+    always to the right: with ``text_align='right'`` the block's right edge sits
+    on the anchor, which is what keeps a right-aligned banner clear of the edge
+    when the words get longer.
+
+    The anchor is resolved against the band's INNER rectangle (margins already
+    removed), so the zone's margins are the gutter the text lives inside, and
+    ``text_dx``/``text_dy`` nudge from there. Coordinates are absolute frame
+    pixels - ASS ``\\pos`` is absolute, and it is the only way to place text
+    anywhere other than the frame's own edges.
+    """
+    if zone.text_align == "left":
+        x = band.inner_x
+    elif zone.text_align == "right":
+        x = band.inner_x + band.inner_width
+    else:
+        x = band.inner_x + band.inner_width / 2
+    if zone.text_valign == "top":
+        y = band.inner_y
+    elif zone.text_valign == "bottom":
+        y = band.inner_y + band.inner_height
+    else:
+        y = band.inner_y + band.inner_height / 2
+    x += zone.text_dx * width
+    y += zone.text_dy * height
+    an = _AN_ROW[zone.text_valign] + _AN_COLUMN[zone.text_align]
+    return int(round(x)), int(round(y)), an
+
+
+# --- filtergraph ----------------------------------------------------------
 
 def scale_into(band: Band, zone: Zone, label_in: str) -> str:
     """Build the scale/pad fragment that fits ``label_in`` inside a band.
@@ -451,7 +560,18 @@ def compose(
             # composer treats the band as a no-op pass-through.
             continue
 
-        source = current if current is not None else f"{video_input}"
+        # Every zone draws exactly one of three things: the clip, a still, or a
+        # flat plate - never the canvas built so far. A ``video`` zone in
+        # particular ALWAYS reads the clip input, wherever it sits in the stack.
+        #
+        # Deriving it from ``current`` meant that a video zone below another zone
+        # (a POV band above the footage, which is the whole point of a ``text``
+        # zone) drew the template background into its own band and dropped the
+        # clip from the graph altogether - the render came out as a coloured
+        # rectangle with the footage nowhere. It also made the composite feed two
+        # filters at once, and ffmpeg's implicit split for that shape wires the
+        # overlay's main input to the wrong stream.
+        source = f"{video_input}"
         # ``image`` and ``frame`` both draw a still, which is always a separate
         # ffmpeg input - never the canvas built so far. Feeding a still zone the
         # running composite would nest the video band inside its own poster.
@@ -462,7 +582,11 @@ def compose(
         label = f"z{index}"
         first = current is None
 
-        if zone.kind == "solid":
+        if zone.kind == "solid" or zone.kind == "text":
+            # A text zone's band is a flat plate like ``solid``: the words are
+            # burned later by libass, which is the only stage that knows about
+            # fonts. The plate is what makes the text legible over anything, and
+            # it is the reason the zone carries a ``color``.
             parts.append(
                 f"color=c={zone.color}:s={band.inner_width}x{band.inner_height}"
                 f":d=1,format=yuva420p,setsar=1[{label}s]"
@@ -572,6 +696,16 @@ def from_dict(data: dict[str, Any], *, name: str | None = None) -> Template:
             "zoom",
             "pan_x",
             "pan_y",
+            "text",
+            "text_size",
+            "text_color",
+            "text_align",
+            "text_valign",
+            "text_dx",
+            "text_dy",
+            "text_bold",
+            "text_uppercase",
+            "text_outline",
         }
         zone_unknown = sorted(set(entry) - zone_known)
         if zone_unknown:
@@ -701,4 +835,13 @@ def describe(template: Template, width: int, height: int) -> str:
             f"inner {band.inner_width}x{band.inner_height} at "
             f"({band.inner_x},{band.inner_y})  fit={band.zone.fit}"
         )
+        if band.kind == "text":
+            x, y, an = text_anchor(band, band.zone, width, height)
+            # The anchor is what the render actually uses, so it is what the user
+            # needs to see: ``an`` alone would not say where the text lands.
+            lines.append(
+                f"           texto ancorado em ({x},{y}) an={an} "
+                f"size={band.zone.text_size:.3f} align={band.zone.text_align}"
+                f"/{band.zone.text_valign}"
+            )
     return "\n".join(lines)

@@ -815,20 +815,22 @@ input[type="range"]::-moz-range-thumb {
   position: absolute; top: 4px; right: 4px;
   background: rgba(0, 0, 0, 0.6); padding: 1px 6px; border-radius: 99px;
 }
-/* Composição Meme (tema escuro): POV sobreposto no topo do vídeo, identidade
-   embaixo. O POV NAO e faixa: como faixa irma ele roubava 30% da altura da zona
-   de video, e o card prometia um layout que a previa nao entrega.
+/* Composição Meme (tema escuro): faixa de texto no topo, identidade embaixo. O POV
+   é uma FAIXA agora — uma zona de texto de verdade, com a fração declarada e o
+   fundo preto saindo do `color` dela. Quando era sobreposição, ele existia só como
+   desenho da página: o motor não queimava texto nenhum, e o card mostrava um layout
+   que o render não entregava.
 
-   E o POV nao mora dentro da faixa: ele e texto de FRAME, posicionado contra a
-   tela (o motor o queima em coordenadas do frame, nao da zona). Dentro da faixa,
-   `top` seria lido contra ela — era preciso converter a area segura em fracao da
-   faixa, e a conta errava sempre que a zona de video mudava de tamanho. */
+   O texto não mora no topo da tela por cálculo de recorte: ele mora DENTRO da faixa,
+   centralizado nela. Quem posiciona é o `align-items` da faixa. */
+.gal-text-band {
+  align-items: center; justify-content: center; padding: 4px 6px;
+  box-sizing: border-box;
+}
 .gal-pov {
-  position: absolute; top: calc(var(--notch-top) + var(--notch-h) + 2px);
-  left: 4px; right: 4px; z-index: 2; margin: 0;
-  color: #fff; font-weight: 800; font-size: 0.6rem; line-height: 1.25; text-align: center;
+  margin: 0; color: #fff; font-weight: 800; font-size: 0.6rem; line-height: 1.25;
   /* 4 linhas, nao 3: com 3 o `clamp` cortava o "mais!" e o card mostrava um POV
-     que nao e o do modelo. A zona de video tem 74% da tela — sobra altura. */
+     que nao e o do modelo. */
   display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
@@ -855,26 +857,75 @@ input[type="range"]::-moz-range-thumb {
      texto que nao e o do modelo. A faixa de video tem 58% da tela — sobra. */
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
+/* ---------- tweet do formato X: UM componente, duas escalas ----------
+   Avatar + nome com selo + @handle + texto e o que a zona de imagem do formato
+   X representa, e o MESMO componente desenha o cartao do modelo na galeria e a
+   janela de previa. As medidas ficam declaradas aqui, uma vez so, como fracao
+   da LARGURA do cartao (`cqw`), e cada lugar resolve contra a propria largura:
+   o cartao da vitrine tem ~136px, o palco da previa ~280px.
+
+   Antes eram duas listas escritas a mao — uma em px, outra em cqw — e elas
+   divergiram: o selo de verificado media 18px na vitrine (herdado de
+   `.gal-band svg`, que existe para os icones de TIPO) e 10px na previa (o
+   atributo do SVG), o @handle nao cortava com reticencias na previa e o texto
+   nao tinha limite de linhas.
+
+   `container-type: inline-size` e o que faz o `cqw` do filho resolver contra a
+   FAIXA, e nao contra a tela do aparelho ou a vitrine. O `cqw` mede a caixa de
+   CONTEUDO do container: no cartao da vitrine sao 122px (136px menos 7px de
+   margem de cada lado), entao as fracoes abaixo saem dos numeros que o cartao
+   ja usava em px — avatar 20px, nome 9,6px, @handle 8,8px. */
+.gal-tweet-band, .pv-tweet {
+  container-type: inline-size;
+  --tw-avatar: 16.4cqw;      /* 20px */
+  --tw-avatar-font: 8.1cqw;
+  --tw-name: 7.87cqw;        /* 9,6px */
+  --tw-handle: 7.21cqw;      /* 8,8px */
+  --tw-body: 7.87cqw;        /* 9,6px: no X o texto do post tem o tamanho do nome */
+  --tw-gap-row: 4.92cqw;     /* 6px entre avatar e identidade */
+  --tw-gap-block: 3.28cqw;   /* 4px entre a identidade e o texto */
+  /* Respiro de topo em px de TELA, nao em cqw: a faixa de imagem comeca na borda
+     de cima da tela do aparelho, e o recorte (notch) pinta por cima do conteudo —
+     com o respiro normal o nome e o selo nasciam atras dele. A ancora e a mesma
+     do POV (`--notch-top` + `--notch-h`), pela mesma razao: o numero e do
+     recorte do aparelho, nao da zona. Os 14px de folga sao o respiro que um post
+     real tem entre a barra de status e o nome; sem eles o bloco ficava colado no
+     recorte e o cartao parecia top-heavy. */
+  --tw-pad-top: calc(var(--notch-top) + var(--notch-h) + 14px);
+}
+
 /* Mini-tweet (tema claro) na faixa de imagem do formato X. */
 /* O respiro vertical vai no FILHO, nao na faixa: padding na faixa entra na base
    do `flex-basis: 0` e engorda a zona (ver `.gal-band`). */
 .gal-tweet-band { background: #fff; padding: 0 7px; align-items: stretch; }
-.gal-tweet { display: flex; flex-direction: column; gap: 4px; min-height: 0; padding: 6px 0; }
-.gal-tweet-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.gal-tweet {
+  display: flex; flex-direction: column; gap: var(--tw-gap-block); min-height: 0;
+  padding: var(--tw-pad-top) 0 var(--tw-gap-block);
+}
+.gal-tweet-row { display: flex; align-items: center; gap: var(--tw-gap-row); min-width: 0; }
 .gal-avatar {
-  width: 20px; height: 20px; border-radius: 999px; flex: none;
+  width: var(--tw-avatar); height: var(--tw-avatar); border-radius: 999px; flex: none;
   display: grid; place-items: center;
-  background: #e7e9ea; color: #0f1419; font-weight: 700; font-size: 0.62rem;
+  background: #e7e9ea; color: #0f1419; font-weight: 700; font-size: var(--tw-avatar-font);
 }
 .gal-tweet-id { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
 .gal-tweet-id strong {
   display: flex; align-items: center; gap: 3px;
-  font-size: 0.6rem; color: #0f1419; white-space: nowrap; overflow: hidden;
+  font-size: var(--tw-name); color: #0f1419; white-space: nowrap; overflow: hidden;
 }
-.gal-tweet-id strong svg { flex: none; }
-.gal-tweet-id small { font-size: 0.55rem; color: #536471; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gal-tweet-body {
-  margin: 0; font-size: 0.6rem; font-weight: 700; line-height: 1.3; color: #0f1419;
+/* 1,25em: o selo acompanha o NOME, como no X. Em px ele ficava preso ao
+   tamanho dos icones de tipo da faixa. */
+.gal-tweet-id strong svg { width: 1.25em; height: 1.25em; flex: none; }
+.gal-tweet-id small {
+  font-size: var(--tw-handle); color: #536471;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* `p` na frente do seletor de proposito: `.gal-card p` (o paragrafo do cartao da
+   vitrine) e mais especifico que a classe e pintava o texto do tweet de cinza,
+   no tamanho do paragrafo do cartao — o tweet saia desbotado por acidente de
+   cascata, nao por escolha. */
+.gal-tweet-band p.gal-tweet-body {
+  margin: 0; font-size: var(--tw-body); font-weight: 700; line-height: 1.3; color: #0f1419;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .gal-cap {
@@ -886,43 +937,189 @@ input[type="range"]::-moz-range-thumb {
   border: 1px solid rgba(255, 79, 174, 0.5); border-radius: 6px; padding: 3px;
 }
 
-/* Tweet dentro da prévia (formato X): mesma composição do mock da galeria,
-   escalada em cqw com o palco. */
+/* Tweet dentro da prévia (formato X): o MESMO componente do cartão do modelo,
+   com as mesmas medidas — os `--tw-*` resolvem contra a largura desta faixa.
+   O branco é o FUNDO DA ZONA, de ponta a ponta — não um cartão solto dentro
+   dela. Era um cartão de 90% centralizado, e a sobra de 10% pintava o preto do
+   palco: a prévia mostrava uma zona que o motor não desenha (a zona de imagem
+   sai preenchendo a faixa inteira, com o `scale`+`crop` de `.band .media`). */
 .pv-tweet {
-  background: #fff; border-radius: 2.5cqw; padding: 3cqw 3.5cqw; width: 90%;
-  color: #0f1419; justify-self: center;
+  position: absolute; inset: 0;
+  background: #fff; padding: var(--tw-pad-top) 3.5cqw 3cqw;
+  color: #0f1419;
+  display: flex; flex-direction: column; gap: var(--tw-gap-block);
 }
-.pv-tweet-row { display: flex; align-items: center; gap: 2cqw; }
+.pv-tweet-row { display: flex; align-items: center; gap: var(--tw-gap-row); min-width: 0; }
 .pv-avatar {
-  width: 7.5cqw; height: 7.5cqw; border-radius: 999px; flex: none;
+  width: var(--tw-avatar); height: var(--tw-avatar); border-radius: 999px; flex: none;
   display: grid; place-items: center;
-  background: #e7e9ea; color: #0f1419; font-weight: 700; font-size: 3.2cqw;
+  background: #e7e9ea; color: #0f1419; font-weight: 700; font-size: var(--tw-avatar-font);
 }
 .pv-id { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
 .pv-id strong {
   display: flex; align-items: center; gap: 1cqw;
-  font-size: 2.7cqw; color: #0f1419; white-space: nowrap;
+  font-size: var(--tw-name); color: #0f1419; white-space: nowrap; overflow: hidden;
 }
-.pv-id small { font-size: 2.4cqw; color: #536471; }
-.pv-body { margin: 2cqw 0 0; font-size: 2.8cqw; font-weight: 700; line-height: 1.3; color: #0f1419; }
-/* POV + identidade do formato Meme dentro da prévia. */
+/* O selo acompanha o nome (1,25em), como no X. Era o atributo de 10px do SVG:
+   um ponto azul perdido ao lado de um nome grande. */
+.pv-id strong svg { width: 1.25em; height: 1.25em; flex: none; }
+.pv-id small {
+  font-size: var(--tw-handle); color: #536471;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pv-body {
+  margin: 0; font-size: var(--tw-body); font-weight: 700; line-height: 1.3; color: #0f1419;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+/* Caixa do grupo "Tweet do modelo" no passo Aparencia. Fica logo abaixo do
+   titulo e da descricao do passo, acima das duas colunas de campos — por isso
+   o respiro e embaixo (o mesmo `margin-bottom: 20px` da `.card-sub`). */
+.tw-box { margin: 0 0 20px; }
+
+/* Posicao fina de cada item do cartao (passo Aparencia), em px do QUADRO. O JS
+   escreve duas variaveis por item: `--tw-off-x-*` e um NUMERO de px do quadro que
+   o CSS multiplica por `--framepx` (1 px do quadro em px de TELA, medido pelo JS
+   na tela do palco), e `--tw-off-y-*` ja vem convertido em `cqh`.
+
+   Duas unidades porque o `cqw` nao serve aqui: o cartao do X e a barra do Meme
+   sao `container-type: inline-size`, e para um FILHO deles o `cqw` mede o
+   conteudo do cartao, nao a largura do quadro — o mesmo `-100` valeria outra
+   coisa nos dois formatos. `cqh` e `--framepx` medem a tela, que e o quadro.
+
+   `translate` e nao `margin`/`top`: ajustar um item nao entra no layout do bloco,
+   entao o nome nao empurra o texto enquanto se procura a posicao. Sem valor
+   declarado o padrao e zero, que e a posicao do modelo. */
+.pv-avatar {
+  transform: translate(calc(var(--tw-off-x-avatar, 0) * var(--framepx, 0px)),
+                       var(--tw-off-y-avatar, 0px));
+}
+.pv-id {
+  transform: translate(calc(var(--tw-off-x-name, 0) * var(--framepx, 0px)),
+                       var(--tw-off-y-name, 0px));
+}
+.pv-body {
+  transform: translate(calc(var(--tw-off-x-body, 0) * var(--framepx, 0px)),
+                       var(--tw-off-y-body, 0px));
+}
+
+/* ---------- EDITOR DA PREVIA (passo Aparencia) ----------
+   Item arrastavel, item selecionado, texto em edicao e o ponto cruz. O `cursor`
+   e a unica pista de que a janela aceita arraste: sem ele o usuario ve o texto
+   do modelo e nao descobre que pode mexer. */
+.pv-tweet [data-edit], .pv-idbar [data-edit], .band--text [data-edit] { cursor: move; }
+#canvas .is-selected {
+  outline: 1px dashed var(--accent-primary); outline-offset: 4px; border-radius: 3px;
+}
+/* Em edicao: cursor de texto e um contorno solido, para nao confundir com o
+   tracejado da selecao (que e o que se arrasta). */
+#canvas [contenteditable="true"] {
+  cursor: text; outline: 1px solid var(--accent-primary); outline-offset: 3px;
+}
+/* Ponto cruz: linhas cheias no centro do item + o cruzamento, sobrepostos a tela
+   e sem capturar ponteiro nenhum (o arraste continua indo para o item). */
+.edit-guides { position: absolute; inset: 0; z-index: 8; pointer-events: none; }
+.edit-guides[hidden] { display: none; }
+.eg-line { position: absolute; background: rgba(99, 102, 241, 0.8); }
+.eg-v { top: 0; bottom: 0; width: 1px; }
+.eg-h { left: 0; right: 0; height: 1px; }
+/* Centrado de verdade (no snap): a linha diz "aqui e o centro" em cor quente. */
+.eg-line.is-center { background: var(--accent-warm); }
+.eg-dot { position: absolute; width: 13px; height: 13px; margin: -7px 0 0 -7px; }
+.eg-dot::before, .eg-dot::after { content: ""; position: absolute; background: var(--accent-warm); }
+.eg-dot::before { left: 6px; top: 0; width: 1px; height: 13px; }
+.eg-dot::after { left: 0; top: 6px; width: 13px; height: 1px; }
+/* Leitura em px do quadro, colada no cruzamento: o numero que os sliders mostram,
+   para o arraste e o campo nunca divergirem. */
+.eg-readout {
+  position: absolute; transform: translate(10px, -50%);
+  font-family: ui-monospace, monospace; font-size: 0.6rem; color: #fff;
+  background: rgba(0, 0, 0, 0.75); border: 1px solid var(--border-strong);
+  border-radius: 6px; padding: 2px 6px; white-space: nowrap;
+}
+
+/* ---------- POSICAO H/V NO PASSO APARENCIA ----------
+   Uma linha por eixo (H e V) com o slider e a leitura, para caberem dois itens
+   por linha na grade. */
+.tw-pos-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 12px; }
+.tw-pos-wide { grid-column: 1 / -1; }
+@media (max-width: 620px) { .tw-pos-grid { grid-template-columns: 1fr; } }
+.tw-axis { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.tw-pos-tag {
+  flex: none; width: 12px; font-family: ui-monospace, monospace;
+  font-size: var(--text-2xs); color: var(--text-muted); cursor: pointer;
+}
+.tw-axis .tw-slide { flex: 1; min-width: 0; }
+.tw-axis .hint { flex: none; width: 46px; text-align: right; }
+
+/* Coluna ao lado da tile de upload: conferencia + nome do arquivo + remover. */
+.tw-avatar-side {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  min-width: 0; padding-top: 2px;
+}
+.tw-avatar-chip {
+  width: 40px; height: 40px; border-radius: 999px; flex: none;
+  display: grid; place-items: center;
+  background: #e7e9ea center / cover no-repeat; color: #0f1419;
+  font-weight: 700; font-size: 1rem;
+}
+.tw-avatar-chip--img { color: transparent; }
+/* O nome do arquivo tem caixa propria: `.mini-label` e uppercase, e subir a caixa
+   de um nome de arquivo muda o nome. */
+.mini-label #tw-avatar-state { text-transform: none; }
+
+/* POV do formato Meme na prévia: agora é o conteúdo de uma ZONA DE TEXTO, não uma
+   sobreposição na tela. Quem decide onde ele fica é o `align-items`/`justify-content`
+   que o JS escreve na faixa, a partir do `text_valign`/`text_align` da zona — os
+   mesmos campos que o motor lê para ancorar o texto no ASS.
+
+   `position: absolute` e o `top` medido a partir do recorte do aparelho saíram: os
+   dois existiam para o POV escapar da faixa de vídeo, e agora ele tem faixa própria. */
 .pv-pov {
-  /* Abaixo do recorte, e nao na margem do headline: o POV e ilustracao do modelo
-     e precisa APARECER — o recorte e moldura do aparelho e pinta por cima. A
-     posicao sai do fundo do notch (`--notch-top` + `--notch-h`), entao mexer no
-     recorte move o texto junto em vez de deixar os dois divergirem. A legenda
-     (`.caption-band`) e que mostra a posicao real que o motor queima. */
-  position: absolute; top: calc(var(--notch-top) + var(--notch-h) + 3px);
-  left: 5cqw; right: 5cqw; z-index: 2; margin: 0;
-  color: #fff; font-weight: 800; font-size: 3.4cqw; line-height: 1.25; text-align: center;
+  margin: 0; color: #fff; font-weight: 800; line-height: 1.25; text-align: center;
+  max-width: 100%;
+  /* O deslocamento fino vem do JS por variável, como no cartão do X: `translate` não
+     entra no layout, então ajustar o texto não empurra mais nada. */
+  transform: translate(calc(var(--tw-off-x-pov, 0) * var(--framepx, 0px)),
+                       var(--tw-off-y-pov, 0px));
 }
+/* A barra de identidade do Meme resolve as MESMAS variaveis do cartao do X, com as
+   fracoes do MODELO (`gal-meme-id`: avatar 18px, nome 9,3px, handle 8,3px e 6px de
+   respiro numa caixa de conteudo de 120px).
+
+   Sem elas aqui, `width: var(--tw-avatar)` era invalido — as `--tw-*` do tweet sao
+   declaradas em `.gal-tweet-band, .pv-tweet` — e o circulo ficava do tamanho da
+   LETRA. Com "S" isso passava por um avatar pequeno; com a FOTO, cuja letra fica
+   invisivel mas ainda ocupa espaco, o avatar virava uma pilula estreita. O defeito
+   so apareceu quando a foto entrou: `container-type` para o `cqw` resolver contra
+   a barra, e nao contra a tela. */
 .pv-idbar {
   display: flex; align-items: center; justify-content: center; gap: 2.5cqw;
   background: #000; width: 100%; height: 100%; padding: 2cqw 4cqw;
+  container-type: inline-size;
+  --tw-avatar: 15cqw;        /* 18px */
+  --tw-avatar-font: 7.4cqw;
+  --tw-name: 7.73cqw;        /* 9,3px */
+  --tw-handle: 6.93cqw;      /* 8,3px */
+  --tw-gap-row: 5cqw;        /* 6px */
 }
 .pv-avatar--dark { background: #3f3f46; color: #fff; }
 .pv-idbar .pv-id strong { color: #fff; }
 .pv-idbar .pv-id small { color: rgba(255, 255, 255, 0.72); }
+
+/* Avatar de arquivo local (passo Aparencia), na janela e na vitrine: a imagem
+   cobre o circulo e a letra do titulo fica invisivel por baixo — `color:
+   transparent` e nao `visibility`, senao um PNG de fundo transparente deixaria a
+   letra aparecer no meio.
+
+   Este bloco vem DEPOIS de `.pv-avatar--dark` e `.gal-avatar--dark` de
+   proposito: os dois usam o atalho `background`, que redefine `background-size`
+   para `auto`. Com a regra acima deles, a foto do formato Meme entrava no tamanho
+   natural (256px) dentro de um circulo de ~48px, em vez de `cover` — e na
+   vitrine, idem. */
+.pv-avatar--img, .gal-avatar--img {
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+  color: transparent;
+}
 /* Gancho na base do vídeo (formato Vídeo Viral na prévia). */
 .pv-hook {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; margin: 0;

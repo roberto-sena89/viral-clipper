@@ -34,6 +34,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from viralclipper import config as config_mod  # noqa: E402
 from viralclipper import download as download_mod  # noqa: E402
+from viralclipper import ig_profile as ig_profile_mod  # noqa: E402
 from viralclipper import pipeline, report, transcript_import, util, viral_report  # noqa: E402
 from viralclipper.util import ClipperError  # noqa: E402
 
@@ -280,6 +281,35 @@ def _run_job(options: dict, plan_only: bool) -> dict:
                 pass
 
 
+#: Content types for the files served straight out of ``web/``. Every response
+#: carries ``X-Content-Type-Options: nosniff``, so a type that is only "close
+#: enough" is refused: a script sent as ``octet-stream`` never runs, and the
+#: hero preview video sent as ``octet-stream`` never plays. Keyed by lowercase
+#: suffix because a suffix on disk can be in any case.
+_ASSET_TYPES = {
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+}
+
+
+def asset_content_type(path: Path) -> str:
+    """The Content-Type to serve a static asset with, by suffix.
+
+    Unknown suffixes stay opaque on purpose: guessing ``text/html`` for a file
+    nobody named would turn any uploaded asset into a script host.
+    """
+    return _ASSET_TYPES.get(path.suffix.lower(), "application/octet-stream")
+
+
 def resolve_within(base: Path, rel: str) -> Path | None:
     """Resolve a client-supplied relative path under ``base``.
 
@@ -326,6 +356,108 @@ def _ytdlp_argv(raw: object) -> list[str]:
     return argv
 
 
+def _cookies_file_from_args(argv: list[str]) -> str:
+    """Path given as ``--cookies`` in the argv the page sent, or "".
+
+    ``ig_profile`` reads a Netscape jar from disk, so ``--cookies-from-browser``
+    is of no use to it — and on Chrome/Edge 127+ that route is sealed by
+    App-Bound Encryption anyway, which is why the page offers the file first.
+    """
+    for index, word in enumerate(argv):
+        if word == "--cookies" and index + 1 < len(argv):
+            return str(argv[index + 1])
+        if word.startswith("--cookies="):
+            return word.split("=", 1)[1]
+    return ""
+
+
+def _ig_title(item) -> str:
+    """First non-empty line of the caption, capped.
+
+    The panel gives the title one line, and an Instagram caption is routinely
+    paragraphs long with the useful sentence at the top. Capping here rather
+    than in CSS keeps the JSON payload small for a 300-item listing.
+    """
+    for line in str(getattr(item, "caption", "") or "").splitlines():
+        text = line.strip()
+        if text:
+            return text[:120]
+    return getattr(item, "code", "") or getattr(item, "pk", "") or "(sem título)"
+
+
+def _ig_profile_results(
+    username: str, payload: dict, cookies_file: str, argv: list[str]
+) -> tuple[list[dict], str, int]:
+    """List an Instagram account through the same call the site itself makes.
+
+    Deliberately NOT through yt-dlp: ``InstagramUserIE`` is disabled upstream
+    and its ``_parse_graphql`` looks for a ``sharedData`` blob Instagram stopped
+    emitting, so the flat playlist answers "Unable to extract data" for an
+    account that is perfectly reachable in a browser. ``ig_profile`` reproduces
+    the ``POST /graphql/query`` the React app issues instead.
+
+    Keeping this beside the yt-dlp branch — rather than replacing it — is what
+    leaves the YouTube path untouched: only an Instagram profile URL is
+    diverted here.
+    """
+    if not cookies_file:
+        raise ClipperError(
+            "Listar um perfil do Instagram exige um cookies.txt: o catálogo só é "
+            "devolvido para uma sessão autenticada. Escolha os cookies por "
+            "arquivo — a opção do navegador não serve para este caminho."
+        )
+
+    limit = payload.get("limit")
+    try:
+        limit = max(1, min(int(limit), 100)) if limit is not None else 20
+    except (TypeError, ValueError):
+        limit = 20
+    viral = bool(payload.get("viral"))
+    # "Mais viralizados": lista até o teto e ordena por views ANTES de cortar.
+    # Sem isso o corte traria os N primeiros do feed, não os N maiores.
+    fetch_end = 100 if viral else limit
+
+    listing = ig_profile_mod.list_profile(username, cookies_file, limit=fetch_end)
+    items = list(listing.items)
+    if viral:
+        items.sort(
+            key=lambda item: item.play_count or item.like_count or 0, reverse=True
+        )
+    items = items[:limit]
+
+    results = []
+    for index, item in enumerate(items, start=1):
+        results.append(
+            {
+                "index": index,
+                "id": item.code or item.pk,
+                "title": _ig_title(item),
+                "url": item.url,
+                "duration": item.duration,
+                "uploader": listing.username,
+                # Reels carry play_count, photo posts only like_count. Sending
+                # whichever exists keeps the row informative instead of blank.
+                "view_count": (
+                    item.play_count if item.play_count is not None else item.like_count
+                ),
+                # The CDN URL from the GraphQL payload. The row never uses it as
+                # a src (CSP forbids a foreign origin); it is what lets
+                # /scrap/thumb skip a per-item yt-dlp round trip.
+                "thumb": item.thumbnail,
+                # Same classification the archiver uses, so the chip on the row
+                # and the folder a download lands in cannot disagree.
+                "folder": item.folder,
+                "kind": item.kind,
+                # False for a photo or a photo-only carousel: the row can say so
+                # instead of letting the download fail with "no video in this
+                # post" after a network round trip.
+                "has_video": item.has_video,
+                "_ytdlp_args": list(argv),
+            }
+        )
+    return results, listing.username, 0
+
+
 def _scrap_results(payload: dict) -> tuple[list[dict], str, int]:
     """Expand a link or a profile into a list of downloadable videos.
 
@@ -339,6 +471,7 @@ def _scrap_results(payload: dict) -> tuple[list[dict], str, int]:
     - ``profile`` -> the whole feed of an account. Here the flat playlist is
       read instead: one entry per item, no per-video extraction, which is the
       only shape that stays fast when the account has hundreds of posts.
+      An Instagram profile never takes that route — see ``_ig_profile_results``.
 
     ``--playlist-end`` is appended through ``extra_ytdlp_args``, which
     ``download._base_args`` appends LAST — that is what lifts the
@@ -367,6 +500,18 @@ def _scrap_results(payload: dict) -> tuple[list[dict], str, int]:
         title = str(meta.get("title") or "")
         removed = 0
     else:
+        # Instagram first, and only Instagram: its profile extractor is disabled
+        # upstream, so the flat-playlist route below cannot answer for an
+        # account. Diverting here — instead of inside download.py — is what
+        # leaves the YouTube branch exactly as it was.
+        ig_user = ig_profile_mod.profile_username(url)
+        if ig_user:
+            return _ig_profile_results(
+                ig_user,
+                payload,
+                _cookies_file_from_args(config.extra_ytdlp_args),
+                config.extra_ytdlp_args,
+            )
         # Only reach here for a profile-shaped URL. A bare profile name is
         # accepted too, but a full URL is what yt-dlp can resolve without
         # guessing the site.
@@ -553,6 +698,37 @@ _THUMB_MAX_BYTES = 6 * 1024 * 1024
 _MAX_SELECTED_DOWNLOADS = 200
 
 
+def _suggest_phrases(idea: str, count: int) -> list[str]:
+    """Ask the ranker LLM for short hook phrases about a video idea.
+
+    Reuses the ranker provider (model, URL and key), so phrases cost nothing
+    new to configure. One phrase per line, faithful to the idea, caps the
+    response at ``count`` non-empty lines.
+    """
+    from viralclipper import ranker
+
+    config = config_mod.ClipConfig(url="", ranker="llm")
+    provider = ranker.build_provider(config)
+    if provider is None:  # pragma: no cover - build_provider raises first
+        raise ClipperError("LLM desligado: use ranker='llm' com API key.")
+    text = provider.complete(
+        "Voce escreve ganchos curtos em pt-BR para videos verticais. "
+        "Responda só com as frases, uma por linha, sem numerar, sem aspas, "
+        "sem inventar fatos alem da ideia. Maximo 120 caracteres por frase.",
+        f"Ideia: {idea}\nQuantidade: {count}",
+    )
+    phrases = []
+    for line in text.splitlines():
+        clean = re.sub(r"^[\s\-\*\d\.\)\]]+", "", line).strip().strip("\"'")
+        if clean:
+            phrases.append(clean[:140])
+        if len(phrases) >= count:
+            break
+    if not phrases:
+        raise ClipperError("o modelo nao devolveu frases; tente outra ideia.")
+    return phrases
+
+
 def _relative_to_repo(path: Path | None) -> str:
     """A path as the UI shows it: inside the repo when it fits, absolute when not.
 
@@ -644,7 +820,6 @@ def _archive_worker(
     thread would leave the page stuck on "Baixando…".
     """
     from viralclipper import archive as archive_mod
-    from viralclipper import ig_profile as ig_profile_mod
 
     _publish_archive(active=True, state="listando", phase="listando",
                      title=f"@{profile}", percent=0.0, index=0, total=0)
@@ -848,26 +1023,29 @@ def _thumb_dir() -> Path:
 def _fetch_thumb_bytes(item: dict) -> bytes | None:
     """Resolve a thumbnail URL for one scrap result and return its bytes.
 
-    Instagram flat entries carry no image at all, so this asks yt-dlp for the
-    single-video metadata, which does. The call is the expensive part of a
-    search: ``_scrap_thumb`` is what keeps it off the critical path.
+    A stored ``thumb`` wins: the Instagram listing already carries the signed
+    CDN URL from the GraphQL payload, so a 300-item profile would otherwise pay
+    300 extractions just to decorate the rows. yt-dlp is the fallback, for the
+    flat-playlist shapes that carry no image at all.
     """
     url = str(item.get("url") or item.get("webpage_url") or "").strip()
     if not url:
         return None
-    config = config_mod.ClipConfig(url=url)
-    args = item.get("_ytdlp_args")
-    if isinstance(args, list):
-        config.extra_ytdlp_args = [str(a) for a in args]
-    config.cache_dir = _thumb_dir().parent / "cache"
-    meta = download_mod.fetch_metadata(url, config)
-    thumb = str(meta.get("thumbnail") or "").strip()
+    thumb = str(item.get("thumb") or "").strip()
     if not thumb:
-        thumbs = meta.get("thumbnails")
-        if isinstance(thumbs, list) and thumbs:
-            last = thumbs[-1]
-            if isinstance(last, dict):
-                thumb = str(last.get("url") or "").strip()
+        config = config_mod.ClipConfig(url=url)
+        args = item.get("_ytdlp_args")
+        if isinstance(args, list):
+            config.extra_ytdlp_args = [str(a) for a in args]
+        config.cache_dir = _thumb_dir().parent / "cache"
+        meta = download_mod.fetch_metadata(url, config)
+        thumb = str(meta.get("thumbnail") or "").strip()
+        if not thumb:
+            thumbs = meta.get("thumbnails")
+            if isinstance(thumbs, list) and thumbs:
+                last = thumbs[-1]
+                if isinstance(last, dict):
+                    thumb = str(last.get("url") or "").strip()
     if not thumb:
         return None
     request = Request(thumb, headers={"User-Agent": "Mozilla/5.0", "Accept": "image/*"})
@@ -1047,14 +1225,16 @@ class Handler(http_server.BaseHTTPRequestHandler):
     # Thumbnails are served from /thumb/, i.e. from this same origin, instead of
     # being hot-linked from Instagram's CDN. That is what keeps the policy tight:
     # no `img-src https:` wildcard, and no per-CDN allowlist that would silently
-    # blank every image the day a host changes. `'unsafe-inline'` is required
-    # because each page is a single file with its markup, style and script inline.
+    # blank every image the day a host changes. The styles and scripts are
+    # external files served from 'self', so script-src needs no 'unsafe-inline';
+    # it stays on style-src because the markup still carries inline style
+    # attributes.
     CSP = (
         "default-src 'self'; "
         "img-src 'self' data:; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
-        "script-src 'self' 'unsafe-inline'; "
+        "script-src 'self'; "
         "connect-src 'self'; "
         "media-src 'self' blob:"
     )
@@ -1233,7 +1413,11 @@ class Handler(http_server.BaseHTTPRequestHandler):
         # Static assets inside web/ (also percent-decoded, same reason).
         asset = resolve_within(WEB_DIR, unquote(path.lstrip("/")))
         if asset is not None:
-            ctype = "text/css; charset=utf-8" if asset.suffix == ".css" else "application/octet-stream"
+            # The pages keep their CSS, JS and preview media in sibling files,
+            # so the type has to be named correctly: nosniff is on, and a
+            # script served as octet-stream is refused by the browser while the
+            # hero video just never plays.
+            ctype = asset_content_type(asset)
             self._send_file(asset.read_bytes(), ctype)
             return
         self._send_json({"error": "not found"}, 404)
@@ -1261,6 +1445,9 @@ class Handler(http_server.BaseHTTPRequestHandler):
             return
         if path == "/transcript/normalize":
             self._handle_normalize(payload)
+            return
+        if path == "/phrases":
+            self._handle_phrases(payload)
             return
         if path != "/run":
             self._send_json({"error": "not found"}, 404)
@@ -1351,8 +1538,6 @@ class Handler(http_server.BaseHTTPRequestHandler):
         de itens leva minutos, e a pagina acompanha o record em
         ``/scrap/archive/progress`` com a barra de progresso.
         """
-        from viralclipper import ig_profile as ig_profile_mod
-
         profile = str(payload.get("profile") or "").strip()
         cookies_file = str(payload.get("cookies_file") or "").strip()
         if not profile:
@@ -1512,6 +1697,26 @@ class Handler(http_server.BaseHTTPRequestHandler):
             self._send_json({"error": str(exc)}, 400)
             return
         self._send_json(result.to_dict())
+
+    def _handle_phrases(self, payload: dict) -> None:
+        """Suggest short hook phrases for a video idea, via the ranker LLM."""
+        idea = payload.get("idea")
+        if not isinstance(idea, str) or not idea.strip():
+            self._send_json({"error": "idea is required"}, 400)
+            return
+        try:
+            count = max(1, min(10, int(payload.get("count") or 5)))
+        except (TypeError, ValueError):
+            count = 5
+        try:
+            phrases = _suggest_phrases(idea.strip(), count)
+        except ClipperError as exc:
+            self._send_json({"error": str(exc)}, 400)
+            return
+        except Exception as exc:  # noqa: BLE001 - network errors surface as text
+            self._send_json({"error": f"modelo indisponivel: {exc}"}, 400)
+            return
+        self._send_json({"phrases": phrases})
 
     def log_message(self, *args) -> None:  # keep the console quiet
         return

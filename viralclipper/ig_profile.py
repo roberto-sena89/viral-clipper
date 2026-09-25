@@ -127,7 +127,14 @@ class ProfileItem:
 
     @property
     def is_photo(self) -> bool:
-        return self.media_type == MEDIA_TYPE_IMAGE and not self.video_signal
+        """True when there is nothing to download.
+
+        Defined as the negation of :attr:`has_video` rather than as
+        ``media_type == 1``. The narrow form lied about a photo-only carousel,
+        which arrives as ``media_type == 8`` and is just as undownloadable as a
+        single still — the one case where the answer actually matters.
+        """
+        return not self.has_video
 
 
 @dataclass
@@ -198,6 +205,43 @@ def _normalise_username(raw: str) -> str:
                 text = segment
                 break
     return text.lstrip("@").split("?")[0]
+
+
+#: First path segment of an Instagram URL that addresses ONE item instead of an
+#: account. ``/p/<code>`` and ``/reel/<code>`` are single posts, ``/stories/``
+#: is a tray, ``/explore/`` is a feed — none of them is a catalogue.
+_ITEM_SEGMENTS = frozenset(
+    {"p", "reel", "reels", "tv", "stories", "explore", "share", "accounts"}
+)
+
+
+def profile_username(raw: str) -> str | None:
+    """Return the account name when ``raw`` addresses a profile, else ``None``.
+
+    A post and a profile are the same URL shape — ``/p/<code>/`` against
+    ``/<user>/`` — so only the first path segment tells them apart. This is the
+    gate that keeps a reel code from being handed to the profile lister, which
+    would answer "0 itens" for an account that exists and is reachable.
+
+    A bare name with no host is accepted only when written as ``@name``: a loose
+    word could just as well be a YouTube channel, and that call belongs to
+    yt-dlp's extractor rather than here.
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    if "instagram.com" not in text:
+        if text.startswith("@"):
+            return text.lstrip("@").split("?")[0].split("/")[0] or None
+        return None
+    tail = text.split("instagram.com", 1)[1].strip("/")
+    segments = [segment for segment in tail.split("/") if segment]
+    if not segments:
+        return None
+    first = segments[0].split("?")[0]
+    if first.lower() in _ITEM_SEGMENTS:
+        return None
+    return first.lstrip("@") or None
 
 
 def _http(cookies: dict[str, str], username: str) -> tuple[str, Exception | None]:
@@ -614,4 +658,5 @@ __all__ = [
     "ProfileItem",
     "ProfileListing",
     "list_profile",
+    "profile_username",
 ]

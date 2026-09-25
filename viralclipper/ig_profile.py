@@ -32,6 +32,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import quote
 
 from .util import ClipperError, Logger
 
@@ -48,6 +49,17 @@ GRAPHQL_URL = "https://www.instagram.com/graphql/query"
 
 #: Friendly name of the operation. Instagram checks it against ``doc_id``.
 FRIENDLY_NAME = "PolarisProfilePostsQuery"
+
+#: The cookie that IS the session. Everything else in the jar (``csrftoken``,
+#: ``ds_user_id``) is readable by page scripts and comes out of any export; this
+#: one is HttpOnly and is the only thing a page-script export cannot see, which
+#: is why it has its own input instead of being blamed on the export.
+SESSION_COOKIE = "sessionid"
+
+#: Ten years. The cookie is really a session cookie, but a jar written with
+#: expiry 0 is *discarded* by readers that do not pass ``ignore_discard`` — and
+#: yt-dlp reading the same jar is one of them.
+_SESSION_TTL_SECONDS = 60 * 60 * 24 * 3650
 
 #: Root field the caller expects back. Sent as ``X-Root-Field-Name``.
 ROOT_FIELD = "xdt_api__v1__feed__user_timeline_graphql_connection"
@@ -170,6 +182,10 @@ def _parse_cookie_file(path: str | Path) -> dict[str, str]:
     it, but it also folds duplicate names across domains, and a value containing
     a tab would be truncated — reading the columns directly keeps every
     character of the session token.
+
+    Deliberately does NOT require :data:`SESSION_COOKIE`: a jar missing it is
+    the normal case (see :func:`resolve_cookies`), and :func:`save_session`
+    needs to read such a jar to fix it.
     """
     source = Path(path)
     if not source.is_file():
@@ -182,13 +198,152 @@ def _parse_cookie_file(path: str | Path) -> dict[str, str]:
         jar.load(ignore_discard=True, ignore_expires=True)
     except (OSError, http.cookiejar.LoadError) as exc:
         raise ClipperError(f"Não consegui ler {source}: {exc}") from exc
-    cookies = {cookie.name: cookie.value for cookie in jar}
-    if "sessionid" not in cookies:
+    return {cookie.name: cookie.value for cookie in jar}
+
+
+#: Host the session cookie belongs to. Instagram sets it on the bare domain with
+#: a leading dot, so every subdomain sends it.
+SESSION_HOST = ".instagram.com"
+
+#: How the user gets the value, spelled out because the reason it is missing is
+#: not obvious: the cookie is HttpOnly, so anything that reads ``document.cookie``
+#: — which is most "export cookies" extensions — cannot see it.
+_SESSION_RECIPE = (
+    "Pegue o valor em DevTools (F12) → Application → Cookies → "
+    "https://www.instagram.com → linha 'sessionid' → copie a coluna Value, e "
+    "passe em --ig-session (ou no campo do painel)."
+)
+
+
+def normalise_session(raw: str) -> str:
+    """Turn a pasted session value into the exact string that goes on the wire.
+
+    DevTools shows the value already percent-decoded, while the ``Cookie``
+    header carries ``%3A`` where the user sees ``:``. Re-quoting with ``%`` kept
+    safe handles both: an already-encoded value passes through untouched, and a
+    decoded one gets encoded. Everything else a header cannot carry (space,
+    ``;``, ``,``) is encoded too, so a paste cannot break the request.
+
+    Three pastes are accepted, because all three are one click away in DevTools:
+    the bare value, the ``sessionid=...`` pair, and a whole ``Cookie`` header
+    (``datr=...; sessionid=...; csrftoken=...``) — in the last one the value ends
+    at the ``;``. Quotes and stray whitespace go too, since copying a table cell
+    brings them along.
+    """
+    value = str(raw or "").strip().strip("\"'").strip()
+    lowered = value.lower()
+    if "sessionid=" in lowered:
+        value = value[lowered.index("sessionid=") + len("sessionid="):]
+        # O valor termina no `;` do proximo cookie (header inteiro colado) ou no
+        # primeiro espaco (celula copiada com lixo em volta).
+        value = re.split(r"[;\s]", value, maxsplit=1)[0]
+    return quote(value.strip(), safe="%")
+
+
+def resolve_cookies(cookies_file: str | Path, session: str = "") -> dict[str, str]:
+    """The cookie set for a GraphQL call, or a :class:`ClipperError` that says how to fix it.
+
+    ``session`` (already normalised) wins over whatever the jar holds: the file
+    is read for ``csrftoken``/``ds_user_id``, and the session comes from the one
+    place an export cannot reach.
+    """
+    cookies = _parse_cookie_file(cookies_file)
+    if session:
+        cookies[SESSION_COOKIE] = session
+    if SESSION_COOKIE not in cookies:
         raise ClipperError(
-            f"{source} não tem o cookie 'sessionid': a sessão não está autenticada "
-            f"e o Instagram só devolve o feed para quem está logado."
+            f"{Path(cookies_file)} não tem o cookie '{SESSION_COOKIE}', que é "
+            f"HttpOnly: nenhum export que leia o cookie pelo JavaScript do site "
+            f"consegue vê-lo. {_SESSION_RECIPE}"
         )
     return cookies
+
+
+def save_session(cookies_file: str | Path, session: str) -> bool:
+    """Merge ``session`` into the jar, leaving every other line byte-identical.
+
+    Written to the FILE and not just used in memory, because the session is not
+    only for listing: yt-dlp reads the same jar to download the media, and it is
+    the file that survives between runs. A jar rewritten from scratch would drop
+    the tiktok cookies and reformat what the user exported.
+
+    Returns ``True`` when the file changed. The ``#HttpOnly_`` prefix is the
+    Netscape way of recording an HttpOnly cookie, and it is what this one is —
+    writing it without the prefix would lose that on the next export.
+    """
+    source = Path(cookies_file)
+    if not session:
+        return False
+    line = "\t".join(
+        [
+            f"#HttpOnly_{SESSION_HOST}",
+            "TRUE",
+            "/",
+            "TRUE",
+            str(int(time.time()) + _SESSION_TTL_SECONDS),
+            SESSION_COOKIE,
+            session,
+        ]
+    )
+    if not source.is_file():
+        source.write_text(
+            "# Netscape HTTP Cookie File\n" + line + "\n", encoding="utf-8"
+        )
+        return True
+
+    raw = source.read_text(encoding="utf-8")
+    newline = "\r\n" if "\r\n" in raw else "\n"
+    trailing = raw.endswith(("\n", "\r"))
+    lines = raw.splitlines()
+    for index, existing in enumerate(lines):
+        bare = existing[len("#HttpOnly_"):] if existing.startswith("#HttpOnly_") else existing
+        if bare.startswith("#") or not bare.strip():
+            continue
+        columns = bare.split("\t")
+        if len(columns) < 7 or columns[5] != SESSION_COOKIE:
+            continue
+        if columns[6] == session:
+            return False  # already the same value: do not touch the file
+        columns[6] = session
+        prefix = "#HttpOnly_" if existing.startswith("#HttpOnly_") else ""
+        lines[index] = prefix + "\t".join(columns)
+        source.write_text(
+            newline.join(lines) + (newline if trailing else ""), encoding="utf-8"
+        )
+        return True
+
+    if lines and lines[-1] == "":
+        lines.pop()
+    lines.append(line)
+    source.write_text(
+        newline.join(lines) + (newline if trailing else ""), encoding="utf-8"
+    )
+    return True
+
+
+def prepare_session(
+    cookies_file: str | Path, session: str, logger: Logger | None = None
+) -> str:
+    """Persist a pasted session into the jar and return the normalised value.
+
+    Best-effort: a read-only jar must not stop the run, so a failed write is a
+    warning and the caller still uses the value in memory.
+    """
+    value = normalise_session(session)
+    if not value:
+        return ""
+    try:
+        changed = save_session(cookies_file, value)
+    except OSError as exc:
+        if logger:
+            logger.warn(
+                f"Não consegui gravar a sessão em {cookies_file} ({exc}); ela "
+                f"vale só para esta execução."
+            )
+        return value
+    if logger and changed:
+        logger.info(f"Sessão do Instagram gravada em {Path(cookies_file).name}.")
+    return value
 
 
 def _normalise_username(raw: str) -> str:
@@ -597,15 +752,20 @@ def list_profile(
     limit: int | None = None,
     page_size: int = PAGE_SIZE,
     pause: float = 0.6,
+    session: str = "",
 ) -> ProfileListing:
     """List every post and reel of ``profile``.
 
     ``pause`` is deliberate and not a tuning knob: Instagram rate limits a burst
     of paginated GraphQL calls, and a listing is not urgent enough to trade a
     429 for a few seconds.
+
+    ``session`` is a sessionid value supplied out of band (see
+    :func:`normalise_session`); it is used in memory here, so a jar that could
+    not be written still lists.
     """
     username = _normalise_username(profile)
-    cookies = _parse_cookie_file(cookies_file)
+    cookies = resolve_cookies(cookies_file, session)
     lsd, page_html = _fetch_lsd(cookies, username)
 
     listing = ProfileListing(username=username, title=_display_name(page_html))
@@ -655,8 +815,13 @@ __all__ = [
     "POSTS_DIR",
     "PROFILE_DOC_ID",
     "REELS_DIR",
+    "SESSION_COOKIE",
     "ProfileItem",
     "ProfileListing",
     "list_profile",
+    "normalise_session",
+    "prepare_session",
     "profile_username",
+    "resolve_cookies",
+    "save_session",
 ]

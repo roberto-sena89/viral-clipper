@@ -236,6 +236,27 @@
               <input type="file" id="cookies-file-picker" accept=".txt" hidden>
               <p class="auth-note">Tem precedência sobre o navegador. Necessário no Chrome/Edge 127+, onde os cookies são selados com App-Bound Encryption.</p>
             </div>
+            <div class="auth-block auth-block--wide">
+              <div class="auth-block-head">
+                <label class="field-label" for="scrap-ig-session">sessionid do Instagram</label>
+                <span class="auth-tag">HttpOnly</span>
+              </div>
+              <div class="auth-file-row">
+                <input type="password" id="scrap-ig-session" name="ig-session"
+                       placeholder="12345678%3AAbCdEfGhIjKl%3A12%3AAY..." autocomplete="off" spellcheck="false">
+                <button type="button" class="auth-icon-btn pressable" id="btn-session-reveal"
+                        aria-label="Mostrar o valor" aria-pressed="false" title="Mostrar o valor">👁</button>
+                <button type="button" class="auth-icon-btn auth-icon-btn--ghost pressable" id="btn-session-clear"
+                        aria-label="Limpar o campo" title="Limpar o campo">✕</button>
+              </div>
+              <p class="auth-note">
+                Este cookie é <strong>HttpOnly</strong>: o export não consegue vê-lo, e sem ele o
+                Instagram responde como se ninguém estivesse logado. Abra DevTools (<kbd>F12</kbd>) →
+                <em>Application</em> → <em>Cookies</em> → <code>https://www.instagram.com</code> →
+                linha <code>sessionid</code> → copie a coluna <em>Value</em>.
+                Fica gravado no cookies.txt, então a busca e o download usam a mesma sessão.
+              </p>
+            </div>
           </div>
         </div>
       </section>

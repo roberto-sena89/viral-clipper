@@ -371,6 +371,26 @@ def _cookies_file_from_args(argv: list[str]) -> str:
     return ""
 
 
+def _ig_session_from_payload(payload: dict) -> str:
+    """Persist the pasted sessionid into the jar and return the normalised value.
+
+    The value is a secret the page never sends twice: once it is in the jar,
+    every later step — the listing, the archive and the yt-dlp download of the
+    media — reads it from the same file. Writing it here, on the request thread,
+    is what keeps the archive worker's signature unchanged.
+
+    The jar path arrives in two shapes, because the two routes need it for
+    different reasons: ``/scrap`` folds it into the yt-dlp argv (yt-dlp is what
+    resolves a single item), while ``/scrap/archive`` sends it as its own field.
+    """
+    path = str(payload.get("cookies_file") or "").strip()
+    if not path:
+        path = _cookies_file_from_args(_ytdlp_argv(payload.get("extra_ytdlp_args")))
+    if not path:
+        return ""
+    return ig_profile_mod.prepare_session(path, str(payload.get("ig_session") or ""))
+
+
 def _ig_title(item) -> str:
     """First non-empty line of the caption, capped.
 
@@ -386,7 +406,7 @@ def _ig_title(item) -> str:
 
 
 def _ig_profile_results(
-    username: str, payload: dict, cookies_file: str, argv: list[str]
+    username: str, payload: dict, cookies_file: str, argv: list[str], session: str = ""
 ) -> tuple[list[dict], str, int]:
     """List an Instagram account through the same call the site itself makes.
 
@@ -399,6 +419,9 @@ def _ig_profile_results(
     Keeping this beside the yt-dlp branch — rather than replacing it — is what
     leaves the YouTube path untouched: only an Instagram profile URL is
     diverted here.
+
+    ``session`` is the sessionid the page pasted; it is already in the jar, and
+    travels in memory too so a jar that could not be written still lists.
     """
     if not cookies_file:
         raise ClipperError(
@@ -417,7 +440,9 @@ def _ig_profile_results(
     # Sem isso o corte traria os N primeiros do feed, não os N maiores.
     fetch_end = 100 if viral else limit
 
-    listing = ig_profile_mod.list_profile(username, cookies_file, limit=fetch_end)
+    listing = ig_profile_mod.list_profile(
+        username, cookies_file, limit=fetch_end, session=session
+    )
     items = list(listing.items)
     if viral:
         items.sort(
@@ -511,6 +536,7 @@ def _scrap_results(payload: dict) -> tuple[list[dict], str, int]:
                 payload,
                 _cookies_file_from_args(config.extra_ytdlp_args),
                 config.extra_ytdlp_args,
+                _ig_session_from_payload(payload),
             )
         # Only reach here for a profile-shaped URL. A bare profile name is
         # accepted too, but a full URL is what yt-dlp can resolve without
@@ -1551,6 +1577,11 @@ class Handler(http_server.BaseHTTPRequestHandler):
             )
             return
 
+        # Antes da thread: o worker le o MESMO arquivo, entao a sessao colada
+        # tem de estar gravada nele quando o download comecar — e o yt-dlp, que
+        # baixa a midia, tambem le esse arquivo.
+        _ig_session_from_payload(payload)
+
         only = str(payload.get("only") or "").strip()
         kinds = [part.strip() for part in only.split(",") if part.strip()]
         valid = {ig_profile_mod.REELS_DIR, ig_profile_mod.POSTS_DIR}
@@ -1640,6 +1671,10 @@ class Handler(http_server.BaseHTTPRequestHandler):
         root = (REPO_ROOT / "output" / "downloads" / slug).resolve()
 
         cookies_file = str(payload.get("cookies_file") or "").strip()
+        # A sessao colada tambem vale aqui: quem baixa a midia e o yt-dlp, e ele
+        # le o MESMO jar. Sem gravar, uma busca autenticada seguida de download
+        # baixaria os itens como anonimo.
+        _ig_session_from_payload(payload)
         logger = CollectingLogger()
         try:
             config = _options_to_config(

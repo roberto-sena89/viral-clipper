@@ -178,6 +178,7 @@ in: a window's score must not change when its neighbours do.
 | `--variant-layouts` | off | comma-separated layouts; re-renders each clip once per layout |
 | `--list-templates` | — | print the built-in templates and exit |
 | `--describe-template` | — | print a template's resolved pixel bands and exit |
+| `--keep-temp` | off | keep the intermediate files |
 
 ### Títulos em pt-BR
 
@@ -348,7 +349,6 @@ repeats.
 
 A browser wizard for building templates (with a live 9:16 preview) is served at
 `http://127.0.0.1:7755/templates` when the web UI is running.
-| `--keep-temp` | off | keep the intermediate files |
 
 Run `python -m viralclipper --help` for the full list.
 
@@ -536,7 +536,13 @@ warnings.
   seals each cookie with App-Bound Encryption, which yt-dlp cannot open. Export
   a `cookies.txt` with a browser extension and pass
   `--ytdlp-arg --cookies --ytdlp-arg C:\path\cookies.txt`. The web panel has a
-  field for the same path.
+  field for the same path. Note that **no export carries `sessionid`** (it is
+  `HttpOnly`): for Instagram profiles that one value has to be pasted by hand —
+  see *`sessionid`: the one cookie an export cannot carry*.
+- `... não tem o cookie 'sessionid'` from `--profile`: the jar is missing the
+  HttpOnly cookie, which is the normal case for any export. Pass
+  `--ig-session <valor>` (or fill the field on the scrap page); the message
+  prints the DevTools path to get it.
 - Instagram fails with `Unable to extract data` while everything else works:
   check that `curl_cffi` is installed (`pip install "curl_cffi>=0.7"`).
   Instagram rejects requests whose TLS fingerprint is not a browser's and
@@ -604,11 +610,44 @@ Two notes on the scrap page, both learned the hard way:
   seals every cookie with App-Bound Encryption (`v20`) and yt-dlp cannot read
   them. Export the cookies to a `cookies.txt` and point the *"Ou um arquivo
   cookies.txt"* field at it. That field takes precedence over the picker.
-- **Instagram profile URLs do not work**, in the panel or on the command line:
-  the extractor is disabled upstream (`InstagramUserIE._WORKING = False` in
-  yt-dlp, whose `sharedData` parser no longer matches the current page).
-  Single post, reel and video URLs do work. The profile mode works for YouTube
-  and TikTok.
+- **Instagram profiles are listed by this tool, not by yt-dlp.** The upstream
+  extractor is disabled (`InstagramUserIE._WORKING = False`, its `sharedData`
+  parser no longer matches the page), so the panel and `--profile` reproduce the
+  `POST /graphql/query` the site's own React app makes — see
+  `viralclipper/ig_profile.py`. Two consequences:
+  - It needs a **logged-in session**. The GraphQL endpoint answers an anonymous
+    visitor with the HTML shell instead of JSON, so the jar must carry
+    `sessionid`. That cookie is `HttpOnly`, which means no browser export can
+    ever contain it — see the `sessionid` block below.
+  - `doc_id` in that module is a build artefact Instagram rotates with each
+    bundle. When it goes stale every request answers 403, and the error message
+    names that possibility rather than reporting an empty feed.
+
+  The media itself is still downloaded by yt-dlp from the single post/reel URL,
+  which works. Profile mode also works for YouTube and TikTok.
+
+#### `sessionid`: the one cookie an export cannot carry
+
+`sessionid` is `HttpOnly`, so every exporter that reads cookies through the
+page's JavaScript — extensions included — omits it, and the jar arrives
+"complete" but unauthenticated. Get the value by hand once:
+
+DevTools (`F12`) → *Application* → *Cookies* → `https://www.instagram.com` →
+the `sessionid` row → copy the **Value** column.
+
+Then either paste it into the *"sessionid do Instagram"* field on the scrap
+page, or pass it on the command line:
+
+```bash
+python -m viralclipper --profile @somebody --cookies cookies.txt \
+  --ig-session '12345678%3AAbCdEf%3A12%3AAY...'
+```
+
+Either way the value is written into `--cookies`, so it is pasted **once**: the
+listing, the archive and the yt-dlp download all read the same jar afterwards.
+Both the bare value and a whole `Cookie:` header are accepted — the paste is
+normalised before it is stored, so a value DevTools shows percent-decoded still
+goes on the wire in the encoded form the header needs.
 
 ### Seleção em lote
 
@@ -658,16 +697,24 @@ A fake can still lie about the process boundary, so the render tests also run th
 task through a pickle round trip before handing it to the pool — that is what
 catches a parent reading its own unmodified copy instead of the worker's result.
 
-Four scripts go one level deeper against real binaries:
+Five scripts go one level deeper against real binaries:
 
 ```powershell
 python smoke_test.py --threads 2     # analysis, selection, render, report
 python reframe_check.py              # frame extraction + the real detector
 python cache_e2e_test.py --model tiny  # transcript cache round trip
 python bench_transcribe.py --wav a.wav # throughput per checkpoint
+python ig_session_check.py           # --ig-session -> jar -> Cookie header
 ```
 
 `smoke_test.py` builds its own fixture with ffmpeg, fakes the transcript and
 exercises every stage without network access. It prints `SMOKE OK` when
 analysis, window selection, rendering (burned and sidecar captions, jump cut)
 and reporting all succeeded.
+
+`ig_session_check.py` runs `run_profile_mode` against a fake Instagram with
+`urlopen` patched out, and asserts the pasted session reaches the `Cookie`
+header of both the profile GET and the GraphQL POST, that the jar gains exactly
+one `#HttpOnly_` line with every other line untouched, and that a second run
+needs no paste at all. It prints one `[ok ]`/`[FALHA]` line per check and exits
+non-zero on any failure.

@@ -63,6 +63,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="cookies.txt exportado do navegador (obrigatorio com --profile)",
     )
     parser.add_argument(
+        "--ig-session",
+        dest="ig_session",
+        default=None,
+        help=(
+            "Valor do cookie 'sessionid' do Instagram. Ele e HttpOnly, entao "
+            "nenhum export que leia o cookie pelo JavaScript do site o traz: "
+            "pegue em DevTools (F12) > Application > Cookies > instagram.com. "
+            "Fica gravado no --cookies, para a busca e o download."
+        ),
+    )
+    parser.add_argument(
         "--only",
         dest="only_kinds",
         default=None,
@@ -605,6 +616,7 @@ def run_profile_mode(
     cookies_file: str,
     logger: Logger,
     *,
+    session: str | None = None,
     only: str | None = None,
     max_items: int | None = None,
 ) -> int:
@@ -613,6 +625,10 @@ def run_profile_mode(
     Nao renderiza nada: o resultado e um arquivo navegavel da conta, nao clipes.
     Renderizar fica a cargo de apontar o pipeline para uma pasta depois (ou para
     uma URL unica), porque as duas tarefas tem custos muito diferentes.
+
+    ``session`` e o valor colado de ``--ig-session``. Ele e gravado no jar antes
+    de qualquer chamada porque o ``sessionid`` nao serve so para listar: o
+    yt-dlp le o MESMO arquivo para baixar a midia.
     """
     from . import archive as archive_mod
     from . import ig_profile as ig_profile_mod
@@ -626,9 +642,13 @@ def run_profile_mode(
         )
         return 2
 
+    session_value = ig_profile_mod.prepare_session(cookies_file, session or "", logger)
+
     try:
         logger.step(f"Lendo o perfil {profile}")
-        listing = ig_profile_mod.list_profile(profile, cookies_file, logger)
+        listing = ig_profile_mod.list_profile(
+            profile, cookies_file, logger, session=session_value
+        )
     except ClipperError as exc:
         logger.warn(str(exc))
         return 1
@@ -736,6 +756,7 @@ def main(argv: list[str] | None = None) -> int:
             args.profile,
             args.cookies_file,
             logger,
+            session=args.ig_session,
             only=args.only_kinds,
             max_items=args.max_items,
         )

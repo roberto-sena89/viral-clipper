@@ -661,6 +661,7 @@
       items: items,
       collection: collectionTitle,
       cookies_file: cookiesFile ? cookiesFile.value.trim() : "",
+      ig_session: igSessionValue(),
     });
 
     if (r.error) {
@@ -883,6 +884,10 @@
     } else if (cookies && cookies.value) {
       payload.extra_ytdlp_args = ["--cookies-from-browser", cookies.value];
     }
+    // O sessionid viaja separado do argv: nao e flag do yt-dlp, e o servidor o
+    // grava no jar antes de listar.
+    const session = igSessionValue();
+    if (session) payload.ig_session = session;
 
     const r = await post("/scrap", payload);
 
@@ -1348,6 +1353,7 @@
     const payload = {
       profile: url,
       cookies_file: cookiesPath,
+      ig_session: igSessionValue(),
       only: only ? only.value : "",
       max_items: max ? Number(max.value) || 0 : 0,
       // "Mais viralizados": ordena por plays/likes antes do corte por tipo.
@@ -1474,6 +1480,16 @@
     });
   }
 
+  // ---------- sessionid: o cookie que o export nao traz ----------
+  // O valor e HttpOnly, entao nenhum export que leia `document.cookie` o
+  // enxerga — e sem ele o Instagram responde como se ninguem estivesse logado.
+  // Vai no payload e o servidor grava no cookies.txt: a busca e o download
+  // passam a usar a MESMA sessao, e por isso o campo se preenche uma vez so.
+  function igSessionValue() {
+    const field = $("#scrap-ig-session");
+    return field ? field.value.trim() : "";
+  }
+
   // ---------- sessão / cookies (sub-card do Buscar) ----------
   // O select de cookies continua sendo a fonte da verdade do
   // payload — o segmentado só espelha o valor dele. O arquivo, quando
@@ -1485,13 +1501,20 @@
     if (!badge) return;
     const fileVal = file ? file.value.trim() : "";
     const selVal = sel ? sel.value : "";
+    // O selo responde a pergunta que importa — "da para autenticar?" —, e o
+    // sessionid colado e metade dela: sem o jar nao ha `csrftoken` para ecoar no
+    // `X-CSRFToken`, e o Instagram devolve a casca HTML em vez do JSON.
+    const suffix = igSessionValue() ? " · sessão" : "";
     if (fileVal) {
       badge.dataset.state = "file";
       const base = fileVal.split(/[\\/]/).pop() || fileVal;
-      badge.textContent = "Arquivo · " + base.slice(0, 28);
+      badge.textContent = "Arquivo · " + base.slice(0, 28) + suffix;
     } else if (selVal) {
       badge.dataset.state = "browser";
-      badge.textContent = "Navegador · " + selVal;
+      badge.textContent = "Navegador · " + selVal + suffix;
+    } else if (suffix) {
+      badge.dataset.state = "session";
+      badge.textContent = "sessionid sem arquivo";
     } else {
       badge.dataset.state = "none";
       badge.textContent = "Sem sessão";
@@ -1564,6 +1587,31 @@
         file.value = "";
         file.dispatchEvent(new Event("input", { bubbles: true }));
         file.focus();
+      });
+    }
+    const session = $("#scrap-ig-session");
+    const reveal = $("#btn-session-reveal");
+    const sessionClear = $("#btn-session-clear");
+    if (session) {
+      session.addEventListener("input", paintAuthStatus);
+      session.addEventListener("change", paintAuthStatus);
+    }
+    if (reveal && session) {
+      // `type` e o unico jeito de revelar um campo de senha — e o valor e longo
+      // e cheio de `%3A`, entao conferir o que foi colado importa.
+      reveal.addEventListener("click", () => {
+        const shown = session.type === "text";
+        session.type = shown ? "password" : "text";
+        reveal.setAttribute("aria-pressed", shown ? "false" : "true");
+        reveal.setAttribute("aria-label", shown ? "Mostrar o valor" : "Ocultar o valor");
+        session.focus();
+      });
+    }
+    if (sessionClear && session) {
+      sessionClear.addEventListener("click", () => {
+        session.value = "";
+        session.dispatchEvent(new Event("input", { bubbles: true }));
+        session.focus();
       });
     }
     paintSeg();

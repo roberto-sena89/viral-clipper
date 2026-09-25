@@ -375,6 +375,11 @@ input::placeholder { color: var(--text-muted); }
 .auth-status[data-state="file"] {
   color: var(--success); border-color: rgba(52, 211, 153, 0.45); background: rgba(52, 211, 153, 0.08);
 }
+/* sessionid colado sem o arquivo: tem credencial, mas falta o `csrftoken` que
+   o jar carrega. Nao e "pronto" (verde) nem "sem sessao" (cinza). */
+.auth-status[data-state="session"] {
+  color: var(--accent-warm); border-color: rgba(251, 191, 36, 0.45); background: rgba(251, 191, 36, 0.08);
+}
 .auth-grid {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 12px; min-width: 0;
 }
@@ -423,7 +428,11 @@ input::placeholder { color: var(--text-muted); }
 .seg-btn[data-value=""][aria-checked="true"] { color: var(--text-primary); }
 .seg-btn:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 1px; }
 .auth-file-row { display: flex; gap: 8px; align-items: stretch; min-width: 0; }
-.auth-file-row input[type="text"] { flex: 1; min-width: 0; font-family: ui-monospace, monospace; font-size: var(--text-caption); }
+.auth-file-row input[type="text"],
+.auth-file-row input[type="password"] { flex: 1; min-width: 0; font-family: ui-monospace, monospace; font-size: var(--text-caption); }
+/* O sessionid ocupa a linha inteira: o valor e longo e a nota que explica como
+   obtê-lo não cabe em meia coluna. */
+.auth-block--wide { grid-column: 1 / -1; }
 .auth-icon-btn {
   appearance: none; flex: none; cursor: pointer; font-family: inherit;
   font-size: var(--text-caption); font-weight: 600;
@@ -435,6 +444,12 @@ input::placeholder { color: var(--text-muted); }
 .auth-icon-btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.10); }
 .auth-icon-btn--ghost { color: var(--text-muted); }
 .auth-note { font-size: var(--text-caption); color: var(--text-muted); margin: 0; line-height: var(--text-caption-lh); }
+.auth-note code, .auth-note kbd {
+  font-family: ui-monospace, monospace; font-size: 0.94em;
+  color: var(--text-secondary); background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle); border-radius: 4px; padding: 0 4px;
+}
+.auth-note strong { color: var(--text-secondary); }
 .sr-only-select {
   position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
 }

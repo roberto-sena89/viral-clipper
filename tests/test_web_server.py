@@ -274,6 +274,67 @@ class ScrapPageTests(unittest.TestCase):
             "o seletor de cookies precisa alimentar extra_ytdlp_args",
         )
 
+    def test_the_session_field_is_a_masked_input(self):
+        """O `sessionid` e o unico caminho, e o valor da a conta inteira.
+
+        O export nao pode traze-lo (HttpOnly), entao o campo nao e conveniencia:
+        sem ele a busca de perfil do Instagram responde como anonima para
+        sempre. E ele tem de ser `password` — o valor fica na tela, em um painel
+        que abre em 127.0.0.1 mas roda numa maquina que pode estar compartilhada.
+        """
+        markup = (server.WEB_DIR / "scrap.html").read_text(encoding="utf-8")
+        tag = re.search(r"<input[^>]*id=\"scrap-ig-session\"[^>]*>", markup)
+        self.assertIsNotNone(tag, "campo do sessionid ausente em web/scrap.html")
+        self.assertIn('type="password"', tag.group(0))
+        self.assertIn('name="ig-session"', tag.group(0))
+        self.assertIn("HttpOnly", markup, "a nota tem de dizer por que o export nao basta")
+
+    def test_the_script_reads_the_field_the_markup_declares(self):
+        """O `id` e a unica ligacao entre o HTML e o JS, e falha em silencio.
+
+        Um id trocado de um lado so nao quebra nada visivel: o seletor devolve
+        `null`, o valor vira `""`, o payload sai sem sessao e o Instagram
+        responde como anonimo — exatamente o sintoma que o campo existe para
+        consertar. Por isso o HTML e o JS sao lidos em separado aqui.
+        """
+        markup = (server.WEB_DIR / "scrap.html").read_text(encoding="utf-8")
+        script = (server.WEB_DIR / "scrap.js").read_text(encoding="utf-8")
+        self.assertIn('id="scrap-ig-session"', markup)
+        self.assertIn('$("#scrap-ig-session")', script)
+
+    def test_the_session_travels_on_every_route_that_needs_it(self):
+        """Busca, arquivo e download: os tres caminhos do servidor levam o valor.
+
+        Sao rotas distintas, com guardas distintas. Esquecer uma nao da erro —
+        da um download anonimo logo depois de uma busca autenticada, que e o
+        pior desfecho possivel: o catalogo aparece e a midia nao baixa.
+        """
+        script = (server.WEB_DIR / "scrap.js").read_text(encoding="utf-8")
+        # Uma ocorrencia por rota, e nada alem disso: `ig_session` e o nome do
+        # campo no payload, e o helper local se chama `igSessionValue`.
+        self.assertEqual(
+            script.count("ig_session"),
+            3,
+            "esperado o valor em /scrap, /scrap/archive e /scrap/download",
+        )
+        # A busca monta o payload aos poucos e so o completa quando ha valor; as
+        # outras duas passam o campo direto no literal.
+        self.assertIn("payload.ig_session = session", script)
+        self.assertEqual(script.count("ig_session: igSessionValue()"), 2)
+        self.assertIn('post("/scrap/download"', script)
+        self.assertIn('post("/scrap"', script)
+
+    def test_the_badge_reports_the_half_of_the_auth_that_is_missing(self):
+        """Sem jar nao ha `csrftoken` para ecoar, e sem sessionid nao ha sessao.
+
+        O selo responde "da para autenticar?" — se ele so olhasse o arquivo,
+        diria "tudo certo" com o sessionid vazio, que e o estado em que a busca
+        falha.
+        """
+        script = (server.WEB_DIR / "scrap.js").read_text(encoding="utf-8")
+        self.assertIn('dataset.state = "session"', script)
+        self.assertIn("sessionid sem arquivo", script)
+
 
 class ScrapUrlRoutingTests(unittest.TestCase):
     """Which URLs are a profile, and which are one post.
@@ -1295,6 +1356,67 @@ class CookiesFileFromArgsTests(unittest.TestCase):
         self.assertEqual(server._cookies_file_from_args(["--cookies"]), "")
 
 
+class IgSessionFromPayloadTests(unittest.TestCase):
+    """O sessionid colado chega em dois formatos, e nos dois tem de gravar.
+
+    ``/scrap`` dobra o jar no argv do yt-dlp (o yt-dlp e quem resolve um item
+    isolado); ``/scrap/archive`` e ``/scrap/download`` mandam o caminho em campo
+    proprio. Ler so um dos dois deixaria metade do painel sem sessao — e o
+    sintoma seria "o perfil veio vazio", que nao aponta para o cookie.
+    """
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(prefix="vc_sess_"))
+        self.jar = self.dir / "cookies.txt"
+        self.jar.write_text(
+            "# Netscape HTTP Cookie File\n"
+            ".instagram.com\tTRUE\t/\tTRUE\t0\tcsrftoken\tabc\n",
+            encoding="utf-8",
+        )
+
+    def test_the_argv_shape(self):
+        value = server._ig_session_from_payload(
+            {
+                "extra_ytdlp_args": ["--cookies", str(self.jar)],
+                "ig_session": "1234%3Aabc",
+            }
+        )
+        self.assertEqual(value, "1234%3Aabc")
+        self.assertIn("sessionid\t1234%3Aabc", self.jar.read_text(encoding="utf-8"))
+
+    def test_the_field_shape(self):
+        value = server._ig_session_from_payload(
+            {"cookies_file": str(self.jar), "ig_session": "1234%3Aabc"}
+        )
+        self.assertEqual(value, "1234%3Aabc")
+        self.assertIn("sessionid\t1234%3Aabc", self.jar.read_text(encoding="utf-8"))
+
+    def test_the_field_wins_when_both_are_present(self):
+        """Os dois apontam para o mesmo arquivo; nao ha o que desempatar."""
+        other = self.dir / "outro.txt"
+        other.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+        server._ig_session_from_payload(
+            {
+                "cookies_file": str(other),
+                "extra_ytdlp_args": ["--cookies", str(self.jar)],
+                "ig_session": "1234%3Aabc",
+            }
+        )
+        self.assertIn("sessionid\t1234%3Aabc", other.read_text(encoding="utf-8"))
+        self.assertNotIn("sessionid", self.jar.read_text(encoding="utf-8"))
+
+    def test_no_value_is_a_no_op(self):
+        before = self.jar.read_text(encoding="utf-8")
+        self.assertEqual(
+            server._ig_session_from_payload({"cookies_file": str(self.jar)}), ""
+        )
+        self.assertEqual(self.jar.read_text(encoding="utf-8"), before)
+
+    def test_no_path_is_a_no_op(self):
+        """Sem arquivo nao ha onde gravar — e o erro do caminho e outro."""
+        self.assertEqual(server._ig_session_from_payload({"ig_session": "1234"}), "")
+
+
 class IgProfileRoutingTests(unittest.TestCase):
     """An Instagram profile must reach the GraphQL lister, never yt-dlp.
 
@@ -1307,12 +1429,23 @@ class IgProfileRoutingTests(unittest.TestCase):
     def setUp(self):
         self.dir = Path(tempfile.mkdtemp(prefix="vc_route_"))
 
-    def _route(self, url, *, extra_ytdlp_args=None):
+    def _jar(self, body=None):
+        target = self.dir / "cookies.txt"
+        target.write_text(
+            body
+            or "# Netscape HTTP Cookie File\n"
+            ".instagram.com\tTRUE\t/\tTRUE\t0\tcsrftoken\tabc\n",
+            encoding="utf-8",
+        )
+        return str(target)
+
+    def _route(self, url, *, extra_ytdlp_args=None, ig_session=None):
         calls = {"ig": None, "ytdlp": None}
 
-        def fake_ig(username, payload, cookies_file, argv):
+        def fake_ig(username, payload, cookies_file, argv, session=""):
             calls["ig"] = {
-                "username": username, "cookies_file": cookies_file, "argv": list(argv),
+                "username": username, "cookies_file": cookies_file,
+                "argv": list(argv), "session": session,
             }
             return [{"index": 1, "id": "A", "folder": "reels"}], username, 0
 
@@ -1323,6 +1456,8 @@ class IgProfileRoutingTests(unittest.TestCase):
         payload = {"url": url, "mode": "profile", "limit": 5}
         if extra_ytdlp_args is not None:
             payload["extra_ytdlp_args"] = extra_ytdlp_args
+        if ig_session is not None:
+            payload["ig_session"] = ig_session
         with mock.patch.object(server, "_ig_profile_results", side_effect=fake_ig), \
              mock.patch.object(server.download_mod, "fetch_metadata", side_effect=fake_meta), \
              mock.patch.object(server.download_mod, "repair_view_counts",
@@ -1333,11 +1468,11 @@ class IgProfileRoutingTests(unittest.TestCase):
     def test_a_profile_url_goes_to_the_graphql_lister(self):
         calls, results = self._route(
             "https://www.instagram.com/salmareis/",
-            extra_ytdlp_args=["--cookies", "cookies.txt"],
+            extra_ytdlp_args=["--cookies", self._jar()],
         )
         self.assertIsNone(calls["ytdlp"], "o yt-dlp nao devia nem ser chamado")
         self.assertEqual(calls["ig"]["username"], "salmareis")
-        self.assertEqual(calls["ig"]["cookies_file"], "cookies.txt")
+        self.assertEqual(calls["ig"]["cookies_file"], str(self.dir / "cookies.txt"))
         self.assertEqual(results[0]["folder"], "reels")
 
     def test_a_reel_url_stays_with_yt_dlp(self):
@@ -1358,11 +1493,48 @@ class IgProfileRoutingTests(unittest.TestCase):
 
     def test_the_cookies_travel_with_the_item(self):
         """The row thumbnail is fetched later and needs the same credential."""
+        jar = self._jar()
         calls, _ = self._route(
             "https://www.instagram.com/salmareis/",
-            extra_ytdlp_args=["--cookies", "cookies.txt"],
+            extra_ytdlp_args=["--cookies", jar],
         )
-        self.assertEqual(calls["ig"]["argv"], ["--cookies", "cookies.txt"])
+        self.assertEqual(calls["ig"]["argv"], ["--cookies", jar])
+
+    def test_the_pasted_session_is_written_to_the_jar_and_forwarded(self):
+        """O sessionid nao serve so para esta busca.
+
+        Ele e gravado no arquivo porque o yt-dlp le o MESMO jar para baixar a
+        midia, e porque a proxima busca nao precisa que o usuario cole de novo.
+        """
+        jar = self._jar()
+        calls, _ = self._route(
+            "https://www.instagram.com/salmareis/",
+            extra_ytdlp_args=["--cookies", jar],
+            ig_session="1234:abc",
+        )
+        self.assertEqual(calls["ig"]["session"], "1234%3Aabc")
+        self.assertIn("sessionid\t1234%3Aabc", Path(jar).read_text(encoding="utf-8"))
+
+    def test_a_decoded_paste_and_an_encoded_one_land_the_same(self):
+        """DevTools mostra ``:``; o header carrega ``%3A``. Os dois valem."""
+        jar = self._jar()
+        calls, _ = self._route(
+            "https://www.instagram.com/salmareis/",
+            extra_ytdlp_args=["--cookies", jar],
+            ig_session="1234%3Aabc",
+        )
+        self.assertEqual(calls["ig"]["session"], "1234%3Aabc")
+
+    def test_no_paste_leaves_the_session_empty_and_the_file_alone(self):
+        """Sem valor colado nada muda: o jar manda."""
+        jar = self._jar()
+        before = Path(jar).read_text(encoding="utf-8")
+        calls, _ = self._route(
+            "https://www.instagram.com/salmareis/",
+            extra_ytdlp_args=["--cookies", jar],
+        )
+        self.assertEqual(calls["ig"]["session"], "")
+        self.assertEqual(Path(jar).read_text(encoding="utf-8"), before)
 
 
 class IgProfileListingTests(unittest.TestCase):

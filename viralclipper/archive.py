@@ -72,7 +72,7 @@ class ArchiveSummary:
             f"  baixados : {self.downloaded}",
             f"  ja tinha : {self.skipped}",
             f"  falhas   : {self.failed}",
-            f"  pastas   : {self.reels} em {REELS_DIR}/, {self.posts} em {POSTS_DIR}/",
+            f"  por tipo : {self.reels} reels, {self.posts} posts",
         ]
         if self.photos:
             lines.append(

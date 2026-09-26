@@ -234,15 +234,23 @@ class ArchiveLoopTests(unittest.TestCase):
         )
         self.assertEqual(summary.downloaded, 1)
 
-    def test_the_lines_report_the_folders(self):
+    def test_the_lines_report_the_split(self):
+        """The counts are items per folder, not files on disk.
+
+        A posts folder holding only photos is empty after the run and still
+        reports its items — calling that line "pastas" sent the reader looking
+        for files that were never going to be there.
+        """
         summary = archive_profile(
-            self._listing([item("R1", REELS_DIR), item("P1", POSTS_DIR)]),
+            self._listing([item("R1", REELS_DIR), item("P1", POSTS_DIR, media_type=1)]),
             self.dir, self.config, downloader=FakeDownloader(),
         )
         report = "\n".join(summary.lines())
         self.assertIn("Perfil @alvo: 2 item(ns) na lista", report)
-        self.assertIn("baixados : 2", report)
-        self.assertIn("pastas   : 1 em reels/, 1 em posts/", report)
+        self.assertIn("baixados : 1", report)
+        self.assertIn("por tipo : 1 reels, 1 posts", report)
+        self.assertIn("pulados  : 1 sem video", report)
+        self.assertEqual(list((self.dir / "posts").glob("*")), [])
         self.assertIn("destino", report)
 
 

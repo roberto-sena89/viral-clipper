@@ -1949,23 +1949,45 @@ class TemplatesGeometryTests(unittest.TestCase):
         self.page = page_source("templates.html")
 
     def test_the_geometry_rule_matches_the_engine(self):
-        """Both implementations are compared on the same input.
+        """Ambas as implementações são comparadas na mesma entrada.
 
-        A change to either one that is not mirrored fails here instead of
-        producing a preview that lies about the render.
+        A página absorve a sobra de arredondamento na última faixa, o mesmo que
+        ``plan_bands``. Travar as constantes compartilhadas impede que uma
+        reescrita derrube a regra sem ninguém notar.
         """
         from viralclipper import template as template_mod
 
         body = self.page
-        # The page absorbs the rounding remainder into the last pixel band, the
-        # same way plan_bands does. Assert the shared constants are present so a
-        # rewrite cannot quietly drop the rule.
         self.assertIn("zone.fraction", body)
         self.assertIn("marginTop", body)
         self.assertIn("marginLeft", body)
         builtin = template_mod.BUILTIN["split-card"]
         bands = template_mod.plan_bands(builtin, 1080, 1920)
         self.assertEqual([b.kind for b in bands], ["video", "frame", "captions"])
+
+    def test_the_preview_rounds_geometry_to_the_chroma_grid_too(self):
+        """A prévia encaixa a geometria no par, igual ao motor.
+
+        O composite é yuv420p, então o motor arredonda toda medida para baixo até
+        o par (``_even``, em ``template.py``). A tabela de geometria do painel
+        imprime ``y``, ``h`` e a área interna em pixels — um número que o usuário
+        lê. Com o arredondamento antigo ela mostrava ``y=307 h=307`` onde o render
+        tem 306, e a prévia media uma faixa que não existe no arquivo gerado.
+        """
+        js = fn_body(self.page, "planBands")
+        self.assertIn("evenFloor(", js, "a prévia deixou de arredondar a geometria")
+        for measure in ("bandH", "innerX", "innerY", "innerW", "innerH"):
+            self.assertRegex(
+                js,
+                rf"{measure} = [^;]*evenFloor\(",
+                f"{measure} não passa pela grade de croma",
+            )
+        # O helper tem de estar na página, e com o mesmo `%` do Python: o do JS
+        # devolve -1 para -5 e o do Python devolve 1, então `n - n % 2` daria
+        # -4 de um lado e -6 do outro. A correção antes do resto é o que mantém
+        # os dois iguais.
+        helper = fn_body(self.page, "evenFloor")
+        self.assertIn("((n % 2) + 2) % 2", helper)
 
 
 class TemplatesPreviewFidelityTests(unittest.TestCase):

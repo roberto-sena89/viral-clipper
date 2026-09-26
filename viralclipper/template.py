@@ -363,8 +363,33 @@ class Band:
     zone: Zone
 
 
+def _even(value: float) -> int:
+    """Snap a pixel measure DOWN to an even number.
+
+    The composite is ``yuv420p``: its chroma planes are half resolution, so every
+    rectangle a zone draws has to land on that grid. Measured on a real render
+    (``band_parity_check.py``), a rectangle that starts or ends on an odd row
+    bleeds one row of its own colour into the neighbour above or below, and it
+    does so at *every* boundary of the stack, not only at the bottom of it; an
+    odd width silently truncates the last drawn column instead. With every band
+    offset, every band height and every inner edge even, the composite comes out
+    bit-exact - which is why this rounds the geometry instead of the heights.
+
+    Rounding down rather than up keeps the inner rectangle INSIDE the margins
+    the zone asked for: a 15px gutter becomes 14, never 16.
+    """
+    whole = int(value)
+    return whole - (whole % 2)
+
+
 def plan_bands(template: Template, width: int, height: int) -> list[Band]:
     """Resolve every zone to a pixel rectangle, top to bottom.
+
+    Every rectangle lands on the yuv420p chroma grid - see :func:`_even` for why
+    that is a correctness rule and not a cosmetic one. A canvas with an odd
+    dimension cannot be tiled by even bands, so there the last band keeps the odd
+    height it was left with: an odd row of one band costs two rows of chroma
+    somewhere, while a one-pixel gap would cost a visible seam.
 
     The caption zone is special: it occupies no height of its own (libass
     positions it absolutely), so it resolves to the full canvas and is emitted
@@ -389,16 +414,24 @@ def plan_bands(template: Template, width: int, height: int) -> list[Band]:
                 )
             )
             continue
-        band_height = int(round(height * zone.fraction))
+        band_height = _even(round(height * zone.fraction))
         # Give the last pixel-hungry zone whatever integer rounding left over so
-        # the bands always tile the canvas exactly.
+        # the bands always tile the canvas exactly. The leftover is even whenever
+        # the canvas is, so the band stays on the chroma grid.
         if zone is template.zones[-1] and cursor + band_height != height:
             band_height = height - cursor
-        inner_x = x = int(round(width * zone.margin_left))
-        inner_y = cursor + int(round(height * zone.margin_top))
-        inner_width = max(2, width - x - int(round(width * zone.margin_right)))
+        # Each of the four inner measures is snapped to the grid on its own.
+        # Snapping the two edges instead would spend a pixel at each end, and the
+        # box is already measured from the band's own top-left; two even numbers
+        # add up to an even number, so the opposite edges land on the grid for
+        # free. The margins are the gutter, so the pixel of rounding error comes
+        # out of the gutter and never out of the picture.
+        inner_x = x = _even(round(width * zone.margin_left))
+        inner_y = _even(cursor + round(height * zone.margin_top))
+        inner_width = max(2, _even(width - x - round(width * zone.margin_right)))
         inner_height = max(
-            2, band_height - int(round(height * (zone.margin_top + zone.margin_bottom)))
+            2,
+            _even(band_height - round(height * (zone.margin_top + zone.margin_bottom))),
         )
         bands.append(
             Band(

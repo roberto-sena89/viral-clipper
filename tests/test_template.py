@@ -7,8 +7,10 @@ composition be caught without encoding a frame.
 
 from __future__ import annotations
 
+import re
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from viralclipper import template as tpl
@@ -227,6 +229,268 @@ class PlanBandsTests(unittest.TestCase):
         self.assertEqual(bands[-1].height, 1920)
 
 
+def _produced_size(fragment: str) -> tuple[int, int]:
+    """O tamanho que o fragmento do still realmente produz.
+
+    ``contain`` termina em ``pad=W:H``, ``cover`` em ``crop=W:H`` (o ``crop`` é
+    quem decide, porque ele é o último a mexer no tamanho) e um ``cover`` sem
+    crop fica no próprio ``scale=W:H``.
+    """
+    match = re.search(r"(?:crop|pad)=(\d+):(\d+)", fragment)
+    if match is None:
+        match = re.search(r"scale=(\d+):(\d+)", fragment)
+    return int(match.group(1)), int(match.group(2))
+
+
+def _mask_size(fragment: str) -> tuple[int, int]:
+    match = re.search(r"s=(\d+)x(\d+)", fragment)
+    return int(match.group(1)), int(match.group(2))
+
+
+class ChromaGridTests(unittest.TestCase):
+    """Todo retângulo que o motor desenha cai na grade do yuv420p.
+
+    O composite é yuv420p, então as duas plantas de croma têm metade da
+    resolução. Um retângulo que começa ou termina em linha ímpar sangra uma linha
+    da própria cor no vizinho de cima ou de baixo — em TODA fronteira do
+    empilhamento, não só na última — e uma largura ímpar trunca a última coluna
+    desenhada. Com offsets, alturas e medidas internas pares o composite sai
+    exato. A medição que estabeleceu isso está em ``band_parity_check.py``, que
+    precisa de ffmpeg; aqui a mesma regra é travada sem binário nenhum.
+    """
+
+    CANVASES = ((1080, 1920), (720, 1280), (1080, 1080), (1920, 1080), (608, 1080))
+
+    def _templates(self):
+        yield from tpl.BUILTIN.values()
+        # Frações que arredondam para ÍMPAR de propósito, e empilhamentos de 1, 3
+        # e 5 zonas: a regra não pode depender do tamanho do empilhamento. As
+        # margens também são ímpares em pixels (0,045 de 1080 são 48,6; 0,007 de
+        # 1920 são 13,4) — é justamente onde o arredondamento erraria.
+        yield tpl.Template(
+            name="uma-zona",
+            zones=(tpl.Zone(kind="video", fraction=1.0),),
+        )
+        yield tpl.Template(
+            name="tres-zonas",
+            zones=(
+                tpl.Zone(
+                    kind="text", fraction=0.333, text="POV: teste", color="black",
+                    margin_top=0.007, margin_bottom=0.007,
+                    margin_left=0.045, margin_right=0.045,
+                ),
+                tpl.Zone(kind="video", fraction=0.333),
+                tpl.Zone(
+                    kind="image", fraction=0.334, source="id.png",
+                    margin_top=0.013, margin_bottom=0.013,
+                    margin_left=0.031, margin_right=0.031,
+                ),
+            ),
+        )
+        yield tpl.Template(
+            name="cinco-zonas",
+            zones=(
+                tpl.Zone(kind="solid", fraction=0.15, color="#111111"),
+                tpl.Zone(kind="video", fraction=0.41),
+                tpl.Zone(kind="solid", fraction=0.11, color="#222222"),
+                tpl.Zone(
+                    kind="frame", fraction=0.21,
+                    margin_top=0.009, margin_bottom=0.009,
+                ),
+                tpl.Zone(
+                    kind="image", fraction=0.12, source="id.png",
+                    margin_top=0.011, margin_bottom=0.011,
+                ),
+            ),
+        )
+        yield tpl.Template(
+            name="com-legenda",
+            zones=(
+                tpl.Zone(kind="video", fraction=0.57),
+                tpl.Zone(
+                    kind="image", fraction=0.43, source="id.png",
+                    margin_top=0.015, margin_bottom=0.015,
+                ),
+                tpl.Zone(kind="captions", fraction=0.0),
+            ),
+        )
+
+    def test_every_band_lands_on_the_chroma_grid(self):
+        for template in self._templates():
+            for width, height in self.CANVASES:
+                for band in tpl.plan_bands(template, width, height):
+                    if band.kind == "captions":
+                        continue
+                    with self.subTest(
+                        template=template.name, canvas=f"{width}x{height}", kind=band.kind
+                    ):
+                        for axis in (
+                            "y", "height", "inner_x", "inner_y",
+                            "inner_width", "inner_height",
+                        ):
+                            self.assertEqual(
+                                getattr(band, axis) % 2,
+                                0,
+                                f"{axis} ímpar em {template.name} @ {width}x{height}",
+                            )
+
+    def test_the_inner_box_never_leaves_its_band(self):
+        """O pixel de arredondamento sai da MARGEM, nunca da imagem.
+
+        Se o retângulo interno passasse do fim da faixa, a última linha
+        desenhada cairia na zona de baixo e o defeito voltaria por outro
+        caminho — por isso a folga é tirada do gutter, que é o que uma margem
+        significa.
+        """
+        for template in self._templates():
+            for width, height in self.CANVASES:
+                for band in tpl.plan_bands(template, width, height):
+                    if band.kind == "captions":
+                        continue
+                    with self.subTest(
+                        template=template.name, canvas=f"{width}x{height}", kind=band.kind
+                    ):
+                        self.assertGreaterEqual(band.inner_x, 0)
+                        self.assertLessEqual(band.inner_x + band.inner_width, width)
+                        self.assertGreaterEqual(band.inner_y, band.y)
+                        self.assertLessEqual(
+                            band.inner_y + band.inner_height, band.y + band.height
+                        )
+
+    def test_the_grid_does_not_cost_the_zone_more_than_a_pixel(self):
+        """Arredondar não pode encolher a zona: a folga é de no máximo 1 px.
+
+        Uma faixa de 307 px que virasse 288 seria um bug de layout disfarçado de
+        arredondamento. A última faixa com altura fica de fora: ela absorve a
+        sobra do empilhamento inteiro para não deixar costura, e é o que
+        ``test_the_leftover_lands_in_the_last_band`` confere.
+        """
+        for template in self._templates():
+            for width, height in self.CANVASES:
+                pixel = [
+                    b for b in tpl.plan_bands(template, width, height)
+                    if b.kind != "captions"
+                ]
+                for band in pixel[:-1]:
+                    zone = band.zone
+                    with self.subTest(
+                        template=template.name, canvas=f"{width}x{height}", kind=band.kind
+                    ):
+                        self.assertLessEqual(
+                            abs(band.height - round(height * zone.fraction)), 1
+                        )
+                for band in pixel:
+                    zone = band.zone
+                    with self.subTest(
+                        template=template.name, canvas=f"{width}x{height}",
+                        kind=band.kind, inner=True,
+                    ):
+                        self.assertLessEqual(
+                            abs(band.inner_x - round(width * zone.margin_left)), 1
+                        )
+                        self.assertLessEqual(
+                            abs(
+                                band.inner_width
+                                - (width - round(width * zone.margin_left)
+                                   - round(width * zone.margin_right))
+                            ),
+                            1,
+                        )
+                        self.assertLessEqual(
+                            abs(
+                                band.inner_height
+                                - (
+                                    band.height
+                                    - round(height * (zone.margin_top + zone.margin_bottom))
+                                )
+                            ),
+                            1,
+                        )
+
+    def test_the_leftover_lands_in_the_last_band(self):
+        """A sobra de arredondamento vai para a última faixa com altura.
+
+        É o que impede uma costura de 1 px (preta, contra fundo claro) entre
+        duas zonas. O preço é que a última faixa pode ficar alguns pixels maior
+        que a fração pedida — mas nunca maior que o número de zonas, que é
+        quanto cada arredondamento consegue deixar para trás.
+        """
+        for template in self._templates():
+            for width, height in self.CANVASES:
+                bands = tpl.plan_bands(template, width, height)
+                pixel = [b for b in bands if b.kind != "captions"]
+                if not pixel:
+                    continue
+                with self.subTest(template=template.name, canvas=f"{width}x{height}"):
+                    cursor = 0
+                    for band in bands:
+                        if band.kind != "captions":
+                            self.assertEqual(band.y, cursor)
+                            cursor += band.height
+                    self.assertEqual(cursor, height)
+                    last = pixel[-1]
+                    rest = sum(b.height for b in pixel[:-1])
+                    self.assertEqual(last.height, height - rest)
+                    self.assertLessEqual(
+                        abs(last.height - round(height * last.zone.fraction)),
+                        len(pixel),
+                    )
+
+    def test_an_odd_canvas_keeps_the_odd_pixel_in_the_last_band(self):
+        """Canvas ímpar: uma faixa fica ímpar, e é a última.
+
+        Não existe ladrilhamento de alturas pares que cubra 1079 px, então
+        alguém tem de ficar com o pixel ímpar. Ele fica na ÚLTIMA faixa, que é
+        onde o defeito custa menos: a borda de baixo dela é o fim do quadro, sem
+        zona nenhuma abaixo para sangrar. (Um canvas ímpar nem é codificável em
+        yuv420p pelo libx264 — este é o estado em que um ``--width`` torto chega
+        antes de o encoder reclamar.)
+        """
+        for template in self._templates():
+            bands = [
+                b for b in tpl.plan_bands(template, 1080, 1079) if b.kind != "captions"
+            ]
+            if not bands:
+                continue
+            odd = [b for b in bands if b.height % 2]
+            with self.subTest(template=template.name):
+                self.assertEqual([b.kind for b in odd], [bands[-1].kind])
+
+    def test_the_mask_is_the_same_size_as_the_still_it_masks(self):
+        """A máscara e o still têm de sair do MESMO tamanho, ou o render MORRE.
+
+        ``alphamerge`` recusa dois frames de tamanhos diferentes — "Input frame
+        sizes do not match" — e derruba o filtergraph inteiro: não é uma linha
+        errada, é nenhum arquivo. E é o que acontecia com altura interna ímpar,
+        porque o ``crop`` do ``scale_into`` encaixa o still na grade de croma
+        (1016x452) enquanto a máscara continua 1016x453.
+
+        As duas medidas saem do mesmo :class:`~viralclipper.template.Band`, então
+        o teste compara o tamanho que cada fragmento do grafo produz — e o faz
+        com raio de canto em toda zona de still, que é o caminho que quebrava.
+        """
+        for template in self._templates():
+            rounded = replace(
+                template,
+                zones=tuple(
+                    replace(zone, corner_radius=0.04)
+                    if zone.kind in {"image", "frame"}
+                    else zone
+                    for zone in template.zones
+                ),
+            )
+            for width, height in self.CANVASES:
+                for band in tpl.plan_bands(rounded, width, height):
+                    if band.kind not in {"image", "frame"}:
+                        continue
+                    with self.subTest(
+                        template=template.name, canvas=f"{width}x{height}", kind=band.kind
+                    ):
+                        still = _produced_size(tpl.scale_into(band, band.zone, "0:v"))
+                        mask = _mask_size(tpl.rounded_mask(band, band.zone))
+                        self.assertEqual(still, mask)
+
+
 class TextZoneTests(unittest.TestCase):
     """Onde as palavras de uma zona ``text`` caem no quadro, em pixels.
 
@@ -301,12 +565,17 @@ class TextZoneTests(unittest.TestCase):
     def test_the_text_band_is_planned_like_any_other(self):
         # A zona de texto entra no empilhamento normal: a faixa tem topo e altura
         # reais e as margens viram o retângulo interno, igual ao `solid`.
+        #
+        # Os números são PARES: o composite é yuv420p e um retângulo que começa
+        # ou termina em linha ímpar sangra uma linha da própria cor na faixa
+        # vizinha. 0,16 de 1920 são 307,2 px, e a faixa desce para 306 — a conta
+        # está em `test_every_band_lands_on_the_chroma_grid`.
         bands = tpl.plan_bands(_text_template(), 1080, 1920)
         self.assertEqual([b.kind for b in bands], ["text", "video", "image"])
         band = bands[0]
-        self.assertEqual((band.y, band.height), (0, round(1920 * 0.16)))
-        self.assertEqual(band.inner_x, round(1080 * 0.05))
-        self.assertEqual(band.inner_y, round(1920 * 0.008))
+        self.assertEqual((band.y, band.height), (0, 306))
+        self.assertEqual(band.inner_x, 54)
+        self.assertEqual(band.inner_y, 14)
         # As bandas continuam ladrilhando: nada de fresta preta entre elas.
         cursor = 0
         for item in bands:
@@ -449,9 +718,9 @@ class ComposeTests(unittest.TestCase):
         # próprio, todos os seguintes andariam um para a frente e a barra de
         # identidade passaria a ler o arquivo errado.
         graph, _ = tpl.compose(_text_template(), 1080, 1920)
-        self.assertIn("color=c=black:s=972x276", graph)  # a faixa interna, não a do quadro
+        self.assertIn("color=c=black:s=972x274", graph)  # a faixa interna, não a do quadro
         self.assertEqual(graph.count("[1:v]"), 1)
-        self.assertIn("[1:v]scale=1080:499", graph)  # o still da identidade, não o texto
+        self.assertIn("[1:v]scale=1080:500", graph)  # o still da identidade, não o texto
 
     def test_caption_only_template_is_a_passthrough(self):
         only = tpl.Template(name="caps", zones=(tpl.Zone(kind="captions", fraction=0.0),))

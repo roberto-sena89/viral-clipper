@@ -285,6 +285,17 @@
   // A previa tem que concordar com o render, entao isto e uma traducao das
   // mesmas regras: fracao -> pixel, sobras absorvidas na ultima faixa, e
   // margin_* como fracao do CANVAS (nao da faixa).
+  //
+  // O composite e yuv420p, entao todo retangulo tem de cair na grade de croma
+  // (metade da resolucao): uma faixa que comeca ou termina em linha IMPAR sangra
+  // uma linha da propria cor na vizinha. O motor arredonda para baixo ate o par
+  // (`_even`, em `template.py`); a previa arredonda igual, senao a tabela de
+  // geometria mede 307px onde o render tem 306. O `%` do Python arredonda para
+  // baixo em negativos e o do JS nao, dai a correcao antes do resto.
+  function evenFloor(n) {
+    return n - (((n % 2) + 2) % 2);
+  }
+
   function planBands() {
     var H = state.height, W = state.width;
     var pixel = state.zones.filter(function (z) { return z.kind !== "captions"; });
@@ -298,11 +309,11 @@
                      innerW: W, innerH: H, share: 0 });
         return;
       }
-      var bandH = Math.round(H * zone.fraction);
-      var innerX = Math.round(W * (zone.marginLeft / 100));
-      var innerY = cursor + Math.round(H * (zone.marginTop / 100));
-      var innerW = Math.max(2, W - innerX - Math.round(W * (zone.marginRight / 100)));
-      var innerH = Math.max(2, bandH - Math.round(H * ((zone.marginTop + zone.marginBottom) / 100)));
+      var bandH = evenFloor(Math.round(H * zone.fraction));
+      var innerX = evenFloor(Math.round(W * (zone.marginLeft / 100)));
+      var innerY = evenFloor(cursor + Math.round(H * (zone.marginTop / 100)));
+      var innerW = Math.max(2, evenFloor(W - innerX - Math.round(W * (zone.marginRight / 100))));
+      var innerH = Math.max(2, evenFloor(bandH - Math.round(H * ((zone.marginTop + zone.marginBottom) / 100))));
       bands.push({ zone: zone, kind: zone.kind, y: cursor, height: bandH,
                    innerX: innerX, innerY: innerY, innerW: innerW, innerH: innerH,
                    share: total > 0 ? zone.fraction / total : 0 });

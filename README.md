@@ -304,6 +304,17 @@ height fractions sum to 1.0:
 | `text` | a flat colour band with **words burned into it** |
 | `captions` | the caption band (positioned by libass; carries fraction 0) |
 
+Every band is resolved to pixels **on the yuv420p chroma grid**: band offsets,
+band heights and the inner rectangles all come out even, and the pixel of
+rounding error is taken out of the margins instead of out of the picture. That is
+a correctness rule, not cosmetics — the filters that place and crop pixels
+(`overlay`, `crop`) snap to that half-resolution grid, so a rectangle that starts
+or ends on an odd row paints one row of the wrong colour at *every* boundary of
+the stack, and a band with rounded corners whose inner height is odd fails the
+render outright (`alphamerge` refuses two frames of different sizes). An odd
+canvas cannot be tiled by even bands; there the odd pixel lands in the last band,
+which is the one with nothing below it to bleed into.
+
 A `text` zone is a band of its own, not an overlay: it takes its fraction like
 any other zone, and the video band shrinks to make room. The plate comes from
 the zone's `color` and the words are burned by libass — the same stage that
@@ -729,11 +740,12 @@ A fake can still lie about the process boundary, so the render tests also run th
 task through a pickle round trip before handing it to the pool — that is what
 catches a parent reading its own unmodified copy instead of the worker's result.
 
-Five scripts go one level deeper against real binaries:
+Six scripts go one level deeper against real binaries:
 
 ```powershell
 python smoke_test.py --threads 2     # analysis, selection, render, report
 python reframe_check.py              # frame extraction + the real detector
+python band_parity_check.py          # zone geometry, one rendered frame per layout
 python cache_e2e_test.py --model tiny  # transcript cache round trip
 python bench_transcribe.py --wav a.wav # throughput per checkpoint
 python ig_session_check.py           # --ig-session -> jar -> Cookie header
@@ -743,6 +755,12 @@ python ig_session_check.py           # --ig-session -> jar -> Cookie header
 exercises every stage without network access. It prints `SMOKE OK` when
 analysis, window selection, rendering (burned and sidecar captions, jump cut)
 and reporting all succeeded.
+
+`band_parity_check.py` builds the real composition graph for a handful of
+layouts, renders one frame with four distinguishable colours (background, text
+plate, clip, still) and compares it with the band plan row by row and column by
+column. It exits non-zero on a single wrong pixel, so it is the check to run
+after touching `plan_bands`.
 
 `ig_session_check.py` runs `run_profile_mode` against a fake Instagram with
 `urlopen` patched out, and asserts the pasted session reaches the `Cookie`

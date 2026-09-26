@@ -376,6 +376,9 @@ editable: drag an item to move it, arrow keys nudge it by 1 px (Shift = 10), and
 a crosshair follows its centre and snaps to the band centre and the frame
 centre. For the `text` zone every path writes the same `text_dx`/`text_dy` the
 engine reads, so a nudge in the preview survives into the downloaded `.toml`.
+Its size sits next to the field where the words are typed — a slider plus three
+ready sizes, the largest being the model's own (the biggest body that still fits
+its band) — and all three controls write the same `text_size` the engine burns.
 
 Run `python -m viralclipper --help` for the full list.
 

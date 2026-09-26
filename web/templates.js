@@ -1332,9 +1332,13 @@
   // ---------- editor de zonas ----------
 
   // Padroes de uma zona de texto. Existem porque os campos abaixo precisam de um
-  // valor para MOSTRAR quando a zona acabou de nascer, e o motor tem os mesmos
-  // defaults: sem isto o painel mostraria vazio e o .toml sairia com o padrao do
-  // motor — o usuario veria uma coisa e renderizaria outra.
+  // valor para MOSTRAR quando a zona acabou de nascer: sem isto o painel mostraria
+  // vazio e o .toml sairia com o padrao do MOTOR — o usuario veria uma coisa e
+  // renderizaria outra.
+  //
+  // `textSize` e o unico que difere do motor de proposito: `Zone.text_size` default
+  // e 5%, e 3,8% e o corpo que o modelo Meme pede. Como o wizard SEMPRE grava
+  // `text_size` explicito, o default do motor so aparece em .toml escrito a mao.
   var TEXT_ZONE_DEFAULTS = {
     text: "POV: o texto que aparece na faixa",
     textSize: 3.8, textColor: "#ffffff", textAlign: "center", textValign: "middle",
@@ -1734,6 +1738,10 @@
     renderPreview();
     renderGeometry();
     renderOutputs();
+    // O tamanho do texto tem controle em DOIS passos (aqui, no editor de zonas, e
+    // na secao da faixa de texto). Sem esta repintura, mexer no slider de Zonas
+    // deixaria o slider e os chips do POV mostrando o tamanho anterior.
+    paintPovFields();
   }
 
   // ---------- interacoes ----------
@@ -1742,8 +1750,22 @@
   }
 
   document.addEventListener("click", function (event) {
-    var target = event.target.closest("[data-act], [data-goto], [data-axis], [data-copy], [data-gallery]");
+    var target = event.target.closest("[data-act], [data-goto], [data-axis], [data-copy], [data-gallery], [data-pov-size]");
     if (!target) return;
+
+    // Tamanhos prontos da faixa de texto (Pequeno/Medio/Grande): um clique reduz o
+    // corpo sem cacar o slider. Escreve o MESMO `zone.textSize` que o slider do POV
+    // e o do passo de Zonas, entao os tres nunca divergem.
+    if (target.dataset.povSize !== undefined) {
+      var sizeZone = povZone();
+      if (sizeZone) {
+        sizeZone.textSize = Number(target.dataset.povSize);
+        paintPovFields();
+        renderPreview();
+        renderOutputs();
+      }
+      return;
+    }
 
     if (target.dataset.goto !== undefined) {
       showStep(Number(target.dataset.goto));
@@ -1877,7 +1899,14 @@
     }
     else if (act === "radius") updateZone(index, { radius: Number(target.value) });
     else if (act === "text") updateZone(index, { text: target.value });
-    else if (act === "textSize") updateZone(index, { textSize: Number(target.value) });
+    else if (act === "textSize") {
+      updateZone(index, { textSize: Number(target.value) });
+      // O tamanho do texto tem controle em dois passos. O `renderAll` daqui nao
+      // roda neste caminho (o listener de `input` repinta so o necessario para nao
+      // recriar o slider no meio do arrasto), entao a secao do POV e espelhada
+      // aqui — sem isto o slider e os chips dela ficariam no valor anterior.
+      paintPovFields();
+    }
     else if (act === "textColor") updateZone(index, { textColor: target.value });
     else if (act === "textOutline") updateZone(index, { textOutline: Number(target.value) });
     else if (act === "marginTop") updateZone(index, { marginTop: Number(target.value) });
@@ -2034,6 +2063,19 @@
         povTarget.text = target.value;
         renderPreview();
         renderGallery();
+        renderOutputs();
+      }
+    } else if (target.id === "pov-size") {
+      // Mesmo caminho do texto: escreve `zone.textSize`, que e de onde o motor
+      // tira o `text_size`. Vai ao `.toml` (`renderOutputs`), senao o usuario
+      // reduzia o texto, baixava o arquivo e ele saia no tamanho antigo.
+      var sizeTarget = povZone();
+      if (sizeTarget) {
+        sizeTarget.textSize = Number(target.value);
+        // Repinta os DOIS controles (slider e chips) daqui, e nao so o slider que
+        // recebeu o evento: um chip aceso com o tamanho antigo mentiria.
+        paintPovFields();
+        renderPreview();
         renderOutputs();
       }
     } else if (target.id.indexOf("tw-pos-") === 0) {
@@ -2388,8 +2430,56 @@
     var zone = povZone();
     var box = document.getElementById("pov-box");
     if (box) box.hidden = !zone;
+    if (!zone) return;
     var text = document.getElementById("pov-text");
-    if (text && zone) text.value = zone.text || "";
+    // So escreve quando o valor MUDOU. Durante a digitacao os dois sao iguais, e
+    // atribuir o mesmo texto ao textarea joga o cursor para o fim da linha — o
+    // usuario digitaria e o cursor saltaria a cada tecla.
+    if (text && text.value !== (zone.text || "")) text.value = zone.text || "";
+    paintPovSize(zone);
+  }
+
+  // Tamanho do texto: um valor so (`zone.textSize`, porcentagem da altura do
+  // quadro — a unidade do motor), desenhado em tres controles: o slider e os chips
+  // prontos daqui e o slider do passo de Zonas. Todos escrevem no mesmo lugar, e
+  // este pintor e o que os mantem de acordo — venha a mudanca de onde vier.
+  function paintPovSize(zone) {
+    var size = povSizeOf(zone);
+    var slider = document.getElementById("pov-size");
+    if (slider) { slider.value = size; paintSlideFill(slider); }
+    var hint = document.getElementById("pov-size-hint");
+    if (hint) hint.textContent = size.toFixed(1) + "%";
+    var unit = document.getElementById("pov-size-unit");
+    if (unit) unit.textContent = Math.round(size / 100 * state.height) + " px de altura";
+    var chips = document.querySelectorAll("#pov-size-chips [data-pov-size]");
+    Array.prototype.forEach.call(chips, function (chip) {
+      // Igualdade exata: o slider vive fora dos tres valores prontos, e nesse caso
+      // nenhum chip esta ligado — o conjunto e o mesmo, mas nao ha "o escolhido".
+      var on = Math.abs(Number(chip.dataset.povSize) - size) < 0.05;
+      chip.setAttribute("aria-checked", on ? "true" : "false");
+      if (on) chip.removeAttribute("tabindex"); else chip.setAttribute("tabindex", "-1");
+    });
+    // O slider do passo de Zonas edita a MESMA zona, e aquele passo nao e
+    // reconstruido a cada tique (nem quando se troca de passo, veja `showStep`).
+    // Espelhar o valor aqui — como o `frameAt` faz entre os seus dois sliders — e o
+    // que impede um controle aceso mostrando o tamanho anterior.
+    Array.prototype.forEach.call(
+      document.querySelectorAll("input[data-act='textSize']"),
+      function (el) {
+        el.value = size;
+        paintSlideFill(el);
+        var head = el.closest(".field, .full");
+        head = head ? head.querySelector(".mini-label span") : null;
+        if (head) head.textContent = size.toFixed(1) + "% da altura";
+      }
+    );
+  }
+
+  // O mesmo default do editor de zonas, para uma zona de texto recem-criada nao
+  // aparecer com o slider em branco.
+  function povSizeOf(zone) {
+    var size = Number(zone && zone.textSize);
+    return Number.isFinite(size) && size > 0 ? size : TEXT_ZONE_DEFAULTS.textSize;
   }
 
   function paintTweetAvatar() {

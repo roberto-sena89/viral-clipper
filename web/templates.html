@@ -271,6 +271,40 @@
                       placeholder="POV: Você usou o formato de meme e VIRALIZOU com 3x mais!"
                       style="min-height:56px"></textarea>
           </div>
+          <!-- Tamanho do texto. Existe aqui, e não só no passo de Zonas, porque é
+               aqui que se escreve o texto: quem acabou de digitar uma frase longa
+               quer reduzi-la sem sair do passo. Os controles escrevem todos o MESMO
+               `textSize` da zona, então nunca divergem.
+
+               Os três tamanhos prontos são uma ESCADA PARA BAIXO, e o maior deles é
+               o do modelo — que é o maior corpo que ainda cabe na faixa dele (3,8%
+               de 1920 = 73px, três linhas dentro dos 276px úteis). Um "Grande"
+               acima disso só produziria texto cortado no card do modelo, que é
+               justamente o que o usuário está tentando evitar; para crescer existe
+               o slider, e a prévia mostra o estouro na hora. -->
+          <div class="field">
+            <div class="mini-label">Tamanho do texto <span id="pov-size-unit">px de altura</span></div>
+            <p class="hint" style="margin:0 0 10px">
+              Fração da <strong>altura do quadro</strong> — o mesmo
+              <code>text_size</code> que o motor queima. Os três prontos cabem na
+              faixa do modelo; acima deles a prévia mostra o texto estourando.
+            </p>
+            <div class="tw-axis">
+              <label class="tw-pos-tag" for="pov-size">T</label>
+              <input class="tw-slide" id="pov-size" type="range" min="1" max="12" step="0.1" value="3.8"
+                     aria-label="Tamanho do texto do POV, em porcentagem da altura do quadro">
+              <span class="hint" id="pov-size-hint">3.8%</span>
+            </div>
+            <div class="chips" id="pov-size-chips" role="radiogroup"
+                 aria-label="Tamanhos prontos do texto da faixa" style="margin-top:10px">
+              <button type="button" class="chip pressable" role="radio" data-pov-size="1.8"
+                      aria-checked="false" tabindex="-1">Pequeno</button>
+              <button type="button" class="chip pressable" role="radio" data-pov-size="2.8"
+                      aria-checked="false" tabindex="-1">Médio</button>
+              <button type="button" class="chip pressable" role="radio" data-pov-size="3.8"
+                      aria-checked="true">Do modelo</button>
+            </div>
+          </div>
           <div class="field">
             <div class="mini-label">Posição do texto <span id="pov-pos-unit">px do quadro</span></div>
             <p class="hint" style="margin:0 0 10px">

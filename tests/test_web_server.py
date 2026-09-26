@@ -2514,6 +2514,126 @@ class TweetEditorTests(unittest.TestCase):
         # escrevendo num lugar que o motor não lê é o defeito que ninguém acha.
         self.assertIn("box.hidden = !zone", self._fn_body("paintPovFields"))
 
+    def test_the_text_size_has_its_own_control_in_the_step(self):
+        """O corpo do texto é editável na PRÓPRIA seção da faixa de texto.
+
+        O tamanho já existia no passo de Zonas, junto dos outros campos da zona —
+        mas é aqui que se escreve o texto, e quem acabou de digitar uma frase
+        longa precisa reduzi-la sem trocar de passo. Os dois controles editam a
+        MESMA zona (``zone.textSize``), então nenhum é uma segunda verdade.
+        """
+        for field in ("pov-size", "pov-size-hint", "pov-size-unit", "pov-size-chips"):
+            self.assertIn(f'id="{field}"', self.step, f"{field} fora do passo Aparencia")
+        # A ordem é a da leitura: o tamanho vem depois do texto que ele dimensiona
+        # e antes da posição — no meio da seção, não jogado no fim dela.
+        self.assertLess(
+            self.step.index('id="pov-text"'), self.step.index('id="pov-size"'),
+            "o tamanho tem de vir depois do texto que ele dimensiona",
+        )
+        self.assertLess(
+            self.step.index('id="pov-size"'), self.step.index('id="tw-pos-pov-x"'),
+            "o tamanho tem de vir antes da posição",
+        )
+        # Escreve `zone.textSize`, que é de onde o motor tira o `text_size`.
+        self.assertIn('target.id === "pov-size"', self.page)
+        self.assertIn("sizeTarget.textSize = Number(target.value)", self.page)
+        # E reescreve o `.toml`: `text_size` SAI no arquivo.
+        branch = self.page.split('target.id === "pov-size"', 1)[1].split("} else if", 1)[0]
+        self.assertIn("renderOutputs()", branch, "o .toml não acompanha o slider de tamanho")
+
+    def test_the_two_size_sliders_accept_the_same_values(self):
+        """O slider do POV e o do passo de Zonas cobrem a MESMA faixa.
+
+        Duas faixas diferentes dariam o absurdo de o mesmo ``textSize`` ser
+        representável num controle e não no outro: o valor escrito no passo de
+        Zonas apareceria cortado no slider do POV, e o usuário veria dois números
+        para o mesmo campo.
+        """
+        self.assertIn('min="1" max="12" step="0.1"', self.step, "o slider do POV mudou de faixa")
+        self.assertIn("min='1' max='12' step='0.1'", self.page, "o slider de Zonas mudou de faixa")
+
+    def test_the_ready_sizes_only_shrink_and_all_of_them_fit(self):
+        """Os atalhos REDUZEM; o maior deles é o do modelo, e é o que nasce aceso.
+
+        O modelo Meme usa 3,8% da altura (73px em 1920) e esse é o maior corpo que
+        ainda cabe na faixa dele: três linhas dentro dos 276px úteis. Um atalho
+        acima disso produziria texto cortado justamente em quem clicou nele para
+        consertar o corte. Para crescer existe o slider, e a prévia mostra o
+        estouro na hora — mas o atalho não pode ser uma armadilha.
+        """
+        sizes = [float(v) for v in re.findall(r'data-pov-size="([0-9.]+)"', self.step)]
+        self.assertEqual(len(sizes), 3, "a seção do POV perdeu os tamanhos prontos")
+        self.assertEqual(sizes, sorted(sizes), "os tamanhos prontos fora de ordem")
+        model = float(re.search(r"textSize: ([0-9.]+)", self._gallery_block("meme")).group(1))
+        self.assertLessEqual(
+            max(sizes), model, "um atalho maior que o do modelo corta o texto dele"
+        )
+        # O chip do modelo é o que nasce aceso, e o slider nasce no mesmo valor.
+        checked = re.search(r'data-pov-size="([0-9.]+)"\s+aria-checked="true"', self.step)
+        self.assertIsNotNone(checked, "nenhum tamanho pronto nasce aceso")
+        self.assertEqual(float(checked.group(1)), model, "o atalho aceso não é o do modelo")
+        slider = self.page.split('id="pov-size"', 1)[1].split(">", 1)[0]
+        self.assertIn(f'value="{model}"', slider, "o slider do POV não nasce no tamanho do modelo")
+
+    def test_every_size_control_writes_the_same_value(self):
+        """Três controles para um valor: cada caminho repinta os outros.
+
+        O slider do POV e os atalhos vivem no passo de Aparencia; o slider do passo
+        de Zonas edita a MESMA zona. Sem a repintura cruzada, um controle aceso
+        mostraria o tamanho anterior — e o passo de Zonas não é reconstruído a cada
+        tique nem ao trocar de passo (veja ``showStep``).
+        """
+        # Atalho: escreve a zona, repinta os controles e reescreve o `.toml`.
+        chip = self.page.split("target.dataset.povSize !== undefined", 1)[1].split("return;", 1)[0]
+        self.assertIn("sizeZone.textSize = Number(target.dataset.povSize)", chip)
+        self.assertIn("paintPovFields()", chip)
+        self.assertIn("renderOutputs()", chip)
+        # O pintor espelha o valor no slider do passo de Zonas.
+        self.assertIn("input[data-act='textSize']", self._fn_body("paintPovSize"))
+        # E o slider de Zonas repinta a seção do POV — no `renderAll` e também no
+        # caminho de `input`, que repinta só o necessário e não passa por ele.
+        self.assertIn("paintPovFields()", self._fn_body("renderAll"))
+        zone_branch = self.page.split('act === "textSize"', 1)[1].split("} else if", 1)[0]
+        self.assertIn("paintPovFields()", zone_branch, "o slider de Zonas não repinta o POV")
+
+    def test_the_pov_text_field_keeps_the_caret(self):
+        """Digitar no meio do campo não joga o cursor para o fim.
+
+        ``paintPovFields`` passou a ser chamado em toda repintura da página (o
+        slider de tamanho repinta os próprios controles e o passo de Zonas repinta
+        a seção). Atribuir o MESMO texto ao textarea move o cursor para o fim, então
+        o pintor só escreve quando o valor mudou — durante a digitação os dois são
+        iguais.
+        """
+        self.assertIn(
+            'text.value !== (zone.text || "")',
+            self._fn_body("paintPovFields"),
+            "o pintor volta a sobrescrever o campo a cada repintura",
+        )
+
+    def test_the_ready_sizes_are_valid_for_the_engine(self):
+        """Os atalhos, no motor, produzem zona válida — a faixa dele é estreita.
+
+        O wizard fala em POR CENTO e o motor em FRAÇÃO, e ``text_size`` só aceita
+        de 0,5% a 40% da altura. Um atalho fora disso viraria erro no meio do
+        render, depois de o usuário já ter baixado o template.
+        """
+        from viralclipper import template as template_mod
+
+        for text in re.findall(r'data-pov-size="([0-9.]+)"', self.step):
+            with self.subTest(size=text):
+                template = template_mod.Template(
+                    name="t",
+                    zones=(
+                        template_mod.Zone(
+                            kind="text", fraction=0.5, text="POV: teste",
+                            text_size=float(text) / 100,
+                        ),
+                        template_mod.Zone(kind="video", fraction=0.5),
+                    ),
+                )
+                template.validate()
+
     def test_the_gallery_never_invents_an_asset_path(self):
         """Nenhum card traz um caminho de imagem pronto — o asset é do usuário.
 

@@ -63,10 +63,24 @@ class ZoneValidationTests(unittest.TestCase):
         with self.assertRaises(ClipperError):
             tpl.Zone(kind="video", fraction=1.5).validate(1)
 
-    def test_image_zone_without_a_source_is_refused(self):
-        with self.assertRaises(ClipperError) as ctx:
-            tpl.Zone(kind="image", fraction=0.4).validate(2)
-        self.assertIn("source", str(ctx.exception))
+    def test_an_image_zone_may_open_without_an_asset(self):
+        """Zona `image` sem `source` é estado VÁIDO, não erro de digitação.
+
+        É assim que um formato da galeria abre: a barra de identidade do Meme e o
+        print do X nascem sem arquivo, e o renderer degrada a faixa para o próprio
+        clipe. Recusar no `validate` travava o wizard antes de o usuário escolher
+        o asset — e o aviso "precisa de um caminho" não tinha correção possível,
+        porque o caminho é opcional por definição.
+        """
+        for source in (None, ""):
+            with self.subTest(source=source):
+                # Não levanta: o ponto do teste é justamente não levantar.
+                tpl.Zone(kind="image", fraction=0.4, source=source).validate(2)
+
+    def test_a_zone_of_another_kind_still_needs_nothing_hidden(self):
+        """Só a `image` ficou sem exigência; as demais seguem com a de sempre."""
+        with self.assertRaises(ClipperError):
+            tpl.Zone(kind="hologram", fraction=1.0).validate(1)
 
     def test_margins_may_not_swallow_the_band(self):
         with self.assertRaises(ClipperError):

@@ -619,19 +619,30 @@ def _template_stills(
     ``image`` zones use their own file; ``frame`` zones get one grabbed from the
     clip. A zone whose still cannot be produced falls back to the clip video
     rather than failing the render, so a missing logo file degrades the look
-    instead of costing the whole clip.
+    instead of costing the whole clip. An ``image`` zone with NO file at all is
+    the same case, and a deliberate one: a gallery template opens with its
+    identity band unset, and refusing it would mean refusing the template.
     """
     inputs: list[str] = []
     for index, zone in enumerate(template.zones):
         if zone.kind == "image":
-            candidate = Path(zone.source)
-            if not candidate.is_absolute():
+            written = (zone.source or "").strip()
+            candidate = Path(written) if written else None
+            if candidate is not None and not candidate.is_absolute():
                 candidate = Path(config.output_dir) / candidate
-            if candidate.exists():
+            if candidate is not None and candidate.exists():
                 inputs.append(str(candidate.resolve()))
                 continue
             if logger:
-                logger.warn(f"Imagem da zona {index + 1} nao encontrada: {zone.source}")
+                if written:
+                    logger.warn(f"Imagem da zona {index + 1} nao encontrada: {written}")
+                else:
+                    # ``Path("")`` e ``.``, e ``.`` EXISTE: sem esta distincao o
+                    # diretorio de saida inteiro entraria no ffmpeg como input e
+                    # o render morreria com "Is a directory" em vez de degradar.
+                    logger.warn(
+                        f"Zona {index + 1} sem imagem; a faixa mostra o proprio clipe."
+                    )
             # Point at the clip so the overlay stays valid (an input index must
             # exist even when its content is unusable).
             inputs.append(str(Path(source).resolve()))

@@ -83,7 +83,11 @@ class Zone:
 
     kind: str
     fraction: float
-    # ``image``: path to the still. ``frame``: ignored, the renderer extracts it.
+    # ``image``: path to the still. Empty is a valid state, not a typo: a gallery
+    # template opens before the user has the asset (the Meme's identity bar, the
+    # X card's tweet print), and the renderer degrades an asset-less band to the
+    # clip rather than refusing the template. ``frame``: ignored, the renderer
+    # extracts the still from the clip.
     source: str | None = None
     # Where inside the clip the ``frame`` still is taken from, in seconds from
     # the start of the clip. 0.0 is the classic "first frame as poster" look.
@@ -136,8 +140,15 @@ class Zone:
         if self.fit not in FIT_MODES:
             known = ", ".join(FIT_MODES)
             raise ClipperError(f"{where}: fit deve ser {known}.")
-        if self.kind == "image" and not self.source:
-            raise ClipperError(f"{where}: image exige um caminho em 'source'.")
+        # Nao ha exigencia de ``source`` numa zona ``image``, de proposito: sem
+        # arquivo e um estado VALIDO, e nao um erro de digitacao. E o estado em
+        # que um formato da galeria abre, antes de o usuario ter o asset (a barra
+        # de identidade do Meme, o print do X). Recusar aqui fazia o wizard acusar
+        # "uma zona de imagem precisa de um caminho" e travar o passo ate o
+        # usuario escolher um arquivo — e inventar um caminho no catalogo so
+        # trocaria esse aviso por um render falhando depois do download. Sem asset
+        # o renderer degrada para o proprio clipe, que e a mesma politica que ele
+        # ja aplica a um arquivo que nao existe (``render._template_stills``).
         if self.kind == "frame" and self.frame_at < 0:
             raise ClipperError(f"{where}: frame_at nao pode ser negativo.")
         if self.kind == "text":

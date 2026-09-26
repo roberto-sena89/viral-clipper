@@ -1192,8 +1192,12 @@
       var where = "Zona " + (index + 1) + " (" + (KINDS[zone.kind] || {}).label + ")";
       if (zone.kind !== "captions" && (zone.fraction < 0.02 || zone.fraction > 1))
         problems.push("Zona " + (index + 1) + ": a fracao precisa ficar entre 2% e 100%.");
-      if (zone.kind === "image" && !zone.source.trim())
-        problems.push(where + ": uma zona de imagem precisa de um caminho.");
+      // Zona de imagem SEM arquivo nao entra na lista de problemas: e o estado em
+      // que um formato da galeria abre, antes de o usuario ter o asset (a barra
+      // de identidade do Meme, o print do X). O motor aceita a zona sem arquivo e
+      // degrada a faixa para o proprio clipe, entao travar o passo aqui acusava
+      // um erro que o arquivo gerado nao tem. O que falta vira dica no campo, e
+      // nao bloqueio (ver o `hint` do input de Arquivo).
       if (zone.marginTop + zone.marginBottom >= 100)
         problems.push(where + ": as margens verticais consomem a faixa inteira.");
     });
@@ -1232,7 +1236,11 @@
       lines.push("[[zones]]");
       lines.push('kind = "' + zone.kind + '"');
       lines.push("fraction = " + fmtNum(round4(zone.fraction)));
-      if (zone.kind === "image") lines.push('source = "' + zone.source.trim() + '"');
+      // Sem arquivo a chave NAO vai: o motor le a ausencia como "ainda nao
+      // escolhi" (a faixa degrada para o clipe) e a zona continua valida. Uma
+      // chave vazia so poria no arquivo um caminho que nao existe.
+      if (zone.kind === "image" && zone.source.trim())
+        lines.push('source = "' + zone.source.trim() + '"');
       if (zone.kind === "frame" && zone.frameAt > 0)
         lines.push("frame_at = " + fmtNum(zone.frameAt));
       if (zone.kind === "solid" || zone.kind === "text")
@@ -1482,6 +1490,10 @@
               "<div class='mini-label'>Arquivo</div>" +
               "<input type='text' value='" + esc(zone.source) + "' placeholder='logo.png'" +
                 " data-act='source' data-i='" + index + "'>" +
+              (zone.source.trim() ? "" :
+                "<div class='hint' style='margin-top:6px'>Sem arquivo por enquanto: " +
+                "a faixa mostra o proprio video. Escolha um aqui quando tiver o " +
+                "cartao ou o print.</div>") +
             "</div>" : "") +
           (zone.kind === "frame" ?
             "<div class='full'>" +

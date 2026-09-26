@@ -304,6 +304,13 @@ height fractions sum to 1.0:
 | `text` | a flat colour band with **words burned into it** |
 | `captions` | the caption band (positioned by libass; carries fraction 0) |
 
+`image` is the one zone that may be left **unset**. A gallery template opens
+before you have the asset (the Meme's identity bar, the X card's tweet print),
+and a band with no file degrades to the clip rather than failing the render — the
+same policy a file that no longer exists gets, and the reason the wizard can offer
+a format without inventing a path for it. The band stays, and so does the zone:
+drop your card in when you have it.
+
 Every band is resolved to pixels **on the yuv420p chroma grid**: band offsets,
 band heights and the inner rectangles all come out even, and the pixel of
 rounding error is taken out of the margins instead of out of the picture. That is

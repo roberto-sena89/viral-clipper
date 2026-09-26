@@ -2656,21 +2656,79 @@ class TweetEditorTests(unittest.TestCase):
                 )
                 template.validate()
 
-    def test_the_gallery_never_invents_an_asset_path(self):
-        """Nenhum card traz um caminho de imagem pronto — o asset é do usuário.
+    def _card_zones(self, key: str) -> tuple:
+        """As zonas do card, como o motor as recebe ao clicar em "Usar".
 
-        O motor exige ``source`` numa zona ``image``, então o card abre com "Zona N
-        (Imagem): uma zona de imagem precisa de um caminho" até o usuário escolher o
-        arquivo. É o mesmo estado nos dois cards que têm imagem (X e Meme), e é
-        deliberado: um caminho inventado aqui viraria um render falhando depois de
-        baixar o template — pior do que o aviso que a própria página já dá.
+        Os ``kind`` e as ``fraction`` saem na ordem em que o card os declara, e o
+        ``source`` entra exatamente como está no catálogo — vazio, que é o ponto.
         """
-        for key in ("x", "meme"):
-            self.assertRegex(
-                self._gallery_block(key),
-                r'source: ""',
-                f"o card {key} inventou um caminho de imagem",
-            )
+        from viralclipper import template as template_mod
+
+        block = self._gallery_block(key)
+        kinds = re.findall(r'kind: "(\w+)"', block)
+        fractions = [float(value) for value in re.findall(r"fraction: ([0-9.]+)", block)]
+        self.assertEqual(len(kinds), len(fractions), f"card {key}: zonas desalinhadas")
+        zones = []
+        for kind, fraction in zip(kinds, fractions):
+            fields = {"kind": kind, "fraction": fraction, "source": ""}
+            if kind == "text":
+                fields.update(text="POV: teste", text_size=0.038, color="black")
+            zones.append(template_mod.Zone(**fields))
+        return tuple(zones)
+
+    def test_every_gallery_card_opens_as_a_valid_template(self):
+        """Clicar em "Usar" e depois em "Baixar" não pode gerar um arquivo recusado.
+
+        O card abre com o caminho da imagem vazio — a galeria nunca inventa um
+        asset —, e o passo Zonas travava justamente por isso: o `.toml` baixado era
+        recusado pelo motor ("image exige um caminho em 'source'"). Agora a
+        ausência de arquivo é um estado válido dos dois lados: o motor aceita a
+        zona e a faixa degrada para o próprio clipe.
+
+        Este teste é a outra metade da regra: o catálogo continua sem inventar
+        caminho nenhum, e é isso que agora atravessa o motor sem tropeço.
+        """
+        from viralclipper import template as template_mod
+
+        for key in ("x", "meme", "viral"):
+            with self.subTest(card=key):
+                # O card realmente abre sem asset: sem isto o teste passaria por
+                # não ter nada para degradar.
+                self.assertIn('source: ""', self._gallery_block(key))
+                template_mod.Template(
+                    name=key, zones=self._card_zones(key)
+                ).validate()  # não levanta
+
+    def test_the_step_does_not_block_on_a_missing_asset(self):
+        """O passo Zonas não acusa um erro que o arquivo gerado não tem.
+
+        O motor aceita uma zona de imagem sem arquivo — a faixa degrada para o
+        próprio clipe —, então listar isso como problema travava um template que é
+        válido de saída: o card recém-carregado da galeria nascia com o passo em
+        vermelho e a geração barrada.
+        """
+        body = self._fn_body("validate")
+        self.assertNotIn("precisa de um caminho", body)
+        self.assertNotIn('zone.kind === "image" && !zone.source', body)
+
+    def test_the_empty_asset_becomes_a_hint_in_the_field(self):
+        """O que falta vira dica no campo de Arquivo, e não bloqueio.
+
+        A dica é o que conta ao usuário o que a faixa mostra até ele escolher o
+        arquivo: a informação útil, sem transformar o estado normal de um card
+        recém-carregado em erro.
+        """
+        self.assertIn("Sem arquivo por enquanto", self.page)
+        self.assertIn("a faixa mostra o proprio video", self.page)
+
+    def test_the_toml_omits_the_source_when_there_is_no_asset(self):
+        """Chave ausente é "ainda não escolhi"; ``source = ""`` é caminho que não existe.
+
+        O motor lê a ausência como degradação para o clipe; uma chave vazia poria
+        no arquivo um caminho que ninguém digitou.
+        """
+        body = self._fn_body("toToml")
+        self.assertIn('zone.kind === "image" && zone.source.trim()', body)
 
     def test_the_meme_gallery_numbers_survive_the_engine(self):
         """Os números do card, passados pelo motor, produzem um template VÁLIDO.
@@ -2682,9 +2740,9 @@ class TweetEditorTests(unittest.TestCase):
         faixa, ou uma fração que não fecha, vira falha de teste em vez de erro no
         meio do render — quando o usuário já clicou em "Usar este template".
 
-        O caminho do asset entra como o card o traz (vazio) mais um palpite: a zona
-        de identidade vem sem arquivo, e é a única coisa que impede o card de ser
-        válido de saída — ver ``test_the_gallery_never_invents_an_asset_path``.
+        O caminho do asset entra como o card o traz (vazio): a zona de identidade
+        vem sem arquivo, e o motor agora aceita esse estado — ver
+        ``test_every_gallery_card_opens_as_a_valid_template``.
         """
         from viralclipper import template as template_mod
 
@@ -2693,7 +2751,7 @@ class TweetEditorTests(unittest.TestCase):
         size = float(re.search(r"textSize: ([0-9.]+)", block).group(1)) / 100
         gap = float(re.search(r"marginTop: ([0-9.]+)", block).group(1)) / 100
         side = float(re.search(r"marginLeft: ([0-9.]+)", block).group(1)) / 100
-        source = re.search(r'source: "([^"]*)"', block).group(1) or "id.png"
+        source = re.search(r'source: "([^"]*)"', block).group(1)
         template = template_mod.Template(
             name="meme",
             zones=(

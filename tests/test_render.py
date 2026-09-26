@@ -658,6 +658,25 @@ class TemplateComposeIntegrationTests(unittest.TestCase):
         graph = self._graph(self._render(template=tpl.SPLIT_CARD))
         self.assertEqual(graph.count("["), graph.count("]"))
 
+    def test_an_image_zone_without_an_asset_falls_back_to_the_clip(self):
+        """Sem arquivo, o input da zona aponta para o PRÓPRIO clipe.
+
+        ``Path("")`` é ``.``, e ``.`` existe — sem a distinção, o diretório de
+        saída inteiro entraria no ffmpeg como input e o render morreria com
+        "Is a directory", em vez de degradar, que é o que o motor promete e o que
+        faz um formato da galeria abrir válido antes de o usuário ter o asset.
+        """
+        template = tpl.Template(
+            name="sem-asset",
+            zones=(
+                tpl.Zone(kind="video", fraction=0.6),
+                tpl.Zone(kind="image", fraction=0.4),
+            ),
+        )
+        command = self._render(template)
+        inputs = [command[i + 1] for i, item in enumerate(command) if item == "-i"]
+        self.assertEqual(inputs, [str((self.tmp / "src.mp4").resolve())] * 2)
+
 
 if __name__ == "__main__":
     unittest.main()

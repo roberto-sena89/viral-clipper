@@ -390,9 +390,10 @@ class SessionOnTheWireTests(unittest.TestCase):
     def _capture(self, session, jar_session=""):
         captured = {}
 
-        def fake_urlopen(request, timeout=None):
-            captured["cookie"] = request.get_header("Cookie") or ""
-            return self._FakeResponse()
+        def fake_send(method, url, *, data=None, headers=None, timeout=30):
+            captured["cookie"] = (headers or {}).get("Cookie", "")
+            captured["body"] = dict(data or {})
+            return 200, '{"data": {}}'
 
         directory = Path(tempfile.mkdtemp(prefix="vc_wire_"))
         jar = directory / "cookies.txt"
@@ -403,14 +404,15 @@ class SessionOnTheWireTests(unittest.TestCase):
             "# Netscape HTTP Cookie File\n" + "\n".join(lines) + "\n", encoding="utf-8"
         )
         cookies = ig_profile.resolve_cookies(jar, session)
-        # `urlopen` e importado DENTRO da funcao (from urllib.request import ...),
-        # entao o alvo do patch e o modulo de origem, nao o ig_profile.
-        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
-            ig_profile._request_page(cookies, "lsd", "alvo", None, 50)
-        return captured["cookie"]
+        # `_send` e a costura unica: e ela que decide entre curl_cffi e urllib.
+        # Fingir no nivel dela deixa o teste independente do transporte — que e
+        # justamente o que o Instagram recusa.
+        with mock.patch.object(ig_profile, "_send", side_effect=fake_send):
+            ig_profile._request_page(cookies, "lsd", "dtsg", "alvo", None, 50)
+        return captured
 
     def test_the_pasted_session_travels_with_the_csrf_token(self):
-        cookie = self._capture(ig_profile.normalise_session("1234:abc"))
+        cookie = self._capture(ig_profile.normalise_session("1234:abc"))["cookie"]
         self.assertIn("sessionid=1234%3Aabc", cookie)
         self.assertIn("csrftoken=abc", cookie)
 
@@ -421,9 +423,85 @@ class SessionOnTheWireTests(unittest.TestCase):
         ja foi gravada pelo :func:`prepare_session` e o campo do painel volta
         vazio.
         """
-        cookie = self._capture("", jar_session="9876%3Axyz")
+        cookie = self._capture("", jar_session="9876%3Axyz")["cookie"]
         self.assertIn("sessionid=9876%3Axyz", cookie)
         self.assertIn("csrftoken=abc", cookie)
+
+    def test_the_fb_dtsg_token_goes_in_the_body(self):
+        """Sem ele a chamada nao passa: medido contra o endpoint real, o
+        Instagram devolve a pagina do perfil em vez do feed."""
+        body = self._capture("", jar_session="9876%3Axyz")["body"]
+        self.assertEqual(body.get("fb_dtsg"), "dtsg")
+        self.assertEqual(body.get("jazoest"), ig_profile._jazoest("dtsg"))
+        self.assertEqual(body.get("doc_id"), ig_profile.PROFILE_DOC_ID)
+
+    def test_the_call_does_not_go_out_without_the_impersonating_client(self):
+        """Sem curl_cffi a recusa tem de NOMEAR a dependencia.
+
+        O sintoma — `error 1357054` num HTTP 200 — nao aponta para um pacote
+        ausente, e a distancia entre os dois e o que faz o usuario tentar de
+        novo em vez de instalar.
+        """
+        with mock.patch.object(ig_profile, "_curl_requests", None):
+            hint = ig_profile._refusal_hint()
+        self.assertIn("curl_cffi", hint)
+        self.assertIn("pip install", hint)
+
+
+class RefusedCallTests(unittest.TestCase):
+    """O corpo do ``/graphql/query`` nao e JSON puro, e a recusa vem em 200.
+
+    Dois defeitos opostos moram aqui. O prefixo ``for (;;);`` faz uma resposta
+    BOA parecer HTML — o Instagram prefixa todo corpo com ele, e o teste
+    ``startswith("{")`` reprovava a resposta certa. E a recusa chega com HTTP
+    200 e um envelope ``__ar``: sem ler o envelope, o usuario recebe "o feed veio
+    vazio", que nao nomeia conserto nenhum.
+    """
+
+    def _request(self, body: bytes) -> dict:
+        def fake_send(method, url, *, data=None, headers=None, timeout=30):
+            return 200, body.decode("utf-8")
+
+        with mock.patch.object(ig_profile, "_send", side_effect=fake_send):
+            return ig_profile._request_page(
+                {"csrftoken": "abc", "sessionid": "1%3A2"}, "lsd", "dtsg", "alvo", None, 12
+            )
+
+    def test_a_plain_json_body_parses(self):
+        self.assertEqual(self._request(b'{"data": {"x": 1}}'), {"data": {"x": 1}})
+
+    def test_the_anti_hijacking_prefix_comes_off(self):
+        """Sem isto, toda resposta BOA virava 'HTTP HTML'."""
+        body = b'for (;;);{"data": {"x": 1}}'
+        self.assertEqual(self._request(body), {"data": {"x": 1}})
+
+    def test_the_prefix_is_optional(self):
+        """Nada garante que o prefixo esteja la — os dois formatos tem de passar."""
+        self.assertEqual(self._strip(b'for (;;);{"a": 1}'), '{"a": 1}')
+        self.assertEqual(self._strip(b'  {"a": 1}'), '{"a": 1}')
+
+    @staticmethod
+    def _strip(raw: bytes) -> str:
+        return ig_profile._strip_json_guard(raw.decode("utf-8"))
+
+    def test_a_refused_envelope_names_the_error_and_the_doc_id(self):
+        body = (
+            b'for (;;);{"__ar":1,"error":1357004,'
+            b'"errorSummary":"Sorry, something went wrong","payload":null}'
+        )
+        with self.assertRaises(ClipperError) as ctx:
+            self._request(body)
+        message = str(ctx.exception)
+        self.assertIn("1357004", message)
+        self.assertIn("doc_id", message)
+        # A recusa tambem acontece quando o Instagram esta limitando: sem esta
+        # segunda hipotese o usuario so tentaria de novo mais tarde por sorte.
+        self.assertIn("limitando", message)
+
+    def test_an_html_body_still_reads_as_a_refusal(self):
+        with self.assertRaises(ClipperError) as ctx:
+            self._request(b"<!DOCTYPE html><html>...</html>")
+        self.assertIn("HTTP HTML", str(ctx.exception))
 
 
 class PaginationTests(unittest.TestCase):
@@ -435,7 +513,7 @@ class PaginationTests(unittest.TestCase):
     def _run(self, documents, **kwargs):
         calls = {"n": 0}
 
-        def fake_page(cookies, lsd, username, cursor, page_size):
+        def fake_page(cookies, lsd, dtsg, username, cursor, page_size):
             index = calls["n"]
             calls["n"] += 1
             if index >= len(documents):
@@ -443,7 +521,9 @@ class PaginationTests(unittest.TestCase):
             return documents[index]
 
         with mock.patch.object(ig_profile, "_parse_cookie_file", return_value={"sessionid": "s"}), \
-             mock.patch.object(ig_profile, "_fetch_lsd", return_value=("lsd", "<html></html>")), \
+             mock.patch.object(
+                 ig_profile, "_fetch_lsd", return_value=("lsd", "dtsg", "<html></html>")
+             ), \
              mock.patch.object(ig_profile, "_request_page", side_effect=fake_page):
             listing = list_profile("alvo", self.dir / "x.txt", pause=0, **kwargs)
         return listing, calls["n"]

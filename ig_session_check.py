@@ -31,6 +31,7 @@ PAGE_HTML = (
     '<meta property="og:title" content="Conta de Teste (@conta) • Instagram photos and videos">'
     "</head><body>"
     '<script>window.__b = {"LSD",[],{"token":"LSDTOKEN123"}};</script>'
+    '<script>window.__b = {"DTSGInitialData",[],{"token":"DTSGTOKEN456"}};</script>'
     "</body></html>"
 )
 
@@ -74,30 +75,20 @@ PAGE_JSON = {
 }
 
 
-class FakeResponse:
-    def __init__(self, body: bytes):
-        self._body = body
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def read(self) -> bytes:
-        return self._body
-
-
 def main() -> int:
-    seen = {"get": None, "post": None}
+    seen = {"get": None, "post": None, "body": {}}
 
-    def fake_urlopen(request, timeout=None):
-        cookie = request.get_header("Cookie") or ""
-        if request.get_method() == "POST":
+    # `_send` e a costura unica do modulo: e ela que escolhe entre curl_cffi e
+    # urllib. Fingir nesse nivel mantem a verificacao offline sem depender do
+    # transporte — que e justamente o que o Instagram recusa.
+    def fake_send(method, url, *, data=None, headers=None, timeout=30):
+        cookie = (headers or {}).get("Cookie", "")
+        if method == "POST":
             seen["post"] = cookie
-            return FakeResponse(json.dumps(PAGE_JSON).encode())
+            seen["body"] = dict(data or {})
+            return 200, json.dumps(PAGE_JSON)
         seen["get"] = cookie
-        return FakeResponse(PAGE_HTML.encode())
+        return 200, PAGE_HTML
 
     workdir = Path(tempfile.mkdtemp(prefix="vc_e2e_"))
     jar = workdir / "cookies.txt"
@@ -121,7 +112,7 @@ def main() -> int:
         return path
 
     checks: list[tuple[str, bool, str]] = []
-    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen), mock.patch.object(
+    with mock.patch.object(ig_profile, "_send", side_effect=fake_send), mock.patch.object(
         download, "download_media", side_effect=fake_download
     ):
         code = cli.run_profile_mode(
@@ -164,6 +155,14 @@ def main() -> int:
             f"cookie={seen['post']}",
         )
     )
+    checks.append(
+        (
+            "POST graphql levou o fb_dtsg e o doc_id",
+            seen["body"].get("fb_dtsg") == "DTSGTOKEN456"
+            and seen["body"].get("doc_id") == ig_profile.PROFILE_DOC_ID,
+            f"body={sorted(seen['body'])}",
+        )
+    )
     reels = sorted(p.name for p in (Path(config.output_dir) / "reels").glob("*"))
     posts = sorted(p.name for p in (Path(config.output_dir) / "posts").glob("*"))
     checks.append(("reel em reels/", len(reels) == 1, f"reels={reels}"))
@@ -172,7 +171,7 @@ def main() -> int:
 
     # Segunda passada: sem colar nada, o que esta no arquivo tem de bastar.
     seen["post"] = None
-    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen), mock.patch.object(
+    with mock.patch.object(ig_profile, "_send", side_effect=fake_send), mock.patch.object(
         download, "download_media", side_effect=fake_download
     ):
         code2 = cli.run_profile_mode(config, "@conta", str(jar), logger, max_items=5)

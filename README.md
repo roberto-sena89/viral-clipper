@@ -663,15 +663,22 @@ Two notes on the scrap page, both learned the hard way:
 - **Instagram profiles are listed by this tool, not by yt-dlp.** The upstream
   extractor is disabled (`InstagramUserIE._WORKING = False`, its `sharedData`
   parser no longer matches the page), so the panel and `--profile` reproduce the
-  `POST /graphql/query` the site's own React app makes — see
-  `viralclipper/ig_profile.py`. Two consequences:
+  `POST /api/graphql` the site's own React app makes — see
+  `viralclipper/ig_profile.py`. Three consequences:
   - It needs a **logged-in session**. The GraphQL endpoint answers an anonymous
     visitor with the HTML shell instead of JSON, so the jar must carry
     `sessionid`. That cookie is `HttpOnly`, which means no browser export can
     ever contain it — see the `sessionid` block below.
-  - `doc_id` in that module is a build artefact Instagram rotates with each
-    bundle. When it goes stale every request answers 403, and the error message
-    names that possibility rather than reporting an empty feed.
+  - It needs **`curl_cffi`**. The body can be byte-for-byte what the browser
+    sends and Instagram still answers `{"__ar":1,"error":1357054}`, because it
+    fingerprints the TLS handshake and refuses a Python client before reading
+    the request. `pip install "curl_cffi>=0.7"` — the same package, and the same
+    wall, as the download path.
+  - `doc_id` and `fb_dtsg` are build artefacts Instagram rotates with each
+    bundle. When they go stale the call is refused; the error message names both
+    possibilities rather than reporting an empty feed. `doc_id` is re-read from
+    the bundle (the `PolarisProfilePostsQuery_instagramRelayOperation` module
+    exports it) and `fb_dtsg` comes from the profile page itself.
 
   The media itself is still downloaded by yt-dlp from the single post/reel URL,
   which works. Profile mode also works for YouTube and TikTok.

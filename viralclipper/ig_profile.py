@@ -36,10 +36,26 @@ from urllib.parse import quote
 
 from .util import ClipperError, Logger
 
-#: ``doc_id`` of Instagram web's ``PolarisProfilePostsQuery``. Captured from the
-#: live page in September 2026. There is no API that reports the current value;
-#: when Instagram rotates it, this constant is what has to change.
-PROFILE_DOC_ID = "29015124851429106"
+try:  # pragma: no cover - exercised by the presence or absence of the package
+    from curl_cffi import requests as _curl_requests
+except ImportError:  # pragma: no cover
+    _curl_requests = None
+
+#: Chrome build ``curl_cffi`` imitates. See :func:`_send` for why it is not
+#: optional in practice.
+_IMPERSONATE = "chrome"
+
+#: ``doc_id`` of Instagram web's ``PolarisProfilePostsQuery``. Rotated by the
+#: site, and there is no API that reports the current value — so the way to
+#: refresh it is to read it out of the bundle Instagram is serving right now:
+#:
+#: 1. GET ``https://www.instagram.com/<conta>/`` and collect every ``.js`` URL.
+#: 2. Download them and look for ``PolarisProfilePostsQuery_instagramRelayOperation``.
+#: 3. The module right next to that name exports the id:
+#:    ``a.exports="28379418928391013"``.
+#:
+#: Re-captured that way on 2026-09-26 (previous value: ``29015124851429106``).
+PROFILE_DOC_ID = "28379418928391013"
 
 #: The web app id Instagram's own bundle sends. Not a secret — it ships in the
 #: public JS — but a request without it is treated as a bot.
@@ -399,38 +415,83 @@ def profile_username(raw: str) -> str | None:
     return first.lstrip("@") or None
 
 
+def _send(
+    method: str,
+    url: str,
+    *,
+    data: dict[str, str] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: int = 30,
+) -> tuple[int, str]:
+    """One HTTP round trip, impersonating Chrome whenever curl_cffi is around.
+
+    Plain ``urllib`` cannot talk to Instagram's GraphQL at all. The body can be
+    byte-for-byte what the site itself sends and the answer is still
+    ``{"__ar":1,"error":1357054}``: Instagram fingerprints the TLS handshake and
+    refuses a Python client before it ever looks at the request. ``curl_cffi``
+    reproduces Chrome's fingerprint, which is why ``download.py`` already depends
+    on it for yt-dlp — the wall is the same one, hit from another module.
+
+    Falling back to ``urllib`` is deliberate rather than fatal: it still reads
+    the profile page, so the failure that reaches the user is the one naming
+    curl_cffi instead of an ImportError from three frames down.
+    """
+    headers = dict(headers or {})
+    if _curl_requests is not None:
+        response = _curl_requests.request(
+            method,
+            url,
+            data=data,
+            headers=headers,
+            impersonate=_IMPERSONATE,
+            timeout=timeout,
+        )
+        return response.status_code, response.text
+
+    from urllib.error import HTTPError
+    from urllib.parse import urlencode
+    from urllib.request import Request, urlopen
+
+    body = urlencode(data).encode("utf-8") if data is not None else None
+    request = Request(url, data=body, headers=headers, method=method)
+    try:
+        with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed host
+            return response.status, response.read().decode("utf-8", errors="replace")
+    except HTTPError as exc:
+        return exc.code, exc.read().decode("utf-8", errors="replace")
+
+
 def _http(cookies: dict[str, str], username: str) -> tuple[str, Exception | None]:
     """Fetch the profile page and return (html, error).
 
-    The page is needed for one reason only: the ``lsd`` token. It lives in the
-    HTML of the profile being scraped, so it cannot be fetched once and reused
-    for a different account.
+    The page is needed for two reasons: the ``lsd`` anti-CSRF token and the
+    ``fb_dtsg`` token. Both live in the HTML of the profile being scraped, so
+    they cannot be fetched once and reused for a different account.
     """
-    import urllib.error
-    from urllib.request import Request, urlopen
-
-    request = Request(
-        f"https://www.instagram.com/{username}/",
-        headers={
-            "User-Agent": USER_AGENT,
-            "Accept": "text/html",
-            "Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()),
-        },
-    )
     try:
-        with urlopen(request, timeout=30) as response:  # noqa: S310 - fixed host
-            return response.read().decode("utf-8", errors="replace"), None
-    except urllib.error.HTTPError as exc:
+        status, text = _send(
+            "GET",
+            f"https://www.instagram.com/{username}/",
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept": "text/html",
+                "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+                "Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()),
+            },
+        )
+    except OSError as exc:
         return "", exc
-    except (OSError, urllib.error.URLError) as exc:
-        return "", exc
+    if status >= 400:
+        return "", ClipperError(f"HTTP {status}")
+    return text, None
 
 
-def _fetch_lsd(cookies: dict[str, str], username: str) -> tuple[str, str]:
-    """Return ``(lsd_token, profile_html)``.
+def _fetch_lsd(cookies: dict[str, str], username: str) -> tuple[str, str, str]:
+    """Return ``(lsd_token, fb_dtsg_token, profile_html)``.
 
-    ``/graphql/query`` answers 403 without the token. It is not a cookie, it is
-    not stable across sessions, and it is different for every page load — a
+    ``/graphql/query`` answers 403 without ``lsd`` and a bare
+    ``{"__ar":1,"error":1357054}`` without ``fb_dtsg`` — and neither is a cookie,
+    neither is stable across sessions, and both change on every page load. A
     cheap GET of the profile is the price of every listing run. The HTML comes
     back from the same request, so the display name costs nothing extra.
     """
@@ -446,7 +507,15 @@ def _fetch_lsd(cookies: dict[str, str], username: str) -> tuple[str, str]:
             "Isso acontece quando a sessão expirou ou o Instagram mudou a página. "
             "Reexporte os cookies e tente de novo."
         )
-    return match.group(1), text
+    dtsg = re.search(r'"DTSGInitialData",\[\],\{"token":"([^"]+)"', text)
+    if not dtsg:
+        raise ClipperError(
+            "Não encontrei o token 'fb_dtsg' na página do perfil. Ele é exigido "
+            "pelo /graphql/query, e a página que o traz é a do perfil sendo "
+            "listado. Se isso aparecer com a sessão boa, o Instagram mudou a "
+            "página e o extrator precisa ser atualizado."
+        )
+    return match.group(1), dtsg.group(1), text
 
 
 def _display_name(page_html: str) -> str:
@@ -477,15 +546,12 @@ def _display_name(page_html: str) -> str:
 def _request_page(
     cookies: dict[str, str],
     lsd: str,
+    dtsg: str,
     username: str,
     after: str | None,
     page_size: int,
 ) -> dict:
     """One GraphQL page of the profile feed."""
-    from urllib.error import HTTPError, URLError
-    from urllib.parse import urlencode
-    from urllib.request import Request, urlopen
-
     variables: dict = {
         "data": {
             "count": page_size,
@@ -502,69 +568,125 @@ def _request_page(
     if after:
         variables["after"] = after
 
-    body = urlencode(
-        {
-            "__a": "1",
-            "__d": "www",
-            "__user": "0",
-            "server_timestamps": "true",
-            "dpr": "1",
-            "doc_id": PROFILE_DOC_ID,
-            "variables": json.dumps(variables, separators=(",", ":")),
-            "fb_api_req_friendly_name": FRIENDLY_NAME,
-            "fb_api_caller_class": "RelayModern",
-        }
-    ).encode("utf-8")
+    # The three the call cannot do without, checked by dropping one at a time
+    # against the live endpoint: `doc_id` (else 0 edges), `variables`, and
+    # `fb_dtsg` (else the profile page comes back instead of the feed). `lsd`,
+    # `jazoest` and the two `fb_api_*` names are sent because the site sends
+    # them — they are not what makes or breaks the call.
+    body = {
+        "doc_id": PROFILE_DOC_ID,
+        "variables": json.dumps(variables, separators=(",", ":")),
+        "fb_dtsg": dtsg,
+        "jazoest": _jazoest(dtsg),
+        "lsd": lsd,
+        "fb_api_req_friendly_name": FRIENDLY_NAME,
+        "fb_api_caller_class": "RelayModern",
+        "server_timestamps": "true",
+    }
 
-    request = Request(
-        GRAPHQL_URL,
-        data=body,
-        headers={
-            "User-Agent": USER_AGENT,
-            "X-IG-App-ID": APP_ID,
-            "X-ASBD-ID": "359341",
-            "X-FB-Friendly-Name": FRIENDLY_NAME,
-            "X-FB-LSD": lsd,
-            "X-CSRFToken": cookies.get("csrftoken", ""),
-            "X-Root-Field-Name": ROOT_FIELD,
-            "Origin": "https://www.instagram.com",
-            "Referer": f"https://www.instagram.com/{username}/",
-            "X-Requested-With": "XMLHttpRequest",
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Accept": "*/*",
-            "Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()),
-        },
-        method="POST",
-    )
     try:
-        with urlopen(request, timeout=30) as response:  # noqa: S310 - fixed host
-            raw = response.read().decode("utf-8", errors="replace")
-    except HTTPError as exc:
-        raise ClipperError(_graphql_error(exc.code, username)) from exc
-    except (OSError, URLError) as exc:
+        status, raw = _send(
+            "POST",
+            GRAPHQL_URL,
+            data=body,
+            headers={
+                "User-Agent": USER_AGENT,
+                "X-IG-App-ID": APP_ID,
+                "X-ASBD-ID": "359341",
+                "X-FB-Friendly-Name": FRIENDLY_NAME,
+                "X-FB-LSD": lsd,
+                "X-CSRFToken": cookies.get("csrftoken", ""),
+                "X-Root-Field-Name": ROOT_FIELD,
+                "X-IG-Max-Touch-Points": "0",
+                "Origin": "https://www.instagram.com",
+                "Referer": f"https://www.instagram.com/{username}/",
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "*/*",
+                "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+                "Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()),
+            },
+        )
+    except OSError as exc:
         raise ClipperError(f"Falha de rede ao ler o feed de {username}: {exc}") from exc
 
-    stripped = raw.lstrip()
+    if status >= 400:
+        raise ClipperError(_graphql_error(status, username, raw))
+
+    stripped = _strip_json_guard(raw)
     if not stripped.startswith("{"):
         # An HTML body here means Instagram refused to treat this as an API call.
         raise ClipperError(_graphql_error(0, username, raw))
     try:
-        return json.loads(raw)
+        document = json.loads(stripped)
     except json.JSONDecodeError as exc:
         raise ClipperError(
             f"O Instagram devolveu algo que não é JSON para {username}: {exc}"
         ) from exc
+
+    # A 200 with an `__ar` envelope is how Instagram reports a refused call: the
+    # HTTP layer said nothing, the payload says everything. Without this the
+    # user gets "o feed veio vazio", which names no fix.
+    if isinstance(document, dict) and document.get("error"):
+        raise ClipperError(
+            f"O Instagram recusou a chamada para {username} "
+            f"(erro {document.get('error')}: {document.get('errorSummary') or ''}). "
+            f"{_refusal_hint()}"
+        )
+    return document
+
+
+#: Prefix Instagram puts in front of every ``/graphql/query`` body. It is the
+#: classic anti-JSON-hijacking guard: an ancient browser trick could read a JSON
+#: array through ``<script src>``, and the unparseable prefix breaks it. For a
+#: client it is noise that has to come off before ``json.loads``.
+_JSONP_GUARD = "for (;;);"
+
+
+def _jazoest(dtsg: str) -> str:
+    """The checksum Instagram sends next to ``fb_dtsg``.
+
+    ``2`` followed by the sum of the character codes — it is ``DTSGUtils`` in the
+    bundle, and the endpoint answers without it. Kept because a request that
+    looks like the site's is worth more than the byte it saves.
+    """
+    return "2" + str(sum(ord(ch) for ch in dtsg))
+
+
+def _refusal_hint() -> str:
+    """What to tell the user when the envelope says the call was refused.
+
+    Ordered by what actually happens, and the first one is not a guess: the same
+    body that gets ``error 1357054`` from a Python client returns 12 edges from
+    ``curl_cffi`` impersonating Chrome. Instagram fingerprints the handshake.
+    """
+    hints = []
+    if _curl_requests is None:
+        hints.append(
+            "O curl_cffi NÃO está instalado, e sem ele o Instagram recusa a "
+            "chamada pelo fingerprint do TLS — instale com "
+            'pip install "curl_cffi>=0.7"'
+        )
+    hints.append(
+        "o 'doc_id' da operação PolarisProfilePostsQuery mudou com uma "
+        "atualização do site (o extrator precisa ser atualizado)"
+    )
+    hints.append("o Instagram está limitando requisições — espere alguns minutos")
+    return "Costuma ser uma destas: " + "; ".join(hints) + "."
+
+
+def _strip_json_guard(raw: str) -> str:
+    """``raw`` without the anti-hijacking prefix, ready for ``json.loads``."""
+    stripped = raw.lstrip()
+    if stripped.startswith(_JSONP_GUARD):
+        return stripped[len(_JSONP_GUARD):].lstrip()
+    return stripped
 
 
 def _graphql_error(status: int, username: str, body: str = "") -> str:
     """Explain a refused GraphQL call in terms of what can be fixed."""
     hint = ""
     if status == 403 or "<!DOCTYPE html>" in body[:200]:
-        hint = (
-            " O Instagram recusou a chamada. Normalmente é o 'doc_id' da operação "
-            "PolarisProfilePostsQuery que mudou com uma atualização do site — "
-            "nesse caso o extrator precisa ser atualizado."
-        )
+        hint = f" {_refusal_hint()}"
     elif status == 401 or status == 302:
         hint = " A sessão expirou: reexporte os cookies do Instagram."
     elif status == 429:
@@ -766,7 +888,7 @@ def list_profile(
     """
     username = _normalise_username(profile)
     cookies = resolve_cookies(cookies_file, session)
-    lsd, page_html = _fetch_lsd(cookies, username)
+    lsd, dtsg, page_html = _fetch_lsd(cookies, username)
 
     listing = ProfileListing(username=username, title=_display_name(page_html))
     seen_cursors: set[str] = set()
@@ -774,7 +896,7 @@ def list_profile(
     seen_codes: set[str] = set()
 
     for page_number in range(1, _MAX_PAGES + 1):
-        document = _request_page(cookies, lsd, username, cursor, page_size)
+        document = _request_page(cookies, lsd, dtsg, username, cursor, page_size)
         items, next_cursor = _page_items(document)
         listing.pages = page_number
         added = 0

@@ -12,6 +12,11 @@ yt-dlp>=2024.1.0
 # With curl_cffi installed, yt-dlp can impersonate Chrome and the same request
 # succeeds. Without it, every Instagram URL fails, cookies or not.
 #
+# The profile listing (`ig_profile.py`) hits the same wall on /api/graphql: the
+# request body can be exactly what the browser sends and the answer is still
+# `{"__ar":1,"error":1357054}`. There the package is not optional in practice —
+# with a session and no curl_cffi, --profile cannot list anything.
+#
 #   pip install "curl_cffi>=0.7"
 
 # External binaries (must be available on PATH):

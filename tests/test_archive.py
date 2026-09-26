@@ -134,6 +134,28 @@ class ArchiveLoopTests(unittest.TestCase):
         self.assertEqual(summary.downloaded, 1)
         self.assertEqual([url for url, _ in fetch.calls], ["https://www.instagram.com/x/R1/"])
 
+    def test_a_leftover_fragment_is_not_taken_for_a_download(self):
+        """An interrupted item must be retried, not skipped for good.
+
+        A run killed between the download and the merge leaves
+        ``<name>.fdash-<id><v|a>.<ext>`` on disk, and a bare suffix test reads
+        that as the finished reel: the item is skipped forever while the folder
+        holds half a download.
+        """
+        folder = self.dir / "reels"
+        folder.mkdir(parents=True)
+        (folder / "R1 - R1.fdash-4626875630869503v.mp4").write_bytes(b"video")
+        (folder / "R1 - R1.fdash-1320620103357609a.m4a").write_bytes(b"audio")
+
+        fetch = FakeDownloader()
+        summary = archive_profile(
+            self._listing([item("R1", REELS_DIR)]), self.dir, self.config, downloader=fetch
+        )
+
+        self.assertEqual(summary.skipped, 0)
+        self.assertEqual(len(fetch.calls), 1)
+        self.assertEqual(summary.downloaded, 1)
+
     def test_a_second_pass_skips_what_is_on_disk(self):
         listing = self._listing([item("R1", REELS_DIR), item("R2", REELS_DIR)])
         first = archive_profile(listing, self.dir, self.config, downloader=FakeDownloader())

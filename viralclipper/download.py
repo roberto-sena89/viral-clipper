@@ -312,7 +312,44 @@ def _extract_json_object(text: str, url: str) -> str:
 
 
 def _template(output: str | Path) -> str:
-    return str(Path(output).with_suffix(".%(ext)s"))
+    """The output template, with yt-dlp's ``%(ext)s`` in place of the extension.
+
+    Uses :func:`_stem_of` rather than ``Path.with_suffix``: a caption is free
+    text and may end in something that looks like an extension (``"... top.app"``),
+    which ``with_suffix`` would silently cut off the name the archiver then looks
+    for — an item that fails forever with "did not produce a file".
+    """
+    path = Path(output)
+    return str(path.with_name(_stem_of(path) + ".%(ext)s"))
+
+
+#: Where yt-dlp keeps the fragments of a download while it works. Sits next to
+#: the destination so the move on completion stays inside one volume.
+_FRAGMENT_DIR = ".fragments"
+
+
+def _output_args(destination: Path) -> list[str]:
+    """``-o`` plus the paths that keep yt-dlp's fragments out of the way.
+
+    Without a temp path the fragments land *next to* the finished file, sharing
+    its name minus the last extension. That is a file the resume check and the
+    "biggest file wins" rule both accept as a result (see :func:`is_fragment`),
+    so an item interrupted between the download and the merge becomes a
+    permanent "already there" holding a video-only fragment.
+
+    The template goes out as a bare name with ``home:`` and ``temp:`` carrying
+    the directories, because yt-dlp ignores ``temp:`` for an absolute ``-o`` —
+    the fragments would then land back in the archive folder, which is the whole
+    thing being avoided here.
+    """
+    return [
+        "-o",
+        _template(destination.name),
+        "-P",
+        f"home:{destination.parent.absolute()}",
+        "-P",
+        f"temp:{(destination.parent / _FRAGMENT_DIR).absolute()}",
+    ]
 
 
 #: Language of the throwaway listing that restores the view counts. yt-dlp's
@@ -417,8 +454,7 @@ def download_audio(
             *_base_args(config),
             "-f",
             "bestaudio/best",
-            "-o",
-            _template(destination),
+            *_output_args(destination),
             url,
         ),
         url,
@@ -451,8 +487,7 @@ def download_section(
             "mp4",
             "--download-sections",
             section,
-            "-o",
-            _template(destination),
+            *_output_args(destination),
             url,
         ),
         url,
@@ -497,8 +532,7 @@ def download_media(
             "res,vcodec:h264,acodec:aac",
             "--merge-output-format",
             "mp4",
-            "-o",
-            _template(destination),
+            *_output_args(destination),
             url,
         ),
         url,
@@ -525,8 +559,7 @@ def download_full(
             f"bv*[height<={height}]+ba/b[height<={height}]/bv*+ba/b",
             "--merge-output-format",
             "mp4",
-            "-o",
-            _template(destination),
+            *_output_args(destination),
             url,
         ),
         url,
@@ -535,17 +568,62 @@ def download_full(
     return _resolve_downloaded(destination)
 
 
+def is_fragment(path: Path, stem: str) -> bool:
+    """True when ``path`` is a yt-dlp fragment of ``stem``, not the result.
+
+    yt-dlp writes an intermediate as ``<stem>.<format_id>.<ext>`` and keeps the
+    format id it invented for that stream, so a fragment carries **two** dots
+    where the finished file carries one. The format id never contains a space,
+    and every name this project asks for does (``"<code> - <caption>"``) — which
+    is what separates ``"reel - top.app.mp4"`` (a caption ending in something
+    that looks like an extension) from ``"reel - caption.fdash-123v.mp4"``.
+
+    A suffix test cannot do this: both files end in ``.mp4``, so "the biggest
+    file wins" hands back a video-only fragment when the merge failed, and the
+    caller reports a download that never happened.
+    """
+    if not path.name.startswith(stem + "."):
+        return False
+    tail = path.name[len(stem) + 1 :]
+    head, dot, _ext = tail.rpartition(".")
+    return bool(dot) and bool(head) and " " not in head
+
+
+def _stem_of(destination: Path) -> str:
+    """The part of the requested name that is not the extension.
+
+    ``Path.stem`` would also cut a piece of the name we must keep: the archive
+    asks for ``"<code> - <caption>"`` and a caption is free text that may end in
+    something that looks like an extension (``"... top.app"``). Only a known
+    media extension comes off.
+    """
+    if destination.suffix.lower() in _MEDIA_SUFFIXES:
+        return destination.name[: -len(destination.suffix)]
+    return destination.name
+
+
 def _resolve_downloaded(destination: Path) -> Path:
     """yt-dlp appends its own extension, so find the file that appeared."""
     if destination.exists():
         return destination
-    stem = destination.stem
+    stem = _stem_of(destination)
+    matching = list(destination.parent.glob(f"{stem}.*"))
     candidates = [
         path
-        for path in destination.parent.glob(f"{stem}.*")
+        for path in matching
         if path.suffix.lower() not in _NOT_MEDIA_SUFFIXES
+        and not is_fragment(path, stem)
     ]
     if not candidates:
+        fragments = [path.name for path in matching if is_fragment(path, stem)]
+        if fragments:
+            # The download itself worked; the merge did not. Saying so is the
+            # difference between "retry" and a silent video-only file.
+            raise ClipperError(
+                f"yt-dlp left only fragments of {destination.name} "
+                f"({fragments[0]}) - the merge into a single file failed. "
+                "The item was not downloaded."
+            )
         raise ClipperError(
             f"yt-dlp did not produce a file matching {destination.parent / (stem + '.*')}"
         )
@@ -555,6 +633,20 @@ def _resolve_downloaded(destination: Path) -> Path:
 #: Suffixes yt-dlp leaves behind that are not the media itself. A file named
 #: like a download but ending in one of these is a leftover, not a result.
 _NOT_MEDIA_SUFFIXES = {".part", ".ytdl", ".json", ".temp"}
+
+#: Extensions a finished download can carry. Used to tell "the extension yt-dlp
+#: picked" from "a dot inside the name the user asked for".
+_MEDIA_SUFFIXES = {
+    ".mp4",
+    ".mkv",
+    ".webm",
+    ".mov",
+    ".m4a",
+    ".mp3",
+    ".opus",
+    ".aac",
+    ".ogg",
+}
 
 #: Characters that are unsafe in a filename on Windows. A video title is
 #: attacker-controlled text that ends up in a path, so this is correctness

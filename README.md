@@ -706,6 +706,32 @@ Both the bare value and a whole `Cookie:` header are accepted — the paste is
 normalised before it is stored, so a value DevTools shows percent-decoded still
 goes on the wire in the encoded form the header needs.
 
+### O catálogo do perfil: `reels/` e `posts/`
+
+`--profile` percorre o feed inteiro e grava cada item na pasta do tipo dele:
+
+```
+output/
+  reels/   DYpr3atCXr8 - Comenta "VIRAL" que te mando....mp4
+  posts/   DZ8unfZtbTA - LINK NA BIO ....mp4
+```
+
+A pasta sai do `product_type` do listing, não do download. Um item de foto ou
+carrossel de fotos é pulado **sem chamada de rede** — o listing já sabe que não
+há vídeo, e perguntar ao yt-dlp custaria uma ida e volta por foto para ouvir
+"no video in this post".
+
+**Retomada pelo nome do arquivo.** O shortcode lidera o nome, então "já baixei"
+é um `exists()`, não um manifesto: re-rodar o mesmo `--profile` baixa só o que
+falta, e renomear a legenda à mão não faz o item voltar. Cada falha custa aquele
+item, nunca a rodada.
+
+**`.fragments/`** é onde o yt-dlp guarda os pedaços enquanto baixa. Fica fora da
+pasta do arquivo de propósito: um pedaço se chama
+`<nome>.<id-do-formato>.<ext>` e termina em `.mp4` igual ao resultado, então um
+download interrompido entre o download e a mesclagem seria lido como "já existe"
+— e o item ficaria pulado para sempre segurando meio download.
+
 ### Seleção em lote
 
 Cada resultado tem um checkbox, e a barra acima da lista tem **Selecionar

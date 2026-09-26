@@ -359,6 +359,80 @@ class ResolveDownloadedTests(unittest.TestCase):
             download._resolve_downloaded(self.tmp / "audio.mp4")
 
 
+class FragmentTests(unittest.TestCase):
+    """A yt-dlp fragment must never pass as a finished download.
+
+    yt-dlp names a fragment ``<name>.<format_id>.<ext>``, so it ends in ``.mp4``
+    exactly like the result. A suffix test — or a "the biggest file wins" rule —
+    therefore hands back a video-only fragment when the merge failed and reports
+    a download that never happened.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="download-frag-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.stem = "DYabc - Comenta VIRAL que te mando"
+
+    def test_a_lone_fragment_is_not_a_download(self):
+        (self.tmp / f"{self.stem}.fdash-4626875630869503v.mp4").write_bytes(b"x" * 900)
+        (self.tmp / f"{self.stem}.fdash-1320620103357609a.m4a").write_bytes(b"x" * 100)
+        with self.assertRaises(ClipperError) as ctx:
+            download._resolve_downloaded(self.tmp / self.stem)
+        self.assertIn("fragments", str(ctx.exception))
+
+    def test_the_fragment_does_not_win_over_the_real_file(self):
+        (self.tmp / f"{self.stem}.fdash-4626875630869503v.mp4").write_bytes(b"x" * 9999)
+        (self.tmp / f"{self.stem}.mp4").write_bytes(b"x")
+        self.assertEqual(
+            download._resolve_downloaded(self.tmp / self.stem),
+            self.tmp / f"{self.stem}.mp4",
+        )
+
+    def test_a_caption_ending_like_an_extension_is_not_a_fragment(self):
+        """The name we asked for may carry dots; only the format id never does."""
+        caption = "Ganhe dinheiro com top.app"
+        self.assertFalse(download.is_fragment(self.tmp / f"{caption}.mp4", caption))
+        self.assertTrue(
+            download.is_fragment(self.tmp / f"{caption}.fdash-9v.mp4", caption)
+        )
+
+    def test_the_download_asks_for_a_separate_fragment_folder(self):
+        """Fragments must not land where the finished files live.
+
+        The template has to stay a bare name: yt-dlp ignores ``temp:`` when
+        ``-o`` is absolute, which would put the fragments straight back into the
+        archive folder.
+        """
+        seen: list[list[str]] = []
+
+        def fake_run(cmd, logger=None, on_line=None):
+            seen.append(list(cmd))
+            (self.tmp / "reel.mp4").write_bytes(b"x")
+            return 0, ""
+
+        with patch.object(download.util, "run_streaming_captured", side_effect=fake_run):
+            download.download_media("https://www.instagram.com/reel/x/", self.tmp / "reel",
+                                    make_config())
+
+        args = seen[0]
+        template = args[args.index("-o") + 1]
+        self.assertNotIn("/", template)
+        self.assertNotIn("\\", template)
+        self.assertEqual(template, "reel.%(ext)s")
+        paths = [args[i + 1] for i, a in enumerate(args) if a == "-P"]
+        self.assertIn(f"home:{self.tmp}", paths)
+        self.assertIn(f"temp:{self.tmp / download._FRAGMENT_DIR}", paths)
+
+    def test_a_caption_ending_like_an_extension_keeps_its_tail(self):
+        """``with_suffix`` would cut it: the archiver then looks for a name
+        yt-dlp never wrote and the item fails forever."""
+        self.assertEqual(
+            download._template("reel - ganhe com top.app"),
+            "reel - ganhe com top.app.%(ext)s",
+        )
+        self.assertEqual(download._template("audio.mp4"), "audio.%(ext)s")
+
+
 class BaseArgsTests(unittest.TestCase):
     def test_no_playlist_is_always_set(self):
         self.assertIn("--no-playlist", download._base_args(make_config()))

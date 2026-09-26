@@ -127,15 +127,25 @@ def _already_there(folder: Path, item: ProfileItem) -> Path | None:
     Matching on the shortcode prefix rather than the exact filename is what
     makes the skip check survive an edited caption, a changed slug length or a
     user who renamed the tail by hand.
+
+    Fragments are not results. A run interrupted between the download and the
+    merge leaves ``<name>.fdash-<id><v|a>.<ext>`` behind, and a bare suffix test
+    reads that as the finished reel — the item is then skipped forever while the
+    folder holds half a download. ``_FRAGMENT_DIR`` keeps new ones out of the
+    way; this keeps the ones already on disk from counting.
     """
     if not folder.is_dir():
         return None
     prefix = item.code or item.pk
     if not prefix:
         return None
+    expected = item_filename(item)
     for candidate in folder.glob(f"{prefix}*"):
-        if candidate.is_file() and candidate.suffix.lower() == ".mp4":
-            return candidate
+        if not candidate.is_file() or candidate.suffix.lower() != ".mp4":
+            continue
+        if download.is_fragment(candidate, expected[: -len(".mp4")]):
+            continue
+        return candidate
     return None
 
 

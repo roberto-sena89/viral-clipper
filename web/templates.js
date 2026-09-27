@@ -150,10 +150,20 @@
     x: {
       label: "Twitter / X", name: "x-reacao", preset: "bold-box", layout: "",
       desc: "Print do post em cima, vídeo reagindo embaixo — formato reação.",
+      // 26/74 e nao 34/66: o cartao do post e contexto, nao o conteudo. Com um
+      // terco da tela a area branca ficava esparsa — avatar, nome e frase nadavam
+      // num bloco enorme, e o video, que e o que a pessoa esta vendo, ficava com
+      // dois tercos. Em 26% o bloco do post fica denso, como numa captura de tela
+      // de verdade, e o video ganha o que importa.
+      //
+      // 26% tambem e o piso do cartao caber: com avatar, nome e DUAS linhas do
+      // texto (o pior caso, a 1080px) o conteudo ocupa ~464px, e a faixa sobra
+      // menos que isso abaixo de ~28% — o texto passaria a ser cortado. Com uma
+      // linha só, a folga sobra dos dois lados.
       zones: [
-        { kind: "image", mock: "tweet", fraction: 0.34, fit: "contain", frameAt: 0, source: "",
+        { kind: "image", mock: "tweet", fraction: 0.26, fit: "contain", frameAt: 0, source: "",
           marginTop: 1.2, marginBottom: 1.2, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" },
-        { kind: "video", fraction: 0.66, fit: "cover", frameAt: 0, source: "",
+        { kind: "video", fraction: 0.74, fit: "cover", frameAt: 0, source: "",
           marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0, radius: 0, color: "black" }
       ]
     },
@@ -3809,7 +3819,13 @@
     $("#tpl-preset").value = state.preset;
     renderPresetHint();
 
-    addCaptionsZone();
+    // O formato de partida e o Twitter/X, e ele entra pelo MESMO caminho do card
+    // da galeria — `loadGallery("x")`, que ja traz nome, preset, zonas, o mock
+    // do cartao e o desligamento de legenda e headline. Copiar esses campos para
+    // dentro do literal de `state` criaria duas verdades: mexer no card X nao
+    // mudaria o padrao, e as duas copias divergiriam sem nenhum teste acusar.
+    // Aqui o padrao E o card, por construcao.
+    loadGallery("x");
 
     $("#btn-add-zone").addEventListener("click", addZone);
     $("#btn-balance").addEventListener("click", balance);

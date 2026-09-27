@@ -1696,6 +1696,45 @@ class TemplatesPageTests(unittest.TestCase):
             "web/templates.html is missing",
         )
 
+    def test_the_post_card_stays_context_and_the_video_gets_the_frame(self):
+        """O cartão do post é contexto; o vídeo é o conteúdo. 26/74.
+
+        A 34/66 a área branca do post ocupava um terço da tela e ficava esparsa —
+        avatar, nome e frase nadando num bloco enorme — enquanto o vídeo, que é
+        o que a pessoa está vendo, ficava com dois terços. O cartão também tem um
+        PISO: com avatar, nome e duas linhas do texto (o pior caso, a 1080px) o
+        conteúdo ocupa ~464px, e abaixo de ~28% a faixa sobra menos que isso e o
+        texto é cortado. Por isso a fração é testada, e não só o par fechando 1.
+        """
+        import re
+
+        cartao = re.search(
+            r'kind: "image", mock: "tweet", fraction: ([\d.]+),', self.page)
+        video = re.search(
+            r'kind: "video", fraction: ([\d.]+), fit: "cover", frameAt: 0, source: "",\n'
+            r"\s*marginTop: 0, marginBottom: 0", self.page)
+        self.assertIsNotNone(cartao, "o cartao do post sumiu do formato X")
+        self.assertIsNotNone(video, "a faixa de video do formato X sumiu")
+        cartao_pct = float(cartao.group(1)) * 100
+        video_pct = float(video.group(1)) * 100
+        self.assertAlmostEqual(cartao_pct + video_pct, 100, places=6)
+        self.assertLessEqual(cartao_pct, 26.0, "o cartao do post voltou a tomar a tela")
+        self.assertGreaterEqual(video_pct, 74.0, "o video perdeu area")
+
+    def test_the_twitter_x_is_the_format_the_panel_opens_on(self):
+        """O formato de partida e o X, e ele entra pelo caminho do card.
+
+        ``loadGallery("x")`` na partida, e nao os campos copiados para o literal
+        de ``state``: uma copia divergiria do card sem nenhum teste acusar, e o
+        arrasto do cartao do tweet — que vive no offset da zona, e nao em um
+        campo solto — so ficaria coerente quem compartilha o caminho do card.
+        """
+        self.assertIn('loadGallery("x");', self.page)
+        # E ele tem que ser carregado DEPOIS do `<select>` de existir, porque a
+        # funcao escreve nele — a ordem invertida deixaria o preset vazio.
+        init = self.page.split("function init() {", 1)[1]
+        self.assertLess(init.index("Object.keys(PRESETS)"), init.index('loadGallery("x")'))
+
     def test_the_page_lists_every_shipped_preset(self):
         from viralclipper import caption_presets
 
@@ -2496,11 +2535,28 @@ class TemplatesGeometryTests(unittest.TestCase):
 
         from viralclipper import template as template_mod
 
-        def margens(fracao: str, kind: str) -> list[str]:
+        def margens_no_card(card: str, kind: str) -> list[str]:
+            # Escopo no BLOCO do card do GALLERY, e nao na pagina inteira. Sem
+            # isso o `[\s\S]` preguiçoso atravessa os cards e casa a margem da
+            # zona errada — e a fracao deixou de servir de ancora quando o X
+            # passou para 26%, a MESMA do Meme: dois cards, uma fracao, margens
+            # opostas (a do X e a unica com respiro embaixo).
+            #
             # `[\s\S]` e nao `.`: a zona e um literal de varias linhas e pode ter
             # um comentario `//` entre o `kind:` e o `marginTop:`. Como e
-            # preguicoso, ele para no primeiro `marginTop:` depois do `fraction:`,
-            # que e sempre o da propria zona.
+            # preguicoso, ele para no primeiro `marginTop:` depois do `kind:`, que
+            # e sempre o da propria zona.
+            bloco = self.page.split(card + ": {", 1)[1].split("\n    }", 1)[0]
+            achados = re.findall(
+                r'kind: "' + kind + r'",[\s\S]*?marginTop: ([\d.]+), marginBottom: ([\d.]+),',
+                bloco)
+            return [f"top={a} bottom={b}" for a, b in achados]
+
+        def margens_na_pagina(kind: str, fracao: str) -> list[str]:
+            # Para a zona que NAO vive num card do GALLERY: o frame do
+            # split-card, que esta no estado padrao e no `loadSplitCard`. Aqui a
+            # fracao e a ancora, porque nao ha bloco para delimitar e a busca
+            # casaria em qualquer lugar da pagina.
             achados = re.findall(
                 r'kind: "' + kind + r'",[\s\S]*?fraction: ' + fracao
                 + r"[\s\S]*?marginTop: ([\d.]+), marginBottom: ([\d.]+),",
@@ -2508,11 +2564,25 @@ class TemplatesGeometryTests(unittest.TestCase):
             return [f"top={a} bottom={b}" for a, b in achados]
 
         # Zonas de mídia na base: respiro em cima, zero embaixo.
-        for kind, fracao in (("frame", r"0\.38"), ("image", r"0\.26"), ("image", r"0\.40")):
-            achados = margens(fracao, kind)
-            self.assertTrue(achados, f"nenhuma zona {kind}/{fracao} encontrada")
+        alvos = [
+            ("split-card", margens_na_pagina("frame", r"0\.38")),
+            ("meme", margens_no_card("meme", "image")),
+            ("viral", margens_no_card("viral", "image")),
+        ]
+        for card, achados in alvos:
+            self.assertTrue(achados, f"{card}: nenhuma zona de midia encontrada")
             for item in achados:
-                self.assertIn("bottom=0", item, f"{kind} {fracao}: {item}")
+                self.assertIn("bottom=0", item, f"{card}: {item}")
+
+        # E o X nao entra na lista de proposito: la a imagem e a PRIMEIRA faixa,
+        # e o respiro embaixo e o vao que a separa do video que vem abaixo. Com
+        # a fracao colidindo com a do Meme, e o bloco do card que separa os dois
+        # casos — sem ele, o X herdaria a regra da base e o vao sumiria.
+        x = margens_no_card("x", "image")
+        self.assertTrue(x, "o X nao tem zona de imagem")
+        for item in x:
+            self.assertNotIn("bottom=0", item,
+                             f"o X perdeu o vao entre o post e o video: {item}")
 
         # A zona nova entra antes da legenda, ou seja na base: mesma regra.
         self.assertIn(

@@ -55,6 +55,11 @@ FIT_MODES = ("cover", "contain")
 TEXT_ALIGNS = ("left", "center", "right")
 TEXT_VALIGNS = ("top", "middle", "bottom")
 
+# The zone kinds that paint a PLATE behind their band, and therefore the only
+# ones that accept ``plate_image``. ``solid`` and ``text`` share the plate code
+# path in :func:`compose`, so the key means the same thing on both.
+PLATE_KINDS = ("solid", "text")
+
 # A zone fraction is meaningless below this; refusing it early beats producing a
 # 2-pixel band that ffmpeg crops to nothing.
 MIN_ZONE_FRACTION = 0.02
@@ -95,11 +100,29 @@ class Zone:
     fit: str = "cover"
     # Flat colour for ``solid``, and the letterbox colour for ``contain``.
     color: str = "black"
+    # Path to a still that REPLACES the flat plate of a ``text``/``solid`` band:
+    # a paper texture, a paint stroke, a logo. It is a separate ffmpeg input and
+    # goes through the same ``scale_into`` as any other still, which is what
+    # makes ``fit`` mean the same thing here as on an ``image`` zone (cover fills
+    # and crops; contain keeps the whole picture and lets ``color`` fill the
+    # letterbox). Absent or empty = the flat plate, so every existing template
+    # keeps the graph it had.
+    plate_image: str | None = None
     # Fractions of the canvas, applied inside the band.
     margin_top: float = 0.0
     margin_bottom: float = 0.0
     margin_left: float = 0.0
     margin_right: float = 0.0
+    # Deslocamento da FAIXA inteira, em fracao da altura do quadro: 0 e a posicao
+    # do empilhamento (a soma das fracoes acima), positivo desce, negativo sobe.
+    #
+    # E o que faz a zona de texto descer sem arrastar as outras. O empilhamento
+    # da posicao — cada faixa comeca onde a anterior acaba — e o que impede o
+    # usuario de escolher ONDE a faixa fica: mudar a fracao move tudo abaixo, e
+    # nao da para "puxar a faixa do meio para baixo" sem trocar a ordem das
+    # zonas. Aqui a faixa sai do lugar e a area que ela deixa vira fundo do
+    # template, que e a mesma conta que as margens ja faziam.
+    band_dy: float = 0.0
     # Rounded corners for a still band, in canvas-width fraction. 0 keeps it
     # square; ffmpeg has no cheap rounded-rect crop, so a rounded zone is drawn
     # by compositing the still over a colour plate with an alpha mask.
@@ -184,6 +207,23 @@ class Zone:
                     f"{where}: text_outline nao pode ser negativo, "
                     f"recebido {self.text_outline}."
                 )
+        # ``plate_image`` is the plate of a band, so only the two kinds that PAINT
+        # a plate can carry one. Accepting it on a ``video`` or ``image`` zone
+        # would be a key that loads, validates, serialises and does nothing —
+        # exactly the silent-typo failure the unknown-key check exists to stop.
+        if self.plate_image is not None and self.kind not in PLATE_KINDS:
+            raise ClipperError(
+                f"{where}: plate_image so existe em zona "
+                f"{' ou '.join(PLATE_KINDS)}."
+            )
+        if self.plate_image is not None and not self.plate_image.strip():
+            # An empty string is what an unfilled form field posts. Treating it
+            # as "no plate" would be friendlier, but it would also make
+            # ``plate_image = ""`` and an absent key mean the same thing in the
+            # file, and the file is written by the panel: one spelling per state.
+            raise ClipperError(
+                f"{where}: plate_image vazio; apague a chave para voltar a placa de cor."
+            )
         if self.corner_radius < 0:
             raise ClipperError(f"{where}: corner_radius nao pode ser negativo.")
         if self.zoom is not None and self.zoom < 1:
@@ -197,6 +237,16 @@ class Zone:
             raise ClipperError(
                 f"{where}: margens verticais somam {total_margin:.2f} da faixa; "
                 "nao sobra imagem."
+            )
+        # O deslocamento e uma fracao do QUADRO, e o limite nao e arbitrario: uma
+        # faixa so pode descer ate a base do quadro e subir ate o topo sem sair.
+        # `band_dy` nao consegue respeitar isso sozinho (nao conhece a posicao nem
+        # a altura da faixa), entao este e o teto grosso e a checagem fina fica em
+        # `plan_bands` — que e onde os dois numeros existem.
+        if not -1.0 <= self.band_dy <= 1.0:
+            raise ClipperError(
+                f"{where}: band_dy precisa ficar entre -1 e 1 (fracao da altura "
+                f"do quadro), recebido {self.band_dy}."
             )
 
 
@@ -214,8 +264,14 @@ class Template:
     description: str = ""
     zones: tuple[Zone, ...] = ()
     caption_preset: str | None = None
+    # ``False`` desliga a legenda queimada do clip. E um campo separado do
+    # ``caption_preset`` porque o desligamento nao e um visual: e o
+    # ``caption_style = "none"`` do config, e o preset continua valendo para o
+    # texto das faixas de headline. ``None`` nao mexe em nada.
+    captions: bool | None = None
     layout: str | None = None
     headline_seconds: float | None = None
+    headline_text: str | None = None
     headline_align: str | None = None
     headline_font_size: int | None = None
     headline_margin_side: int | None = None
@@ -293,6 +349,10 @@ class Template:
             raise ClipperError(
                 f"Template '{self.name}': caption_box_theme precisa ser light ou dark."
             )
+        if self.captions is not None and not isinstance(self.captions, bool):
+            raise ClipperError(
+                f"Template '{self.name}': captions precisa ser true ou false."
+            )
 
     @property
     def video_zone(self) -> Zone | None:
@@ -328,8 +388,11 @@ SPLIT_CARD = Template(
             kind="frame",
             fraction=0.38,
             fit="cover",
+            # Respiro SO em cima: e o vao que separa o video do cartao. A margem
+            # de baixo e zero de proposito — ela aparecia como uma faixa preta
+            # solta antes da borda da tela, sem nada abaixo para separar.
             margin_top=0.012,
-            margin_bottom=0.012,
+            margin_bottom=0.0,
             margin_left=0.03,
             margin_right=0.03,
             corner_radius=0.035,
@@ -429,6 +492,18 @@ def plan_bands(template: Template, width: int, height: int) -> list[Band]:
         # Give the last pixel-hungry zone whatever integer rounding left over so
         # the bands always tile the canvas exactly. The leftover is even whenever
         # the canvas is, so the band stays on the chroma grid.
+        # O `band_dy` tira a faixa do empilhamento: `cursor` segue somando como se
+        # nada tivesse movido (e as faixas de baixo NAO se mexem — e o ponto), e
+        # so o retangulo desta sai do lugar. A area que ela deixa vaza mostra o
+        # fundo do template, pelo mesmo motivo que uma margem vazia mostra.
+        #
+        # O deslocamento e limitado ao alcance real: a faixa nao pode descer alem
+        # da base nem subir acima do topo. Cortar aqui — em vez de deixar o
+        # `overlay` do ffmpeg receber uma `y` negativa — e o que evita um render
+        # que sai com codigo 0 e uma faixa cortada sem aviso.
+        dy = round(height * zone.band_dy)
+        band_y = _even(cursor + dy)
+        band_y = min(max(band_y, 0), max(0, height - band_height))
         if zone is template.zones[-1] and cursor + band_height != height:
             band_height = height - cursor
         # Each of the four inner measures is snapped to the grid on its own.
@@ -438,7 +513,9 @@ def plan_bands(template: Template, width: int, height: int) -> list[Band]:
         # free. The margins are the gutter, so the pixel of rounding error comes
         # out of the gutter and never out of the picture.
         inner_x = x = _even(round(width * zone.margin_left))
-        inner_y = _even(cursor + round(height * zone.margin_top))
+        # O interno acompanha a faixa: com o `band_dy`, a margem de cima e a
+        # respiro somam sobre a posicao nova, e nao sobre a do empilhamento.
+        inner_y = _even(band_y + round(height * zone.margin_top))
         inner_width = max(2, _even(width - x - round(width * zone.margin_right)))
         inner_height = max(
             2,
@@ -448,7 +525,7 @@ def plan_bands(template: Template, width: int, height: int) -> list[Band]:
             Band(
                 kind=zone.kind,
                 x=0,
-                y=cursor,
+                y=band_y,
                 width=width,
                 height=band_height,
                 inner_x=inner_x,
@@ -619,7 +696,7 @@ def compose(
         # ``image`` and ``frame`` both draw a still, which is always a separate
         # ffmpeg input - never the canvas built so far. Feeding a still zone the
         # running composite would nest the video band inside its own poster.
-        if zone.kind in {"image", "frame"}:
+        if zone.kind in {"image", "frame"} or zone.plate_image:
             source = f"{image_index}:v"
             image_index += 1
 
@@ -627,14 +704,22 @@ def compose(
         first = current is None
 
         if zone.kind == "solid" or zone.kind == "text":
-            # A text zone's band is a flat plate like ``solid``: the words are
-            # burned later by libass, which is the only stage that knows about
-            # fonts. The plate is what makes the text legible over anything, and
-            # it is the reason the zone carries a ``color``.
-            parts.append(
-                f"color=c={zone.color}:s={band.inner_width}x{band.inner_height}"
-                f":d=1,format=yuva420p,setsar=1[{label}s]"
-            )
+            if zone.plate_image:
+                # A textured plate is a still, so it reads the input above and
+                # goes through the SAME ``scale_into`` as an image zone. Sharing
+                # the function is what makes ``fit`` mean one thing across the
+                # page: cover fills the band and crops the overflow, contain
+                # keeps the whole picture and lets ``color`` fill the letterbox.
+                parts.append(scale_into(band, zone, source) + f"[{label}s]")
+            else:
+                # A text zone's band is a flat plate like ``solid``: the words are
+                # burned later by libass, which is the only stage that knows about
+                # fonts. The plate is what makes the text legible over anything, and
+                # it is the reason the zone carries a ``color``.
+                parts.append(
+                    f"color=c={zone.color}:s={band.inner_width}x{band.inner_height}"
+                    f":d=1,format=yuva420p,setsar=1[{label}s]"
+                )
             drawn = f"{label}s"
         else:
             parts.append(scale_into(band, zone, source) + f"[{label}s]")
@@ -689,6 +774,21 @@ def compose(
 # --- template files -------------------------------------------------------
 
 
+def _optional_bool(data: dict[str, Any], key: str) -> bool | None:
+    """Read a boolean switch, keeping "absent" distinct from "false".
+
+    A three-state switch (``None`` = the caller decides) cannot go through
+    ``bool()``: a typo like ``captions = "sim"`` would quietly become ``True``.
+    Anything that is not a real bool is a hard error, same as an unknown key.
+    """
+    if key not in data:
+        return None
+    value = data[key]
+    if not isinstance(value, bool):
+        raise ClipperError(f"'{key}' precisa ser true ou false, recebido {value!r}.")
+    return value
+
+
 def from_dict(data: dict[str, Any], *, name: str | None = None) -> Template:
     """Build a template from a parsed config mapping.
 
@@ -701,8 +801,10 @@ def from_dict(data: dict[str, Any], *, name: str | None = None) -> Template:
         "description",
         "zones",
         "caption_preset",
+        "captions",
         "layout",
         "headline_seconds",
+        "headline_text",
         "headline_align",
         "headline_font_size",
         "headline_margin_side",
@@ -732,10 +834,12 @@ def from_dict(data: dict[str, Any], *, name: str | None = None) -> Template:
             "frame_at",
             "fit",
             "color",
+            "plate_image",
             "margin_top",
             "margin_bottom",
             "margin_left",
             "margin_right",
+            "band_dy",
             "corner_radius",
             "zoom",
             "pan_x",
@@ -769,6 +873,7 @@ def from_dict(data: dict[str, Any], *, name: str | None = None) -> Template:
         caption_preset=data.get("caption_preset"),
         layout=data.get("layout"),
         headline_seconds=data.get("headline_seconds"),
+        headline_text=data.get("headline_text"),
         headline_align=data.get("headline_align"),
         headline_font_size=data.get("headline_font_size"),
         headline_margin_side=data.get("headline_margin_side"),
@@ -777,6 +882,7 @@ def from_dict(data: dict[str, Any], *, name: str | None = None) -> Template:
         reframe_pan_y=data.get("reframe_pan_y"),
         caption_box_theme=data.get("caption_box_theme"),
         progress_bar=data.get("progress_bar"),
+        captions=_optional_bool(data, "captions"),
         background=str(data.get("background") or "black"),
     )
     template.validate()
@@ -844,6 +950,12 @@ def apply_to_config(config, template: Template):
         overrides["layout"] = template.layout
     if template.headline_seconds is not None:
         overrides["headline_seconds"] = template.headline_seconds
+    if template.headline_text:
+        # Só string CHEIA. Um campo vazio no .toml significa "deixa o motor
+        # derivar do corte" (o `headline_text` do config é None justamente para
+        # isso), então uma string vazia aqui passaria a apagar o texto que o
+        # usuário digitou na linha de comando.
+        overrides["headline_text"] = template.headline_text
     if template.headline_align is not None:
         overrides["headline_align"] = template.headline_align
     if template.headline_font_size is not None:
@@ -860,6 +972,13 @@ def apply_to_config(config, template: Template):
         overrides["caption_box_theme"] = template.caption_box_theme
     if template.progress_bar is not None:
         overrides["progress_bar"] = template.progress_bar
+    if template.captions is not None and not template.captions:
+        # Desligar e sempre uma ordem, e o motor tem um valor pronto para isso:
+        # ``caption_style = "none"``. Religar pelo template NAO e, porque não
+        # existe valor "volta ao que eu tinha" — chutar "karaoke" apagaria um
+        # ``--caption-style block`` escolhido na linha de comando sem o usuário
+        # ter pedido. Quem religa é o painel da web, omitindo a chave.
+        overrides["caption_style"] = "none"
     if not overrides:
         return config
     return replace(config, **overrides)
@@ -887,5 +1006,13 @@ def describe(template: Template, width: int, height: int) -> str:
                 f"           texto ancorado em ({x},{y}) an={an} "
                 f"size={band.zone.text_size:.3f} align={band.zone.text_align}"
                 f"/{band.zone.text_valign}"
+            )
+        if band.zone.plate_image:
+            # The plate is a file, not a colour, so the colour alone no longer
+            # describes the band: saying which file the render will read is the
+            # difference between a useful summary and a misleading one.
+            lines.append(
+                f"           placa={band.zone.plate_image} "
+                f"fit={band.zone.fit} (cor {band.zone.color} no letterbox)"
             )
     return "\n".join(lines)

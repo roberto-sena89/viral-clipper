@@ -14,7 +14,7 @@ ffmpeg runs with ``cwd`` set to the per-clip work directory, which keeps the
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from . import caption_presets, reframe, template as template_mod, util
@@ -596,13 +596,39 @@ def _apply(filters: str, extra: str) -> str:
 
 
 def len_for_compose(template) -> int:
-    """Count the zones a template actually draws.
+    """Count the input streams a template actually draws.
 
     ``captions`` never draws a band (libass positions the text absolutely), so
     a template of one video zone plus captions needs no composer at all and
-    keeps the original single-stream render path.
+    keeps the original single-stream render path. A plate image is not a band but
+    it IS a stream, so it counts: a lone video zone with a textured plate behind
+    it cannot be rendered by the plain layout filter, which only ever produces
+    one full-canvas stream.
     """
-    return sum(1 for zone in template.zones if zone.kind != "captions")
+    streams = 0
+    for zone in template.zones:
+        if zone.kind == "captions":
+            continue
+        streams += 1
+        if zone.kind in {"solid", "text"} and zone.plate_image:
+            streams += 1
+    return streams
+
+
+def _resolve_plate_path(written: str, output_dir: Path) -> Path | None:
+    """Locate a ``plate_image`` on disk, or ``None``.
+
+    Same resolution order as an ``image`` zone's ``source``: an absolute path is
+    taken as written, a relative one is read from the output directory, because
+    that is the folder the rest of the template's assets are relative to.
+    """
+    text = (written or "").strip()
+    if not text:
+        return None
+    candidate = Path(text)
+    if not candidate.is_absolute():
+        candidate = Path(output_dir) / candidate
+    return candidate if candidate.is_file() else None
 
 
 def _template_stills(
@@ -613,18 +639,42 @@ def _template_stills(
     work: Path,
     clip_start: float,
     logger: Logger | None,
-) -> list[str]:
+) -> tuple[list[str], tuple]:
     """Resolve every still a template needs, in zone order.
 
     ``image`` zones use their own file; ``frame`` zones get one grabbed from the
-    clip. A zone whose still cannot be produced falls back to the clip video
-    rather than failing the render, so a missing logo file degrades the look
-    instead of costing the whole clip. An ``image`` zone with NO file at all is
-    the same case, and a deliberate one: a gallery template opens with its
-    identity band unset, and refusing it would mean refusing the template.
+    clip; a zone carrying ``plate_image`` uses that file as its plate. A zone
+    whose still cannot be produced falls back to the clip video rather than
+    failing the render, so a missing logo file degrades the look instead of
+    costing the whole clip. An ``image`` zone with NO file at all is the same
+    case, and a deliberate one: a gallery template opens with its identity band
+    unset, and refusing it would mean refusing the template.
+
+    Returns ``(inputs, zones)``. The zones come back with unusable plates
+    REMOVED, and that is the whole reason they are returned at all:
+    :func:`compose` decides which zones consume a still input by reading
+    ``plate_image`` off the zone, so a plate that fails to resolve here has to
+    stop existing there too. Degrading the plate to a colour while leaving the key
+    in place would shift every input after it by one, and the identity bar below
+    would read the plate's file.
     """
     inputs: list[str] = []
+    zones: list = []
     for index, zone in enumerate(template.zones):
+        if zone.kind in {"solid", "text"} and zone.plate_image:
+            candidate = _resolve_plate_path(zone.plate_image, config.output_dir)
+            if candidate is not None:
+                inputs.append(str(candidate.resolve()))
+                zones.append(zone)
+                continue
+            if logger:
+                logger.warn(
+                    f"Placa da zona {index + 1} nao encontrada: {zone.plate_image}; "
+                    "a faixa volta a ser cor."
+                )
+            zones.append(replace(zone, plate_image=None))
+            continue
+        zones.append(zone)
         if zone.kind == "image":
             written = (zone.source or "").strip()
             candidate = Path(written) if written else None
@@ -656,7 +706,7 @@ def _template_stills(
                 logger=logger,
             )
             inputs.append(str(grabbed.resolve() if grabbed else Path(source).resolve()))
-    return inputs
+    return inputs, tuple(zones)
 
 
 def _focus_crop_x(
@@ -766,9 +816,14 @@ def render_clip(
     )
     extra_inputs: list[str] = []
     if zones_need_composing:
-        extra_inputs = _template_stills(
+        extra_inputs, resolved_zones = _template_stills(
             template, config, ffmpeg, source, work / "zones", seek_start, logger
         )
+        # The zones come back with unusable plates stripped, so the graph is built
+        # from the SAME template the input list describes. Building it from the
+        # original would make ``compose`` count a still input the list no longer
+        # has, and every zone below the plate would read the file above it.
+        template = replace(template, zones=resolved_zones)
         compose_graph, compose_label = template_mod.compose(
             template,
             config.width,

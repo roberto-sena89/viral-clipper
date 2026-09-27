@@ -724,13 +724,23 @@ The server serves `web/index.html` and exposes:
   lines, or `{"error": ...}`.
 - `GET /status` — current queue and generated clips.
 - `GET /clips/<relpath>` — serves a rendered clip from `output/`.
-- `GET /templates` — the template wizard (`web/templates.html`), a 7-step
+- `GET /templates` — the template wizard (`web/templates.html`), an 8-step
   editor with a live 9:16 preview that writes a `.toml` and the matching
   command. The preview recomputes the zone geometry with the same rules as
   `template.plan_bands`, and `tests/test_web_server.py` fails if the page's
   catalog drifts from the engine's. Its canvas is an editor: items are dragged
   in place, nudged with the arrow keys or the H/V fields, and a `text` zone is
   typed straight onto the preview.
+- Step 2, **Cores da frase**, is a palette for the central phrase: eight named
+  colours plus a free field, all writing the same `text_color` the zone editor
+  edits, so the preview, the gallery card and the `.toml` move together. What it
+  adds over an `<input type="color">` is the **contrast readout**: the ratio is
+  measured against the *plate* (the background the phrase is burned on), using
+  the WCAG formula, and 4.5:1 / 3:1 are the two floors the label names. With an
+  image plate there is no known background, and the tab says so instead of
+  printing a number it cannot justify. The whole section hides on formats with
+  no text zone — there is no phrase to colour, and a live control that writes
+  where the preview does not read is an invisible adjustment.
 - `GET /templates/catalog` — the presets, zone kinds and built-in templates, read
   from `viralclipper` rather than duplicated in the page.
 - `GET /templates/plates` — the ready-made text plates in `web/fundo titulo/`,

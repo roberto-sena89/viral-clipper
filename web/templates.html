@@ -253,15 +253,17 @@
                 Zerar posições
               </button>
               <button type="button" class="btn btn-sm pressable" id="tw-save-id-offset">
-                Salvar avatar e título como padrão
+                Salvar avatar, título e texto como padrão
               </button>
             </div>
             <p class="hint" style="margin:8px 0 0">
-              <strong>Salvar como padrão</strong> grava a posição atual do avatar e
-              do título <strong>no template carregado</strong>: carregar o formato de
-              novo, e o botão <em>Zerar posições</em>, passam a devolver este ponto.
-              Não mexe no texto do tweet nem no POV, e não vai para o <code>.toml</code> —
-              a barra de identidade é só desenho da prévia.
+              <strong>Salvar como padrão</strong> grava a posição atual do avatar, do
+              título e do texto do post <strong>no template carregado</strong> e no
+              navegador: carregar o formato de novo, recarregar a página, e o botão
+              <em>Zerar posições</em>, passam a devolver este ponto. O texto do post só
+              entra nos formatos que o desenham — no Meme ele não existe. Nada disso
+              vai para o <code>.toml</code>: a barra de identidade é só desenho da
+              prévia.
             </p>
           </div>
         </div>
@@ -570,9 +572,56 @@
 
       
 
-      <!-- PASSO 2 — ZONAS -->
+      <!-- PASSO 2 — CORES DA FRASE -->
+      <!-- Uma aba so para a cor da frase. A cor ja era editavel no passo de Zonas
+           (`<input type="color">`), e um seletor de cor do sistema nao ajuda a
+           escolher: ele abre o SO Windows, nao a paleta do canal, e nao mostra a
+           cor ao lado das outras. A paleta aqui e a lista de cores que o publico
+           deste formato usa, cada uma no seu quadradinho, com o nome escrito. -->
       <section class="card" data-step="1" hidden>
-        <h2><span class="ico">2</span> Zonas</h2>
+        <h2><span class="ico">2</span> Cores da frase</h2>
+        <p class="card-sub">
+          A cor com que a frase central é queimada. É a <code>text_color</code> da
+          zona de texto, a mesma chave que o editor de zonas edita — escolher aqui
+          move a prévia, o card da galeria e o <code>.toml</code> junto.
+        </p>
+
+        <!-- Só existe para quem tem zona de texto. Nos formatos sem ela (o X) não
+             há o que colorir, e um controle visível escrevendo num lugar que a
+             prévia não lê é ajuste invisível. -->
+        <div class="tool-box tw-box" id="phrase-color-box" hidden>
+          <div class="mini-label">Paleta</div>
+          <p class="hint" style="margin:0 0 10px">
+            Clique num quadradinho. A escolha vale para a
+            <strong>frase central</strong> — a faixa de texto que o motor queima
+            no meio do quadro.
+          </p>
+          <div class="swatch-strip" id="phrase-color-strip" role="radiogroup"
+               aria-label="Cores da frase"></div>
+          <span class="hint" id="phrase-color-hint"></span>
+
+          <!-- A paleta nao fecha o espaço de cor: quem tem uma cor de marca vai
+               digita-la. O campo e o MESMO ajuste, e por isso ele espelha a
+               escolha da paleta em vez de ter estado proprio. -->
+          <div class="field" style="margin-top:12px">
+            <label for="phrase-color-custom">Outra cor</label>
+            <div class="phrase-color-custom">
+              <input type="color" id="phrase-color-swatch" aria-label="Escolher uma cor">
+              <input type="text" id="phrase-color-custom" spellcheck="false"
+                     placeholder="#ffffff ou yellow">
+            </div>
+            <span class="hint">
+              O mesmo valor, escrito à mão. A cor da placa é outra coisa: ela é o
+              <strong>fundo</strong>, e mora no campo <em>Cor da placa</em> do
+              painel do gancho.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <!-- PASSO 3 — ZONAS -->
+      <section class="card" data-step="2" hidden>
+        <h2><span class="ico">3</span> Zonas</h2>
         <p class="card-sub">
           As faixas horizontais que formam o quadro, de cima para baixo. As
           fracoes precisam somar exatamente <strong>100%</strong> — a faixa de
@@ -589,9 +638,9 @@
         </div>
       </section>
 
-      <!-- PASSO 3 — FRASES -->
-      <section class="card" data-step="2" hidden>
-        <h2><span class="ico">3</span> Frases</h2>
+      <!-- PASSO 4 — FRASES -->
+      <section class="card" data-step="3" hidden>
+        <h2><span class="ico">4</span> Frases</h2>
         <p class="card-sub">
           O texto que aparece queimado no quadro. O headline e independente do
           preset de legenda: mesmo um render sem legenda ainda ganha o hook,
@@ -677,9 +726,9 @@
         </div>
       </section>
 
-      <!-- PASSO 4 — MIDIA -->
-      <section class="card" data-step="3" hidden>
-        <h2><span class="ico">4</span> Midia</h2>
+      <!-- PASSO 5 — MIDIA -->
+      <section class="card" data-step="4" hidden>
+        <h2><span class="ico">5</span> Midia</h2>
         <p class="card-sub">
           De onde vem cada zona. A zona de video e sempre o corte; <strong>frame</strong>
           extrai um quadro do proprio video (nenhum arquivo externo) e
@@ -699,9 +748,9 @@
         </div>
       </section>
 
-      <!-- PASSO 5 — ESTILO -->
-      <section class="card" data-step="4" hidden>
-        <h2><span class="ico">5</span> Estilo</h2>
+      <!-- PASSO 6 — ESTILO -->
+      <section class="card" data-step="5" hidden>
+        <h2><span class="ico">6</span> Estilo</h2>
         <p class="card-sub">
           Ajustes de recorte e acabamento por zona. O raio de canto e uma fracao
           da largura do canvas, entao o mesmo numero da o mesmo visual em 720p e
@@ -725,9 +774,9 @@
         </div>
       </section>
 
-      <!-- PASSO 6 — VARIACOES -->
-      <section class="card" data-step="5" hidden>
-        <h2><span class="ico">6</span> Variacoes</h2>
+      <!-- PASSO 7 — VARIACOES -->
+      <section class="card" data-step="6" hidden>
+        <h2><span class="ico">7</span> Variacoes</h2>
         <p class="card-sub">
           O multiplicador. Cada corte e re-encodado uma vez por combinacao, mas
           <strong>nada e rebaixado nem reanalisado</strong>: uma secao baixada
@@ -752,9 +801,9 @@
         <div id="matrix-out"></div>
       </section>
 
-      <!-- PASSO 7 — GERAR -->
-      <section class="card" data-step="6" hidden>
-        <h2><span class="ico">7</span> Gerar</h2>
+      <!-- PASSO 8 — GERAR -->
+      <section class="card" data-step="7" hidden>
+        <h2><span class="ico">8</span> Gerar</h2>
         <p class="card-sub">
           Salve o arquivo e rode. O template e um <code>.toml</code> que o motor
           le direto — nao ha passo de build.

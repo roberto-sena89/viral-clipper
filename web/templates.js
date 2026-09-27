@@ -225,6 +225,10 @@
         { kind: "image", fraction: 0.26, fit: "cover", frameAt: 0, source: "",
           // Imagem na BASE: respiro so em cima. Embaixo dela nao ha faixa nenhuma,
           // e a margem aparecia como uma faixa preta solta no fim da tela.
+          //
+          // Raio zero: esta faixa encosta nas bordas da tela, e o canto
+          // arredondado denunciava um recorte onde nao existe. A foto preenche
+          // o quadro inteiro, como a faixa de video acima dela.
           marginTop: 1.2, marginBottom: 0, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" }
       ]
     },
@@ -267,13 +271,17 @@
         { kind: "image", fraction: 0.30, fit: "cover", frameAt: 0, source: "",
           // Imagem na BASE: respiro so em cima. Embaixo dela nao ha faixa nenhuma,
           // e a margem aparecia como uma faixa preta solta no fim da tela.
-          marginTop: 1.2, marginBottom: 0, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" }
+          //
+          // Raio zero: a foto encosta nas bordas do quadro, e o canto
+          // arredondado denunciava um recorte onde nao existe nenhum.
+          marginTop: 1.2, marginBottom: 0, marginLeft: 3, marginRight: 3, radius: 0, color: "black" }
       ]
     }
   };
 
   var STEPS = [
     { key: "aparencia",  label: "Aparencia" },
+    { key: "cores",      label: "Cores" },
     { key: "zonas",      label: "Zonas" },
     { key: "frases",     label: "Frases" },
     { key: "midia",      label: "Midia" },
@@ -980,13 +988,89 @@
     entry.idOffset = entry.idOffset || {};
     entry.idOffset.avatar = { x: pct(x, state.width), y: pct(y, state.height) };
     entry.idOffset.name = { x: pct(x, state.width), y: pct(y, state.height) };
+    // O texto do post entra SO nos formatos que o desenham. E o corpo da faixa
+    // de identificacao do X; o Meme desenha a barra e a legenda, nunca um corpo
+    // de tweet, e gravar o offset dele ali seria um ajuste invisivel que voltaria
+    // sozinho pelo `modelIdOffset`.
+    if (formatHasTweetBody()) {
+      var bd = tweetOffsetOf("body");
+      entry.idOffset.body = { x: pct(bd.x, state.width), y: pct(bd.y, state.height) };
+    }
     // O estado passa a ler do gravado, para o que esta na tela e o que o
     // catalogo diz serem a mesma coisa (a conversao px->px pode arredondar).
     state.tweetOffset.avatar = idOffsetPx(entry.idOffset.avatar);
     state.tweetOffset.name = idOffsetPx(entry.idOffset.name);
+    if (entry.idOffset.body) state.tweetOffset.body = idOffsetPx(entry.idOffset.body);
+    // O catalogo e um literal do arquivo: sem isto, recarregar a pagina perdia o
+    // padrao e o usuario refazia os tres arrases a cada sessao — que e justamente
+    // o trabalho que este botao existe para nao repetir.
+    var guardado = writeSavedIdOffsets();
     paintTweetFields();
     renderPreview();
-    toast("Padrão salvo em " + entry.name + ".", "ok");
+    toast(
+      guardado
+        ? "Padrão salvo em " + entry.name + " (fica no navegador)."
+        : "Padrão salvo em " + entry.name + ", so nesta aba: o navegador recusou a gravacao.",
+      guardado ? "ok" : "bad"
+    );
+  }
+
+  // Este formato desenha o corpo do texto do post? So o X: o cartao dele tem a
+  // zona `mock: "tweet"`, e o Meme desenha barra de identidade e legenda, nao um
+  // tweet. A pergunta e feita pelo MARCADOR da zona e nao por uma lista de
+  // formatos, para um template novo que desenhe tweet entrar sozinho.
+  function formatHasTweetBody() {
+    var entry = GALLERY[state.previewMock];
+    if (!entry || !entry.zones) return false;
+    return entry.zones.some(function (z) { return z.mock === "tweet"; });
+  }
+
+  // ---------- PADRAO DAS POSICOES, PERSISTIDO ----------
+  //
+  // Um `localStorage` so, com um mapa formato -> idOffset. A gravacao vai
+  // primeiro no CATALOGO e o storage guarda uma copia: `modelIdOffset` e
+  // `applyGalleryIdOffset` continuam lendo o catalogo, e o storage e so o que
+  // devolve o mesmo numero depois que a pagina recarrega. Se os dois divergirem,
+  // quem manda na tela continua sendo o catalogo.
+  //
+  // Nunca vai para o .toml: a barra de identidade e desenho da previa, e o motor
+  // recebe a imagem do post que o proprio usuario fornece.
+  var ID_OFFSET_STORE = "viral-clipper:id-offset";
+
+  function readSavedIdOffsets() {
+    // localStorage lanca em modo privado, com cota estourada ou em iframe sem
+    // permissao. Uma preferencia de layout nunca pode derrubar a pagina: falhar
+    // aqui e so nao ter nada guardado.
+    try {
+      var raw = window.localStorage.getItem(ID_OFFSET_STORE);
+      var data = raw ? JSON.parse(raw) : null;
+      return data && typeof data === "object" ? data : {};
+    } catch (err) {
+      return {};
+    }
+  }
+
+  function writeSavedIdOffsets() {
+    var data = {};
+    Object.keys(GALLERY).forEach(function (key) {
+      if (GALLERY[key].idOffset) data[key] = GALLERY[key].idOffset;
+    });
+    try {
+      window.localStorage.setItem(ID_OFFSET_STORE, JSON.stringify(data));
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  // O que o CATALOGO diz, com o que o usuario guardou por cima. Roda antes do
+  // primeiro `loadGallery`, que e quem aplica o offset nas zonas.
+  function restoreIdOffsets() {
+    var saved = readSavedIdOffsets();
+    Object.keys(saved).forEach(function (key) {
+      if (!GALLERY[key] || !saved[key]) return;
+      GALLERY[key].idOffset = Object.assign({}, GALLERY[key].idOffset || {}, saved[key]);
+    });
   }
 
   function initTweetEditor() {
@@ -2433,6 +2517,12 @@
     // na secao da faixa de texto). Sem esta repintura, mexer no slider de Zonas
     // deixaria o slider e os chips do POV mostrando o tamanho anterior.
     paintPovFields();
+    // A paleta da frase tem controle em dois passos (a aba e o editor de zonas), e
+    // `renderAll` tem de repintar os dois — como faz com a placa. Sem esta linha,
+    // trocar o tipo da zona no passo de Zonas deixaria a paleta mostrando a cor de
+    // uma zona que ja nao existe, e o `<input type="color">` dela ficaria apagado
+    // no formato recem-carregado.
+    paintPhraseColors();
     // A placa tambem tem controle em dois lugares (o campo desta lista e a tira do
     // painel do gancho), entao `renderAll` tambem tem que repintar os dois. Sem
     // esta linha, trocar o tipo da zona no passo de Zonas deixaria a tira do
@@ -2453,8 +2543,17 @@
   document.addEventListener("click", function (event) {
     var target = event.target.closest(
       "[data-act], [data-goto], [data-axis], [data-copy], [data-gallery], " +
-      "[data-pov-size], [data-hook-size], [data-plate]");
+      "[data-pov-size], [data-hook-size], [data-plate], [data-phrase-color]");
     if (!target) return;
+
+    // Um quadradinho da paleta da frase. `data-phrase-color` esta na lista do
+    // seletor pelo mesmo motivo que `data-hook-size` e `data-plate` entraram: o
+    // que o seletor nao lista morre no `if (!target) return`, e o botao vira um
+    // quadradinho colorido que nao faz nada e nao acusa nada.
+    if (target.hasAttribute("data-phrase-color")) {
+      applyPhraseColor(target.getAttribute("data-phrase-color"));
+      return;
+    }
 
     // Modelos de fundo da placa: um item da tira. `data-plate` esta na lista do
     // seletor pelo mesmo motivo que `data-hook-size` entrou — o que o seletor
@@ -2635,7 +2734,14 @@
       // aqui — sem isto o slider e os chips dela ficariam no valor anterior.
       paintPovFields();
     }
-    else if (act === "textColor") updateZone(index, { textColor: target.value });
+    else if (act === "textColor") {
+      updateZone(index, { textColor: target.value });
+      // A paleta da aba escreve a MESMA chave. O `renderAll` deste caminho nao roda
+      // (o `input` repinta so o necessario para nao recriar o `<input type=color>` no
+      // meio do arraste), entao a aba e espelhada aqui: sem isto ela ficaria
+      // mostrando a cor anterior depois de mudar pelo editor de zonas.
+      paintPhraseColors();
+    }
     else if (act === "textOutline") updateZone(index, { textOutline: Number(target.value) });
     else if (act === "marginTop") updateZone(index, { marginTop: Number(target.value) });
     else if (act === "marginBottom") updateZone(index, { marginBottom: Number(target.value) });
@@ -2883,7 +2989,22 @@
         renderPreview();
         renderGallery();
         renderOutputs();
+        // A placa e o fundo do contraste: mudar a cor dela muda se a frase se le,
+        // e o aviso da aba de Cores e o que informa isso. Sem esta repintura o
+        // numero ficaria na cor da placa anterior.
+        paintPhraseColors();
       }
+    } else if (target.id === "phrase-color-swatch" ||
+               target.id === "phrase-color-custom") {
+      // Os dois campos da aba de Cores escrevem a MESMA chave que a paleta e que
+      // o `<input type=color>` do editor de zonas: `zone.textColor`, que o motor
+      // queima e o `.toml` leva como `text_color`.
+      //
+      // O campo de texto passa pelo mesmo `applyPhraseColor` da paleta, e nao por
+      // um `updateZone` paralelo: um caminho a mais seria uma terceira escrita
+      // da mesma chave, e cada uma delas precisa lembrar de repintar os outros
+      // dois controles.
+      applyPhraseColor(target.value);
     } else if (target.id.indexOf("tw-pos-") === 0) {
       // Slider do grid de posicao: `tw-pos-<item>-<eixo>`. O arraste e esta rota
       // escrevem o MESMO `state.tweetOffset`, entao os dois controles nunca ficam
@@ -3316,6 +3437,10 @@
     // A placa e a COR DA ZONA: e o fundo que o motor pinta atras do texto.
     var cor = document.getElementById("hook-color");
     if (cor && cor.value !== (zone.color || "")) cor.value = zone.color || "";
+    // A placa e o FUNDO do contraste, entao mudar a cor dela muda a leitura da
+    // frase. O aviso da aba de Cores e o que informa isso, entao ele e repintado
+    // junto: sem esta linha o numero ficaria na cor de placa anterior.
+    paintPhraseColors();
     // O `select` e a tira de modelos leem a MESMA chave, e `paintPlatePicker` e
     // quem os pinta — por isso aqui so se garante que a pintura aconteceu, e nao
     // se escreve o valor de novo.
@@ -3363,6 +3488,176 @@
   function povSizeOf(zone) {
     var size = Number(zone && zone.textSize);
     return Number.isFinite(size) && size > 0 ? size : TEXT_ZONE_DEFAULTS.textSize;
+  }
+
+  // ---------- paleta da frase ----------
+  //
+  // As cores que o publico deste formato usa de verdade, nao um arco-iris. A
+  // lista e curta de proposito: um grade com 30 quadradinhos e uma rolagem e o
+  // mesmo que nao ter paleta, e o `<input type="color">` do editor de zonas
+  // continua ali para quem tem uma cor de marca.
+  //
+  // Os nomes sao o rotulo, nao a cor: "Amarelo" e `#fbbf24` sao coisas diferentes
+  // no queimado, e quem escolhe precisa saber o que esta vendo no `.toml`.
+  var PHRASE_COLORS = [
+    { value: "#ffffff", name: "Branco" },
+    { value: "#fbbf24", name: "Amarelo" },
+    { value: "#f87171", name: "Vermelho" },
+    { value: "#34d399", name: "Verde" },
+    { value: "#38bdf8", name: "Azul" },
+    { value: "#a78bfa", name: "Roxo" },
+    { value: "#f472b6", name: "Rosa" },
+    { value: "#111827", name: "Grafite" }
+  ];
+
+  // Luminancia relativa, para o contraste. A formula e a da WCAG (canais
+  // linearizados e ponderados), e nao um "e claro?": o que separa um amarelo de um
+  // branco, ou um azul de um grafite, e a soma ponderada dos canais.
+  function relativeLuminance(hex) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+    if (!m) return null;
+    var n = parseInt(m[1], 16);
+    var canais = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(function (c) {
+      var s = c / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * canais[0] + 0.7152 * canais[1] + 0.0722 * canais[2];
+  }
+
+  function contrastRatio(a, b) {
+    if (a == null || b == null) return null;
+    var claro = Math.max(a, b), escuro = Math.min(a, b);
+    return (claro + 0.05) / (escuro + 0.05);
+  }
+
+  // A luminancia da PLACA (o fundo), nao a da pagina: e a placa que decide se a
+  // frase se le no clipe. Devolve `null` quando nao da para medir, e quem chama
+  // trata o `null` como "nao medido" em vez de "zero".
+  function plateLuminance(zone) {
+    if (!zone) return null;
+    // Com imagem de placa nao ha cor de fundo conhecida: a textura decide o
+    // contraste, e nenhum numero aqui seria honesto.
+    if (zone.plateImage) return null;
+    var cor = String(zone.color || "#000").trim();
+    if (/^#?[0-9a-f]{3}$/i.test(cor)) {
+      // `#fff` e abreviado de 3 digitos: o ffmpeg aceita, e sem esta expansao a
+      // cor cairia fora da conta e viraria "sem contraste medido".
+      var d = cor.replace("#", "");
+      cor = "#" + d[0] + d[0] + d[1] + d[1] + d[2] + d[2];
+    }
+    if (!/^#[0-9a-f]{6}$/i.test(cor)) {
+      // Nome de cor CSS ("black", "yellow"): o navegador sabe traduzir, e ele e
+      // quem pinta o fundo de verdade.
+      var probe = document.createElement("span");
+      probe.style.color = cor;
+      document.body.appendChild(probe);
+      var resolvida = getComputedStyle(probe).color;
+      probe.remove();
+      var nums = resolvida.match(/[\d.]+/g);
+      if (!nums) return null;
+      cor = "#" + nums.slice(0, 3).map(function (v) {
+        return ("0" + Math.round(Number(v)).toString(16)).slice(-2);
+      }).join("");
+    }
+    return relativeLuminance(cor);
+  }
+
+  // O pintor da paleta. Marca a escolha e escreve o aviso de legibilidade, que e o
+  // que a paleta acrescenta sobre um seletor de cor: nao e so escolher a cor, e
+  // saber se ela se le sobre a placa que esta em uso.
+  function paintPhraseColors() {
+    var box = document.getElementById("phrase-color-box");
+    var zone = povZone();
+    // So para quem tem zona de texto. O X nao tem: nao ha frase para colorir, e um
+    // controle visivel escrevendo num lugar que a previa nao le e ajuste invisivel.
+    if (box) box.hidden = !zone;
+    if (!zone) return;
+
+    var atual = String(zone.textColor || TEXT_ZONE_DEFAULTS.textColor).toLowerCase();
+    var lumPlaca = plateLuminance(zone);
+
+    var strip = document.getElementById("phrase-color-strip");
+    if (strip) {
+      // A lista so e reconstruida quando a PALETA muda. `innerHTML` a cada
+      // chamada recriaria os botoes e com eles o foco de quem esta navegando
+      // pelas setas do teclado.
+      var lista = PHRASE_COLORS.map(function (c) { return c.value; }).join("|");
+      if (strip.dataset.palette !== lista) {
+        strip.innerHTML = PHRASE_COLORS.map(function (cor) {
+          return "<button type='button' class='swatch pressable' role='radio'" +
+            " data-phrase-color='" + cor.value + "'" +
+            " aria-checked='false' tabindex='-1'" +
+            " title='" + esc(cor.name + " " + cor.value) + "'" +
+            " style='--swatch:" + cor.value + "'>" +
+            "<span class='swatch-box' aria-hidden='true'></span>" +
+            "<span class='swatch-name'>" + esc(cor.name) + "</span></button>";
+        }).join("");
+        strip.dataset.palette = lista;
+      }
+      // A marcacao e separada da construcao, e nao vai no HTML acima: quem
+      // chegou de um `.toml` com `text_color` fora da paleta precisa ver os
+      // quadradinhos desligados, e nao um marcado por padrao.
+      Array.prototype.forEach.call(
+        strip.querySelectorAll("[data-phrase-color]"),
+        function (botao) {
+          var on = botao.getAttribute("data-phrase-color").toLowerCase() === atual;
+          botao.setAttribute("aria-checked", on ? "true" : "false");
+          if (on) botao.removeAttribute("tabindex"); else botao.setAttribute("tabindex", "-1");
+        }
+      );
+    }
+
+    // O aviso de legibilidade. Com placa de imagem nao ha fundo conhecido, e o
+    // texto diz isso em vez de inventar um numero.
+    var hint = document.getElementById("phrase-color-hint");
+    if (hint) {
+      var razao = contrastRatio(relativeLuminance(atual), lumPlaca);
+      if (razao == null) {
+        hint.textContent = zone.plateImage
+          ? "A placa é uma imagem: a legibilidade depende da textura escolhida, e nenhum número aqui seria honesto."
+          : "A cor em uso não é um hexadecimal — ela vai para o `.toml` como está.";
+      } else {
+        // 4,5:1 e o piso da WCAG para texto normal; 3:1 e o de texto grande, e a
+        // faixa de texto deste formato e grande e grossa. E o que separa um
+        // amarelo de um branco sobre a mesma placa preta.
+        var minimo = razao >= 4.5 ? "legível" : (razao >= 3 ? "no piso do texto grande" : "difícil de ler");
+        hint.textContent = "Contraste " + razao.toFixed(1) + ":1 contra a placa — " +
+          minimo + ". O motor queima essa cor sobre esse fundo.";
+      }
+    }
+
+    // Os dois campos espelham a MESMA chave da paleta, entao tambem se espelham
+    // entre si. `<input type="color">` so aceita `#rrggbb`: um nome ou um `#fff`
+    // curto faria o navegador trocar por `#000000` em silencio, e o quadradinho
+    // mostraria uma cor que nao e a escolhida.
+    var swatch = document.getElementById("phrase-color-swatch");
+    var hexCheio = /^#[0-9a-f]{6}$/i.test(atual) ? atual : "#ffffff";
+    if (swatch && swatch.value !== hexCheio) swatch.value = hexCheio;
+    var custom = document.getElementById("phrase-color-custom");
+    // Nao escreve por cima do campo em foco: digitar "#f" e ver o campo trocar
+    // para outra cor no meio da tecla apaga o que a pessoa estava escrevendo.
+    if (custom && document.activeElement !== custom && custom.value !== (zone.textColor || ""))
+      custom.value = zone.textColor || "";
+  }
+
+  // Escolher a cor da frase. E a MESMA chave que o editor de zonas edita
+  // (`textColor`), entao a previa, o card e o `.toml` saem daqui sem caminho
+  // paralelo — e sem estado separado que pudesse divergir da zona.
+  function applyPhraseColor(valor) {
+    var zone = povZone();
+    if (!zone) return;
+    zone.textColor = valor;
+    // O `input[type=color]` do editor de zonas e a paleta escrevem a mesma chave
+    // em passos diferentes, entao os dois se espelham: sem isto o quadradinho do
+    // editor ficaria com a cor anterior depois de escolher aqui.
+    Array.prototype.forEach.call(
+      document.querySelectorAll("input[data-act='textColor']"),
+      function (el) { if (el.value !== valor) el.value = valor; }
+    );
+    paintPhraseColors();
+    renderPreview();
+    renderGallery();
+    renderOutputs();
   }
 
   function paintTweetAvatar() {
@@ -3842,6 +4137,7 @@
     // dentro do literal de `state` criaria duas verdades: mexer no card X nao
     // mudaria o padrao, e as duas copias divergiriam sem nenhum teste acusar.
     // Aqui o padrao E o card, por construcao.
+    restoreIdOffsets();
     loadGallery("x");
 
     $("#btn-add-zone").addEventListener("click", addZone);

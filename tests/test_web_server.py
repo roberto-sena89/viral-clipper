@@ -1733,7 +1733,10 @@ class TemplatesPageTests(unittest.TestCase):
         # E ele tem que ser carregado DEPOIS do `<select>` de existir, porque a
         # funcao escreve nele — a ordem invertida deixaria o preset vazio.
         init = self.page.split("function init() {", 1)[1]
-        self.assertLess(init.index("Object.keys(PRESETS)"), init.index('loadGallery("x")'))
+        # Mesma razao do outro teste: o comentario cita `loadGallery("x")`, entao
+        # a ordem se mede por linha, e nao pela posicao no texto bruto.
+        linhas = [ln.strip() for ln in init.splitlines()]
+        self.assertLess(linhas.index("renderPresetHint();"), linhas.index('loadGallery("x");'))
 
     def test_the_page_lists_every_shipped_preset(self):
         from viralclipper import caption_presets
@@ -3434,16 +3437,56 @@ class TweetEditorTests(unittest.TestCase):
                          "o avatar precisa gravar os DOIS eixos")
         self.assertRegex(body, r"idOffset\.name\s*=\s*\{[^}]*x:[^}]*y:",
                          "o nome precisa gravar os DOIS eixos")
-        # O POV e o body NAO podem ser gravados aqui.
+        # O texto do post e guardado, mas ATRAS da pergunta "este formato desenha
+        # ele?": sem o guarda, gravar no Meme seria um ajuste invisivel.
+        self.assertIn("idOffset.body", body,
+                      "o texto do post precisa ser salvo com avatar e titulo")
+        self.assertIn("if (formatHasTweetBody())", body,
+                      "o texto do post so pode ser salvo onde ele e desenhado")
+        # O POV nao pode ser gravado aqui: ele vive na zona.
         self.assertNotIn("idOffset.pov", body,
                          "o POV nao pertence ao idOffset: ele vive na zona")
-        self.assertNotIn("idOffset.body", body,
-                         "o texto do tweet nao pertence ao idOffset")
         # E a unidade: % do quadro, com a base de cada eixo.
         self.assertRegex(body, r"pct\(x,\s*state\.width\)",
                          "o X tem de ser fracao da LARGURA")
         self.assertRegex(body, r"pct\(y,\s*state\.height\)",
                          "o Y tem de ser fracao da ALTURA")
+
+    def test_the_saved_default_survives_a_reload(self):
+        """O padrão é gravado no navegador, não só na memória da aba.
+
+        O catálogo é um literal do arquivo: sem o ``localStorage``, recarregar a
+        página perdia o padrão e o usuário refazia os três arraste toda sessão —
+        que é exatamente o trabalho que o botão existe para não repetir. Como
+        ``localStorage`` lança em modo privado, a leitura e a escrita são
+        try/catch: uma preferência de layout não pode derrubar a página.
+        """
+        self.assertIn('var ID_OFFSET_STORE = "viral-clipper:id-offset"', self.page)
+        store = self._fn_body("readSavedIdOffsets")
+        write = self._fn_body("writeSavedIdOffsets")
+        for nome, corpo in (("leitura", store), ("escrita", write)):
+            self.assertIn("try {", corpo, f"a {nome} do storage pode lancar")
+            self.assertIn("catch", corpo, f"a {nome} do storage precisa de guarda")
+        # O `setItem` tem de acontecer dentro da escrita — fora do try ele
+        # estouraria a pagina no modo privado.
+        self.assertIn("setItem", write)
+        # E a restauracao precisa rodar ANTES do primeiro loadGallery, que e quem
+        # aplica o offset nas zonas; depois, o primeiro formato abriria no catalogo
+        # e o guardado so entraria na visita seguinte.
+        init = self.page.split("function init() {", 1)[1]
+        self.assertIn("restoreIdOffsets();", init, "o padrao guardado nao volta na partida")
+        # Comparacao por LINHA, e nao por `index` no texto bruto: o comentario
+        # acima da chamada cita `loadGallery("x")`, e um `index` acharia o
+        # comentario primeiro e daria a ordem errada sem nenhum erro visivel.
+        linhas = [ln.strip() for ln in init.splitlines()]
+        self.assertLess(
+            linhas.index("restoreIdOffsets();"),
+            linhas.index('loadGallery("x");'),
+            "o padrao guardado tem de voltar ANTES do primeiro formato abrir",
+        )
+        restore = self._fn_body("restoreIdOffsets")
+        self.assertIn("GALLERY[key].idOffset = Object.assign", restore,
+                      "o guardado precisa entrar no catalogo, nao numa segunda leitura")
 
     def test_saving_reports_when_there_is_no_gallery_template(self):
         """"Carregar split-card" nao vem da galeria: o botao avisa em vez de gravar.
@@ -4007,6 +4050,24 @@ class HookControlsTests(unittest.TestCase):
     def _gallery_block(self, key: str) -> str:
         return self.page.split(f"{key}: {{", 1)[1].split("\n    }", 1)[0]
 
+    def test_the_bottom_image_of_the_viral_has_no_rounded_corner(self):
+        """A imagem da base encosta nas bordas: raio zero.
+
+        Ela fecha o quadro de ponta a ponta, e o canto arredondado denunciava um
+        recorte que não existe — a mesma faixa de vídeo logo acima, que é
+        sangria, ficava com o canto reto. O `radius` é `corner_radius` da zona,
+        então ele vai para o ``.toml`` e o motor queima o mesmo: corrigir só a
+        prévia faria ela mentir sobre o render.
+        """
+        import re
+
+        viral = self._gallery_block("viral")
+        zona = re.search(
+            r'\{ kind: "image", fraction: 0\.30,[^}]*\}', viral, re.S)
+        self.assertIsNotNone(zona, "a imagem da base do Viral sumiu")
+        self.assertIn("radius: 0", zona.group(0),
+                      "a imagem da base voltou a ter canto arredondado")
+
     def test_the_hook_is_a_text_zone_in_the_template(self):
         """O Viral declara uma zona ``text`` com a frase, e ela vira ``.toml``.
 
@@ -4164,6 +4225,128 @@ class HookControlsTests(unittest.TestCase):
         # sobre a faixa de video, que nao ocupava altura.
         self.assertIn("galHookBand", self._fn_body("viralBands"),
                       "a faixa de texto do gancho nao entra no card do Viral")
+
+
+class PhraseColorPaletteTests(unittest.TestCase):
+    """A aba de Cores: a cor da frase central e a legibilidade dela.
+
+    A cor ja era editavel no editor de zonas (``<input type="color">``). A aba
+    acrescenta duas coisas que aquele controle nao tem: uma paleta com nome, e a
+    medida do contraste contra a PLACA — que e o fundo real da frase no clipe. Sem
+    o aviso, escolher uma cor bonita e descobrir no render que ela some sobre a
+    textura e uma aposta.
+    """
+
+    def setUp(self):
+        self.page = page_source("templates.html")
+
+    def _fn_body(self, name: str) -> str:
+        return fn_body(self.page, name)
+
+    def test_the_palette_writes_the_zone_key_the_engine_burns(self):
+        """A paleta escreve ``textColor``, a chave que o motor queima.
+
+        Nao ``color``: essa e a cor da PLACA, o fundo. Trocar as duas escreveria a
+        cor da frase no fundo, e a previa mostraria um desenho que o clipe nao
+        teria.
+        """
+        writer = self._fn_body("applyPhraseColor")
+        self.assertIn("textColor", writer,
+                      "a paleta nao escreve a chave de cor do TEXTO")
+        self.assertIn("povZone()", writer,
+                      "a paleta nao le a zona de texto do estado")
+        # E o que fecha o contrato com o arquivo: o `.toml` so leva `text_color`
+        # quando a cor sai do branco, entao escolher precisa chegar la.
+        self.assertIn("text_color", self._fn_body("toToml"))
+        # E o que mantem os tres controles — paleta, campo de cor e editor de
+        # zonas — em acordo: cada escrita repinta os outros.
+        for nome in ("paintHookFields", "applyPhraseColor"):
+            with self.subTest(caminho=nome):
+                self.assertIn("paintPhraseColors", self._fn_body(nome),
+                              f"{nome} nao repinta a paleta apos escrever a cor")
+
+    def test_the_click_listener_admits_the_swatch(self):
+        """``data-phrase-color`` esta na porta do listener de clique.
+
+        O seletor do ``closest`` e a PORTA: o que ele nao lista morre no
+        ``if (!target) return``, e nenhum ramo abaixo roda. Um botao de cor que
+        nao faz nada e nao acusa nada e o pior tipo de controle — parece funcionar
+        e o clipe sai com a cor antiga.
+        """
+        seletor = self.page.split("closest(\n", 1)[1].split(");", 1)[0]
+        self.assertIn("data-phrase-color", seletor,
+                      "o clique no quadradinho morre antes do handler")
+
+    def test_the_two_color_fields_go_through_the_same_writer(self):
+        """O campo livre e o ``<input type=color>`` chamam ``applyPhraseColor``.
+
+        Um caminho proprio por campo seria uma segunda escrita da mesma chave, e
+        os dois campos poderiam divergir entre si e da paleta.
+        """
+        body = self._fn_body("applyPhraseColor")
+        self.assertIn("paintPhraseColors", body,
+                      "a escrita nao repinta a paleta: os tres controles "
+                      "divergiriam")
+        # E o espelho vao para o `<input type=color>` do editor de zonas, que
+        # escreve a mesma chave em outro passo.
+        self.assertIn("data-act='textColor'", body,
+                      "o editor de zonas nao e espelhado ao escolher na aba")
+
+    def test_the_contrast_is_measured_against_the_plate(self):
+        """O contraste e contra a PLACA, nao contra a pagina.
+
+        A frase queima sobre a placa: e o fundo dela que decide a leitura. Medir
+        contra o branco da pagina daria 21:1 para qualquer cor sobre uma placa
+        preta e nao diria nada, e medir contra o fundo do painel mentiria no
+        outro extremo.
+        """
+        painter = self._fn_body("plateLuminance")
+        self.assertIn("zone.color", painter,
+                      "o contraste nao olha a cor da placa")
+        self.assertIn("plateImage", painter,
+                      "com imagem de placa nao ha fundo conhecido, e a funcao "
+                      "precisa devolver 'nao medido' em vez de medir a cor")
+        # E a formula e a da WCAG: sem os canais linearizados o numero sai errado
+        # e o aviso mente sobre a legibilidade.
+        self.assertIn("2.4", self._fn_body("relativeLuminance"),
+                      "a luminancia nao lineariza os canais: o contraste sai errado")
+        for piso in ("4.5", "3"):
+            self.assertIn(piso, self._fn_body("paintPhraseColors"),
+                          f"o aviso nao usa o piso {piso}:1 da WCAG")
+
+    def test_the_palette_only_shows_where_there_is_a_phrase(self):
+        """A aba some nos formatos sem zona de texto.
+
+        O X nao tem frase: nao ha o que colorir, e um controle visivel escrevendo
+        num lugar que a previa nao le e ajuste invisivel — o usuario mexe nele e
+        nao descobre onde a mudanca foi.
+        """
+        painter = self._fn_body("paintPhraseColors")
+        self.assertIn("phrase-color-box", painter, "a caixa da aba nao e controlada")
+        self.assertIn("povZone()", painter)
+        self.assertIn("hidden", painter,
+                      "a aba nao e escondida quando nao ha zona de texto")
+        # E o `renderAll` tem de repintar: sem isso, carregar um formato novo
+        # deixaria a paleta com a cor da zona anterior.
+        self.assertIn("paintPhraseColors", self._fn_body("renderAll"))
+
+    def test_the_steps_and_the_page_agree_on_the_new_tab(self):
+        """A aba e um passo do wizard, e a contagem bate dos dois lados.
+
+        ``STEPS`` e o que gera a barra de passos, e ``data-step`` e o que mostra o
+        card: se um lado ganhar uma entrada e o outro nao, o passo aparece na
+        barra e nao abre, ou abre sem estar na barra.
+        """
+        passos = re.findall(r'\{ key: "(\w+)",\s+label: "([^"]+)" \}', self.page)
+        self.assertTrue(passos, "a lista de passos sumiu")
+        self.assertIn("cores", [k for k, _ in passos], "a aba nao esta em STEPS")
+        cards = [int(n) for n in re.findall(
+            r'<section class="card" data-step="(\d+)"', self.page)]
+        self.assertEqual(sorted(cards), list(range(len(passos))),
+                         f"a pagina tem {len(cards)} cards para {len(passos)} passos")
+        # E o numero do `<h2>` e o do passo: o `ico` e o que a pessoa le.
+        self.assertIn('<span class="ico">2</span> Cores da frase', self.page,
+                      "o ico do passo de Cores sumiu")
 
 
 class PlateControlsTests(unittest.TestCase):

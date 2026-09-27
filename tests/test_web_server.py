@@ -3415,13 +3415,15 @@ class TweetEditorTests(unittest.TestCase):
         perdia o ajuste — a posição era estado de sessão, e o catálogo só tinha o
         valor fixo com que o desenho nasceu.
 
-        A trava cobre as três decisões que fazem a diferença:
+        A trava cobre as decisões que fazem a diferença:
 
         * os DOIS eixos: um botão que gravasse só o Y deixaria o avatar torto
           para sempre depois de um "voltar ao modelo";
-        * só avatar e nome: o POV mora na ZONA e vira `text_dy` no ``.toml``, e
-          gravar a posição dele aqui criaria uma segunda fonte para o mesmo
-          número, que divergiria no primeiro slider mexido;
+        * o TEXTO DO POST entra, mas só onde ele é desenhado: é o corpo da faixa
+          de identificação do X. O POV fica de fora de propósito — ele mora na
+          ZONA e vira `text_dy`` no ``.toml``, e gravar a posição dele aqui
+          criaria uma segunda fonte para o mesmo número, que divergiria no
+          primeiro slider mexido;
         * em % DO QUADRO, com a base de cada eixo: em px, a mesma posição na tela
           valeria números diferentes conforme a resolução.
         """
@@ -4017,10 +4019,25 @@ class HookControlsTests(unittest.TestCase):
                       "o Viral nao tem zona de texto: o gancho nao seria queimado")
         self.assertIn("Isso aqui vai viralizar", block,
                       "a frase do modelo nao esta na zona")
-        # As tres faixas: a frase ocupa espaco proprio, entre video e imagem.
-        for fracao in ("0.44", "0.16", "0.40"):
-            self.assertIn(f"fraction: {fracao}", block,
-                          f"a faixa {fracao} sumiu: o layout nao e mais de 3 faixas")
+        # As tres faixas: a frase ocupa espaco proprio, entre video e imagem. O
+        # `assertIn` fixo nao serve aqui: o layout muda com o pedido (o video
+        # cresceu de 44% para 54% e a imagem pagou), e o que este teste trava e
+        # o CONTRATO -- tres faixas, a do gancho no meio, e a soma em 1,0, que
+        # e o que o motor exige para nao recusar o `.toml` baixado.
+        kinds = re.findall(r'kind: "(\w+)"', block)
+        fractions = [float(v) for v in re.findall(r"fraction: ([0-9.]+)", block)]
+        self.assertEqual(kinds, ["video", "text", "image"],
+                         f"o Viral nao e mais video/gancho/imagem: {kinds}")
+        self.assertEqual(len(fractions), 3, "o layout nao e mais de 3 faixas")
+        self.assertAlmostEqual(sum(fractions), 1.0, places=6,
+                               msg=f"as faixas somam {sum(fractions)}, e o motor "
+                                   "exige 1,0 exato")
+        # E o video e a MAIOR das tres: e o formato se chama "video em destaque".
+        # As outras duas podem mudar de tamanho, mas se o video nao for a maior
+        # faixa o card esta prometendo um formato que nao e o dele.
+        self.assertEqual(max(fractions), fractions[0],
+                         "a faixa do video deixou de ser a maior: "
+                         f"{dict(zip(kinds, fractions))}")
         # E o `toToml` escreve a zona: a mesma funcao que ja levava o POV.
         self.assertIn("text_size", self._fn_body("toToml"),
                       "o .toml parou de levar o tamanho do texto")
@@ -4290,6 +4307,45 @@ class PlateControlsTests(unittest.TestCase):
         for nome in ("paintTextZone", "galTextBand", "galHookBand"):
             with self.subTest(pintor=nome):
                 self.assertNotIn("style.cssText", self._fn_body(nome))
+
+    def test_the_plate_quote_survives_the_style_attribute(self):
+        """O `url()` da placa nao fecha o atributo `style` do card.
+
+        Os cards da galeria montam a faixa como TEXTO: `style='...'` com aspas
+        simples. O `plateStyle` devolvia `url('/fundo%20titulo/1.jpg')` com aspas
+        simples tambem, entao a primeira delas fechava o atributo no meio do
+        valor. Medido no Edge headless: o `style` do elemento parava em
+        `background-image:url(` e a imagem nao aparecia no card -- e o
+        `backgroundImage` do CSSOM voltava `url("")`. Sem erro no console, e sem
+        a previa mintindo: o card da galeria e a promessa do formato, e ele
+        prometia a cor.
+
+        A trava e a DELIMITACAO do atributo: o `url()` do pintor tem de usar
+        aspas DUPLAS, porque quem embute o texto e o atributo com aspas simples.
+        """
+        pintor = self._fn_body("plateStyle")
+        # A busca e pela CONSTRUCAO, e nao pela palavra "url'": o comentario do
+        # proprio pintor cita o defeito, e um teste que casasse o texto do
+        # comentario reprovaria a documentacao.
+        construcao = [ln for ln in pintor.splitlines()
+                      if "background-image:url" in ln and not ln.strip().startswith("//")]
+        self.assertTrue(construcao, "o pintor parou de escrever o background-image")
+        for linha in construcao:
+            self.assertNotIn("url('", linha,
+                             "o url() com aspa simples fecha o atributo "
+                             "style='...' do card e a placa some da galeria")
+        # O `fn_body` devolve o FONTE, com os escapes intactos: a aspa dupla
+        # aparece como `\"` no arquivo, e nao como `"`.
+        self.assertTrue(any('url(\\"' in ln for ln in construcao),
+                        "o url() precisa de aspas duplas: o atributo do card e "
+                        "delimitado por aspas simples")
+        # E o contrato dos dois lados, para o teste nao passar por accidento:
+        # quem embute o texto no HTML tem de ser o dono da delimitacao.
+        for nome in ("galTextBand", "galHookBand"):
+            with self.subTest(pintor=nome):
+                self.assertIn("style='", self._fn_body(nome),
+                              f"{nome} nao usa mais aspas simples no style: se "
+                              "passar a usar duplas, o url() tem de trocar tambem")
 
     def test_the_crop_reaches_the_toml_for_a_plate_zone(self):
         """`zoom`/`pan_x`/`pan_y` de uma zona com placa vão para o arquivo.

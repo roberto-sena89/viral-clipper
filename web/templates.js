@@ -246,9 +246,17 @@
       // 16% para a faixa: 3 linhas de 3% (9%) mais o respiro de 1,8% dos dois
       // lados (3,6%) = 12,6%, e sobra 3,4% para a faixa nao encostar nas
       // vizinhas. Com menos, o texto encostava na borda: a 12% sobrava 2px em
-      // 720x1280, que e a resolucao mais apertada.
+      // 720x1280, que e a resolucao mais apertada. A faixa NAO encolhe para o
+      // video crescer: 16% ja e o menor valor medido que segura o texto, e
+      // encolhe-la devolveria o defeito que o numero acima descreve.
+      //
+      // O video e a 54%, e a imagem caiu para 30%. Quem paga o crescimento e a
+      // faixa de imagem, porque e a unica das tres que sobra espaco: e um still
+      // numa caixa de 30% (576px a 1920) ainda le a foto, enquanto a 20% ela
+      // viraria uma tira. A soma e 1,0 exato -- o motor recusa o arquivo se
+      // sobra ou falta.
       zones: [
-        { kind: "video", fraction: 0.44, fit: "cover", frameAt: 0, source: "",
+        { kind: "video", fraction: 0.54, fit: "cover", frameAt: 0, source: "",
           marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0, radius: 0, color: "black" },
         { kind: "text", fraction: 0.16, fit: "cover", frameAt: 0, source: "",
           marginTop: 1.8, marginBottom: 1.8, marginLeft: 3, marginRight: 3, radius: 0, color: "black",
@@ -256,7 +264,7 @@
           textSize: 3, textColor: "#ffffff", textAlign: "center", textValign: "middle",
           textBold: true, textUppercase: false, textOutline: 0,
           textOff: { x: 0, y: 0 } },
-        { kind: "image", fraction: 0.40, fit: "cover", frameAt: 0, source: "",
+        { kind: "image", fraction: 0.30, fit: "cover", frameAt: 0, source: "",
           // Imagem na BASE: respiro so em cima. Embaixo dela nao ha faixa nenhuma,
           // e a margem aparecia como uma faixa preta solta no fim da tela.
           marginTop: 1.2, marginBottom: 0, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" }
@@ -1055,7 +1063,14 @@
     var plate = plateByPath(zone && zone.plateImage);
     if (!plate || !plate.url) return css;
     var box = plateBox(zone, plate);
-    css += ";background-image:url('" + plate.url + "')";
+    // ASPAS DUPLAS no `url()`, e nao simples: este texto vai cru para dentro de
+    // um atributo `style='...'` nos cards da galeria (`galTextBand` e
+    // `galHookBand`). Um `'` aqui fecharia o atributo no meio do valor -- o
+    // navegador leria `style` so ate `url(`, o resto viraria atributo invalido,
+    // e a placa nao apareceria no card sem nenhum erro no console. Medido no
+    // Edge headless: com `url('...')` o card entrega `url("")`, a imagem some.
+    // A URL vem do servidor ja percent-encoded, entao nao pode conter aspa.
+    css += ";background-image:url(\"" + plate.url + "\")";
     css += ";background-size:" + box.size;
     css += ";background-position:" + box.position;
     css += ";background-repeat:no-repeat";
@@ -3494,7 +3509,9 @@
   // Antes o gancho era um `<span class="gal-hook">` SOBREPOSTO na base do video
   // (`position: absolute`, fora do fluxo), e por isso nao ocupava altura: o card
   // contava [58, 42] com a frase empilhada em cima. Agora ele e uma zona, e o
-  // card conta [44, 16, 40] — o que o motor monta de verdade.
+  // card conta as TRES faixas declaradas — o que o motor monta de verdade. A
+  // divisao esta no `GALLERY.viral`, e o comentario de la diz quem paga cada
+  // ajuste; aqui nao ha numero para envelhecer.
   //
   // O texto vem do ESTADO, e nao do `g.zones`: ele e editavel no passo Aparencia,
   // e o card e o que o usuario ve ANTES de abrir o formato. Com o texto do

@@ -964,10 +964,10 @@ input[type="range"]::-moz-range-thumb {
 .gal-id-text strong { font-size: 0.58rem; color: #fff; white-space: nowrap; }
 .gal-id-text small { font-size: 0.52rem; color: rgba(255, 255, 255, 0.72); white-space: nowrap; }
 /* A faixa de texto do GANCHO no card do Viral. Nao ha mais o `.gal-hook`
-   absoluto: o gancho virou uma ZONA (16% da tela), entao a faixa entra no fluxo
-   como as outras — e o card passa a contar [44, 16, 40], que e o que o motor
-   monta. Este bloco so ajusta o texto DENTRO da faixa: um corpo menor que o do
-   POV, porque a frase e curta e a faixa e estreita. */
+   absoluto: o gancho virou uma ZONA, entao a faixa entra no fluxo como as
+   outras — e o card passa a contar as tres faixas declaradas, que e o que o
+   motor monta. Este bloco so ajusta o texto DENTRO da faixa: um corpo menor que
+   o do POV, porque a frase e curta e a faixa e estreita. */
 .gal-hook-band .gal-pov--hook {
   font-size: 0.72rem; line-height: 1.24;
   /* 3 linhas: a frase do modelo quebra em 2 e sobra uma para o usuario escrever

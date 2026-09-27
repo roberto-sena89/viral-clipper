@@ -22,6 +22,27 @@ from web import server
 from web.server import resolve_within
 
 
+def _jpeg(width: int, height: int) -> bytes:
+    """Um JPEG com SOI, um segmento COMPRIMENTO antes do SOF, e o SOF.
+
+    O segmento extra (um ``APP0`` de 16 bytes) é o que dá valor ao teste: o SOF
+    fica num offset que nenhum atalho fixo acertaria, então um leitor que
+    procurasse o cabeçalho em posição constante leria bytes do ``APP0`` e
+    devolveria a largura como 61 — um número plausível, e por isso pior.
+    """
+    import struct
+
+    def segment(marker: int, payload: bytes) -> bytes:
+        return bytes([0xFF, marker]) + struct.pack(">H", len(payload) + 2) + payload
+
+    app0 = segment(0xE0, b"JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00" + b"\x00" * 4)
+    sof0 = segment(0xC0, bytes([8]) + struct.pack(">HH", height, width) + bytes([3]) + b"\x00" * 9)
+    return b"\xff\xd8" + app0 + sof0 + segment(0xDA, b"\x00" * 4) + b"\xff\xd9"
+
+
+_JPEG_1904x544 = _jpeg(1904, 544)
+
+
 class ResolveWithinTests(unittest.TestCase):
     def setUp(self):
         self.base = Path(tempfile.mkdtemp(prefix="vc_web_"))
@@ -1724,6 +1745,245 @@ class TemplatesPageTests(unittest.TestCase):
     def test_the_panel_links_to_the_templates_page(self):
         panel = page_source("index.html")
         self.assertIn('href="/templates"', panel)
+
+
+class CaptionSwitchTests(unittest.TestCase):
+    """Desligar a legenda pelo painel precisa chegar no motor.
+
+    A opção vive em dois lugares que não se enxergam: o item "Sem legenda" no
+    combo e o switch que ``build_captions`` consulta. Se um dos dois mudar de
+    nome, o painel continua mostrando a escolha e o vídeo sai com a legenda
+    queimada — sem erro em lugar nenhum, o que é a pior forma de falhar.
+    """
+
+    def setUp(self):
+        self.page = page_source("templates.html")
+
+    def _fn_body(self, name: str) -> str:
+        return fn_body(self.page, name)
+
+    def test_the_panel_offers_a_way_to_turn_captions_off(self):
+        self.assertIn("NO_CAPTIONS", self.page)
+        self.assertIn("Sem legenda", self.page)
+
+    def test_the_panel_starts_with_the_captions_off(self):
+        """O painel abre DESLIGADO: legenda queimada é pedido, não padrão.
+
+        Quem abre o painel está montando o template e ainda não renderizou nada.
+        Legenda queimada é um pedido explícito, então ela não vem ligada por
+        omissão — o que traz o item "Sem legenda" já marcado, a prévia sem a
+        faixa e o ``captions = false`` no ``.toml`` de saída.
+
+        A trava cobre os TRÊS pontos onde o padrão é reposto. Qualquer um deles
+        com ``true`` religaria a legenda por baixo, e o usuário veria o item
+        "Sem legenda" marcado na lista enquanto recebia legenda no render — a
+        falha que não tem erro em lugar nenhum.
+        """
+        # 1) o estado inicial
+        inicial = self.page.split("var state = {", 1)[1].split("\n  };", 1)[0]
+        self.assertRegex(inicial, r"captions:\s*false",
+                         "o painel nao abre com a legenda desligada")
+
+        # 2) "Carregar split-card" e 3) "Usar este template" da galeria repõem o
+        #    mesmo padrao. Os dois formatos antigos religavam, e um so com `true`
+        #    ja seria regressao silenciosa.
+        #
+        #    A trava le o CODIGO, nao a pagina: um `state.captions = true` num
+        #    comentario — ou o comentario de justificativa — nao religa nada, e um
+        #    teste que so procurasse `true` na pagina toda passaria com a legenda
+        #    religada. Por isso o `assertNotRegex` e o comentario come como
+        #    falsamente limpo.
+        for fn in ("loadSplitCard", "loadGallery"):
+            body = self._fn_body(fn)
+            codigo = "\n".join(
+                linha for linha in body.splitlines()
+                if not linha.strip().startswith("//")
+            )
+            self.assertIn("state.captions = false", codigo,
+                          f"{fn} nao repõe o padrao desligada")
+            self.assertNotIn("state.captions = true", codigo,
+                             f"{fn} religa a legenda contra o padrao")
+
+    def test_the_default_is_not_a_dead_end(self):
+        """"Sem legenda" tem que ser uma ESCOLHA, e um padrão que se religa.
+
+        O padrão desligado só é defensável se escolher um preset religar. Sem
+        isso o painel abriria sempre sem legenda e o único jeito de ter legenda
+        seria editar o ``.toml`` à mão — o painel estaria trancado no padrão.
+
+        E o item tem de ser o PRIMEIRO da lista: quem não quer legenda não
+        deveria rolar 38 presets até acha-lo.
+        """
+        # O caminho real e' o handler de `change` do `<select>` escondido: e ele
+        # que o combo dispara ao escolher. A trava le esse pedaco, e nao a
+        # funcao do combo — que so repassa o valor.
+        change = self.page.split('} else if (target.id === "tpl-preset") {', 1)
+        self.assertEqual(len(change), 2,
+                         "nao achei o ramo do preset no handler de change")
+        ramo = change[1].split('} else if', 1)[0]
+        self.assertIn("state.captions = true", ramo,
+                      "escolher um preset nao religa a legenda")
+
+        # E o item fica no topo da lista, inclusive na busca vazia.
+        keys = self._fn_body("presetKeys")
+        self.assertIn("keys.unshift(NO_CAPTIONS)", keys,
+                      "'Sem legenda' deixou de ser o primeiro item da lista")
+        # E a busca por "sem legenda" ou "deslig" tem que acha-lo.
+        self.assertRegex(keys, r"NO_CAPTIONS_DESC\.toLowerCase\(\)\.indexOf",
+                         "a busca por 'legenda' ou 'deslig' nao acha o item")
+
+    def test_the_option_lives_outside_the_preset_catalog(self):
+        """"Sem legenda" é opção do painel, não um preset do motor.
+
+        Se virasse uma entrada de ``PRESETS``, o teste de deriva acima continuaria
+        verde — ele compara com o motor — mas a linha ``caption_preset`` do
+        ``.toml`` passaria a apontar para um preset que o render não acha.
+        """
+        from viralclipper import caption_presets
+
+        self.assertNotIn("none", caption_presets.PRESETS)
+        block = re.search(r"var PRESETS = \{(.*?)\n  \};", self.page, re.S)
+        self.assertNotRegex(block.group(1), r'^\s*"none":')
+
+    def test_the_toml_says_false_only_when_the_captions_are_off(self):
+        """``captions = false`` some do arquivo quando a legenda está ligada.
+
+        ``None`` no template é "não mexe", então escrever ``captions = true``
+        seria afirmar algo que o motor não distingue de ligado-e-comando-de-linha
+        — e passaria a pisar num ``--caption-style block`` da linha de comando.
+        """
+        toml = self.page.split("function toToml()", 1)[1].split("function round4", 1)[0]
+        # Só as linhas de código: o comentário que explica por que a chave some
+        # quando está ligada cita "captions = true" ao contrário, e um teste que
+        # lesse comentário como código reprovaria a documentação que ele
+        # deveria premiar.
+        code = "\n".join(
+            line for line in toml.splitlines() if not line.strip().startswith("//")
+        )
+        self.assertIn('if (!state.captions) lines.push("captions = false")', code)
+        self.assertNotIn("captions = true", code)
+
+    def test_the_engine_reads_the_key_the_panel_writes(self):
+        """A chave do painel existe no motor e o motor não a inventa sozinho.
+
+        ``from_dict`` recusa chave desconhecida, então uma chave emitida pelo
+        painel e ausente no motor não é um detalhe: é o arquivo inteiro
+        recusado, com o trabalho do template perdido na hora do render.
+        """
+        from viralclipper import template as template_mod
+
+        data = {
+            "name": "mudo",
+            "captions": False,
+            "zones": [{"kind": "video", "fraction": 1.0}],
+        }
+        self.assertIs(template_mod.from_dict(data).captions, False)
+
+    def test_picking_a_preset_turns_the_captions_back_on(self):
+        """Escolher um preset religa — é a única forma de religar.
+
+        Desligar é uma opção do painel e não um preset, então nada mais devolve
+        a legenda. Sem esta linha o item "Sem legenda" ficava marcado e o preset
+        escolhido não aparecia em lugar nenhum da interface.
+        """
+        # O handler de change é um listener anônimo ligado por addEventListener,
+        # então não há nome para cortar: o que delimita o ramo é a própria
+        # condição. Cortar pela próxima `else if` é o que isola o bloco do
+        # preset — sem isto a busca acharia o `state.captions = true` de outro
+        # ramo e passaria com o preset quebrado.
+        branch = re.search(
+            r'id === "tpl-preset"\)(.*?)\n    \} else if', self.page, re.S
+        )
+        self.assertIsNotNone(branch, "ramo do tpl-preset nao encontrado")
+        self.assertIn("state.captions = true", branch.group(1))
+
+    def test_the_preview_hides_the_caption_band_when_they_are_off(self):
+        """A prévia some com a faixa de legenda, senão ela mente sobre o render."""
+        preview = self.page.split("function renderPreview()", 1)[1].split(
+            "\n  function ", 1
+        )[0]
+        self.assertIn("if (!state.captions) return;", preview)
+
+    def test_the_list_marks_the_item_that_describes_the_state(self):
+        """O marcado da lista é o item que descreve o estado, não o guardado atrás.
+
+        A lista guarda o preset num campo e a legenda num flag separado, então
+        "o que está selecionado" tem duas respostas possíveis. A que vale é a
+        segunda: com a legenda desligada, o item que descreve a tela é "Sem
+        legenda". Marcando o preset, a lista abriria apontando para um item que
+        não está em vigor — e o teclado Enter sobre ele religaria a legenda
+        sozinho, sem o usuário pedir.
+        """
+        body = self._fn_body("setComboOpen")
+        self.assertIn(
+            "comboActive = state.captions ? state.preset : NO_CAPTIONS", body
+        )
+
+    def test_the_hint_says_the_captions_are_off(self):
+        """O texto de apoio avisa, porque o botão ainda mostra o preset.
+
+        Desligar a legenda não troca o preset — ele continua no ``.toml`` e
+        continua pintando o headline e as faixas de texto. Então o botão fica
+        mostrando "ultra-impact" e a única pista de que a legenda saiu é o
+        ``· Desligada`` do subtítulo; o aviso no ``#preset-hint`` torna isso
+        visível longe do combo, onde a lista de trinta e oito presets mora.
+        """
+        body = self._fn_body("renderPresetHint")
+        self.assertIn("state.captions", body)
+        self.assertIn("Legenda DESLIGADA", body)
+
+    def test_the_search_keeps_the_cursor_on_the_choice_in_force(self):
+        """Buscar não move o cursor para o topo da lista.
+
+        A lista de busca põe "Sem legenda" em primeiro lugar de propósito, então
+        um cursor que salta para o primeiro item a cada tecla deixaria o Enter
+        seguinte desligando a legenda — só por o usuário ter digitado e apagado
+        uma letra. O cursor segue a seleção, que é o que está em vigor.
+        """
+        block = re.search(
+            r'comboSearch\.addEventListener\("input"(.*?)\n      \}\);',
+            self.page,
+            re.S,
+        )
+        self.assertIsNotNone(block, "handler de input da busca nao encontrado")
+        body = block.group(1)
+        self.assertIn('aria-selected") === "true"', body)
+        self.assertNotIn('querySelector(".combo-item")', body)
+
+    def test_the_arrows_start_from_the_choice_in_force(self):
+        """A primeira seta sai da seleção, não do índice zero.
+
+        Sem legenda, o item em vigor é o índice 0 da lista. A conta antiga
+        somava ±1 a zero mesmo assim, então a seta para cima saltava para o
+        último preset e o Enter religava a legenda.
+        """
+        block = re.search(
+            r'event\.key === "ArrowDown" \|\| event\.key === "ArrowUp"(.*?)\n        \}\n',
+            self.page,
+            re.S,
+        )
+        self.assertIsNotNone(block, "ramo das setas nao encontrado")
+        body = block.group(1)
+        self.assertIn("if (i < 0) i = 0;", body)
+        self.assertIn("else i = (i +", body)
+
+    def test_the_summary_table_stops_claiming_libass_positions_it(self):
+        """A tabela de geometria não pode prometer um posicionamento que não existe.
+
+        A faixa de legenda aparece na tabela como "posicionado pelo libass". Com
+        a legenda desligada não há evento nenhum para o libass posicionar, então
+        a linha mentia sobre o arquivo que vai ser renderizado.
+        """
+        geometry = self.page.split("function renderGeometry()", 1)[1].split(
+            "\n  function ", 1
+        )[0]
+        self.assertIn('state.captions ? "full canvas" : "desligada"', geometry)
+        self.assertIn(
+            'state.captions ? "posicionado pelo libass" : "sem texto queimado"',
+            geometry,
+        )
+
+
 class RailNavigationTests(unittest.TestCase):
     """The page picker on the lateral rail.
 
@@ -1942,11 +2202,330 @@ class RailNavigationTests(unittest.TestCase):
                 )
 
 
+class TikTokPreviewUiTests(unittest.TestCase):
+    """A prévia do TikTok desenha a UI do app, não só o vídeo.
+
+    O que essa UI compra é uma pergunta que só o app real responde: a legenda e
+    a faixa de texto caem embaixo da barra e do bloco de autor, ou ficam
+    escondidas atrás deles. Por isso os testes travam as peças e a ordem delas,
+    que é o que o app faz.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.page = page_source("templates.html")
+        cls.css = (server.WEB_DIR / "templates.css").read_text(encoding="utf-8")
+
+    def _rail(self) -> str:
+        return self.page.split('class="tt-rail"', 1)[1].split("</div>", 1)[0]
+
+    def test_the_page_carries_every_piece_of_the_chrome(self):
+        for fragment in (
+            'class="platform-ui tt-ui"',
+            'class="tt-head"',
+            'class="tt-rail"',
+            'class="tt-meta"',
+            'class="tt-nav"',
+        ):
+            self.assertIn(fragment, self.page, fragment)
+
+    def test_the_header_names_the_two_feeds(self):
+        self.assertIn("Following", self.page)
+        self.assertIn("For You", self.page)
+
+    def test_the_rail_holds_five_pieces_in_the_apps_order(self):
+        """Avatar, like, comentário, share e o disco — nessa ordem.
+
+        O disco entra por último de propósito: solto no canto ele caía no MEIO
+        do trilho e tapava a contagem do coração, que é a peça que denuncia
+        legenda invadindo a lateral.
+        """
+        rail = self._rail()
+        self.assertIn("tt-avatar", rail)
+        self.assertIn("tt-disc", rail)
+        self.assertEqual(rail.count('class="tt-act"'), 3, rail)
+        self.assertLess(rail.index("tt-avatar"), rail.index("tt-disc"))
+        for label in ("99.9k", "100", "Share"):
+            self.assertIn(label, rail, label)
+
+    def test_the_nav_lists_the_four_destinations_and_the_create_button(self):
+        nav = self.page.split('class="tt-nav"', 1)[1]
+        for label in ("Home", "Discover", "Inbox", "Me"):
+            self.assertIn(f"<em>{label}</em>", nav, label)
+        self.assertIn("tt-nav-plus", nav)
+
+    def test_the_ui_is_illustration_and_not_content(self):
+        """aria-hidden + pointer-events: none — nada de anunciar, nada de
+        interceptar o arraste do POV que passa por cima."""
+        block = self.page.split('class="platform-ui tt-ui"', 1)[1][:80]
+        self.assertIn("aria-hidden", block)
+        # Ancorado na regra de TOPO: `.platform-ui {` sozinho também casa a
+        # descendente `[data-platform="tiktok"] .platform-ui`, que vem primeiro.
+        rule = self.css.split("\n.platform-ui {", 1)[1].split("}", 1)[0]
+        self.assertIn("pointer-events: none", rule)
+
+    def test_only_one_chrome_shows_at_a_time(self):
+        """Cada plataforma mostra a SUA moldura desenhada, e nunca as duas.
+
+        As duas uis dividem a classe `.platform-ui`, entao o seletor tem de casar
+        pela classe que as DISTINGUE (`.tt-ui` / `.ig-ui`) e nao pela generica.
+        Com `.stage[data-platform="tiktok"] .platform-ui`, o TikTok desenhado
+        acenderia junto com o Reels desenhado — as duas molduras empilhadas na
+        mesma tela, com dois cabecalhos e duas barras.
+        """
+        self.assertIn(
+            '.stage[data-platform="tiktok"] .tt-ui { display: block; }',
+            self.css,
+            "a UI do TikTok deixou de ser desenhada",
+        )
+        self.assertIn(
+            '.stage[data-platform="instagram"] .ig-ui { display: block; }',
+            self.css,
+            "a UI do Reels deixou de ser desenhada",
+        )
+        # O generico `.platform-ui` tem de continuar escondido: e ele que segura
+        # as duas ao mesmo tempo se alguem escrever so ele.
+        base = self.css.split("\n.platform-ui {", 1)[1].split("}", 1)[0]
+        self.assertIn("display: none", base)
+        # O rotulo simples foi embora: com cabecalho desenhado nos dois apps ele
+        # duplicaria a peca, e o `platform-name` no JS apontaria para um no que
+        # nao existe mais. A busca e no CODIGO, nao no arquivo inteiro: o
+        # comentario que explica a remocao cita o nome, e varrer a prosa
+        # reprovaria a propria explicacao.
+        self.assertNotIn("platform-chrome", self.css)
+        self.assertNotIn('id="platform-name"', self.page)
+        js = (server.WEB_DIR / "templates.js").read_text(encoding="utf-8")
+        self.assertNotIn('getElementById("platform-name")', js)
+
+
+class ReelsPreviewUiTests(unittest.TestCase):
+    """A prévia do Instagram desenha a tela do Reels, não só o vídeo.
+
+    Mesma compra que a do TikTok — descobrir se a legenda e a faixa de texto caem
+    embaixo da UI do app ou ficam escondidas atrás dela. E a moldura do Reels NAO
+    pode ser a do TikTok com outro nome: o app e diferente o bastante na tela, e a
+    diferenca e justamente o que faz a previa valer.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.page = page_source("templates.html")
+        cls.css = (server.WEB_DIR / "templates.css").read_text(encoding="utf-8")
+
+    def _ui(self) -> str:
+        """O bloco do Reels, e nao a UI do TikTok que vem antes dele."""
+        return self.page.split('class="platform-ui ig-ui"', 1)[1]
+
+    def test_the_page_carries_every_piece_of_the_reels_screen(self):
+        for fragment in (
+            "ig-status", "ig-head", "ig-rail", "ig-meta", "ig-cover", "ig-nav",
+        ):
+            self.assertIn(f'class="{fragment}"', self.page, fragment)
+
+    def test_the_player_controls_stay_out_of_the_copy(self):
+        """Nem o play nem o botao de som do CENTRO entram na copia.
+
+        No app eles so aparecem com o video PAUSADO. A previa nao reproduz nada,
+        entao desenhar os dois deixaria um botao de play clicavel que nao faz
+        nada — pior do que nao ter. Quem denuncia a moldura trocada nao e o play:
+        sao o trilho de quatro acoes SEM contagem e o rodape recolhido.
+        """
+        ui = self._ui()
+        self.assertNotIn("ig-play", ui)
+        self.assertNotIn("ig-center", ui)
+        self.assertNotIn("ig-audio", ui)
+        # E o play nao pode ter virado uma acao do trilho.
+        trilho = ui.split('class="ig-rail"', 1)[1].split("ig-meta", 1)[0]
+        self.assertNotIn("ig-play", trilho)
+
+    def test_the_header_names_the_feed_and_the_group(self):
+        """`Reels` puro e `Amigos` com os tres avatares do grupo.
+
+        O grupo de amigos e o que o TikTok nao tem: sem ele, o cabecalho do Reels
+        e o do TikTok com o texto trocado. O titulo vai SEM a seta de menu — o
+        app mostra o nome puro nesta tela, e a seta sugeriria um menu que a
+        copia nao tem.
+        """
+        head = self._ui().split('class="ig-head"', 1)[1].split("ig-rail", 1)[0]
+        self.assertIn("Reels", head)
+        self.assertIn("Amigos", head)
+        self.assertIn("ig-faces", head)
+        self.assertEqual(head.count("<i "), 3, "sao tres avatares no grupo")
+        self.assertNotIn("ig-caret", head)
+
+    def test_the_rail_holds_four_actions_and_no_counts(self):
+        """Coracao, comentario, enviar e salvar — QUATRO, e sem numero embaixo.
+
+        O reels esconde a contagem de cada acao quando ela nao cabe; num feed
+        limpo ela nao cabe, e o que fica sao so os icones de contorno. Cinco
+        acoes com numero seria a tela de um post que ja foioinserido e curtido —
+        ou seja, a copia de outro momento do app, nao desta.
+        """
+        rail = self._ui().split('class="ig-rail"', 1)[1].split("ig-meta", 1)[0]
+        self.assertEqual(rail.count('class="ig-act"'), 4, rail)
+        self.assertNotIn("<b>", rail, "feed limpo nao mostra contagem por acao")
+
+    def test_the_footer_is_the_collapsed_one(self):
+        """Avatar + @user truncado + `Seguir` + `Ver mais`, e nada mais.
+
+        Este e o estado RECOLHIDO do rodape: nem a faixa de audio nem o texto da
+        legenda aparecem ate o `Ver mais` ser tocado. E de proposito — e a forma
+        que ocupa a MENOS altura util do rodape, e portanto a mais honesta para
+        julgar se a legenda queimada do corte encosta na UI.
+        """
+        meta = self._ui().split('class="ig-meta"', 1)[1].split("ig-nav", 1)[0]
+        self.assertIn("ig-seguir", meta)
+        self.assertIn("ig-more", meta)
+        self.assertIn("Ver mais", meta)
+        self.assertIn("ig-avatar", meta)
+        self.assertNotIn("ig-caption", meta, "a legenda fica escondida ate o Ver mais")
+        self.assertNotIn("ig-sound", meta, "a faixa de audio tambem fica recolhida")
+
+    def test_the_footer_carries_the_track_indicator(self):
+        """As tres linhas do indicador de faixa, no canto inferior direito.
+
+        No reels o post sem capa propria mostra esse tres-tracos no lugar da
+        arte. E a unica peca do rodape sem equivalente no TikTok (la e o disco
+        que gira), e ela ocupa exatamente a faixa onde a legenda costuma
+        encostar.
+        """
+        self.assertIn('class="ig-cover"', self._ui())
+        rule = self.css.split(".ig-cover {", 1)[1].split("}", 1)[0]
+        self.assertIn("position: absolute", rule)
+        # As pecas do rodape se empilham por `bottom` e nao se sobrepoem por
+        # acaso: se uma mudar de altura, essa ordem e a primeira a conferir.
+        # A barra gruda no zero (`bottom: 0`), entao o parser aceita os dois.
+        def bottom_of(name: str) -> float:
+            import re
+
+            body = self.css.split(f".{name} {{", 1)[1].split("}", 1)[0]
+            found = re.search(r"bottom:\s*(\d+(?:\.\d+)?)cqh", body)
+            return float(found.group(1)) if found else 0.0
+
+        bottoms = {name: bottom_of(name) for name in ("ig-nav", "ig-cover", "ig-rail", "ig-meta")}
+        self.assertLess(bottoms["ig-nav"], bottoms["ig-cover"], bottoms)
+        self.assertLess(bottoms["ig-cover"], bottoms["ig-rail"], bottoms)
+
+    def test_the_nav_has_no_labels_under_the_icons(self):
+        """Cinco icones e nenhum ROTULO embaixo — e assim que o Reels faz.
+
+        O TikTok rotula (`<em>Home</em>`, `<em>Me</em>`). Copiar os rotulos para ca
+        deixaria a barra com duas vezes a altura e o formato errado.
+
+        `<em>` continua aparecendo na barra, mas so como ADORNO: a contagem do
+        direct e o ponto do perfil. E por isso que o teste olha o que tem dentro
+        de cada `<em>` em vez de banir a tag — banir seria proibir a novidade,
+        que e metade do que a barra do app tem a dizer.
+
+        O recorte vai ate o FIM da UI do Reels, e nao ate o fim do arquivo: sem o
+        limite, o `split` engoliria o resto da pagina — incluindo o `<em>` do
+        TikTok que vem logo antes, e o teste passaria a medir a barra errada.
+        """
+        import re
+
+        nav = self._ui().rsplit('class="ig-nav"', 1)[1].split("</div>", 1)[0]
+        self.assertEqual(nav.count('class="ig-nav-i'), 5, nav)
+        for tag in re.findall(r"<em[^>]*>", nav):
+            self.assertTrue("ig-badge" in tag or "ig-dot" in tag, tag)
+        # Nenhum `<em>` pode conter texto solto: seria um rotulo.
+        self.assertNotIn("<em>Home</em>", nav)
+        self.assertNotIn("<em>Me</em>", nav)
+
+    def test_the_nav_carries_the_two_awareness_marks(self):
+        """A contagem de mensagens no direct e o ponto de atividade no perfil.
+
+        São as duas únicas coisas da moldura que dizem "você tem coisa nova", e
+        somem se a cópia ficar sem elas — o resto da barra é idêntica em qualquer
+        conta. A contagem vai dentro do item, entao um badge solto na barra
+        denunciaria a troca de posição.
+        """
+        nav = self._ui().rsplit('class="ig-nav"', 1)[1].split("</div>", 1)[0]
+        self.assertIn('class="ig-badge">5<', nav)
+        self.assertIn('class="ig-dot"', nav)
+        # O Reels (segundo item) nao carrega adorno: e a aba ja aberta.
+        ativos = [chunk for chunk in nav.split('class="ig-nav-i')[1:] if "ig-badge" in chunk or "ig-dot" in chunk]
+        self.assertEqual(len(ativos), 2, "so o direct e o perfil trazem adorno")
+
+    def test_the_reels_is_illustration_and_not_content(self):
+        """`aria-hidden` + `pointer-events: none`, como a do TikTok."""
+        bloco = self.page.split('class="platform-ui ig-ui"', 1)[1][:80]
+        self.assertIn("aria-hidden", bloco)
+        # A regra generica de `.platform-ui` e o que garante o `pointer-events`; a
+        # do Reels herda dela, e um `pointer-events: auto` local a religaria.
+        base = self.css.split("\n.platform-ui {", 1)[1].split("}", 1)[0]
+        self.assertIn("pointer-events: none", base)
+        self.assertNotIn("pointer-events: auto", self.css.split("UI DO INSTAGRAM", 1)[1])
+
+    def test_the_status_bar_is_the_phones_and_not_the_apps(self):
+        """A barra de status e do SO, entao ela fica ACIMA do cabecalho do app.
+
+        Se fosse a peca do topo do app, entraria dentro de `.ig-head` — e ai a ordem
+        de leitura na tela seria a mesma, mas a regra que as posiciona seria a errada
+        para quem ajustasse a moldura.
+        """
+        self.assertIn("21:20", self.page)
+        status = self._ui().split('class="ig-status"', 1)[1].split("ig-head", 1)[0]
+        self.assertIn("VoLTE", status)
+        # O relogio e a esquerda com os glifos da operadora; VoLTE/sinal/wifi/
+        # bateria sao o outro lado. A ordem e o que faz a barra parecer de
+        # aparelho em vez de um detalhe solto no canto.
+        self.assertIn("ig-clock", status)
+        self.assertIn("ig-status-l", status)
+
+
 class TemplatesGeometryTests(unittest.TestCase):
     """The wizard recomputes band pixels; the numbers must agree with the engine."""
 
     def setUp(self):
         self.page = page_source("templates.html")
+
+    def test_media_anchored_to_the_bottom_is_flush_with_the_frame(self):
+        """Toda zona de mídia na BASE encosta na borda de baixo.
+
+        O vão entre faixas é o respiro — mas embaixo da última zona não há nada
+        para separar, e a margem de baixo aparecia como uma faixa preta solta no
+        fim da tela, que lia como render quebrado. A regra é posicional: vale
+        para o cartão do split-card e para a imagem do Meme e do Vídeo Viral,
+        que têm a mesma situação — a última faixa encosta embaixo.
+
+        A única exceção é o Twitter/X, e ela é real: lá a imagem é a PRIMEIRA
+        faixa, e a margem de baixo é o vão que a separa do vídeo que vem abaixo.
+        Esse respiro existe e tem função, então fica.
+        """
+        import re
+
+        from viralclipper import template as template_mod
+
+        def margens(fracao: str, kind: str) -> list[str]:
+            # `[\s\S]` e nao `.`: a zona e um literal de varias linhas e pode ter
+            # um comentario `//` entre o `kind:` e o `marginTop:`. Como e
+            # preguicoso, ele para no primeiro `marginTop:` depois do `fraction:`,
+            # que e sempre o da propria zona.
+            achados = re.findall(
+                r'kind: "' + kind + r'",[\s\S]*?fraction: ' + fracao
+                + r"[\s\S]*?marginTop: ([\d.]+), marginBottom: ([\d.]+),",
+                self.page)
+            return [f"top={a} bottom={b}" for a, b in achados]
+
+        # Zonas de mídia na base: respiro em cima, zero embaixo.
+        for kind, fracao in (("frame", r"0\.38"), ("image", r"0\.26"), ("image", r"0\.40")):
+            achados = margens(fracao, kind)
+            self.assertTrue(achados, f"nenhuma zona {kind}/{fracao} encontrada")
+            for item in achados:
+                self.assertIn("bottom=0", item, f"{kind} {fracao}: {item}")
+
+        # A zona nova entra antes da legenda, ou seja na base: mesma regra.
+        self.assertIn(
+            "marginTop: 1.2, marginBottom: 0, marginLeft: 3, marginRight: 3,\n"
+            '      radius: kind === "solid"',
+            self.page,
+            "a zona nova voltou a ter respiro embaixo",
+        )
+
+        # O motor tem que concordar com a página no layout que ele tambem carrega.
+        zona = template_mod.BUILTIN["split-card"].zones[1]
+        self.assertEqual(zona.margin_top, 0.012)
+        self.assertEqual(zona.margin_bottom, 0.0)
 
     def test_the_geometry_rule_matches_the_engine(self):
         """Ambas as implementações são comparadas na mesma entrada.
@@ -2000,6 +2579,15 @@ class TemplatesPreviewFidelityTests(unittest.TestCase):
     efetiva e travam a regra, porque a prévia que mente sobre o render é pior
     do que não ter prévia.
     """
+
+    @classmethod
+    def setUpClass(cls):
+        # O `css` entra aqui porque os testes de moldura leem o CSS da página e não
+        # o `page_source` (HTML + CSS + JS colados): no `page_source` o nome de uma
+        # regra viraria parte de uma linha só, e o `self._rule`, que ancora no
+        # início da linha, pararia de casar.
+        cls.page = page_source("templates.html")
+        cls.css = (server.WEB_DIR / "templates.css").read_text(encoding="utf-8")
 
     def setUp(self):
         self.page = page_source("templates.html")
@@ -2074,15 +2662,54 @@ class TemplatesPreviewFidelityTests(unittest.TestCase):
         faixa de vídeo: dois espaços de coordenada, e a posição real do recorte
         só aparecia subtraindo o padding do palco. Agora o desenho e a âncora do
         POV saem das mesmas duas variáveis.
+
+        Só a galeria tem recorte: a prévia deixou de ter um, porque cada app
+        desenhado (TikTok e Reels) traz a própria barra de status no lugar — um
+        recorte de celular em cima dela seria a mesma informação duas vezes.
         """
-        pairs = ((".phone-screen", ".phone-notch"), (".gal-screen", ".gal-notch"))
-        for screen, notch in pairs:
-            block = self._rule(screen)
-            self.assertIn("--notch-top", block, f"{screen} não declara o topo do recorte")
-            self.assertIn("--notch-h", block, f"{screen} não declara a altura do recorte")
-            drawn = self._rule(notch)
-            self.assertIn("top: var(--notch-top)", drawn)
-            self.assertIn("height: var(--notch-h)", drawn)
+        block = self._rule(".gal-screen")
+        self.assertIn("--notch-top", block, ".gal-screen não declara o topo do recorte")
+        self.assertIn("--notch-h", block, ".gal-screen não declara a altura do recorte")
+        drawn = self._rule(".gal-notch")
+        self.assertIn("top: var(--notch-top)", drawn)
+        self.assertIn("height: var(--notch-h)", drawn)
+        # A prévia não pode voltar a ter um recorte próprio.
+        self.assertNotIn(".phone-notch", self.page)
+
+    def test_the_stage_is_the_frame_and_not_a_phone(self):
+        """O palco é o QUADRO 9:16, sem mock de aparelho.
+
+        Duas coisas quebram quando ele volta a ser um mock de smartphone, e as
+        duas são silenciosas — nenhuma delas dá erro, só muda o número:
+
+        1. **A razão.** O palco era 9/18.4 (proporção de aparelho) enquanto o
+           quadro é 9:16. Todo `cqh`/`cqw` da prévia é fração da tela, então uma
+           tela 18% mais alta que o frame translateia TODA medida vertical em
+           pixels grandes demais: legenda, altura de faixa e corpo do texto saíam
+           maiores do que o motor queima. A prévia ficava discordando do render
+           sem nada apontar para a causa.
+        2. **A moldura.** O render é um 9:16 reto; cantos arredondados e bezel
+           mostravam uma tela que não existe e sumiam conteúdo nas bordas.
+        """
+        palco = self._rule(".stage")
+        self.assertIn("aspect-ratio: 9 / 16", palco,
+                      "o palco precisa ser 9:16 — e a razao do quadro, nao do aparelho")
+        # Nenhum resto de moldura: cantos, bezel, padding ou os botoes laterais
+        # que eram pseudo-elementos do palco.
+        for resto in ("border-radius", "box-shadow", "padding"):
+            self.assertNotIn(resto, palco, f"a moldura voltou: {resto} no palco")
+        for pseudo in (".stage::before", ".stage::after"):
+            self.assertNotIn(pseudo, self.css,
+                             f"{pseudo} desenha botao de aparelho num quadro reto")
+        # A barra de home e a moldura de baixo: as duas saem com o frame.
+        self.assertNotIn(".phone-home", self.css)
+        self.assertNotIn("phone-home", self.page)
+        # A tela e o limite do video: reto, e sem encolher dentro de um padding.
+        tela = self._rule(".phone-screen")
+        self.assertNotIn("border-radius", tela,
+                         "a tela do quadro nao tem canto arredondado")
+        self.assertNotIn("padding", tela,
+                         "a tela nao pode encolher dentro de uma moldura")
 
     def test_the_pov_is_a_band_of_its_own_outside_the_video(self):
         """O POV é uma ZONA de texto, não uma sobreposição sobre o vídeo.
@@ -2109,7 +2736,110 @@ class TemplatesPreviewFidelityTests(unittest.TestCase):
         # A faixa do texto é pintada pela cor da ZONA (preta no Meme), não por CSS:
         # no motor ela é o mesmo `solid`, e é ele que dá o fundo preto.
         self.assertIn("function paintTextZone", self.page)
-        self.assertIn("el.style.background = zone.color", self.page)
+        # `plateStyle` e quem pinta: ele devolve a cor E, quando a zona tem
+        # `plate_image`, a imagem por cima. A trava e a chamada, e nao a
+        # atribuicao direta de `background`, porque a faixa passou a ter dois
+        # estados (cor solida e placa) e um `el.style.background = zone.color`
+        # fixaria so o primeiro.
+        painter = fn_body(self.page, "paintTextZone")
+        # A trava e a CHEGADA ao pintor, e nao a atribuicao direta de `background`,
+        # porque a faixa passou a ter dois estados (cor solida e placa) e um
+        # `el.style.background = zone.color` fixaria so o primeiro. O caminho
+        # pode ser a chamada direta ou a indireta por `applyPlateStyle` — o que
+        # nao pode e a faixa pintar o fundo sozinha.
+        self.assertTrue(
+            "plateStyle(zone)" in painter or "applyPlateStyle(el, zone)" in painter,
+            "a faixa da previa ignora a placa de fundo da zona")
+        self.assertNotIn("el.style.background = zone.color", painter,
+                         "a faixa voltou a ignorar a cor da zona")
+        # E a cor continua tendo quem a le: ela e o fundo sem placa e o letterbox
+        # do encaixe "Encaixa", entao sumir dela faria a previa mentir sobre os
+        # dois casos.
+        self.assertIn("zone.color", fn_body(self.page, "plateStyle"))
+
+        # A placa nao pode ser aplicada por `cssText`. O laco de `renderPreview`
+        # escreve `top` e `height` na faixa ANTES de chamar `paintTextZone`, e
+        # `cssText` substitui o bloco inline inteiro: a faixa perdia a posicao,
+        # caia no topo do canvas e ficava com a altura do texto. A placa saia no
+        # lugar errado e o console nao dizia nada — so a geometria na tela
+        # denunciava, que e o tipo de defeito que os testes de string nao pegam.
+        self.assertNotIn("style.cssText", painter,
+                         "a faixa de texto troca o bloco inline e perde top/height")
+        # A trava do contratoparte: a pintura tem de acontecer em `applyPlateStyle`.
+        self.assertIn("applyPlateStyle(el, zone)", painter)
+
+    def test_the_meme_id_text_is_centered_and_the_x_card_is_not(self):
+        """No Meme o nome e o @handle saem centrados; no X, a esquerda.
+
+        A ``.pv-id`` e a MESMA classe nos dois formatos, e nela o
+        ``flex: 1`` faz a CAIXA ocupar a linha toda que sobra depois do avatar.
+        Sem centralizar, o texto herda ``start`` e fica grudado nessa borda —
+        foi o que o usuario viu. Centralizar exige DUAS coisas: ``text-align``
+        (move o texto dentro da linha) e ``align-items`` (o ``strong`` e
+        ``display: flex`` para o selo azul, e item flex nao obedece a
+        ``text-align``). Faltando a segunda, o nome desce centrado e o @handle
+        fica a esquerda.
+
+        E a caixa precisa ENCOLHER: com ``flex: 1`` ela continuaria larga e o
+        centro do texto cairia no meio do espaço vazio, e não no meio do par
+        avatar + nome.
+
+        O escopo e ``.pv-idbar`` justamente para o cartão do X ficar com o
+        nome à esquerda, que é como o post se apresenta.
+        """
+        meme = self._rule(".pv-idbar .pv-id")
+        self.assertIn("align-items: center", meme,
+                      "o strong (flex) do Meme nao obedece a text-align sozinho")
+        self.assertIn("text-align: center", meme,
+                      "o nome/@handle do Meme continuam a esquerda")
+        # `flex: 0 1 auto` e o que faz a caixa encolher ate o conteudo.
+        self.assertRegex(meme, r"flex:\s*0\s+1\s+auto",
+                         "a caixa do texto continua ocupando a linha toda (flex: 1)")
+
+        # O cartao do X NAO pode ter pego o centro: la o nome encosta no avatar.
+        regra_comum = self._rule(".pv-id")
+        self.assertIn("flex: 1", regra_comum,
+                      "a .pv-id compartilhada perdeu o flex: 1 do cartao do X")
+        self.assertNotIn("text-align: center", regra_comum,
+                         "centralizar a .pv-id global trocaria o cartao do X junto")
+
+    def test_the_gallery_id_text_matches_the_window(self):
+        """O card da galeria e a janela mostram o MESMO perfil, alinhados igual.
+
+        Os dois desenham avatar + nome + @handle. Com o card em ``left`` e a
+        janela em ``center``, o formato prometia uma coisa no card e entregava
+        outra no palco — e o card e o que o usuario ve ANTES de abrir o
+        formato, entao era ele quem mentia.
+        """
+        card = self._rule(".gal-id-text")
+        self.assertIn("align-items: center", card,
+                      "o nome do card da galeria nao alinha com o @handle")
+        self.assertNotIn("text-align: left", card,
+                         "o card da galeria ainda centraliza o nome a esquerda")
+
+    def test_the_gallery_text_band_keeps_its_declared_height(self):
+        """A faixa de texto do card Meme mede a fração DECLARADA, nem mais nem menos.
+
+        O `padding` vertical da faixa entra na base do `flex-basis: 0` e sai fora
+        da conta do `flex-grow`: com `4px 6px` ela desenhava 18,3% da tela onde a
+        zona declara 16%, e o vídeo desenhado começava abaixo do vídeo do motor.
+        O card prometia um layout que o render não entregava — o mesmo defeito que
+        fez a legenda virar sobreposição no formato Vídeo Viral. O respiro vai no
+        texto, que a faixa centraliza.
+        """
+        block = self._rule(".gal-text-band")
+        pad = re.search(r"padding:\s*([^;]+);", block)
+        self.assertIsNotNone(pad, ".gal-text-band não declara o respiro do texto")
+        parts = pad.group(1).split()
+        # shorthand: 1 valor (todos), 2 (v | h), 3/4 (top e bottom explícitos)
+        vertical, bottom = parts[0], (parts[2] if len(parts) > 2 else parts[0])
+        self.assertEqual(
+            vertical.strip(), "0",
+            "padding vertical na faixa de texto engorda a zona declarada",
+        )
+        self.assertEqual(
+            bottom.strip(), "0", "padding vertical assimétrico na faixa de texto",
+        )
 
     def test_the_text_band_is_painted_in_place(self):
         """Uma faixa por zona — a de texto inclusive.
@@ -2198,7 +2928,6 @@ class TemplatesPreviewFidelityTests(unittest.TestCase):
                 "var(--tw-pad-top)", self._rule(selector),
                 f"{selector} voltou a nascer atrás do recorte",
             )
-
 
 class TweetEditorTests(unittest.TestCase):
     """O passo Aparencia edita o tweet do modelo: título, @handle, texto, posição.
@@ -2443,8 +3172,9 @@ class TweetEditorTests(unittest.TestCase):
 
         Antes ele era desenho da página sobreposto à faixa de vídeo: o render não
         o queimava e a altura do vídeo não o contava. Agora ocupa altura própria —
-        por isso o vídeo caiu de 74% para 58%. Uma zona nova aqui sem reequilibrar
-        as outras é o defeito que só apareceria no render, acusado pelo motor.
+        por isso o vídeo encolhe (52%, depois de 58% quando a faixa era 16%).
+        Uma zona nova aqui sem reequilibrar as outras é o defeito que só
+        apareceria no render, acusado pelo motor.
         """
         block = self._gallery_block("meme")
         fractions = [float(value) for value in re.findall(r"fraction: ([0-9.]+)", block)]
@@ -2467,6 +3197,240 @@ class TweetEditorTests(unittest.TestCase):
         block = self._gallery_block("meme")
         self.assertRegex(block, r'text: "[^"]+"', "a zona de texto do Meme está sem palavras")
         self.assertIn('color: "black"', block, "a faixa do POV perdeu o fundo preto")
+
+    def test_the_pov_carries_the_46px_descent_of_the_model(self):
+        """O catálogo nasce com o POV 46px abaixo do centro, como a prévia do modelo.
+
+        O valor é medido, não herdado: com ``an=5`` o libass centraliza a CAIXA da
+        fonte, que tem mais altura acima da linha-base do que abaixo, então o centro
+        visual do texto fica acima do centro da faixa. Os 46px corrigem esse desnível
+        e é o que faz prévia e render lerem iguais.
+
+        Zerado, o render sai com o texto ~3% mais alto e nada reclama — o defeito
+        fica invisível na tela e só aparece na comparação com a prévia. E o valor
+        mora em ``textOff`` (px do quadro), não em fração: quem ler ``y: 46`` como
+        fração de canvas colocaria o texto 46x mais longe, fora do quadro.
+        """
+        block = self._gallery_block("meme")
+        self.assertRegex(
+            block,
+            r"textOff:\s*\{\s*x:\s*0,\s*y:\s*46\s*\}",
+            "o modelo do Meme perdeu o deslocamento vertical do POV",
+        )
+        # Em px do quadro, e a mesma unidade dos sliders de posição do passo
+        # Aparência — o usuário arrasta em px e espera o mesmo número no modelo.
+        self.assertIn("clampOffset", self.page)
+        # E o .toml converte para a fração que o motor lê: 46/1920 = 0.024.
+        toml = self._fn_body("toToml")
+        self.assertIn("text_dy", toml, "o offset do POV não chega ao .toml")
+        self.assertIn("offY / state.height", toml, "o Y do POV tem de dividir pela ALTURA")
+
+    def test_the_id_bar_position_is_part_of_the_template(self):
+        """A posição do perfil é do TEMPLATE, e não estado solto da sessão.
+
+        Avatar e nome nascem centrados pelo CSS (``justify-content: center`` com
+        ``align-items: center``), e o Meme ainda declara um ajuste em cima disso
+        (os 2% de :meth:`test_the_meme_lifts_the_profile_two_percent`). O que
+        importa aqui é a chave ``idOffset`` existir e ser aplicada: sem ela, o
+        arrasto vivia só em ``state.tweetOffset`` e sobrevivia à virada de
+        formato — o usuário saía do Meme torto, ia ao Viral, voltava, e o Meme
+        mantinha o arrasto. O "padrão" que o usuário pedia não existia: o botão
+        de usar o formato entregava o que ficou da última visita.
+
+        A trava é o ``idOffset`` no catálogo mais a cópia em
+        ``applyGalleryIdOffset``: sem o clone, o estado passaria a ser o mesmo
+        objeto do catálogo e o primeiro arrasto reescreveria a galeria, que se
+        redesenha a cada render.
+        """
+        block = self._gallery_block("meme")
+        self.assertIn("idOffset:", block, "o Meme não declara a posição do seu perfil")
+        # Avatar e nome andam JUNTOS: o mesmo par sobe ou desce junto, senão o
+        # circulo e o texto se desencontram.
+        av = re.search(r"avatar:\s*\{[^}]*\}", block)
+        nome = re.search(r"name:\s*\{[^}]*\}", block)
+        self.assertIsNotNone(av, "o Meme não declara o offset do avatar")
+        self.assertIsNotNone(nome, "o Meme não declara o offset do nome")
+        self.assertEqual(re.findall(r"[-+]?\d+", av.group(0)),
+                         re.findall(r"[-+]?\d+", nome.group(0)),
+                         "avatar e nome declaram deslocamentos diferentes")
+
+        loader = self._fn_body("applyGalleryIdOffset")
+        self.assertIn("g.idOffset", loader, "a galeria não lê a posição que ela declara")
+        self.assertIn("state.tweetOffset[item] = idOffsetPx", loader,
+                      "a posição do perfil não é escrita no estado do cartão")
+        # COPIA, e não referência: `state.tweetOffset.avatar` virar o mesmo objeto
+        # de `GALLERY.meme.idOffset.avatar` faria o arraste reescrever o catálogo.
+        conv = self._fn_body("idOffsetPx")
+        self.assertIn("off = off || {}", conv,
+                      "o leitor do idOffset precisa tratar item ausente")
+        # COPIA E CONVERSAO nos DOIS eixos. O X precisa da divisao tanto quanto o
+        # Y: o CSS multiplica o valor por `--framepx` (px do quadro em px de
+        # tela), entao uma fracao passada crua viraria "2,78px" em vez de 2,78%
+        # — 30px de ajuste viravam 3px, e o deslocamento sumia sem erro.
+        self.assertRegex(conv, r"off\.x\s*\|\|\s*0\)\s*/\s*100\s*\*\s*state\.width",
+                         "o X do catálogo não é convertido para px do quadro")
+        self.assertRegex(conv, r"off\.y\s*\|\|\s*0\)\s*/\s*100\s*\*\s*state\.height",
+                         "o Y do catálogo não é convertido para px do quadro")
+        # E o reset precisa do MESMO caminho, senão os dois discordariam da
+        # unidade e o botão devolveria um deslocamento diferente do modelo.
+        self.assertIn("idOffsetPx", self._fn_body("modelIdOffset"),
+                      "o botao de voltar ao modelo nao passa pela mesma conversao")
+
+        # E o `loadGallery` precisa CHAMAR isso: declarar sem aplicar nao muda nada.
+        # A trava olha o CORPO de `loadGallery`, e nao a pagina inteira: uma
+        # chamada comentada no fonte continua sendo a mesma string, e o teste
+        # passaria com a correcao desligada — que e o que ele existe para pegar.
+        galeria = self._fn_body("loadGallery")
+        self.assertIn(
+            "applyGalleryIdOffset(g)", galeria,
+            "carregar um formato da galeria nao aplica a posicao do perfil",
+        )
+        # E a linha tem de estar viva: nem comentada nem dentro de um `if` que
+        # nunca seja verdadeiro.
+        chamada = next(
+            (linha for linha in galeria.splitlines()
+             if "applyGalleryIdOffset" in linha), ""
+        )
+        self.assertFalse(
+            chamada.strip().startswith("//"),
+            "a aplicacao do offset do perfil esta comentada em loadGallery",
+        )
+
+    def test_the_meme_lifts_the_profile_by_the_declared_amount(self):
+        """O Meme sobe o par avatar+nome 7,6% do quadro, e isso é do MODELO.
+
+        Com ``align-items: center`` o par nasce no meio da faixa, e aí ele lê
+        baixo demais: a barra tem o avatar e o nome, e o centro geométrico não é o
+        centro visual. Os 146px de ajuste são o pedido, medidos no arrasto.
+
+        O valor é declarado em % DO QUADRO, e não em px, por um motivo medido: a
+        folga da barra até o topo é a mesma fração nas três resoluções (9,7%),
+        mas em px de quadro ela seria 124, 187 e 249. Um valor em px daria um
+        arranco mínimo em 720p e, em 2560p, empurraria o avatar para fora da
+        faixa. Com a fração, 7,6% são 7,6% em qualquer lugar.
+
+        O teste trava a fração E a conversão: um número que chegue ao estado como
+        px sem converter faz o desenho mudar de tamanho conforme a resolução.
+        """
+        block = self._gallery_block("meme")
+        for item in ("avatar", "name"):
+            self.assertRegex(
+                block,
+                rf"{item}:\s*\{{\s*x:\s*0,\s*y:\s*-7\.6\s*\}}",
+                f"o Meme nao sobe {item} em 7,6% do quadro",
+            )
+        # 7,6% de 1920 = 145,92px: o numero que o usuario pediu (-146) arredonda
+        # para a precisao do catalogo. Uma casa a mais seria precisao que a
+        # fonte nao tem — o campo mostraria -146 e o desenho estaria em -145,92.
+        self.assertAlmostEqual(-7.6 / 100 * 1920, -146, delta=0.5)
+
+        loader = self._fn_body("applyGalleryIdOffset")
+        # O catalogo fala em fracao; o estado (sliders, arraste) fala em px do
+        # quadro. Sem esta divisao o -2 vira "2px", invisivel em 2560p. A conta
+        # mora em `idOffsetPx`, e as DUAS portas que leem o catalogo passam por
+        # ela — com a divisao repetida em cada uma, uma delas pode perder e o
+        # desenho mudar de tamanho conforme a resolucao, sem erro nenhum.
+        self.assertIn("idOffsetPx", loader,
+                      "o estado do cartao nao passa pela conversao de % para px")
+        conv = self._fn_body("idOffsetPx")
+        self.assertRegex(conv, r"off\.y\s*\|\|\s*0\)\s*/\s*100\s*\*\s*state\.height",
+                         "o % do catalogo nao e convertido para px do quadro")
+        self.assertIn("idOffsetPx", self._fn_body("modelIdOffset"),
+                      "o botao de voltar ao modelo nao passa pela mesma conversao")
+    def test_the_save_button_writes_the_current_point_into_the_template(self):
+        """"Salvar como padrão" grava a posição atual NO CATÁLOGO do formato.
+
+        É o inverso do botão ao lado: "voltar ao modelo" lê o catálogo, este
+        escreve nele. Sem ele o usuário ajustava o avatar, recarregava o formato e
+        perdia o ajuste — a posição era estado de sessão, e o catálogo só tinha o
+        valor fixo com que o desenho nasceu.
+
+        A trava cobre as três decisões que fazem a diferença:
+
+        * os DOIS eixos: um botão que gravasse só o Y deixaria o avatar torto
+          para sempre depois de um "voltar ao modelo";
+        * só avatar e nome: o POV mora na ZONA e vira `text_dy` no ``.toml``, e
+          gravar a posição dele aqui criaria uma segunda fonte para o mesmo
+          número, que divergiria no primeiro slider mexido;
+        * em % DO QUADRO, com a base de cada eixo: em px, a mesma posição na tela
+          valeria números diferentes conforme a resolução.
+        """
+        self.assertIn('id="tw-save-id-offset"', self.step,
+                      "o botão de salvar padrão sumiu do passo")
+        body = self._fn_body("saveIdOffsetAsModel")
+        self.assertRegex(body, r"idOffset\.avatar\s*=\s*\{[^}]*x:[^}]*y:",
+                         "o avatar precisa gravar os DOIS eixos")
+        self.assertRegex(body, r"idOffset\.name\s*=\s*\{[^}]*x:[^}]*y:",
+                         "o nome precisa gravar os DOIS eixos")
+        # O POV e o body NAO podem ser gravados aqui.
+        self.assertNotIn("idOffset.pov", body,
+                         "o POV nao pertence ao idOffset: ele vive na zona")
+        self.assertNotIn("idOffset.body", body,
+                         "o texto do tweet nao pertence ao idOffset")
+        # E a unidade: % do quadro, com a base de cada eixo.
+        self.assertRegex(body, r"pct\(x,\s*state\.width\)",
+                         "o X tem de ser fracao da LARGURA")
+        self.assertRegex(body, r"pct\(y,\s*state\.height\)",
+                         "o Y tem de ser fracao da ALTURA")
+
+    def test_saving_reports_when_there_is_no_gallery_template(self):
+        """"Carregar split-card" nao vem da galeria: o botao avisa em vez de gravar.
+
+        O ``split-card`` seta o estado sem passar por ``loadGallery``, entao
+        ``state.previewMock`` aponta para um formato que o usuario nao escolheu.
+        Gravar ali sobrescreveria o modelo de um formato que ele nao esta vendo —
+        e o botao ainda diria que salvou.
+        """
+        body = self._fn_body("saveIdOffsetAsModel")
+        self.assertIn("if (!entry)", body, "o botao nao checa se ha formato carregado")
+        self.assertRegex(body, r"if \(!entry\)[\s\S]{0,400}?return;",
+                         "sem formato carregado, o botao tem de PARAR")
+        self.assertIn('"bad"', body,
+                      "sem formato carregado o botao tem de avisar, nao fingir")
+
+    def test_the_reset_button_returns_to_the_model_not_to_zero(self):
+        """"Voltar ao modelo" devolve o que o catálogo declara, e não zero.
+
+        A UI do botão diz "Posições de volta ao modelo" desde o começo. Com o
+        Meme declarando um deslocamento, um zerar literal jogaria o par no meio da
+        faixa — exatamente o desenho que o usuário trocou. E zerar o POV
+        apagaria o ``text_dy`` que o catálogo acabou de escrever e que é o que
+        chega ao ``.toml``.
+
+        O reset devolve os DOIS eixos do modelo, e não só o Y: o botão de salvar
+        grava os dois, e um reset que devolvesse só o Y deixaria o avatar torto
+        para sempre depois de um "voltar ao modelo". O POV fica de fora dos dois
+        porque o offset dele mora no ``textOff`` da zona, e o modelo dele é o
+        ``text_dy`` do catálogo — zerá-lo aqui apagaria o valor que chega ao
+        ``.toml``.
+        """
+        reset = self._fn_body("resetTweetOffsets")
+        self.assertIn("modelIdOffset(item)", reset,
+                      "o botao zera em vez de voltar ao valor do modelo")
+        self.assertRegex(reset, r"off\.x\s*=\s*model\.x",
+                         "o X do reset tem de voltar ao modelo tambem")
+        self.assertRegex(reset, r"off\.y\s*=\s*model\.y",
+                         "o Y do reset tem de voltar ao modelo")
+        self.assertRegex(reset, r'item === "pov"', 
+                         "o POV precisa ficar de fora: o offset dele vive na zona")
+        # E o leitor do modelo tem de existir e ler o `idOffset` do formato atual.
+        model = self._fn_body("modelIdOffset")
+        self.assertIn("GALLERY[state.previewMock]", model,
+                      "o modelo do perfil nao vem do formato carregado")
+        self.assertIn("entry.idOffset", model, "o modelo do perfil nao le o idOffset")
+
+    def test_the_id_bar_offsets_never_reach_the_toml(self):
+        """A barra de identidade é só prévia: nada dela vai para o motor.
+
+        O POV tem ``text_dx``/``text_dy`` porque a zona de texto é queimada pelo
+        libass. A barra de identidade é desenho da página — o motor recebe uma
+        zona ``image`` e nenhum avatar, nome ou posição. Se algum dia uma
+        ``id_x`` aparecesse no ``.toml``, o motor recusaria o arquivo inteiro por
+        chave desconhecida, e o defeito só apareceria no render.
+        """
+        toml = self._fn_body("toToml")
+        for chave in ("id_x", "id_y", "idOffset", "tweetOffset", "avatar"):
+            self.assertNotIn(chave, toml, f"{chave} da barra vazou para o .toml")
 
     def test_the_pov_field_and_the_drag_write_the_same_place(self):
         """Campo, sliders e arraste do POV escrevem no MESMO objeto.
@@ -2892,13 +3856,22 @@ class TweetEditorTests(unittest.TestCase):
         self.assertIn("input, textarea, select, [contenteditable='true']", body)
 
     def test_the_reset_button_restores_the_model_positions(self):
-        """"Zerar posições" volta os quatro itens para o zero do modelo.
+        """"Zerar posições" leva os quatro itens ao PADRÃO DO MODELO.
 
         O POV guarda o deslocamento na ZONA (é ela que o motor lê, via
         ``text_dx``/``text_dy``); os outros três, no estado do cartão. Zerar pelo
         MESMO resolvedor que o arraste usa é o que mantém os dois lados no mesmo
         lugar — escrevendo ``state.tweetOffset[item]`` na mão, o POV ficaria
         parado onde estava e o botão pareceria quebrado só naquele item.
+
+        "Zerar" é o nome do botão, mas o destino não é mais zero: o Meme declara
+        o perfil deslocado, e um zero literal jogaria o par no meio da faixa — o
+        desenho que o usuário acabou de trocar. O aviso na UI é "de volta ao
+        modelo", então agora o botão faz o que diz, nos DOIS eixos (o botão de
+        salvar grava os dois; devolver só o Y deixaria o avatar torto). O POV
+        segue em zero nos dois eixos porque o offset dele mora na zona, e o
+        modelo dele é o `text_dy` do catálogo (travado em
+        :meth:`test_the_reset_button_returns_to_the_model_not_to_zero`).
         """
         self.assertIn('id="tw-reset-pos"', self.step)
         items = self.page.split("TW_ITEMS = [", 1)[1].split("]", 1)[0]
@@ -2906,8 +3879,18 @@ class TweetEditorTests(unittest.TestCase):
             self.assertIn(f'"{item}"', items, f"TW_ITEMS não cobre {item}")
         body = self._fn_body("resetTweetOffsets")
         self.assertIn("tweetOffsetOf(item)", body)
-        self.assertIn("off.x = 0", body)
-        self.assertIn("off.y = 0", body)
+        # O Y vai para o valor do modelo dos dois eixos — e o POV, para zero.
+        self.assertIn("modelIdOffset(item)", body,
+                      "o botao zera em vez de voltar ao valor do modelo")
+        self.assertRegex(body, r"off\.x\s*=\s*model\.x",
+                         "o X do reset tem de voltar ao modelo tambem")
+        self.assertRegex(body, r"off\.y\s*=\s*model\.y",
+                         "o Y do reset tem de voltar ao modelo")
+        # O resolvedor é quem sabe ONDE cada item mora — e é ele que o arraste, as
+        # setas e os campos também usam.
+        resolver = self._fn_body("tweetOffsetOf")
+        self.assertIn('item === "pov"', resolver)
+        self.assertIn("return zone.textOff", resolver)
         # O resolvedor é quem sabe ONDE cada item mora — e é ele que o arraste, as
         # setas e os campos também usam.
         resolver = self._fn_body("tweetOffsetOf")
@@ -2930,8 +3913,381 @@ class TweetEditorTests(unittest.TestCase):
             self.assertNotIn(key, toml, f"{key} vazou para o .toml")
 
 
+class HookControlsTests(unittest.TestCase):
+    """O painel do gancho do formato Video Viral.
+
+    O gancho e uma ZONA DE TEXTO do template, como a faixa do POV no Meme. Antes
+    ele era um ``<p class="pv-hook">`` desenhado por cima da faixa de video, e o
+    painel vivia num estado so de previa que nao tinha par no ``.toml``: quem
+    queimava a frase no clipe era a legenda, em outro lugar. Virou zona, e por isso
+    o painel escreve nela.
+    """
+
+    def setUp(self):
+        self.page = page_source("templates.html")
+        markup = (server.WEB_DIR / "templates.html").read_text(encoding="utf-8")
+        # O passo Aparencia e o card data-step="0".
+        self.step = markup.split('data-step="0"', 1)[1].split("<!-- PASSO 1", 1)[0]
+
+    def _fn_body(self, name: str) -> str:
+        return fn_body(self.page, name)
+
+    def _gallery_block(self, key: str) -> str:
+        return self.page.split(f"{key}: {{", 1)[1].split("\n    }", 1)[0]
+
+    def test_the_hook_is_a_text_zone_in_the_template(self):
+        """O Viral declara uma zona ``text`` com a frase, e ela vira ``.toml``.
+
+        E o que separa "o painel existe" de "o painel faz alguma coisa": sem a
+        zona, o texto ajustado aqui não chegaria ao render, e o usuário
+        baixaria um arquivo que não era o que ele viu.
+        """
+        block = self._gallery_block("viral")
+        self.assertIn('kind: "text"', block,
+                      "o Viral nao tem zona de texto: o gancho nao seria queimado")
+        self.assertIn("Isso aqui vai viralizar", block,
+                      "a frase do modelo nao esta na zona")
+        # As tres faixas: a frase ocupa espaco proprio, entre video e imagem.
+        for fracao in ("0.44", "0.16", "0.40"):
+            self.assertIn(f"fraction: {fracao}", block,
+                          f"a faixa {fracao} sumiu: o layout nao e mais de 3 faixas")
+        # E o `toToml` escreve a zona: a mesma funcao que ja levava o POV.
+        self.assertIn("text_size", self._fn_body("toToml"),
+                      "o .toml parou de levar o tamanho do texto")
+        # O `.pv-hook` sumiu: a sobreposicao era o defeito. A trava le o CODIGO
+        # e nao a pagina: os comentarios — de linha (`//`) E de bloco (`/* */`,
+        # como o do CSS) — explicam POR QUE a regra foi removida, e citam o nome
+        # antigo. Reprovar a documentacao seria travar a solucao.
+        codigo = "\n".join(
+            linha for linha in self.page.splitlines()
+            if not linha.strip().startswith(("//", "/*", "*"))
+        )
+        for morto in ("pv-hook", "viralHook"):
+            self.assertNotIn(morto, codigo,
+                             f"o gancho voltou ao desenho antigo ({morto})")
+    def test_the_panel_writes_the_zone_and_the_toml_follows(self):
+        """Cada controle escreve a ZONA, e não um estado do gancho.
+
+        `zone.text`, `zone.textSize`, as margens e `zone.color`: são as chaves que
+        o motor lê. Um `state.hook` separado permitiria o painel e o `.toml`
+        divergirem — que era o defeito original.
+        """
+        painter = self._fn_body("paintHookFields")
+        self.assertIn("povZone()", painter,
+                      "o painel do gancho nao le a zona de texto")
+        for chave in ("zone.text", "zone.textSize", "zone.marginTop", "zone.color"):
+            self.assertIn(chave, painter, f"o painel nao le {chave}")
+        self.assertNotIn("state.hook.", self.page,
+                         "o estado do gancho voltou: ele nao tem par no motor")
+        # E cada `input` escreve a zona e chama `renderOutputs`, senao o arquivo
+        # mostraria o valor anterior enquanto a previa ja mostrava o novo.
+        for campo in ("hook-text", "hook-size", "hook-pad", "hook-color"):
+            ramo = self.page.split(f'target.id === "{campo}"', 1)[1].split("} else if", 1)[0]
+            codigo = "\n".join(
+                linha for linha in ramo.splitlines()
+                if not linha.strip().startswith("//")
+            )
+            self.assertIn("povZone()", codigo, f"{campo} nao escreve a zona de texto")
+            self.assertIn("renderOutputs", codigo, f"{campo} nao reescreve o .toml")
+
+    def test_the_panel_shows_only_in_the_format_that_has_the_zone(self):
+        """O painel do gancho aparece no Viral e some nos outros.
+
+        No Meme a zona de texto é o POV, e o painel dele é o dono; no X não há
+        zona de texto. Escondido não basta: um campo visível escrevendo num lugar
+        que a prévia não lê é ajuste invisível.
+        """
+        self.assertIn('id="hook-box"', self.step)
+        painter = self._fn_body("paintHookFields")
+        self.assertIn('state.previewMock === "viral"', painter,
+                      "o painel do gancho aparece num formato que nao o tem")
+        self.assertIn("box.hidden = !temGancho", painter,
+                      "a caixa do gancho nao e escondida nos outros formatos")
+
+    def test_the_chips_and_the_zone_editor_write_the_same_size(self):
+        """Os chips e o editor de zonas mexem no MESMO ``zone.textSize``.
+
+        Dois controles para o mesmo ajuste que escrevem em lugares diferentes é
+        como o valor diverge na tela: o usuário mexe no chip, o editor de zonas
+        continua mostrando o tamanho antigo, e nenhum dos dois está errado.
+        """
+        for rotulo, ancora in (
+            ("o chip", "target.dataset.hookSize !== undefined"),
+            ("o slider do painel", 'target.id === "hook-size"'),
+        ):
+            trecho = self.page.split(ancora, 1)[1].split("} else if", 1)[0]
+            codigo = "\n".join(
+                linha for linha in trecho.splitlines()
+                if not linha.strip().startswith("//")
+            )
+            self.assertIn(".textSize = Number(", codigo,
+                          f"{rotulo} nao escreve zone.textSize")
+            self.assertIn("paintPovFields()", codigo,
+                          f"{rotulo} nao repinta o editor de zonas: os dois divergem")
+
+    def test_the_click_listener_admits_the_hook_chips(self):
+        """O seletor do listener de clique lista ``data-hook-size``.
+
+        O seletor é a PORTA do handler: o que ele não lista morre no
+        ``if (!target) return``, e nenhum ramo abaixo roda. Sem esta lista o chip
+        do gancho era um botão que não fazia nada — e sem erro nenhum, que é o
+        pior tipo: o `paintHookFields` continuava marcando o chip errado e a
+        prévia continuava com o corpo antigo, como se o clique tivesse funcionado
+        e o valor fosse outro.
+        """
+        # O `self.page` concatena o HTML e o JS, e o HTML tem os SEUS listeners
+        # de clique. Por isso a ancora e o unico que abre a delegacao de dados
+        # (`closest(` com varios `data-*`), e nao a primeira ocorrencia do
+        # `addEventListener("click"` da pagina.
+        seletor = self.page.split('closest(\n      "[data-act]', 1)[1].split(");", 1)[0]
+        for atributo in ("data-pov-size", "data-hook-size", "data-plate"):
+            self.assertIn(atributo, seletor,
+                          f"o clique em [{atributo}] morre antes do handler: "
+                          "o botao fica sem efeito e sem erro")
+
+    def test_the_gallery_card_shows_the_edited_hook(self):
+        """O card da galeria e a janela mostram o MESMO gancho.
+
+        O card é o que o usuário vê ANTES de abrir o formato. Com ele lendo o
+        catálogo fixo e a janela lendo a zona editada, o formato prometeria uma
+        frase e um corpo que a prévia não mostraria.
+        """
+        bands = self._fn_body("galHookBand")
+        self.assertIn("state.zones", bands,
+                      "o card do Viral le a frase do catalogo, e nao a editada")
+        self.assertIn("zona.text", bands, "o card ignora o texto da zona")
+        # A cor e a placa vao pelo mesmo `plateStyle` que pinta a previa: sao o
+        # MESMO ajuste com dois rotulos, entao o card que promete o formato antes
+        # de abrir precisa sair do mesmo lugar. Um `zona.color` escrito aqui
+        # seria uma segunda copia do fundo, e as duas divergiriam no dia em que
+        # a placa aparecesse.
+        self.assertIn("plateStyle(zona)", bands,
+                      "o card do Viral ignora a placa e a cor da zona")
+        # E o fundo inteiro vem da ZONA passada como argumento, nao do catalogo:
+        # `plateStyle` nao tem como ler o estado sozinha, e e por isso que o card
+        # precisa estar handing a `zona` editada. Se um dia alguem passar `z` (o
+        # catalogo) aqui em vez de `zona`, o card volta a prometer o fundo do
+        # modelo enquanto a janela mostra o da pessoa — que e o defeito que este
+        # teste existe para travar.
+        painter = self._fn_body("plateStyle")
+        self.assertIn("zone.color", painter, "a cor da zona sumiu do fundo")
+        self.assertIn("zone.plateImage", self._fn_body("plateUrl"),
+                      "a placa e procurada por outra chave que nao a da zona")
+        # E a faixa do gancho entra no fluxo: nao e mais um `position: absolute`
+        # sobre a faixa de video, que nao ocupava altura.
+        self.assertIn("galHookBand", self._fn_body("viralBands"),
+                      "a faixa de texto do gancho nao entra no card do Viral")
+
+
+class PlateControlsTests(unittest.TestCase):
+    """O fundo de placa da faixa de texto: escolha, previa e ``.toml``.
+
+    A placa é o mesmo modelo de chave que o resto do painel do gancho: o que a
+    tela mostra é a chave da zona, e a chave da zona é o que o motor queima. Um
+    estado de previa separado — como o ``pv-hook`` foi — é o defeito que esta
+    classe existe para impedir: a miniatura bonita, o arquivo sem a imagem.
+    """
+
+    def setUp(self):
+        self.page = page_source("templates.html")
+
+    def _fn_body(self, name: str) -> str:
+        return fn_body(self.page, name)
+
+    def test_the_plate_writes_the_zone_and_the_toml_carries_it(self):
+        """Escolher um modelo escreve `plate_image` na zona, e o `.toml` leva.
+
+        O `renderOutputs` no mesmo caminho e o que fecha o contrato: sem ele o
+        usuario via a textura na previa, baixava o arquivo e o clipe saia com a
+        placa de cor — e a pagina nunca diria que as duas coisas sao diferentes.
+        """
+        writer = self._fn_body("applyPlate")
+        self.assertIn("povZone()", writer, "a placa nao e lida da zona de texto")
+        self.assertIn("plateImage", writer, "a placa nao escreve `zone.plateImage`")
+        self.assertIn("renderOutputs()", writer,
+                      "a placa nao vai para o .toml: o arquivo sairia com a cor")
+        self.assertIn("renderPreview()", writer, "a previa nao mostra a placa")
+        # O `.toml` escreve a chave com o nome do motor, e so para os tipos de
+        # zona que pintam chapa.
+        toml = self._fn_body("toToml")
+        self.assertIn('plate_image = "', toml,
+                      "o .toml nao escreve a chave que o motor le")
+        for tipo in ('zone.kind === "solid"', 'zone.kind === "text"'):
+            self.assertIn(tipo, toml)
+
+    def test_no_plate_writes_no_key_at_all(self):
+        """Sem placa, o `.toml` não leva a chave — nem vazia.
+
+        `plate_image = ""` é recusado pelo validador do motor, então um painel que
+        emitisse a chave vazia geraria um arquivo que ele mesmo não aceitaria, e
+        a recusa só apareceria no momento do render, com o trabalho do template
+        já feito.
+        """
+        writer = self._fn_body("applyPlate")
+        self.assertIn("delete zone.plateImage", writer,
+                      "a placa vazia fica como string em vez de sumir")
+        toml = self._fn_body("toToml")
+        self.assertIn("zone.plateImage)", toml,
+                      "o .toml escreve a placa sem exigir que ela exista")
+
+    def test_the_whole_plate_travels_through_one_key(self):
+        """A tira, o `<select>` e o campo de zonas editam a MESMA chave.
+
+        São três controles para um ajuste. Se um deles escrevesse em outro lugar,
+        os dois marcadores ficariam acesos em valores diferentes e o `.toml`
+        levaria só um deles — sem erro em lugar nenhum, que é o modo de falha
+        que o painel sofreu antes com o corpo do texto.
+
+        E o `renderZones` tem de estar no caminho de quem ESCREVE pela tira. É ele
+        que reconstrói o campo de texto do editor de zonas, e sem a chamada o
+        campo ficaria com o valor antigo enquanto o select e a tira marcariam o
+        novo: três controles do mesmo ajuste, discordando, sem erro nenhum.
+        """
+        for rotulo, corpo in (
+            ("tira", self._fn_body("applyPlate")),
+            ("campo de zonas", self.page.split("data-act='plateImage'", 1)[1]),
+        ):
+            with self.subTest(controle=rotulo):
+                self.assertIn("plateImage", corpo)
+        self.assertIn("renderZones()", self._fn_body("applyPlate"),
+                      "a tira escreve sem repintar o campo do editor de zonas")
+        # E o `loadPlates` e o `paintPlatePicker` sao as duas pontas: quem escreve
+        # e quem relê, e as duas têm de passar pela zona.
+        self.assertIn("plateImage", self._fn_body("loadPlates"))
+
+    def test_the_list_comes_from_the_server_not_from_the_markup(self):
+        """Os modelos vêm de `/templates/plates`, que lê a pasta do disco.
+
+        Um `<option>` escrito no HTML seria uma segunda verdade: o usuario
+        largaria um arquivo em `web/fundo titulo/` e a pagina continuaria
+        mostrando a lista antiga, sem nenhuma pista do porque.
+        """
+        self.assertIn("/templates/plates", self.page)
+        self.assertIn("loadPlates()", self._fn_body("init"))
+        # E o servidor tem a rota, com a lista lida da pasta.
+        source = (server.WEB_DIR / "server.py").read_text(encoding="utf-8")
+        self.assertIn('path == "/templates/plates"', source)
+        self.assertIn("list_plates()", source)
+
+
+    def test_the_picker_survives_a_zone_without_one(self):
+        """Sem zona de texto, a tira some junto com o painel do gancho.
+
+        O painel do gancho já é condicional ao formato; a tira é parte dele. Se
+        ficasse visível num formato sem zona de texto, o clique não teria onde
+        escrever e o usuário veria um controle morto.
+        """
+        picker = self._fn_body("paintPlatePicker")
+        self.assertIn("povZone()", picker)
+        self.assertIn("hook-plate", picker,
+                      "a tira nao se esconde junto com o painel do gancho")
+
+    def test_the_preview_and_the_gallery_read_the_same_painter(self):
+        """Prévia e card da galeria saem do mesmo `plateStyle`.
+
+        O card é o que o usuário vê ANTES de carregar o formato. Se ele pintasse o
+        fundo por conta própria, os dois deixariam de ser o mesmo desenho no dia
+        em que a placa aparecesse — e o card é justamente a promessa do formato.
+
+        A prévia chega ao pintor por `applyPlateStyle`, que é a mesma pintura
+        aplicada propriedade a propriedade (ver o teste da faixa de texto); a
+        reachability é o que importa, não a grafia da chamada.
+        """
+        for nome in ("paintTextZone", "galTextBand", "galHookBand"):
+            with self.subTest(pintor=nome):
+                corpo = self._fn_body(nome)
+                chega = ("plateStyle(" in corpo
+                         or "applyPlateStyle(" in corpo)
+                self.assertTrue(chega, f"{nome} nao le o pintor de placa")
+
+    def test_the_plate_is_painted_without_touching_the_band_geometry(self):
+        """A placa é escrita no `style` da faixa, nunca no bloco inteiro.
+
+        `el.style.cssText = ...` substitui TODAS as declarações inline do
+        elemento. O laço de `renderPreview` escreve `top` e `height` antes de
+        chamar o pintor, então um `cssText` com o fundo apagava a geometria: a
+        faixa voltava ao `top: auto` do fluxo, encostava no topo do canvas e
+        ficava com a altura do texto em vez da fração da zona. A placa aparecia
+        no lugar errado — o `.toml`, o `backgroundImage` e o console seguiam
+        perfeitos, porque o defeito era de posição, não de conteúdo.
+        """
+        aplicar = self._fn_body("applyPlateStyle")
+        self.assertIn("setProperty", aplicar,
+                      "a placa precisa ser escrita propriedade a propriedade")
+        self.assertNotIn("style.cssText", aplicar,
+                         "a placa nao pode trocar o bloco inline da faixa")
+        # Nenhum pintor pode reintroduzir o `cssText` pela porta dos fundos.
+        for nome in ("paintTextZone", "galTextBand", "galHookBand"):
+            with self.subTest(pintor=nome):
+                self.assertNotIn("style.cssText", self._fn_body(nome))
+
+    def test_the_crop_reaches_the_toml_for_a_plate_zone(self):
+        """`zoom`/`pan_x`/`pan_y` de uma zona com placa vão para o arquivo.
+
+        O portão antigo aceitava essas chaves só em `image`/`frame`. Com uma placa
+        o painel ajustaria o recorte, a prévia mostraria o resultado e o `.toml`
+        NÃO descreveria nada disso: o ajuste pareceria funcionar e o render sairia
+        com o enquadramento neutro. É a falha silenciosa mais cara possível — o
+        arquivo parece com a intenção e o vídeo sai diferente.
+        """
+        fonte = (server.WEB_DIR / "templates.js").read_text(encoding="utf-8")
+        # O portão tem de abrir para a zona de texto COM placa.
+        self.assertIn('zone.kind === "text"', fonte)
+        self.assertIn("!!zone.plateImage", fonte,
+                      "o `.toml` nao descreve o recorte de uma zona com placa")
+        # E a checagem é a do tipo, não uma lista de valores: um gate escrito como
+        # lista de tipos volta a perder a placa na primeira zona nova.
+        self.assertNotIn('zone.kind === "image" || zone.kind === "frame") && zone.zoom',
+                         fonte,
+                         "o portao de zoom/pan voltou a excluir a zona de texto")
+
+    def test_the_plate_crop_is_measured_not_guessed(self):
+        """A prévia calcula o `background-size` em vez de deixar `cover` fixo.
+
+        Com `background-size: cover` a prévia ignora o zoom, e com
+        `background-position: center` ignora o pan: o painel mexeria em algo que
+        a tela não mostraria. O `plateBox` é quem traduz o `scale_into` do motor
+        para porcentagem de CSS, e ele precisa ler as três chaves.
+        """
+        caixa = fn_body(page_source("templates.html"), "plateBox")
+        for chave in ("zone.zoom", "zone.panX", "zone.panY", "plate.width", "plate.height"):
+            self.assertIn(chave, caixa, f"o recorte da previa ignora {chave}")
+        # O `contain` do motor ignora zoom e pan, e a previa precisa ignorar tambem.
+        self.assertIn('zone.fit === "contain"', caixa,
+                      "a previa mostra um recorte que o motor nao queima")
+        # E o neutro tem de sair no `cover` de verdade, e nao em porcentagem
+        # equivalente: um `1016.000%` equivalente seria mais lento e ilegivel.
+        self.assertIn('size: "cover"', caixa)
+
+    def test_the_plate_never_leaks_a_url_into_the_toml(self):
+        """A zona guarda o `path` do disco, nunca a `url` da página.
+
+        São dois campos diferentes de propósito: a URL funciona na prévia e não
+        existe no disco que o ffmpeg abre. Se a URL fosse para a zona, o `.toml`
+        descreveria um arquivo que o motor não encontraria, e a degradação
+        (voltar à cor) esconderia o erro em vez de mostrá-lo.
+        """
+        self.assertIn("plateByPath(zone && zone.plateImage)", self._fn_body("plateUrl"))
+        self.assertNotIn(".url", self._fn_body("applyPlate"),
+                         "a URL da pagina foi guardada na zona: o motor nao a abriria")
+
+    def test_the_fit_reaches_the_toml_only_when_there_is_a_plate(self):
+        """`fit` numa faixa de cor não faz nada — mas numa placa, faz.
+
+        `scale_into` é o mesmo dos dois, então o encaixe da imagem (corta, ou
+        encaixa e deixa a cor no letterbox) é o mesmo número. Escrever `fit`
+        sempre poluiria todo `.toml` com uma chave que o grafo nunca lê.
+        """
+        toml = self._fn_body("toToml")
+        self.assertIn('zone.fit !== "cover"', toml)
+        self.assertIn("zone.plateImage &&", toml,
+                      "o encaixe vai para o .toml mesmo sem placa nenhuma")
+
+
 class PortParsingTests(unittest.TestCase):
     """``--port`` exists so a stale listener is not a dead end."""
+
+
 
     def test_defaults_to_the_documented_port(self):
         self.assertEqual(server._parse_port([]), server.PORT)
@@ -2993,6 +4349,110 @@ class PhrasesRouteTests(unittest.TestCase):
         self.assertEqual(phrases, ["Primeira frase", "Segunda frase"])
 
 
+class PlateListingTests(unittest.TestCase):
+    """``/templates/plates`` lista a pasta de fundos de placa.
+
+    A lista vem do disco, e nao de uma lista escrita na pagina: soltar um
+    arquivo em ``web/fundo titulo/`` e o que o adiciona. Um item hardcoded no
+    HTML seria uma segunda verdade para divergir da pasta assim que o usuario
+    laurasse um arquivo — e a divergencia seria silenciosa, porque o item velho
+    continuaria aparecendo e o novo nao.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="vc_plates_"))
+
+    def _png(self, path: Path, width: int, height: int) -> Path:
+        """A PNG minima: assinatura, IHDR com as dimensoes, e o resto que o leitor
+        de header precisa para nao reclamar. Nao precisa ser uma imagem valida —
+        o leitor para no IHDR, e o que esta em teste e a leitura do cabecalho."""
+        import struct
+        import zlib
+
+        def chunk(kind: bytes, payload: bytes) -> bytes:
+            return (
+                struct.pack(">I", len(payload)) + kind + payload
+                + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+            )
+
+        ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+        path.write_bytes(
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", ihdr)
+            + chunk(b"IDAT", zlib.compress(b"\x00"))
+            + chunk(b"IEND", b"")
+        )
+        return path
+
+    def test_it_reads_the_folder_instead_of_a_hardcoded_list(self):
+        self._png(self.tmp / "papel.png", 1904, 544)
+        (self.tmp / "notas.txt").write_text("ignorado", encoding="utf-8")
+        plates = server.list_plates(self.tmp)
+        self.assertEqual([p["name"] for p in plates], ["papel.png"])
+        self.assertEqual((plates[0]["width"], plates[0]["height"]), (1904, 544))
+
+    def test_a_jpeg_size_comes_from_the_frame_header(self):
+        # O entregável desta pasta e um JPEG largo, e o leitor precisa achar o
+        # SOF atraves dos segmentos com comprimento — um offset fixo leria o
+        # cabecalho de outro arquivo e a miniatura viraria "?".
+        (self.tmp / "pincel.jpg").write_bytes(_JPEG_1904x544)
+        plates = server.list_plates(self.tmp)
+        self.assertEqual((plates[0]["width"], plates[0]["height"]), (1904, 544))
+
+    def test_a_missing_folder_is_an_empty_list_not_an_error(self):
+        # A pasta e do usuario: uma installacao sem os modelos entregues tem de
+        # abrir a pagina igual, so que sem miniatura.
+        self.assertEqual(server.list_plates(self.tmp / "nao_existe"), [])
+
+    def test_the_path_is_the_engine_path_and_the_url_is_quoted(self):
+        # Sao dois campos de proposito. O `path` e o que vai no `.toml` e o que o
+        # ffmpeg abre; a `url` e o que a previa pinta. Guardar a URL na zona
+        # funcionaria na tela e quebraria no render, porque
+        # `/fundo%20titulo/1.jpg` nao existe no disco. E a URL precisa de quoting
+        # porque a pasta tem espaco — a rota estatica decodifica antes do disco.
+        probe = server.PLATES_DIR / "_teste.png"
+        self._png(probe, 10, 10)
+        try:
+            plates = server.list_plates()
+            entry = next(p for p in plates if p["name"] == "_teste.png")
+            # Conferido com o arquivo AINDA NO DISCO: o `finally` abaixo o apaga,
+            # e uma assercao depois dele reprovaria um caminho correto.
+            self.assertTrue((server.REPO_ROOT / entry["path"]).is_file())
+        finally:
+            probe.unlink()
+        self.assertEqual(entry["url"], "/fundo%20titulo/_teste.png")
+        self.assertEqual(entry["path"], "web/fundo titulo/_teste.png")
+        self.assertFalse(entry["path"].startswith("/"))
+
+    def test_the_shipped_folder_is_served_and_the_models_are_there(self):
+        """A pasta que o usuario encheu tem de responder, e o endpoint tem de
+        devolver os arquivos. Sem isto a pagina abriria com a tira vazia e o
+        usuario culparia o painel por um arquivo que ele mesmo pôs ali.
+
+        A URL e conferida DECODIFICADA, e nao como string: ela e percent-encoded
+        para a rede, e a rota estatica so a encontra depois do `unquote`. Um
+        teste que juntasse as duas sem decodificar reprovaria um arquivo que a
+        pagina carrega sem problema — que e o tipo de trava que faz a gente
+        "consertar" uma URL que ja funcionava.
+        """
+        from urllib.parse import unquote
+
+        plates = server.list_plates()
+        self.assertTrue(plates, "web/fundo titulo/ nao devolveu nenhum modelo")
+        for entry in plates:
+            self.assertTrue(
+                (server.WEB_DIR / unquote(entry["url"].lstrip("/"))).is_file(),
+                f"{entry['name']}: a URL nao resolve para um arquivo de web/",
+            )
+            self.assertTrue((server.REPO_ROOT / entry["path"]).is_file())
+            # E o tipo sai certo: `nosniff` esta ligado, entao um `.jpg` servido
+            # como octet-stream nao apareceria na previa.
+            self.assertEqual(
+                server.asset_content_type(Path(unquote(entry["url"].lstrip("/")))),
+                "image/jpeg" if entry["name"].endswith(".jpg") else "image/png",
+            )
+
+
 class AssetContentTypeTests(unittest.TestCase):
     """Static assets need their real type, because nosniff is on.
 
@@ -3034,35 +4494,49 @@ class AssetContentTypeTests(unittest.TestCase):
 
 
 class HeroPreviewTests(unittest.TestCase):
-    """The hero preview stack: one real clip, two placeholders.
+    """The hero preview stack: every card plays its own clip.
 
-    The page is the product demo, so the first card plays an actual 9:16 clip
-    instead of the schematic. What can break silently is the degradation path:
-    the video sits in the repo's own ``web/`` folder and is gitignored, so a
-    fresh clone has no file at all and the card has to look exactly as it did
-    before — not show a broken media icon.
+    The page is the product demo, so each of the three cards plays an actual
+    9:16 video instead of the schematic. What can break silently is the
+    degradation path: the files sit in the repo's own ``web/`` folder and are
+    gitignored, so a fresh clone has none of them and a card has to look exactly
+    as it did before — not show a broken media icon.
     """
+
+    #: Each card that plays a clip, and the file it plays.
+    LIVE_CARDS = {
+        "/1.mp4": "0:42 → 1:24",
+        "/2.mp4": "3:10 → 3:58",
+        "/3.mp4": "7:02 → 7:47",
+    }
 
     def setUp(self):
         self.page = page_source("index.html")
         self.markup = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
 
-    def test_the_first_card_loads_the_clip(self):
-        self.assertIn('src="/1.mp4"', self.markup)
-        self.assertIn('class="preview-video"', self.markup)
+    def test_every_live_card_loads_its_clip(self):
+        for src in self.LIVE_CARDS:
+            self.assertIn(f'src="{src}"', self.markup, f"falta o video {src}")
+        self.assertEqual(self.markup.count('class="preview-video"'), len(self.LIVE_CARDS))
 
-    def test_the_clip_is_a_silent_loopable_inline_preview(self):
-        """No audio, no controls: it is a background, not a player."""
-        video = self.markup.split("preview-video", 1)[1].split("</video>", 1)[0]
-        for attribute in ("muted", "playsinline", "loop", "autoplay"):
-            self.assertIn(attribute, video, f"falta {attribute} no preview do hero")
-        self.assertNotIn("controls", video)
+    def test_each_clip_is_a_silent_loopable_inline_preview(self):
+        """No audio, no controls: they are a background, not a player."""
+        chunks = self.markup.split("<video")[1:]
+        self.assertEqual(len(chunks), len(self.LIVE_CARDS))
+        for chunk in chunks:
+            video = chunk.split("</video>", 1)[0]
+            for attribute in ("muted", "playsinline", "loop", "autoplay"):
+                self.assertIn(attribute, video, f"falta {attribute} no preview do hero")
+            self.assertNotIn("controls", video)
 
-    def test_the_card_starts_as_the_placeholder(self):
+    def test_the_cards_start_as_placeholders(self):
         """``data-live="0"`` is the start state; only the script lights it."""
-        self.assertIn('id="preview-live" data-live="0"', self.markup)
+        self.assertEqual(self.markup.count('data-live="0"'), len(self.LIVE_CARDS))
+        self.assertNotIn('data-live="1"', self.markup)
 
-    def test_the_script_lights_the_card_only_after_a_frame_decodes(self):
+    def test_the_script_wires_every_live_card(self):
+        """One loop over the cards: a third card must not need new script."""
+        self.assertIn("$$('.preview-card[data-live]')", self.page)
         self.assertIn("'loadeddata'", self.page)
         self.assertIn("'data-live'", self.page)
 
@@ -3098,8 +4572,21 @@ class HeroPreviewTests(unittest.TestCase):
         self.assertIn('.preview-card[data-live="1"] .preview-video', self.page)
         self.assertIn('.preview-card[data-live="1"]::after', self.page)
 
-    def test_only_the_first_card_has_a_video(self):
-        self.assertEqual(self.markup.count("<video"), 1)
+    def test_every_card_in_the_stack_plays_a_clip(self):
+        """No card is left schematic: the stack is the product demo."""
+        self.assertEqual(self.markup.count('class="preview-card"'), len(self.LIVE_CARDS))
+        self.assertEqual(self.markup.count("<video"), len(self.LIVE_CARDS))
+        for tag in self.LIVE_CARDS.values():
+            self.assertIn(f'<span class="tag">{tag}</span>', self.markup)
+
+    def test_the_stack_is_one_card_per_clip_in_order(self):
+        """The tags are the reading order; a clip swapped between cards would
+        put a 26 s cut under a 0:42 → 1:24 label."""
+        bodies = self.markup.split('class="preview-card"')[1:]
+        self.assertEqual(len(bodies), len(self.LIVE_CARDS))
+        for body, (src, tag) in zip(bodies, self.LIVE_CARDS.items()):
+            self.assertIn(f'src="{src}"', body, f"{src} fora de ordem no stack")
+            self.assertIn(tag, body, f"{src} com o rotulo de outro card")
 
 
 if __name__ == "__main__":  # pragma: no cover

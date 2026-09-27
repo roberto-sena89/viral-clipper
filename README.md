@@ -344,6 +344,51 @@ text_dx = 0.0              # nudge, share of the frame WIDTH
 text_dy = 0.0              # nudge, share of the frame HEIGHT
 ```
 
+`plate_image` puts a still where the flat colour would go — a paper texture, a
+paint stroke, a logo. It replaces the plate rather than sitting on top of it,
+and `fit` means the same thing it means on an `image` zone: `cover` (the
+default) fills the band and crops the overflow, `contain` keeps the whole
+picture and lets `color` fill the letterbox. The path is read from the output
+directory, like an `image` zone's `source`:
+
+```toml
+[[zones]]
+kind = "text"
+fraction = 0.16
+color = "black"           # only shows in the letterbox when fit = "contain"
+plate_image = "web/fundo titulo/1.jpg"
+fit = "cover"
+text = "ISSO AQUI VAI VIRALIZAR"
+text_size = 0.03
+```
+
+A plate file that cannot be found is a warning, not a failure: the band falls
+back to `color`. The `web` templates page offers the ready-made plates in
+`web/fundo titulo/` — dropping a file in that folder is what adds it to the
+picker, no code change. Both kinds that paint a plate (`solid` and `text`)
+accept the key; the others refuse it rather than loading a key that does
+nothing.
+
+### Framing the plate
+
+A plate is a still inside the band, so it takes the same `zoom`/`pan_x`/`pan_y`
+as an `image` zone — the same keys, the same meaning, the same filter. The
+templates page exposes them under **Ajustar posição**: drag the point on the pad
+(or use the arrow keys, `Shift` for bigger steps) and set the zoom. What lands
+in the file is the framing, not the plate's own vocabulary:
+
+```toml
+plate_image = "web/fundo titulo/1.jpg"
+zoom = 1.4          # >= 1; magnifies around the pan point
+pan_x = 0.25        # 0..1; which part of the overflow stays in frame
+pan_y = 0.75
+```
+
+`cover` is what makes framing matter: the plate is wider than the band, so there
+is overflow to slide through. `contain` shows the whole plate and the engine
+ignores all three keys — the page greys the pad out rather than writing values
+the render would drop.
+
 Built-ins ship with the tool:
 
 ```bash
@@ -375,6 +420,36 @@ The `frame` zone is why a branded split layout needs no asset files: the still
 is grabbed from the clip itself. If the grab or the image is missing the render
 degrades to the video instead of failing.
 
+Beyond the zones, the file carries a few template-level keys:
+
+```toml
+name = "meme-pov"
+caption_preset = "ultra-impact"
+captions = false              # turn the burned captions OFF
+headline_seconds = 3.0
+headline_text = "VOCE USOU O FORMATO"   # empty = the clip's own opening
+
+[[zones]]
+kind = "text"
+fraction = 0.16
+band_dy = -0.02               # shifts this band up, frame fraction
+```
+
+`captions = false` is a field of its own rather than another preset, because
+switching them off is not a look: it is `caption_style = "none"`, and
+`caption_preset` keeps meaning the headline and the text bands, which are
+different things from the caption. It is a **one-way key** — the template can
+turn the captions off, never back on, because there is no value for "return to
+whatever I had on the command line" and guessing `karaoke` would erase a
+`--caption-style block` the user never asked to lose. The panel turns them back
+on by omitting the key. Anything but `true`/`false` is refused, so
+`captions = "sim"` is an error and not a `True`.
+
+`band_dy` moves one band without dragging the others: `0` is the stacked
+position, positive goes down, negative goes up, and the unit is a fraction of
+the **frame** height (the page shows it as a percentage). What the band leaves
+behind becomes template background, exactly like the margins already did.
+
 **Variations.** One analysis pass, many deliverables — the whole point of
 templating:
 
@@ -397,6 +472,18 @@ engine reads, so a nudge in the preview survives into the downloaded `.toml`.
 Its size sits next to the field where the words are typed — a slider plus three
 ready sizes, the largest being the model's own (the biggest body that still fits
 its band) — and all three controls write the same `text_size` the engine burns.
+The same section carries the band's own plate: its height, its colour, and the
+**Fundo da placa** picker with the files from `web/fundo titulo/`. Picking one
+reveals **Ajustar posição**, a pad where the point is dragged (or moved with the
+arrow keys, `Shift` for bigger steps) to write `pan_x`/`pan_y` plus a `zoom`
+slider — the same keys an `image` zone carries, so the crop you set in the page
+is the crop in the file. `contain` greys the pad out instead of writing values
+the render would drop.
+
+Two platform chrome sets sit over the preview (TikTok's rail and header, the
+Instagram one), and the stage's `data-platform` picks which is visible. They are
+**illustration, not content**: the switch changes what surrounds the frame, and
+no template key comes out of it.
 
 Run `python -m viralclipper --help` for the full list.
 
@@ -646,6 +733,12 @@ The server serves `web/index.html` and exposes:
   typed straight onto the preview.
 - `GET /templates/catalog` — the presets, zone kinds and built-in templates, read
   from `viralclipper` rather than duplicated in the page.
+- `GET /templates/plates` — the ready-made text plates in `web/fundo titulo/`,
+  each with its real pixel size. The list is **read from the folder**, so
+  dropping an image in it is what adds it to the picker; a list written in the
+  page would be a second truth to keep in step. The thumbnails are served by the
+  same static route as the rest of `web/`, so the preview shows the very bytes
+  the render will read.
 - `GET /scrap` — the scrap page (`web/scrap.html`): expand a link or an account
   feed into a list of downloadable videos, pick one, and hand it to the
   clipper. `POST /scrap` runs the search; `GET /scrap/thumb?i=N` serves the
@@ -772,7 +865,7 @@ python web/server.py --port 7756
 python -m unittest discover -s tests -t .
 ```
 
-506 tests, offline and fast (no ffmpeg, no yt-dlp, no whisper model). The
+998 tests, offline and fast (no ffmpeg, no yt-dlp, no whisper model). The
 rendering, download and ranker paths are exercised through injected fakes, so
 the suite never needs a network.
 
@@ -780,12 +873,13 @@ A fake can still lie about the process boundary, so the render tests also run th
 task through a pickle round trip before handing it to the pool — that is what
 catches a parent reading its own unmodified copy instead of the worker's result.
 
-Six scripts go one level deeper against real binaries:
+Seven scripts go one level deeper against real binaries:
 
 ```powershell
 python smoke_test.py --threads 2     # analysis, selection, render, report
 python reframe_check.py              # frame extraction + the real detector
 python band_parity_check.py          # zone geometry, one rendered frame per layout
+python placa_check.py                # a text band with a plate, sampled by pixel
 python cache_e2e_test.py --model tiny  # transcript cache round trip
 python bench_transcribe.py --wav a.wav # throughput per checkpoint
 python ig_session_check.py           # --ig-session -> jar -> Cookie header
@@ -801,6 +895,15 @@ layouts, renders one frame with four distinguishable colours (background, text
 plate, clip, still) and compares it with the band plan row by row and column by
 column. It exits non-zero on a single wrong pixel, so it is the check to run
 after touching `plan_bands`.
+
+`placa_check.py` asks the same question about `plate_image`, and the answer is
+by **pixel sample** rather than by exit code — ffmpeg leaves 0 even when a
+filter did nothing, so the only way to know the plate reached the file is to
+read a 16x16 block back out of it. It renders at 1080x1920, 720x1280 and
+1440x2560, and it checks that `pan_x`/`pan_y`/`zoom` really move the plate in
+the file (two pan corners and the zoomed frame must differ by more than the
+sensor noise) with a sentinel band colour that exists in neither model, so a
+missing plate fails loudly instead of reading as "the right colour".
 
 `ig_session_check.py` runs `run_profile_mode` against a fake Instagram with
 `urlopen` patched out, and asserts the pasted session reaches the `Cookie`

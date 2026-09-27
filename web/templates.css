@@ -588,6 +588,19 @@ select.sr-only-select {
 .combo-item:hover, .combo-item[data-active="true"] { background: rgba(255, 255, 255, 0.04); }
 .combo-item[aria-selected="true"] { border-color: var(--accent-primary); background: var(--active-tint); }
 .combo-dot { width: 24px; height: 24px; border-radius: 7px; flex: none; border: 1px solid; }
+/* Amostra do item "Sem legenda": vazia e riscada, nao uma cor — o que ele
+   desliga e justamente a cor queimada no quadro. */
+.combo-dot--off {
+  position: relative;
+  background: rgba(255, 255, 255, 0.02);
+  border-color: #4a4a52;
+}
+.combo-dot--off::after {
+  content: "";
+  position: absolute; inset: 6px 4px;
+  border-top: 2px solid #6b6b74;
+  transform: rotate(-38deg);
+}
 .combo-item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .combo-item-text strong { font-size: var(--text-body-sm); }
 .combo-item-text small {
@@ -630,6 +643,100 @@ select.sr-only-select {
   background: var(--active-tint); border-color: var(--accent-primary); color: var(--text-ink);
 }
 .chip:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 1px; }
+
+/* ---------- MODELOS DE PLACA (fundo da faixa de texto) ----------
+   As placas são faixas largas (3,5:1 e 5,5:1 nos arquivos entregues), então a
+   miniatura é uma FAIXA de altura fixa e não um quadrado: mostrar o arquivo
+   numa tile quadrada cortaria justamente o que o usuário está escolhendo — a
+   marca pintada que ocupa o meio da altura e some nas pontas. O `cover` é o
+   mesmo encaixe do motor, e é por isso que a miniatura e a prévia contam a mesma
+   história. */
+.plate-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.plate-opt {
+  position: relative; width: 116px; padding: 0; cursor: pointer;
+  background: var(--well-bg); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); overflow: hidden; font-family: inherit;
+}
+.plate-opt:hover { border-color: var(--border-strong); }
+.plate-opt[aria-checked="true"] { border-color: var(--accent-primary); box-shadow: 0 0 0 1px var(--accent-primary); }
+.plate-opt:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 1px; }
+.plate-opt .plate-thumb {
+  display: block; height: 34px;
+  background-position: center; background-size: cover; background-repeat: no-repeat;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.plate-opt .plate-name {
+  display: block; padding: 5px 7px; font-size: 0.72rem; font-weight: 600;
+  color: var(--text-secondary); text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.plate-opt .plate-dim { color: var(--text-muted); font-weight: 500; }
+.plate-opt[aria-checked="true"] .plate-name { color: var(--text-ink); }
+.plate-strip .plate-none .plate-thumb { background: var(--well-bg); }
+
+/* ---------- AJUSTE DE POSICAO DA PLACA ----------
+   O pad e quadrado porque e um MAPA: cada eixo vai de 0 a 1, entao os dois
+   precisam de tanto espaco quanto o outro. Um pad retangular faria o eixo curto
+   (o vertical) perder precisao, e a altura e justamente a direcao em que uma
+   faixa larga tem mais sobra para recortar. */
+.plate-fit { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.plate-fit-btn { display: inline-flex; align-items: center; gap: 7px; }
+.plate-fit-ico { display: inline-flex; }
+.plate-fit-btn[aria-expanded="true"] .plate-fit-ico { color: var(--accent-primary); }
+/* O estado do recorte fica ao lado do botao, e nao dentro do painel: ele
+   responde "esta em que posicao?" mesmo com o painel fechado, que e a pergunta
+   que se faz antes de decidir abrir. */
+.plate-fit-state { font-size: 0.76rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.plate-fit-state b { color: var(--text-secondary); font-weight: 600; }
+
+.plate-panel {
+  display: grid; grid-template-columns: auto 1fr; gap: 12px 14px;
+  align-items: start; margin-top: 10px; padding: 12px;
+  background: var(--well-bg); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+.plate-panel > .hint { grid-column: 1 / -1; }
+.plate-panel[hidden] { display: none; }
+
+.plate-pad {
+  position: relative; width: 132px; height: 132px; cursor: crosshair;
+  background:
+    linear-gradient(to right, var(--border-subtle) 1px, transparent 1px) 0 0 / 25% 100%,
+    linear-gradient(to bottom, var(--border-subtle) 1px, transparent 1px) 0 0 / 100% 25%,
+    var(--surface, #101018);
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
+  touch-action: none; /* o arraste e o gesto; sem isto o scroll da pagina rola junto */
+}
+.plate-pad:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+/* A grade de fundo e a mesma coisa que as cruzes: marca 0%, 25%, 50%, 75% e
+   100% nos dois eixos, que sao os pontos para onde o ponto pode cair. */
+.plate-pad-cross { position: absolute; background: rgba(255, 255, 255, 0.16); pointer-events: none; }
+.plate-pad-cross--h { left: 0; right: 0; top: 50%; height: 1px; }
+.plate-pad-cross--v { top: 0; bottom: 0; left: 50%; width: 1px; }
+.plate-pad-dot {
+  position: absolute; width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px;
+  border-radius: 50%; background: var(--accent-primary);
+  border: 2px solid #fff; box-shadow: 0 1px 5px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+/* O ponto no canto e o que avisa que a placa esta toda puxada para la: com o
+   pan em 0 ou 1 a imagem nao tem sobra daquele lado, e o usuario precisa ver
+   que encostou no limite antes de culpar o arquivo. */
+.plate-pad-dot[data-edge="x"] { box-shadow: 0 1px 5px rgba(0, 0, 0, 0.6), 0 0 0 3px rgba(255, 193, 7, 0.45); }
+.plate-pad-dot[data-edge="y"] { box-shadow: 0 1px 5px rgba(0, 0, 0, 0.6), 0 0 0 3px rgba(255, 193, 7, 0.45); }
+
+.plate-panel-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.plate-readout {
+  display: flex; gap: 14px; font-size: 0.78rem; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.plate-readout b { color: var(--text-ink); font-weight: 600; }
+/* Com o encaixe "Encaixa" nao ha o que posicionar: o motor mostra a placa
+   inteira e o `.toml` nem recebe as chaves. O painel diz isso em vez de
+   sumir — sumir deixaria o usuario sem explicacao para o botao que ele clicou. */
+.plate-panel[data-off="1"] { opacity: 0.55; }
+.plate-panel[data-off="1"] .plate-pad,
+.plate-panel[data-off="1"] .tw-axis { pointer-events: none; }
 
 /* ---------- NUMEROS COM UNIDADE (margens) ----------
    O "%" fixo ao lado do input diz a unidade sem gastar um label inteiro. */
@@ -824,11 +931,15 @@ input[type="range"]::-moz-range-thumb {
    O texto não mora no topo da tela por cálculo de recorte: ele mora DENTRO da faixa,
    centralizado nela. Quem posiciona é o `align-items` da faixa. */
 .gal-text-band {
-  align-items: center; justify-content: center; padding: 4px 6px;
+  /* Sem padding VERTICAL: ele entraria na base do `flex-basis: 0` e a faixa
+     mediria 18,3% onde a zona declarada e 16% (ver `.gal-band`). O respiro vai
+     no texto, que e centralizado pela faixa. */
+  align-items: center; justify-content: center; padding: 0 6px;
   box-sizing: border-box;
 }
 .gal-pov {
   margin: 0; color: #fff; font-weight: 800; font-size: 0.6rem; line-height: 1.25;
+  padding: 2px 0;
   /* 4 linhas, nao 3: com 3 o `clamp` cortava o "mais!" e o card mostrava um POV
      que nao e o do modelo. */
   display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
@@ -842,20 +953,27 @@ input[type="range"]::-moz-range-thumb {
   padding: 0 8px;
 }
 .gal-avatar--dark { background: #3f3f46; color: #fff; width: 18px; height: 18px; font-size: 0.55rem; }
-.gal-id-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; text-align: left; }
+.gal-id-text {
+  display: flex; flex-direction: column; line-height: 1.2; min-width: 0;
+  /* Centralizado, como a barra da janela (`.pv-idbar .pv-id`). O card e a prévia
+     mostram o MESMO perfil, e o `left` de antes os deixava desalinhados: nome
+     grudado no avatar na vitrine, centrado no palco. `align-items` alem do
+     `text-align` porque o `strong` e flex (para o selo azul). */
+  align-items: center; text-align: center;
+}
 .gal-id-text strong { font-size: 0.58rem; color: #fff; white-space: nowrap; }
 .gal-id-text small { font-size: 0.52rem; color: rgba(255, 255, 255, 0.72); white-space: nowrap; }
-/* Gancho do Vídeo Viral: o texto que a legenda queima, SOBREPOSTO na base da
-   faixa de vídeo — o mesmo ponto que a prévia usa e que o motor posiciona por
-   `captionMargin`. Como faixa irmã (`flex: none`) ele tirava 12% da altura da
-   zona de vídeo, e o card mostrava 48% onde a zona declarada é 58%. */
-.gal-hook {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
-  background: #000; padding: 3px 6px; border-top: 1px solid rgba(255, 255, 255, 0.12);
-  color: #fff; font-weight: 700; font-size: 0.6rem; line-height: 1.28; text-align: center;
-  /* 3 linhas: em 2 o gancho saia cortado ("...sabe po...") e o card mostrava um
-     texto que nao e o do modelo. A faixa de video tem 58% da tela — sobra. */
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+/* A faixa de texto do GANCHO no card do Viral. Nao ha mais o `.gal-hook`
+   absoluto: o gancho virou uma ZONA (16% da tela), entao a faixa entra no fluxo
+   como as outras — e o card passa a contar [44, 16, 40], que e o que o motor
+   monta. Este bloco so ajusta o texto DENTRO da faixa: um corpo menor que o do
+   POV, porque a frase e curta e a faixa e estreita. */
+.gal-hook-band .gal-pov--hook {
+  font-size: 0.72rem; line-height: 1.24;
+  /* 3 linhas: a frase do modelo quebra em 2 e sobra uma para o usuario escrever
+     mais sem que o card mostre reticencias onde a janela nao mostra. */
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden; padding: 0 4px;
 }
 /* ---------- tweet do formato X: UM componente, duas escalas ----------
    Avatar + nome com selo + @handle + texto e o que a zona de imagem do formato
@@ -884,14 +1002,16 @@ input[type="range"]::-moz-range-thumb {
   --tw-body: 7.87cqw;        /* 9,6px: no X o texto do post tem o tamanho do nome */
   --tw-gap-row: 4.92cqw;     /* 6px entre avatar e identidade */
   --tw-gap-block: 3.28cqw;   /* 4px entre a identidade e o texto */
-  /* Respiro de topo em px de TELA, nao em cqw: a faixa de imagem comeca na borda
-     de cima da tela do aparelho, e o recorte (notch) pinta por cima do conteudo —
-     com o respiro normal o nome e o selo nasciam atras dele. A ancora e a mesma
-     do POV (`--notch-top` + `--notch-h`), pela mesma razao: o numero e do
-     recorte do aparelho, nao da zona. Os 14px de folga sao o respiro que um post
-     real tem entre a barra de status e o nome; sem eles o bloco ficava colado no
-     recorte e o cartao parecia top-heavy. */
-  --tw-pad-top: calc(var(--notch-top) + var(--notch-h) + 14px);
+  /* Respiro de topo em px de TELA, nao em cqw. A faixa de imagem comeca na borda
+     de cima do quadro, entao o bloco de cima encostaria nela; o respiro e o
+     mesmo que um post real deixa entre a barra de status e o nome.
+
+     O numero nao vem mais do recorte do aparelho: com o frame da previa
+     removido, `--notch-top`/`--notch-h` nao existem aqui, e deixar o `calc`
+     pendurado num undefined resolveria para `NaN` e zeraria o padding — o
+     bloco colado no topo sem ninguem perceber por que. O card da galeria
+     (`.gal-screen`) tem o seu proprio recorte e continua medindo por ele. */
+  --tw-pad-top: 14px;
 }
 
 /* Mini-tweet (tema claro) na faixa de imagem do formato X. */
@@ -1106,6 +1226,25 @@ input[type="range"]::-moz-range-thumb {
 .pv-idbar .pv-id strong { color: #fff; }
 .pv-idbar .pv-id small { color: rgba(255, 255, 255, 0.72); }
 
+/* O nome e o handle saem CENTRADOS dentro do bloco, e nao colados a esquerda.
+   A causa nao e falta de `text-align`: `.pv-id` tem `flex: 1`, entao a CAIXA
+   ocupa a linha toda que sobra depois do avatar — e o texto, sem `text-align`,
+   herda `start` e fica grudado na borda esquerda dessa caixa larga. Centralizar
+   e alinhar as duas linhas entre si, o que e o que o formato Meme pede.
+
+   O escopo e `.pv-idbar` e nao `.pv-id` de proposito: a MESMA classe monta o
+   cartao do X, onde o nome tem de ficar a esquerda, encostado no avatar. Um
+   `.pv-id { text-align: center }` global trocaria o cartao do X junto.
+
+   E `align-items: center` no pai, e nao so `text-align`: o `strong` e `display:
+   flex` (para o selo azul seguir o nome), entao `text-align` nao o move — quem
+   move um item flex dentro da coluna e o `align-items` do proprio pai.
+
+   E `flex: 0 1 auto`: com o `flex: 1` da regra comum, a caixa continuaria larga
+   e o centro do texto cairia no meio do ESPACO vazio, e nao no meio do par
+   avatar + nome. O `justify-content: center` do pai centraliza o par. */
+.pv-idbar .pv-id { flex: 0 1 auto; align-items: center; text-align: center; }
+
 /* Avatar de arquivo local (passo Aparencia), na janela e na vitrine: a imagem
    cobre o circulo e a letra do titulo fica invisivel por baixo — `color:
    transparent` e nao `visibility`, senao um PNG de fundo transparente deixaria a
@@ -1120,13 +1259,12 @@ input[type="range"]::-moz-range-thumb {
   background-size: cover; background-position: center; background-repeat: no-repeat;
   color: transparent;
 }
-/* Gancho na base do vídeo (formato Vídeo Viral na prévia). */
-.pv-hook {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; margin: 0;
-  background: #000; padding: 1.8cqw 3cqw;
-  color: #fff; font-weight: 700; font-size: 3cqw; line-height: 1.28; text-align: center;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-}
+/* Nao ha mais `.pv-hook`: o gancho do Viral e a ZONA DE TEXTO do template, e sai
+   pela `.band--text` / `.pv-pov` — a mesma que desenha a faixa do POV no Meme. Era
+   um `<p>` posicionado em `bottom: 0` sobre a faixa de video, e por isso nao
+   ocupava altura: a previa contava 58% de video onde o motor queimaria menos, e
+   a frase que aparecia ali nao era a que o motor queimaria. A placa preta agora e
+   a cor da zona e o respiro sao as margens, que o motor le. */
 
 /* ---------- PREVIA POR PLATAFORMA (TikTok / Instagram) ----------
    Só moldura da prévia: o render é idêntico, mas cada app emoldura o
@@ -1136,21 +1274,285 @@ input[type="range"]::-moz-range-thumb {
 .platform-row .platform-seg { flex: 1; min-width: 0; }
 .platform-row .tseg-btn { min-height: 42px; flex-direction: row; gap: 8px; }
 .platform-row .tseg-btn strong { font-size: var(--text-body-sm); }
-.platform-chrome {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 9;
-  display: flex; align-items: center; justify-content: center; height: 5.5cqw;
-  font-size: 2.6cqw; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
-  color: #fff; pointer-events: none;
+
+/* ---------- UI DO TIKTOK NA PREVIA ----------
+   A moldura do app desenhada: cabeçalho Following|For You, trilho de ações à
+   direita, bloco de autor/hashtags, disco de som e a barra inferior. É o que
+   o usuário vê de fato no app, e é o que revela se a legenda e a faixa de
+   texto caem embaixo da UI ou ficam escondidas atrás dela.
+
+   Fica ACIMA do canvas (z-index 6) e ABAIXO dos guias da prévia (z 8): a UI é
+   o app, os guias são ferramenta de desenho, e quem tem que ser lido por último
+   é o desenho. `pointer-events: none` porque é ilustração — o arraste do POV
+   precisa passar por cima dela.
+
+   Toda medida é em `cqh`/`cqw` porque `.phone-screen` é `container-type:
+   size`: a UI escala junto com o palco e continua correta quando o layout
+   encolhe. */
+/* Os DOIS apps tem UI desenhada agora, entao o `data-platform` escolhe entre
+   elas em vez de escolher entre "app" e "rotulo". A regra e por CLASSE
+   (`.tt-ui` / `.ig-ui`) e nao por atributo solto no seletor descendant: uma
+   regra `.stage[data-platform="tiktok"] .platform-ui` acenderia as DUAS, porque
+   as duas uis sao `.platform-ui` — o TikTok desenhado E o Instagram desenhado na
+   mesma tela. Trocar o atributo viraria trocar as duas telas de uma vez. */
+.stage[data-platform="tiktok"] .tt-ui { display: block; }
+.stage[data-platform="instagram"] .ig-ui { display: block; }
+/* O gradiente de marca do Instagram era o "chrome" antigo; agora que o Reels tem
+   cabecalho proprio, ele vira so um tingimento no topo — o suficiente para o app
+   se ler como Instagram sem repintar o cabecalho. */
+.stage[data-platform="instagram"] .ig-ui::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 16cqh;
+  background: linear-gradient(180deg, rgba(131, 58, 180, 0.32), rgba(253, 29, 29, 0.08) 62%, transparent);
+  pointer-events: none;
 }
-.stage[data-platform="tiktok"] .platform-chrome {
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.6), transparent);
+.platform-ui {
+  position: absolute; inset: 0; z-index: 6;
+  display: none; pointer-events: none;
+  color: #fff; font-family: inherit;
+  -webkit-font-smoothing: antialiased;
 }
-.stage[data-platform="instagram"] .platform-chrome {
-  background: linear-gradient(180deg, rgba(131, 58, 180, 0.5), rgba(253, 29, 29, 0.12) 70%, transparent);
+/* Sombra nos glifos: o vídeo atrás pode ser claro, e um ícone branco sem
+   contorno some — é o mesmo truque que a legenda queimada usa. */
+.platform-ui .tt-ico,
+.platform-ui .tt-tab,
+.platform-ui .tt-nav-i em,
+.platform-ui .tt-act b,
+.platform-ui .tt-user,
+.platform-ui .tt-tags,
+.platform-ui .tt-sound { text-shadow: 0 0 1.1cqw rgba(0, 0, 0, 0.55); }
+.platform-ui svg { fill: currentColor; }
+.platform-ui .tt-ico { width: 7.4cqw; height: 7.4cqw; display: block; }
+
+/* Cabeçalho: "Following | For You" com a lupa à direita. */
+.tt-head {
+  position: absolute; top: 0; left: 0; right: 0; height: 9cqh;
+  display: flex; align-items: center; justify-content: center; gap: 2.4cqw;
+  padding-top: 1.5cqh;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent);
+}
+.tt-tab { font-size: 2.9cqw; font-weight: 600; opacity: 0.62; }
+.tt-tab.is-on { font-size: 3.1cqw; font-weight: 700; opacity: 1; }
+.tt-div { font-size: 2.6cqw; opacity: 0.4; }
+.tt-head-search {
+  position: absolute; right: 3.4cqw; top: 50%; transform: translateY(-50%);
+  width: 4.2cqw; height: 4.2cqw; opacity: 0.95;
+}
+
+/* Trilho de ações: avatar com +, coração, comentário e share, empilhados na
+   borda direita e ancorados pelo rodapé (o topo é o que mais muda entre
+   vídeos, o rodapé é a barra). */
+.tt-rail {
+  position: absolute; right: 2.4cqw; bottom: 11cqh; width: 14cqw;
+  display: flex; flex-direction: column; align-items: center; gap: 3.2cqh;
+}
+.tt-avatar {
+  position: relative; width: 10.6cqw; height: 10.6cqw; border-radius: 50%;
+  margin-bottom: 1.4cqh;
+  background: radial-gradient(circle at 50% 30%, #5b6472, #232a33 70%);
+  box-shadow: 0 0 0 0.5cqw #fff;
+}
+.tt-follow {
+  position: absolute; left: 50%; bottom: -1.9cqh; transform: translateX(-50%);
+  width: 4.6cqw; height: 4.6cqw; border-radius: 50%;
+  display: grid; place-items: center;
+  background: #fe2c55; color: #fff; font-size: 3.4cqw; font-style: normal;
+  line-height: 1; box-shadow: 0 0 0 0.35cqw #fff;
+}
+.tt-act { display: flex; flex-direction: column; align-items: center; gap: 0.5cqh; }
+.tt-act b { font-size: 2.5cqw; font-weight: 600; }
+.tt-ico.is-heart { color: #fe2c55; }
+
+/* Autor, hashtags e som: o bloco que o app põe no rodapé, à esquerda. */
+.tt-meta {
+  position: absolute; left: 3.4cqw; bottom: 12.4cqh; width: 62cqw;
+  display: flex; flex-direction: column; gap: 0.9cqh;
+}
+.tt-user, .tt-tags, .tt-sound { margin: 0; font-size: 2.6cqw; font-weight: 600; }
+.tt-user span { font-weight: 500; opacity: 0.75; }
+.tt-sound { display: flex; align-items: center; gap: 1.2cqw; }
+.tt-sound .tt-ico { width: 2.7cqw; height: 2.7cqw; flex: none; }
+.tt-sound span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Disco de som: último item do trilho, abaixo do share — é onde o app põe,
+   e fora dele a peça flutuava no meio do trilho e tapava a contagem do
+   coração. */
+.tt-disc {
+  margin-top: 0.8cqh;
+  width: 12cqw; height: 12cqw; border-radius: 50%;
+  display: grid; place-items: center; color: #fff;
+  background: radial-gradient(circle at 50% 50%, #3a2b52, #1b1424 70%);
+  box-shadow: 0 0 0 0.35cqw #fff, 0 0 0 0.6cqw rgba(254, 44, 85, 0.55);
+}
+.tt-disc .tt-ico { width: 5.4cqw; height: 5.4cqw; }
+
+/* Barra inferior: Home, Discover, Inbox, Me e o "+" de criação no meio, que é
+   um quadrado branco com as bordas ciano/vermelha do app. */
+.tt-nav {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 10cqh;
+  display: flex; align-items: center; justify-content: space-around;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.85), transparent);
+}
+.tt-nav-i {
+  display: flex; flex-direction: column; align-items: center; gap: 0.4cqh;
+  font-size: 2.2cqw;
+}
+.tt-nav-i .tt-ico { width: 4.6cqw; height: 4.6cqw; }
+.tt-nav-i em { font-size: 2.1cqw; font-style: normal; font-weight: 500; opacity: 0.9; }
+.tt-nav-plus {
+  width: 6.6cqw; height: 4.6cqw; border-radius: 0.9cqw;
+  display: grid; place-items: center;
+  background: #fff; color: #111;
+  font-size: 3.4cqw; font-weight: 500; line-height: 1;
+  box-shadow: -0.45cqw 0 0 #25f4ee, 0.45cqw 0 0 #fe2c55;
+}
+
+
+/* ---------- UI DO INSTAGRAM (REELS) NA PREVIA ----------
+   Mesma regra do TikTok acima (mesma camada, `pointer-events: none`, `cqh`/`cqw`
+   para escalar com o palco), com prefixo `ig-` e a forma do Reels.
+
+   O que difere do TikTok, e por que nada aqui reaproveita a moldura de la:
+
+   * o Reels e um PLAYER — o play fica no CENTRO, com o botao de audio logo
+     acima. O TikTok nao tem play central; o disco de som e no trilho, embaixo.
+     E a peca que mais denuncia uma moldura trocada.
+   * o cabecalho traz "Amigos" com os avatares do grupo, que o TikTok nao tem.
+   * o rodape leva legenda e audio juntos, e o "Seguir" e um botao de contorno ao
+     lado do @user — no TikTok o bloco e so texto.
+   * a barra inferior do Reels NAO tem rotulo embaixo dos icones.
+
+   Todas as medidas em `cqh`/`cqw`, como o resto: `.phone-screen` e
+   `container-type: size`, entao a UI encolhe junto com o palco. */
+.platform-ui .ig-ico { width: 7cqw; height: 7cqw; display: block; }
+
+/* Status do aparelho: fino, branco, encostado no topo. O relogio fica a esquerda
+   com os glifos da operadora, e o VoLTE/sinal/wifi/bateria a direita — como no
+   aparelho, e separado de qualquer coisa do app.
+
+   Sem notch, o SO nao recorta nada, entao a barra ocupa o topo inteiro: a
+   folga que ela tinha servia para o recorte do aparelho, que saiu com o frame. */
+.ig-status {
+  position: absolute; top: 0; left: 0; right: 0; height: 5cqh;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 5cqw; font-size: 3.2cqw; font-weight: 600; color: #fff;
+}
+.ig-status-l, .ig-status-i { display: flex; align-items: center; gap: 1.4cqw; }
+.ig-status-l .ig-ico { width: 2.9cqw; height: 2.9cqw; }
+.ig-carrier { font-size: 2.6cqw; font-weight: 600; }
+.ig-status-i b {
+  font-size: 2.2cqw; font-weight: 700; letter-spacing: 0.02em;
+  border: 0.28cqw solid currentColor; border-radius: 0.9cqw; padding: 0 0.7cqw;
+}
+.ig-status-i .ig-ico { width: 3.4cqw; height: 3.4cqw; }
+.ig-bat {
+  position: relative; display: grid; place-items: center;
+  width: 5.4cqw; height: 2.7cqw; border: 0.28cqw solid currentColor;
+  border-radius: 0.8cqw;
+}
+.ig-bat::after {
+  content: ""; position: absolute; right: -0.85cqw; top: 50%;
+  transform: translateY(-50%); width: 0.4cqw; height: 1.1cqw;
+  background: currentColor; border-radius: 0 0.4cqw 0.4cqw 0;
+}
+.ig-bat i { font-size: 1.9cqw; font-style: normal; font-weight: 700; }
+
+/* Cabecalho: "+" a esquerda, "Reels" e "Amigos" com os avatares do grupo.
+   O anel colorido nos avatares e o indicador de story assistida: sem ele o
+   grupo parece uma lista de contatos em vez de pessoas cujo story tem novidade. */
+.ig-head {
+  position: absolute; top: 4.8cqh; left: 0; right: 0; height: 9cqh;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 4.6cqw; color: #fff;
+}
+.ig-head-plus { width: 5.2cqw; height: 5.2cqw; flex: none; }
+.ig-head-title { font-size: 4.4cqw; font-weight: 700; }
+.ig-head-friends {
+  display: flex; align-items: center; gap: 1.6cqw;
+  font-size: 3.4cqw; font-weight: 700;
+}
+.ig-faces { display: flex; }
+.ig-faces i {
+  width: 4.6cqw; height: 4.6cqw; border-radius: 50%; margin-left: -1.2cqw;
+  box-shadow: 0 0 0 0.5cqw #f9d616;
+}
+.ig-faces i:first-child { margin-left: 0; }
+
+/* Trilho: QUATRO icones de contorno, sem contagem. Ancorado pelo rodape com
+   folga acima do bloco de autor. Sem numero embaixo de cada um — o reels
+   esconde a contagem quando ela nao cabe, e num feed limpo ela nao cabe. */
+.ig-rail {
+  position: absolute; right: 3cqw; bottom: 21cqh; width: 12cqw;
+  display: flex; flex-direction: column; align-items: center; gap: 4.4cqh;
+}
+.ig-act { display: grid; place-items: center; }
+.ig-act .ig-ico { width: 7.4cqw; height: 7.4cqw; }
+
+/* Rodape recolhido: avatar com anel de story, @user truncado, "Seguir" e o
+   "Ver mais". E o estado que ocupa MENOS altura util do rodape — e por isso
+   o mais honesto para julgar se a legenda queimada do corte encosta na UI. */
+.ig-meta {
+  position: absolute; left: 4cqw; right: 20cqw; bottom: 13.5cqh;
+  display: flex; flex-direction: column; gap: 1.4cqh;
+}
+.ig-user { margin: 0; display: flex; align-items: center; gap: 1.8cqw; }
+.ig-avatar {
+  width: 7.2cqw; height: 7.2cqw; border-radius: 50%; flex: none;
+  background: radial-gradient(circle at 50% 35%, #4a4a52, #16161a 72%);
+  box-shadow: 0 0 0 0.55cqw #f9d616;
+}
+.ig-handle {
+  font-size: 3.1cqw; font-weight: 600; max-width: 22cqw;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* "Seguir" e botao de contorno no app, nao texto solto. */
+.ig-seguir {
+  font-size: 2.7cqw; font-weight: 600; line-height: 1;
+  padding: 1cqw 3cqw; border: 0.32cqw solid currentColor; border-radius: 1cqw;
+}
+.ig-more { margin: 0; font-size: 2.8cqw; font-weight: 500; opacity: 0.95; }
+
+/* Indicador da faixa: as tres linhas no canto, no lugar da arte quando o
+   post nao tem capa. Fica entre a barra e o trilho (14cqh contra 21cqh). */
+.ig-cover {
+  position: absolute; right: 3.4cqw; bottom: 13.6cqh;
+  width: 7.4cqw; height: 7.4cqw;
+  display: grid; place-items: center; color: #fff;
+}
+.ig-cover .ig-ico { width: 6.4cqw; height: 6.4cqw; }
+
+/* Barra inferior: cinco icones, SEM rotulo — e o que o Reels faz, e a diferenca
+   mais visivel para quem trocou de plataforma. O fundo e preto solido, nao o
+   degradeo do TikTok: aqui a barra e uma faixa de verdade. */
+.ig-nav {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 12cqh;
+  display: flex; align-items: center; justify-content: space-around;
+  background: #000;
+}
+.ig-nav-i { position: relative; display: grid; place-items: center; }
+.ig-nav-i .ig-ico { width: 5.6cqw; height: 5.6cqw; }
+.ig-nav-i.is-on { background: #fff; border-radius: 1.1cqw; }
+.ig-nav-i.is-on .ig-ico { width: 4.6cqw; height: 4.6cqw; color: #000; }
+.ig-nav-me {
+  width: 5.4cqw; height: 5.4cqw; border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, #55555e, #17171c 72%);
+  box-shadow: 0 0 0 0.3cqw #fff;
+}
+/* As duas pecas que dizem "voce tem coisa nova": a contagem de mensagens no
+   direct e o pontinho de atividade no perfil. */
+.ig-badge {
+  position: absolute; top: -1.4cqw; right: -2.4cqw;
+  min-width: 3.4cqw; height: 3.4cqw; padding: 0 0.6cqw;
+  display: grid; place-items: center; border-radius: 99px;
+  background: #ff3040; color: #fff;
+  font-size: 2.1cqw; font-weight: 700; font-style: normal;
+}
+.ig-dot {
+  position: absolute; right: -0.4cqw; bottom: -0.2cqw;
+  width: 1.8cqw; height: 1.8cqw; border-radius: 50%;
+  background: #ff3040; box-shadow: 0 0 0 0.3cqw #000;
 }
 
 /* ---------- LISTA DE ZONAS ---------- */
-.zone-list { display: flex; flex-direction: column; gap: 12px; }
 .zone-item {
   border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
   background: rgba(0,0,0,0.18); padding: 14px;
@@ -1208,29 +1610,30 @@ input[type="range"]::-moz-range-thumb {
   font-size: var(--text-caption); color: var(--text-muted);
 }
 
-/* O palco é um smartphone: bezel, notch, home e botões laterais. A tela
-   (.phone-screen) mantém o 9:16 de conteúdo e as container queries, então
-   todo texto/raio escala com a largura do frame e a prévia continua fiel
-   quando o layout encolhe. */
+/* O palco É o quadro: 9:16, sem moldura de aparelho.
+   Antes ele era um mock de smartphone — bezel, cantos de 40px, botões laterais e
+   proporção 9/18.4 — e isso quebrava a prévia de duas maneiras:
+
+   1. O render real é um 9:16 RETO. Desenhar cantos arredondados e um bezel
+      mostrava um aparelho que não existe: a borda da tela ficava arredondada e
+      o conteúdo sumia debaixo de uma moldura que nenhum render tem.
+   2. Pior, a razão do palco (9:18.4) não era a do quadro (9:16). Todo `cqh` e
+      `cqw` da prévia é uma fração da tela, e uma tela 18% mais alta que o frame
+      translateia TODA medida vertical em pixels grandes demais — a legenda, a
+      altura da faixa e o corpo do texto saíam maiores do que o motor queima. O
+      `.stage` ser 9:16 é a condição para `cqh` significar a mesma coisa aqui e
+      em `render.py`.
+
+   A borda fina do `.phone-screen` é só o limite do vídeo (o arquivo tem borda,
+   mesmo que invisível), não moldura. */
 .stage {
   position: relative; width: 100%; max-width: 300px; margin: 0 auto;
-  aspect-ratio: 9 / 18.4; border-radius: 40px; background: #0a0a0c;
-  border: 1px solid var(--border-strong);
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.06), 0 18px 40px -14px rgba(0, 0, 0, 0.7);
-  padding: 11px 9px;
-}
-.stage::before {
-  content: ""; position: absolute; right: -2.5px; top: 96px; width: 2.5px; height: 52px;
-  border-radius: 2px; background: var(--border-strong);
-}
-.stage::after {
-  content: ""; position: absolute; left: -2.5px; top: 82px; width: 2.5px; height: 84px;
-  border-radius: 2px; background: var(--border-strong);
-  box-shadow: 0 -94px 0 -32px var(--border-strong);
+  aspect-ratio: 9 / 16;
 }
 .phone-screen {
   position: relative; width: 100%; height: 100%;
-  border-radius: 30px; overflow: hidden; background: #000;
+  overflow: hidden; background: #000;
+  border: 1px solid var(--border-subtle);
   /* `size` (e nao `inline-size`) porque a previa precisa de cqh: toda medida
      vertical do motor — margem da legenda, corpo da fonte, altura da barra —
      e um numero de pixels num frame de 1920 de altura, e tem de ser convertida
@@ -1238,23 +1641,6 @@ input[type="range"]::-moz-range-thumb {
      essas medidas saem encolhidas pela razao de aspecto do palco. Seguro aqui
      porque o palco tem tamanho definido pelo pai e todo filho e absoluto. */
   container-type: size;
-  /* Recorte do aparelho, em px a partir do topo da TELA. Uma fonte so: o notch
-     desenha a partir daqui e o POV se ancora no FUNDO dele. O POV e ilustracao
-     do modelo e precisa aparecer; o recorte pinta por cima do conteudo, e a
-     area segura do motor (4%) comeca ACIMA dele — os dois numeros sao reais e
-     conflitam, entao quem manda no POV e o recorte. */
-  --notch-top: 10px;
-  --notch-h: 17px;
-}
-.phone-notch {
-  position: absolute; top: var(--notch-top); left: 50%; transform: translateX(-50%);
-  width: 82px; height: var(--notch-h); border-radius: 99px; background: #000; z-index: 9;
-  border: 1px solid rgba(255, 255, 255, 0.09); pointer-events: none;
-}
-.phone-home {
-  position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-  width: 74px; height: 5px; border-radius: 99px; background: rgba(255, 255, 255, 0.55); z-index: 9;
-  pointer-events: none;
 }
 .canvas { position: absolute; inset: 0; }
 .band {

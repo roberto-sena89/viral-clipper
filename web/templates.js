@@ -160,30 +160,96 @@
     meme: {
       label: "Meme", name: "meme-pov", preset: "ultra-impact", layout: "", mock: "meme",
       desc: "Faixa de texto POV em fundo preto no topo, vídeo reduzido e barra de identidade embaixo.",
+      // Posicao do PERFIL dentro da barra de identidade. `y` negativo sobe.
+      //
+      // O -7,6 (146px para cima num quadro de 1920) e pedido do modelo, nao
+      // sobra de arrasto: com `align-items: center` o par avatar+nome nasce no
+      // meio da faixa, e ai ele le baixo demais. Medido, o par final fica 7,6%
+      // do quadro acima do meio da faixa, com 13px de folga ate o topo.
+      //
+      // NAO e a soma de um ajuste antigo com este: o `align-items: center` ja
+      // põe o par no meio, entao o `idOffset` e o unico deslocamento. Quando o
+      // valor era 2%, o desenho media 2% — somar os dois dava um offset que so
+      // valia 2.
+      //
+      // EM % DO QUADRO, e nao em px: a folga ate o topo e a mesma nas tres
+      // resolucoes (medida 9,7% do quadro em 720p, 1080p e 2560p), mas em px
+      // de quadro ela seria 124, 187 e 249px. Um valor em px valeria numa
+      // resolucao e empurraria o avatar para fora nas outras — 124px de folga
+      // aguentaria, 249 nao.
+      //
+      // O valor e em 2 casas (0,01% = 0,19px a 1920), que e a precisao que o
+      // botao "Salvar avatar e titulo como padrao" grava: gravar mais casas
+      // seria mais precisao que a propria fonte, e o numero na tela Mentiria.
+      //
+      // O X NAO muda: o cartao do X mantem o nome a esquerda, e `idOffset`
+      // ausente nos outros formatos significa zero.
+      idOffset: { avatar: { x: 0, y: -7.6 }, name: { x: 0, y: -7.6 } },
       zones: [
         // A faixa de texto vem PRIMEIRO e fora do video: ela e altura propria, e
-        // por isso o video encolhe para 58%. Antes o POV era sobreposto ao video
-        // (74%) e so existia como desenho na pagina — o render nao o queimava.
-        { kind: "text", fraction: 0.16, fit: "cover", frameAt: 0, source: "",
+        // por isso o video encolhe. Antes o POV era sobreposto ao video (74%) e so
+        // existia como desenho na pagina — o render nao o queimava.
+        //
+        // 22%, e nao os 16% de antes: a 16% a placa tem 306px e o corpo do texto
+        // 73px, e sobrava pouco respiro para o deslocamento de 46px do texto_dy.
+        // Medido nas tres resolucoes, a 16% o texto saia DA placa em 1080p e 720p.
+        // A 20% ele ja cabia em 1080p (10px) e 2560p (13px), mas em 720x1280
+        // sobrava so 2px — o texto quebra em QUATRO linhas nessa resolucao e a
+        // altura extra come o respiro. 22% e o menor valor que passa nas tres
+        // (8px em 720p, 14px em 1080p, 17px em 2560p).
+        { kind: "text", fraction: 0.22, fit: "cover", frameAt: 0, source: "",
           marginTop: 0.8, marginBottom: 0.8, marginLeft: 5, marginRight: 5, radius: 0, color: "black",
           text: "POV: Você usou o formato de meme e VIRALIZOU com 3x mais!",
           textSize: 3.8, textColor: "#ffffff", textAlign: "center", textValign: "middle",
-          textBold: true, textUppercase: false, textOutline: 0, textOff: { x: 0, y: 0 } },
-        { kind: "video", fraction: 0.58, fit: "cover", frameAt: 0, source: "",
+          textBold: true, textUppercase: false, textOutline: 0,
+          // O texto desce 46px do centro. Nao e sobra de arrasto: e o modelo.
+          // Com `an=5` o libass centraliza a CAIXA da fonte, e a caixa tem mais
+          // altura acima da linha-base do que abaixo (ascendente/descendente), de
+          // modo que o miolo das letras fica ACIMA do centro geometrico da faixa.
+          // Descer 46px e o que faz a previa e o render lerem iguais.
+          // Em px do QUADRO — a mesma unidade dos sliders do passo Aparencia, e
+          // nao fracao: `toToml` converte (46/1920 = 0.024) e o motor le a fracao.
+          textOff: { x: 0, y: 46 } },
+        { kind: "video", fraction: 0.52, fit: "cover", frameAt: 0, source: "",
           marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0, radius: 0, color: "black" },
         { kind: "image", fraction: 0.26, fit: "cover", frameAt: 0, source: "",
-          marginTop: 1.2, marginBottom: 1.2, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" }
+          // Imagem na BASE: respiro so em cima. Embaixo dela nao ha faixa nenhuma,
+          // e a margem aparecia como uma faixa preta solta no fim da tela.
+          marginTop: 1.2, marginBottom: 0, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" }
       ]
     },
     viral: {
       label: "Vídeo Viral", name: "video-viral", preset: "fire", layout: "", mock: "viral",
-      desc: "Vídeo em destaque + faixa de imagem com o gancho — energia alta.",
-      hook: "Isso aqui vai viralizar e você ainda não sabe por quê",
+      desc: "Vídeo em destaque + faixa de texto com o gancho + faixa de imagem — energia alta.",
+      // O gancho e uma ZONA DE TEXTO de verdade, como a faixa do POV no Meme: o
+      // motor queima a frase, e ela vai para o `.toml` como `text_size`/`text`.
+      //
+      // Antes era um `<p class="pv-hook">` desenhado por cima da faixa de video,
+      // que NADA queimava — a frase que saia no clipe era a legenda, e o desenho
+      // mentia sobre o arquivo. Agora a frase e conteudo do template.
+      //
+      // A fracao da faixa e o que substitui o respiro de antes: a placa preta e a
+      // propria zona (`color`), e o ar em volta do texto sao as margens
+      // (`marginTop`/`marginBottom`/`marginLeft`/`marginRight`) — o motor ja le
+      // margens e a previa ja as desenhava. Nao ha mais `pad`: ele virou margem.
+      //
+      // 16% para a faixa: 3 linhas de 3% (9%) mais o respiro de 1,8% dos dois
+      // lados (3,6%) = 12,6%, e sobra 3,4% para a faixa nao encostar nas
+      // vizinhas. Com menos, o texto encostava na borda: a 12% sobrava 2px em
+      // 720x1280, que e a resolucao mais apertada.
       zones: [
-        { kind: "video", fraction: 0.58, fit: "cover", frameAt: 0, source: "",
+        { kind: "video", fraction: 0.44, fit: "cover", frameAt: 0, source: "",
           marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0, radius: 0, color: "black" },
-        { kind: "image", fraction: 0.42, fit: "cover", frameAt: 0, source: "",
-          marginTop: 1.2, marginBottom: 1.2, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" }
+        { kind: "text", fraction: 0.16, fit: "cover", frameAt: 0, source: "",
+          marginTop: 1.8, marginBottom: 1.8, marginLeft: 3, marginRight: 3, radius: 0, color: "black",
+          text: "Isso aqui vai viralizar e você ainda não sabe por quê",
+          textSize: 3, textColor: "#ffffff", textAlign: "center", textValign: "middle",
+          textBold: true, textUppercase: false, textOutline: 0,
+          textOff: { x: 0, y: 0 } },
+        { kind: "image", fraction: 0.40, fit: "cover", frameAt: 0, source: "",
+          // Imagem na BASE: respiro so em cima. Embaixo dela nao ha faixa nenhuma,
+          // e a margem aparecia como uma faixa preta solta no fim da tela.
+          marginTop: 1.2, marginBottom: 0, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" }
       ]
     }
   };
@@ -214,6 +280,16 @@
     headlineSize: 100,
     headlineMargin: 60,
     captionTheme: "",
+    // A legenda queimada comeca DESLIGADA. "Sem legenda" e o estado de
+    // chegada, nao um preset do motor: o motor le `false` como
+    // `caption_style = "none"`, e o preset abaixo continua valendo para o que a
+    // legenda NAO faz — o headline e as faixas de texto saem com a fonte dele.
+    //
+    // Off e o padrao porque legenda queimada e um pedido, nao um padrao: quem
+    // abre o painel esta montando o template, ainda nao renderizou nada, e
+    // escolher o preset e o que liga. Quem QUER legenda escolhe um item da lista
+    // — a troca e de um clique, e o item continua na primeira posicao.
+    captions: false,
     reframeZoom: 1,
     reframePanX: 0.5,
     reframePanY: 0.5,
@@ -235,6 +311,15 @@
       name: { x: 0, y: 0 },
       body: { x: 0, y: 0 }
     },
+    // O gancho NAO tem estado proprio: e uma zona de texto como a do POV, e por
+    // isso mora em `state.zones` — o texto em `zone.text`, o corpo em
+    // `zone.textSize`, a placa em `zone.color` e o respiro nas margens da zona.
+    //
+    // Foi assim que o painel deixou de mentir. Antes o gancho era um estado
+    // SO DE PREVIA e as zonas eram video + imagem: o que o painel mostrava nao
+    // tinha par no `.toml`, e quem queimava a frase no clipe era a legenda, em
+    // outro lugar. Agora a frase e conteudo do template, e os chips mexem no
+    // mesmo `textSize` que o motor le.
     // Foto do avatar do cartao: SO previa. Guarda o object URL do arquivo
     // escolhido no computador — mesma ideia dos `previewVideos` e pelo mesmo
     // motivo: o objeto vive na sessao da pagina e o arquivo nao sobe para
@@ -253,15 +338,24 @@
     progressOn: false,
     progressHeight: 10,
     progressColor: "yellow",
+    // Modelos de fundo de placa, vindos de `GET /templates/plates` (que le
+    // a pasta `web/fundo titulo/`). Ficam no estado, e nao no HTML, porque a
+    // lista e do SERVIDOR: um `<option>` escrito na pagina seria uma segunda
+    // verdade para divergir da pasta assim que o usuario laurasse um arquivo.
+    plates: [],
     variantPresets: [],
     variantLayouts: [],
     zones: [
       { kind: "video", fraction: 0.62, fit: "cover", frameAt: 0, source: "",
         marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0, radius: 3.5, color: "black" },
       { kind: "frame", fraction: 0.38, fit: "cover", frameAt: 0, source: "",
-        marginTop: 1.2, marginBottom: 1.2, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" }
-    ],
-    hasCaptions: true
+        // Respiro SO em cima: e o vao que separa o video do cartao. Embaixo o
+        // margem e zero de proposito — ela aparecia como uma faixa preta solta
+        // antes da borda da tela, sem nada abaixo para separar. As duas copias
+        // deste layout (estado padrao e loadSplitCard) precisam combinar com o
+        // SPLIT_CARD do motor, entao a mudanca vem nas duas.
+        marginTop: 1.2, marginBottom: 0, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" }
+    ]
   };
 
   var $ = function (sel) { return document.querySelector(sel); };
@@ -311,10 +405,15 @@
       }
       var bandH = evenFloor(Math.round(H * zone.fraction));
       var innerX = evenFloor(Math.round(W * (zone.marginLeft / 100)));
-      var innerY = evenFloor(cursor + Math.round(H * (zone.marginTop / 100)));
+      // Mesma conta do motor: `cursor` continua o empilhamento (as faixas de
+      // baixo nao se mexem) e so esta sai do lugar. O recorte e o mesmo — a
+      // faixa nao desce alem da base nem sobe acima do topo.
+      var bandY = evenFloor(cursor + Math.round(H * ((zone.bandDy || 0) / 100)));
+      bandY = Math.min(Math.max(bandY, 0), Math.max(0, H - bandH));
+      var innerY = evenFloor(bandY + Math.round(H * (zone.marginTop / 100)));
       var innerW = Math.max(2, evenFloor(W - innerX - Math.round(W * (zone.marginRight / 100))));
       var innerH = Math.max(2, evenFloor(bandH - Math.round(H * ((zone.marginTop + zone.marginBottom) / 100))));
-      bands.push({ zone: zone, kind: zone.kind, y: cursor, height: bandH,
+      bands.push({ zone: zone, kind: zone.kind, y: bandY, height: bandH,
                    innerX: innerX, innerY: innerY, innerW: innerW, innerH: innerH,
                    share: total > 0 ? zone.fraction / total : 0 });
       cursor += bandH;
@@ -462,6 +561,13 @@
   // arraste, os campos e o proprio desenho. Devolver a ZONA (e nao o no do DOM)
   // e o que mantem uma fonte so — o canvas e reescrito a cada render e o no
   // morreria junto.
+  // A ZONA DE TEXTO do formato carregado. O Meme e o Viral tem uma cada: no Meme
+  // e a faixa do POV, no Viral e o gancho. E a MESMA busca para os dois porque as
+  // duas coisas sao a mesma coisa para o motor — uma zona `text` com `text_size`,
+  // cor e margens. Por isso o painel do gancho e o do POV escrevem no mesmo
+  // lugar: nao sao dois ajustes parecidos, e o mesmo ajuste com dois rotulos.
+  //
+  // `povZone()` e essa funcao. Ela ficou, e o nome e que so.
   function povZone() {
     for (var i = 0; i < state.zones.length; i++) {
       if (state.zones[i].kind === "text") return state.zones[i];
@@ -789,17 +895,80 @@
     event.preventDefault();
   }
 
+  // "Zerar posições" volta ao PADRÃO DO MODELO, e nao a zero. Sao coisas
+  // diferentes desde que o Meme ganhou o idOffset: o modelo sobe o perfil 2% para
+  // o par nao parecer baixo, e um "zerar" literal jogaria o usuario no meio da
+  // faixa — que e o desenho que ele acabou de trocar. O aviso da UI e "de volta
+  // ao modelo" desde o começo, entao o botao agora faz o que diz.
+  //
+  // O POV continua zerado: o offset dele mora no `textOff` da zona, e o modelo
+  // dele e o `text_dy` do catalogo. Zera-lo aqui apagaria o valor que o
+  // `loadGallery` acabou de escrever e que chega ao .toml.
   function resetTweetOffsets() {
     TW_ITEMS.forEach(function (item) {
       // O POV guarda o deslocamento na zona; os outros tres, no estado do cartao.
+      // O X volta ao do modelo E o Y: o "Salvar como padrão" grava os dois
+      // eixos, e um reset que so devolvesse o Y deixaria o avatar torto para
+      // sempre — o usuario arrasta, salva, aperta "voltar ao modelo", e o
+      // horizontal some sem ele ter tocado em nada.
       var off = tweetOffsetOf(item);
-      off.x = 0;
-      off.y = 0;
+      if (item === "pov") {
+        off.x = 0;
+        off.y = 0;
+      } else {
+        var model = modelIdOffset(item);
+        off.x = model.x;
+        off.y = model.y;
+      }
     });
     paintTweetFields();
     renderPreview();
     renderOutputs();
     toast("Posições de volta ao modelo.", "");
+  }
+
+  // "Salvar avatar e título como padrão" grava a posição ATUAL no CATÁLOGO do
+  // formato carregado, e é o inverso do botão ao lado: aquele volta ao modelo,
+  // este TORNA o modelo o que está na tela agora.
+  //
+  // Só avatar e nome. O `body` (texto do tweet) e o `pov` ficam de fora porque
+  // o POV mora na ZONA e vira `text_dy` no .toml — salvar a posição dele aqui
+  // criaria uma segunda fonte para o mesmo número, e as duas divergiriam assim
+  // que o usuário mexesse no slider. O `body` é do cartão do X e o Meme nem o
+  // desenha, então gravá-lo no modelo do Meme seria um ajuste invisível.
+  //
+  // A gravação vai em % DO QUADRO, a mesma unidade que o catálogo já usa, e
+  // passa por `idOffsetPx` ao contrário: um valor em px seria 38px em 1920 e
+  // 51px em 2560 para a MESMA posição na tela.
+  function saveIdOffsetAsModel() {
+    var key = state.previewMock;
+    var entry = GALLERY[key];
+    if (!entry) {
+      // Sem formato de galeria carregado nao ha onde gravar. Acontece apos
+      // "Carregar split-card", que seta o estado sem passar por `loadGallery`.
+      toast("Carregue um formato da galeria para salvar um padrão.", "bad");
+      return;
+    }
+    // Avatar e nome andam juntos: um par com os dois em pontos diferentes fica
+    // com o circulo longe do texto. A media dos dois Y e o que o par realmente
+    // parece estar — e o que o `align-items: center` do pai vai alinhar de novo.
+    var av = tweetOffsetOf("avatar");
+    var nm = tweetOffsetOf("name");
+    var y = Math.round((av.y + nm.y) / 2);
+    var x = Math.round((av.x + nm.x) / 2);
+    var pct = function (value, base) {
+      return Math.round(value / base * 10000) / 100;   // 2 casas: 0,01% de precisao
+    };
+    entry.idOffset = entry.idOffset || {};
+    entry.idOffset.avatar = { x: pct(x, state.width), y: pct(y, state.height) };
+    entry.idOffset.name = { x: pct(x, state.width), y: pct(y, state.height) };
+    // O estado passa a ler do gravado, para o que esta na tela e o que o
+    // catalogo diz serem a mesma coisa (a conversao px->px pode arredondar).
+    state.tweetOffset.avatar = idOffsetPx(entry.idOffset.avatar);
+    state.tweetOffset.name = idOffsetPx(entry.idOffset.name);
+    paintTweetFields();
+    renderPreview();
+    toast("Padrão salvo em " + entry.name + ".", "ok");
   }
 
   function initTweetEditor() {
@@ -809,6 +978,7 @@
     canvas.addEventListener("pointermove", moveTweetDrag);
     canvas.addEventListener("pointerup", endTweetDrag);
     canvas.addEventListener("pointercancel", endTweetDrag);
+    initPlateFit();
     canvas.addEventListener("dblclick", function (event) {
       var node = event.target.closest ? event.target.closest("#canvas [data-edit]") : null;
       if (!node) return;
@@ -828,12 +998,436 @@
     document.addEventListener("keydown", onTweetKey);
     var reset = $("#tw-reset-pos");
     if (reset) reset.addEventListener("click", resetTweetOffsets);
+    // O botao grava no catalogo do formato, entao so faz sentido com um formato
+    // de galeria carregado — e o proprio `saveIdOffsetAsModel` avisa quando nao ha.
+    var salvar = $("#tw-save-id-offset");
+    if (salvar) salvar.addEventListener("click", saveIdOffsetAsModel);
     paintFrameScale();
     // `--framepx` e um comprimento em px de TELA: sem reescrever no resize, um item
     // deslocado sairia fora de escala quando o palco encolhesse.
     if (window.ResizeObserver) {
       new ResizeObserver(function () { paintFrameScale(); }).observe($(".phone-screen"));
     }
+  }
+
+  // ---------- fundo de placa da faixa de texto ----------
+
+  // O caminho de uma placa e a chave `plate_image` da zona, e nada mais: o
+  // servidor devolve `path` (o que o motor vai ler) e `url` (o que a previa
+  // pinta), e sao campos diferentes porque so o primeiro vai para o `.toml`.
+  // Uma funcao so pra isso evita o erro de salvar a URL na zona — que funciona
+  // na tela e quebra no render, ja que `/fundo%20titulo/1.jpg` nao existe no
+  // disco do ffmpeg.
+  function plateByPath(path) {
+    var wanted = String(path || "");
+    for (var i = 0; i < state.plates.length; i++) {
+      if (state.plates[i].path === wanted) return state.plates[i];
+    }
+    return null;
+  }
+
+  function plateUrl(zone) {
+    var found = plateByPath(zone && zone.plateImage);
+    return found ? found.url : "";
+  }
+
+  // CSS do fundo da faixa: cor, e a imagem por cima quando ha placa. A cor
+  // CONTINUA sendo escrita mesmo com placa — e ela que aparece no letterbox do
+  // encaixe "Encaixa", exatamente como o motor faz com o `pad` do `scale_into`.
+  //
+  // Quem chama esta funcao passa so a ZONA, e nao a faixa: o `size` e o
+  // `position` saem em porcentagem de CSS, que e relativa a caixa onde a
+  // imagem cai. Como a conta sai em razao, o mesmo texto serve para a previa, o
+  // card da galeria e o passo de zonas — e os tres mostram o recorte certo sem
+  // depender do tamanho da caixa em que foram desenhados.
+  function plateStyle(zone) {
+    var css = "background:" + ((zone && zone.color) || "#000");
+    var plate = plateByPath(zone && zone.plateImage);
+    if (!plate || !plate.url) return css;
+    var box = plateBox(zone, plate);
+    css += ";background-image:url('" + plate.url + "')";
+    css += ";background-size:" + box.size;
+    css += ";background-position:" + box.position;
+    css += ";background-repeat:no-repeat";
+    return css;
+  }
+
+  // As MESMAS medidas que o motor tira de `scale_into`, em porcentagem de CSS.
+  //
+  // O motor faz `scale=w*z:h*z:force_original_aspect_ratio=increase` e depois
+  // `crop=w:h:x=(in_w-out_w)*pan_x`. O `cover` puro e o caso z=1. Como o
+  // `background-size` em porcentagem e relativo a caixa, a conta e feita em
+  // RAZAO — razao da area interna da faixa contra a da imagem — e nao em
+  // pixels: e a mesma em qualquer canvas, que e o que permite a previa e o card
+  // da galeria concordarem com o render sem conhecer o tamanho deles.
+  //
+  // `contain` ignora zoom e pan no motor (o `scale_into` volta antes deles), e a
+  // previa precisa ignorar tambem: mostrar um recorte que o render nao queima
+  // seria a previa mentindo sobre o arquivo.
+  function plateBox(zone, plate) {
+    var neutro = { size: "cover", position: "center" };
+    if (zone.fit === "contain") return { size: "contain", position: "center" };
+    var zoom = zone.zoom || 1;
+    var panX = zone.panX != null ? zone.panX : 0.5;
+    var panY = zone.panY != null ? zone.panY : 0.5;
+    if (zoom === 1 && panX === 0.5 && panY === 0.5) return neutro;
+    // Sem as dimensoes do arquivo nao ha razao para a conta, e sem elas o pad
+    // nem sobe: a lista do servidor traz `width`/`height` justamente para isso.
+    if (!plate || !plate.width || !plate.height) return neutro;
+
+    var W = state.width, H = state.height;
+    // As margens da zona sao as mesmas de `planBands`: `bandH` menos a respiro
+    // vertical, e a largura menos a horizontal. Errar aqui faria a previa
+    // recortar num ponto e o render em outro, sem nenhum sinal.
+    var innerW = W * (1 - (zone.marginLeft + zone.marginRight) / 100);
+    var innerH = H * (zone.fraction - (zone.marginTop + zone.marginBottom) / 100);
+    if (!(innerW > 0) || !(innerH > 0)) return neutro;
+
+    var A = innerW / innerH;                 // razao da faixa
+    var B = plate.width / plate.height;      // razao do arquivo
+    // O `increase` do ffmpeg encolhe pelo lado que FALTA: se a faixa e mais
+    // larga que a imagem, a altura sobra e e a largura que preenche.
+    var m = A >= B ? A / B : 1;
+    return {
+      size: (100 * zoom * B * m / A).toFixed(3) + "% " + (100 * zoom * m).toFixed(3) + "%",
+      // O `crop` do motor começa em `(in-out)*pan`, e o `background-position`
+      // em porcentagem tambem desloca a imagem por `(caixa-imagem)*pct` — o
+      // mesmo numero, com o sinal trocado pelo do eixo. 50% e o centro.
+      position: (panX * 100).toFixed(2) + "% " + (panY * 100).toFixed(2) + "%"
+    };
+  }
+
+  // Aplica o texto de `plateStyle` na faixa, PROPRIEDADE A PROPRIEDADE.
+  //
+  // `el.style.cssText = ...` trocaria o bloco inline INTEIRO, e a faixa ja tem
+  // `top` e `height` escritos pelo laco de `renderPreview`. Trocar o bloco
+  // apagava os dois, e o que aparecia na tela nao era mais a zona de texto: a
+  // faixa perdia a posicao, caia no canto superior do canvas e ficava com a
+  // altura do texto (58 px em vez da fracao declarada) — a placa aparecia no
+  // lugar errado sem nenhum erro no console. Por isso a regra: nenhum `cssText`
+  // em elemento que ja tem geometria.
+  function applyPlateStyle(el, zone) {
+    plateStyle(zone).split(";").forEach(function (decl) {
+      var i = decl.indexOf(":");
+      if (i < 0) return;
+      el.style.setProperty(decl.slice(0, i).trim(), decl.slice(i + 1).trim());
+    });
+  }
+
+  // A tira de modelos e o `<select>` sao o MESMO controle em duas formas: o
+  // select e o que funciona sem JS nas opcoes e o que o teclado percorre, e a
+  // tira mostra o desenho. Repintar so o que muda — recriar a tira no boot
+  // apagaria o foco de quem esta navegando por ela.
+  function paintPlatePicker() {
+    var zone = povZone();
+    var current = (zone && zone.plateImage) || "";
+    var sel = document.getElementById("hook-plate");
+    if (sel) {
+      if (!sel.dataset.filled && state.plates.length) {
+        sel.innerHTML = "<option value=''>Cor solida (sem imagem)</option>" +
+          state.plates.map(function (p) {
+            return "<option value='" + esc(p.path) + "'>" + esc(p.name) + "</option>";
+          }).join("");
+        sel.dataset.filled = "1";
+      }
+      if (sel.value !== current) sel.value = current;
+    }
+    var strip = document.getElementById("hook-plate-strip");
+    if (!strip) return;
+    var items = [{ path: "", name: "Cor solida", url: "", width: 0, height: 0 }]
+      .concat(state.plates);
+    var signature = items.map(function (p) { return p.path; }).join("|") + "#" + current;
+    if (strip.dataset.signature === signature) return;
+    strip.dataset.signature = signature;
+    strip.innerHTML = items.map(function (p) {
+      var on = p.path === current;
+      var dims = p.width && p.height ? p.width + "×" + p.height : "";
+      // O caminho vai no atributo `value` e o sinalizador no `data-plate`. A
+      // ordem inversa pareceria mais natural e estaria ERRADA: `data-plate` sem
+      // valor e um atributo VAZIO, entao o item "Cor solida" e o item "1.jpg"
+      // sairiam com `data-plate=""` os dois — e o `closest("[data-plate]")`
+      // devolveria o primeiro, trocando a placa pela cor sem nenhum erro.
+      return "<button type='button' class='plate-opt pressable" + (p.path ? "" : " plate-none") +
+        "' role='radio' data-plate value='" + esc(p.path) + "'" +
+        " aria-checked='" + (on ? "true" : "false") + "'" +
+        (on ? "" : " tabindex='-1'") + " title='" + esc(p.name) + "'>" +
+        "<span class='plate-thumb'" + (p.url ? " style=\"background-image:url('" + esc(p.url) + "')\"" : "") + "></span>" +
+        "<span class='plate-name'>" + esc(p.name) +
+        (dims ? " <span class='plate-dim'>" + dims + "</span>" : "") + "</span></button>";
+    }).join("");
+  }
+
+  // Uma placa e lida de DUAS formas que precisam concordar: a tira aqui e o
+  // campo de texto do editor de zonas. O `paintPlateFields` e o que mantem as
+  // duas acesas no mesmo valor, pelo mesmo motivo que `paintPovSize` mantem o
+  // slider e os chips do texto em acordo.
+  function paintPlateFields() {
+    paintPlatePicker();
+    paintPlateFit();
+    paintHookFields();
+  }
+
+  // ---------- ajuste de posicao da placa ----------
+
+  // Os ouvintes do painel ficam num `init` so, e nao no delegador global de
+  // clique: o pad e um alvo de ARRASTE com captura de ponteiro, e um
+  // delegador de `click` para ele nao teria nem o `pointermove` nem o
+  // `pointerup` para escutar.
+  function initPlateFit() {
+    var pad = document.getElementById("hook-plate-pad");
+    if (pad) {
+      pad.addEventListener("pointerdown", startPlatePadDrag);
+      pad.addEventListener("keydown", platePadKey);
+    }
+    var toggle = document.getElementById("hook-plate-toggle");
+    if (toggle) toggle.addEventListener("click", togglePlatePanel);
+    var reset = document.getElementById("hook-plate-reset");
+    if (reset) reset.addEventListener("click", resetPlateFit);
+    var zoom = document.getElementById("hook-plate-zoom");
+    if (zoom) zoom.addEventListener("input", plateZoomInput);
+  }
+
+  // O recorte da placa mora em `zone.zoom`/`zone.panX`/`zone.panY` — as MESMAS
+  // chaves que a zona `image`/`frame` ja usa, e nao tres novas. O motor nao sabe
+  // o que e uma placa: para ele, `scale_into` recebe uma zona e um still. Se a
+  // placa tivesse prefixo proprio (`plate_zoom`), o `scale_into` precisaria de
+  // um caso novo, e a previa, o card e o `.toml` teriam duas linguagens para o
+  // mesmo gesto. Uma chave, um significado: "o enquadramento dentro da faixa".
+  function platePan() {
+    var zone = povZone();
+    return {
+      zone: zone,
+      x: zone && zone.panX != null ? zone.panX : 0.5,
+      y: zone && zone.panY != null ? zone.panY : 0.5,
+      zoom: zone && zone.zoom ? zone.zoom : 1
+    };
+  }
+
+  // Escreve o recorte e repinta. Os valores que voltam ao neutro sao APAGADOS em
+  // vez de gravados como 0.5/1: o `.toml` so escreve a chave quando ela muda de
+  // verdade, entao um ajuste desfeito e voltando nao deixa marca no arquivo.
+  function applyPlateFit(pan) {
+    var zone = povZone();
+    if (!zone) return;
+    if (pan.x === 0.5) delete zone.panX; else zone.panX = pan.x;
+    if (pan.y === 0.5) delete zone.panY; else zone.panY = pan.y;
+    if (pan.zoom === 1) delete zone.zoom; else zone.zoom = pan.zoom;
+    // `contain` nao tem o que posicionar: o motor volta do `scale_into` antes de
+    // ler as chaves, entao grava-las aqui produziria um `.toml` que descreve um
+    // recorte que o render ignora — o pior tipo de mentira, porque o arquivo
+    // parece com a intencao e o video sai diferente.
+    if (zone.fit === "contain") {
+      delete zone.panX; delete zone.panY; delete zone.zoom;
+    }
+    paintPlateFit();
+    renderPreview();
+    renderGallery();
+    renderOutputs();
+  }
+
+  // Espelha o estado no painel: visibilidade, ponto, leituras, zoom.
+  //
+  // O painel inteiro some sem placa. Nao e vaidade de layout: sem imagem nao ha
+  // nada para posicionar, e um pad funcionando sobre a cor solida ensinaria o
+  // usuario a mexer num controle que nao tem efeito nenhum.
+  function paintPlateFit() {
+    var box = document.getElementById("hook-plate-fit");
+    var panel = document.getElementById("hook-plate-panel");
+    if (!box || !panel) return;
+    var zone = povZone();
+    var plate = plateByPath(zone && zone.plateImage);
+    box.hidden = !plate;
+    if (!plate) {
+      // Fecha junto: um painel aberto que some da tela deixa o `aria-expanded`
+      // do botao apontando para um alvo invisivel.
+      panel.hidden = true;
+      var btnOff = document.getElementById("hook-plate-toggle");
+      if (btnOff) btnOff.setAttribute("aria-expanded", "false");
+      return;
+    }
+
+    var p = platePan();
+    var contem = zone.fit === "contain";
+    panel.dataset.off = contem ? "1" : "";
+
+    var dot = document.getElementById("hook-plate-dot");
+    if (dot) {
+      dot.style.left = (p.x * 100).toFixed(2) + "%";
+      dot.style.top = (p.y * 100).toFixed(2) + "%";
+      // O aviso de limite: com pan em 0 ou 1 a placa nao tem sobra daquele lado.
+      // Sem isto o usuario acha que o arquivo acabou na borda.
+      var edge = "";
+      if (p.x <= 0 || p.x >= 1) edge = (edge ? " " : "") + "x";
+      if (p.y <= 0 || p.y >= 1) edge = (edge ? " " : "") + "y";
+      if (edge) dot.dataset.edge = edge; else delete dot.dataset.edge;
+    }
+    var h = document.getElementById("hook-plate-h");
+    var v = document.getElementById("hook-plate-v");
+    if (h) h.textContent = Math.round(p.x * 100) + "%";
+    if (v) v.textContent = Math.round(p.y * 100) + "%";
+    var pad = document.getElementById("hook-plate-pad");
+    if (pad) {
+      pad.setAttribute("aria-label",
+        "Posição da placa: horizontal " + Math.round(p.x * 100) + "%, vertical " +
+        Math.round(p.y * 100) + "%. Arraste ou use as setas do teclado.");
+    }
+
+    var zs = document.getElementById("hook-plate-zoom");
+    if (zs) { zs.value = p.zoom; paintSlideFill(zs); }
+    var zh = document.getElementById("hook-plate-zoom-hint");
+    if (zh) zh.textContent = contem ? "—" : p.zoom.toFixed(2) + "x";
+
+    // O resumo ao lado do botao responde "esta em que posicao?" com o painel
+    // fechado, que e a pergunta que vem antes de decidir abrir.
+    var st = document.getElementById("hook-plate-fit-state");
+    if (st) {
+      var central = p.x === 0.5 && p.y === 0.5 && p.zoom === 1;
+      st.innerHTML = contem ? "encaixa: placa inteira" :
+        central ? "centralizado" :
+        "H <b>" + Math.round(p.x * 100) + "%</b> · V <b>" + Math.round(p.y * 100) +
+        "%</b> · <b>" + p.zoom.toFixed(2) + "x</b>";
+    }
+  }
+
+  // Abre e fecha o painel. O `aria-expanded` mora no botao porque e dele que se
+  // navega por Tab.
+  function togglePlatePanel() {
+    var panel = document.getElementById("hook-plate-panel");
+    var btn = document.getElementById("hook-plate-toggle");
+    if (!panel || !btn) return;
+    var abrir = panel.hidden;
+    panel.hidden = !abrir;
+    btn.setAttribute("aria-expanded", abrir ? "true" : "false");
+    var txt = document.getElementById("hook-plate-toggle-txt");
+    if (txt) txt.textContent = abrir ? "Fechar ajuste" : "Ajustar posição";
+    if (abrir) {
+      var pad = document.getElementById("hook-plate-pad");
+      if (pad) pad.focus();
+    }
+  }
+
+  // O ponto do pad para uma fracao 0..1. O retangulo do pad e a area interna da
+  // faixa, e nao a caixa da miniatura: a marca desenhada no pad fica onde o
+  // motor vai mostrar, que e o unico lugar onde um "quase no centro" diz algo.
+  function platePadPoint(event) {
+    var pad = document.getElementById("hook-plate-pad");
+    if (!pad) return null;
+    var r = pad.getBoundingClientRect();
+    if (!(r.width > 0) || !(r.height > 0)) return null;
+    return {
+      x: Math.min(1, Math.max(0, (event.clientX - r.left) / r.width)),
+      y: Math.min(1, Math.max(0, (event.clientY - r.top) / r.height))
+    };
+  }
+
+  // O arraste escreve a ZONA a cada movimento, e nao um rascunho: e a previa que
+  // precisa mudar junto, e e o que faz o pad valer mais que dois campos. Um
+  // rascunho exigiria um segundo caminho de pintura e uma copia do estado para
+  // desfazer, e a previa mentiria sobre o que o motor queima ate o fim do
+  // arrasto — no caso em que isso mais importa.
+  function startPlatePadDrag(event) {
+    if (event.button !== 0) return;
+    var pad = event.target.closest ? event.target.closest("#hook-plate-pad") : null;
+    if (!pad) return;
+    var p = platePadPoint(event);
+    if (!p) return;
+    try { pad.setPointerCapture(event.pointerId); } catch (e) {}
+    var move = function (ev) {
+      var q = platePadPoint(ev);
+      if (!q) return;
+      applyPlateFit({ x: q.x, y: q.y, zoom: platePan().zoom });
+    };
+    var end = function (ev) {
+      if (pad.hasPointerCapture && pad.hasPointerCapture(ev.pointerId)) {
+        pad.releasePointerCapture(ev.pointerId);
+      }
+      pad.removeEventListener("pointermove", move);
+      pad.removeEventListener("pointerup", end);
+      pad.removeEventListener("pointercancel", end);
+    };
+    pad.addEventListener("pointermove", move);
+    pad.addEventListener("pointerup", end);
+    pad.addEventListener("pointercancel", end);
+    event.preventDefault();
+    move(event);
+  }
+
+  // Setas no pad: 2% por tecla, 10% com Shift. Quem esta no teclado esta
+  // corrigindo algo pequeno, nao reposicionando a placa inteira, e 2% ja e
+  // indistinguivel de um pixel na previa.
+  function platePadKey(event) {
+    var passo = event.shiftKey ? 0.1 : 0.02;
+    var p = platePan();
+    var x = p.x, y = p.y, mudou = true;
+    switch (event.key) {
+      case "ArrowLeft": x -= passo; break;
+      case "ArrowRight": x += passo; break;
+      case "ArrowUp": y -= passo; break;
+      case "ArrowDown": y += passo; break;
+      case "Home": x = 0; y = 0; break;
+      case "End": x = 1; y = 1; break;
+      case "Enter": case " ": x = 0.5; y = 0.5; break;
+      default: mudou = false;
+    }
+    if (!mudou) return;
+    event.preventDefault();
+    applyPlateFit({
+      x: Math.min(1, Math.max(0, x)),
+      y: Math.min(1, Math.max(0, y)),
+      zoom: p.zoom
+    });
+  }
+
+  // Centralizar: volta as tres chaves ao neutro, e elas somem do estado — o
+  // `.toml` de um recorte centrado e o mesmo de uma zona sem ajuste.
+  function resetPlateFit() {
+    applyPlateFit({ x: 0.5, y: 0.5, zoom: 1 });
+  }
+
+  // Zoom da placa. O `paintSlideFill` e o mesmo das outras rampas da pagina: sem
+  // ele o trilho nao mostra o preenchido e o slider parece quebrado.
+  function plateZoomInput(event) {
+    var target = event.target;
+    if (target.id !== "hook-plate-zoom") return;
+    var z = Number(target.value);
+    if (!Number.isFinite(z) || z < 1) z = 1;
+    var p = platePan();
+    paintSlideFill(target);
+    applyPlateFit({ x: p.x, y: p.y, zoom: z });
+  }
+
+  function applyPlate(path) {
+    var zone = povZone();
+    if (!zone) return;
+    // Vazio = a chapa de cor. A chave some do estado em vez de virar "", porque
+    // `plate_image = ""` e recusado pelo validador do motor: uma grafia por
+    // estado, e "sem placa" e a ausencia da chave.
+    if (path) zone.plateImage = path; else delete zone.plateImage;
+    // O `renderZones` entra ANTES das pinturas, e e ele que reconstrói o campo
+    // de texto do editor de zonas. Sem esta linha o campo ficaria com o valor
+    // antigo enquanto o select e a tira marcariam o novo — tres controles do
+    // mesmo ajuste discordando, que e o modo de falha que o painel teve antes
+    // com o corpo do texto.
+    renderZones();
+    paintPlateFields();
+    renderPreview();
+    renderGallery();
+    // A placa vai para o `.toml` como conteudo do template: sem o `renderOutputs`
+    // o arquivo mostraria a cor solida enquanto a previa ja mostrava a imagem.
+    renderOutputs();
+  }
+
+  function loadPlates() {
+    return fetch("/templates/plates").then(function (res) { return res.json(); })
+      .then(function (r) {
+        state.plates = r.plates || [];
+        paintPlateFields();
+        // Quem escolheu um modelo antes da lista chegar receberia um `select`
+        // vazio; repintar aqui e o que garante que a escolha volte a aparecer.
+        if (povZone() && povZone().plateImage) renderPreview();
+      }).catch(function () {
+        state.plates = [];
+      });
   }
 
   // Faixa de texto na prévia: placa + texto. Espelha o que o motor faz — a zona
@@ -854,7 +1448,11 @@
   function paintTextZone(el, band) {
     var zone = band.zone;
     el.className = "band band--text";
-    el.style.background = zone.color || "#000";
+    // `plateStyle` e a cor E a placa: o motor pinta a imagem no lugar da cor
+    // (ou a cor no letterbox do encaixe "Encaixa"), e a previa conta a mesma
+    // historia pelos mesmos dois numeros. Aplicado propriedade a propriedade
+    // para nao comer o `top`/`height` que o laco ja escreveu nesta faixa.
+    applyPlateStyle(el, zone);
     el.style.paddingTop = ((band.innerY - band.y) / state.height * 100) + "cqh";
     el.style.paddingBottom =
       ((band.height - (band.innerY - band.y) - band.innerH) / state.height * 100) + "cqh";
@@ -932,14 +1530,13 @@
     return bar;
   }
 
-  // Gancho na base do vídeo (formato Vídeo Viral na prévia).
-  function viralHook() {
-    var hook = document.createElement("p");
-    hook.className = "pv-hook";
-    var entry = GALLERY[state.previewMock] || {};
-    hook.textContent = entry.hook || "";
-    return hook;
-  }
+  // O gancho do formato Viral NAO tem desenho proprio: ele e a zona de texto do
+  // template, e sai por `paintTextZone` — a mesma funcao que desenha a faixa do
+  // POV no Meme. Antes havia um `viralHook()` com `<p class="pv-hook">`
+  // posicionado em `bottom: 0` sobre a faixa de video, e ele sumiu porque a
+  // sobreposicao era o defeito: o texto nao ocupava espaco proprio, entao a
+  // previa contava 58% de video onde o motor queimaria menos, e a frase que
+  // aparecia ali nao era a que o motor queimaria.
 
   // ---------- render da previa ---------- //
   function renderPreview() {
@@ -954,6 +1551,11 @@
       el.style.height = (band.height / state.height * 100) + "%";
 
       if (band.kind === "captions") {
+        // Legenda desligada: a previa NAO desenha a faixa. Ela e o que o motor
+        // faz com `caption_style = "none"` (build_captions nao escreve as
+        // palavras), e uma previa com palavra queimada seria exatamente o
+        // contrario do que o .toml vai mandar o motor fazer.
+        if (!state.captions) return;
         // A faixa de legenda e posicionada por margin_v a partir da BASE DO
         // CANVAS. Numa composicao de varias zonas ela cola na base da faixa
         // de video (12% da altura dela), no ponto viral — ver captionMargin.
@@ -1073,10 +1675,11 @@
           }
         }
         el.appendChild(media);
-        // Formato Viral: gancho na base do vídeo. (O POV do Meme deixou de ser
-        // sobreposição: ele é uma zona de texto com faixa própria, desenhada por
-        // `paintTextZone` — a mesma que o motor queima.)
-        if (mockKey === "viral" && band.kind === "video") el.appendChild(viralHook());
+        // O gancho do Viral NAO e desenhado aqui: ele e a zona de texto, e sai
+        // pela `paintTextZone` como a faixa do Meme. A sobreposicao no video que
+        // existia aqui (`viralHook` + `appendChild`) foi removida: ela contava
+        // altura que a zona nao tem, e a previa prometia um layout que o motor
+        // nunca montou.
         }
       }
       canvas.appendChild(el);
@@ -1150,8 +1753,12 @@
     var bands = planBands();
     var rows = bands.map(function (band) {
       if (band.kind === "captions") {
-        return "<tr><td>" + KINDS.captions.label + "</td><td class='mono'>full canvas</td>" +
-               "<td class='mono'>posicionado pelo libass</td></tr>";
+        // A zona continua listada mesmo desligada (ela e o que o .toml
+        // declara), mas o Resumo diz o que o motor vai fazer com ela.
+        return "<tr><td>" + KINDS.captions.label + "</td><td class='mono'>" +
+               (state.captions ? "full canvas" : "desligada") + "</td>" +
+               "<td class='mono'>" + (state.captions ? "posicionado pelo libass" : "sem texto queimado") +
+               "</td></tr>";
       }
       return "<tr><td><span class='zone-swatch' style='background:" +
         (KINDS[band.kind] || {}).color + ";display:inline-block;margin-right:7px'></span>" +
@@ -1210,6 +1817,9 @@
     var lines = [];
     lines.push('name = "' + state.name.trim() + '"');
     lines.push('caption_preset = "' + state.preset + '"');
+    // So quando muda: ligado e o padrao do motor, entro nao polui todo .toml
+    // com um `captions = true` que nao diz nada.
+    if (!state.captions) lines.push("captions = false");
     if (state.layout) lines.push('layout = "' + state.layout + '"');
     if (state.background && state.background !== "black")
       lines.push('background = "' + state.background + '"');
@@ -1245,8 +1855,19 @@
         lines.push("frame_at = " + fmtNum(zone.frameAt));
       if (zone.kind === "solid" || zone.kind === "text")
         lines.push('color = "' + (zone.color || "black") + '"');
+      // A placa so vai quando existe E a faixa aceita uma: escrever
+      // `plate_image` numa zona de video produziria um arquivo que o motor
+      // recusa, e o painel nem perceberia — o `.toml` nao passa pelo validador
+      // ate a hora do render.
+      if ((zone.kind === "solid" || zone.kind === "text") && zone.plateImage)
+        lines.push('plate_image = "' + zone.plateImage + '"');
       if (zone.kind !== "captions" && zone.kind !== "solid" && zone.kind !== "text") {
         if (zone.fit !== "cover") lines.push('fit = "' + zone.fit + '"');
+      } else if ((zone.kind === "solid" || zone.kind === "text") && zone.plateImage &&
+                 zone.fit !== "cover") {
+        // O encaixe so interessa quando ha imagem: sem ela a faixa e uma cor e
+        // o `fit` seria uma chave que o grafo nunca le.
+        lines.push('fit = "' + zone.fit + '"');
       }
       if (zone.kind === "text") {
         // O texto vai entre aspas com as internas escapadas; o `\\n` do campo vira
@@ -1273,13 +1894,24 @@
       if (zone.marginBottom) lines.push("margin_bottom = " + fmtNum(zone.marginBottom / 100));
       if (zone.marginLeft) lines.push("margin_left = " + fmtNum(zone.marginLeft / 100));
       if (zone.marginRight) lines.push("margin_right = " + fmtNum(zone.marginRight / 100));
+      // Deslocamento da faixa: em % do quadro na pagina, fracao no motor — a
+      // mesma divisao das margens. Sai so quando ha valor, para nao sujar o
+      // arquivo de um `band_dy = 0` que nao mudaria nada no render.
+      if (zone.bandDy) lines.push("band_dy = " + fmtNum(round4(zone.bandDy / 100)));
       if (zone.radius > 0 && (zone.kind === "image" || zone.kind === "frame"))
         lines.push("corner_radius = " + fmtNum(zone.radius / 100));
-      if ((zone.kind === "image" || zone.kind === "frame") && zone.zoom && zone.zoom !== 1)
+      // `zoom`/`pan_x`/`pan_y` sao o enquadramento DENTRO da faixa, e nao um
+      // privilegio da zona de imagem: uma placa tambem e um still dentro da faixa, e
+      // o `scale_into` do motor le as mesmas chaves para as duas. O portao antigo
+      // aceitava so `image`/`frame`, o que faria a previa mostrar um recorte que
+      // o `.toml` nao descreve — o painel ajustaria e o arquivo nao mudaria.
+      var reenquadra = zone.kind === "image" || zone.kind === "frame" ||
+        ((zone.kind === "text" || zone.kind === "solid") && !!zone.plateImage);
+      if (reenquadra && zone.zoom && zone.zoom !== 1)
         lines.push("zoom = " + fmtNum(zone.zoom));
-      if ((zone.kind === "image" || zone.kind === "frame") && zone.panX != null && zone.panX !== 0.5)
+      if (reenquadra && zone.panX != null && zone.panX !== 0.5)
         lines.push("pan_x = " + fmtNum(zone.panX));
-      if ((zone.kind === "image" || zone.kind === "frame") && zone.panY != null && zone.panY !== 0.5)
+      if (reenquadra && zone.panY != null && zone.panY !== 0.5)
         lines.push("pan_y = " + fmtNum(zone.panY));
       lines.push("");
     });
@@ -1506,7 +2138,18 @@
             "<div class='full'>" +
               "<div class='mini-label'>" + (zone.kind === "text" ? "Cor da faixa" : "Cor") + "</div>" +
               "<input type='text' value='" + esc(zone.color) + "' data-act='color' data-i='" + index + "'>" +
-            "</div>" : "") +
+              "<input type='text' value='" + esc(zone.plateImage || "") + "'" +
+                " placeholder='web/fundo titulo/1.jpg' data-act='plateImage' data-i='" + index + "'" +
+                " aria-label='Imagem de fundo da placa; vazio para a placa de cor'>" +
+              "<div class='hint' style='margin-top:6px'>" +
+                (zone.plateImage ?
+                  "A imagem substitui a cor: e ela que o motor pinta na faixa. O caminho " +
+                  "e lido a partir da pasta de saida. Apagando o campo, a placa volta " +
+                  "a ser cor." :
+                  "Segundo campo: o caminho de uma imagem de fundo. Vazio = placa de " +
+                  "cor. O painel do gancho tem os modelos prontos de " +
+                  "<code>web/fundo titulo/</code>.") +
+              "</div></div>" : "") +
           (zone.kind === "text" ?
             "<div class='full'>" +
               "<div class='mini-label'>Texto da faixa</div>" +
@@ -1553,7 +2196,7 @@
             "<div><div class='mini-label'>Desloc. V</div><div class='num-wrap'>" +
               "<input type='number' min='-480' max='480' step='1' value='" + textOffsetOf(zone, "y") + "'" +
                 " data-act='textOffY' data-i='" + index + "' aria-label='Deslocamento vertical do texto em px do quadro'><span>px</span></div></div>" : "") +
-          (isPixel && zone.kind !== "solid" && zone.kind !== "text" ?
+          (isPixel && (zone.kind !== "solid" && zone.kind !== "text" || zone.plateImage) ?
             "<div class='full'>" +
               "<div class='mini-label'>Encaixe</div>" +
               "<div class='chips' role='radiogroup' aria-label='Encaixe da zona " + (index + 1) + "'>" +
@@ -1765,6 +2408,11 @@
     // na secao da faixa de texto). Sem esta repintura, mexer no slider de Zonas
     // deixaria o slider e os chips do POV mostrando o tamanho anterior.
     paintPovFields();
+    // A placa tambem tem controle em dois lugares (o campo desta lista e a tira do
+    // painel do gancho), entao `renderAll` tambem tem que repintar os dois. Sem
+    // esta linha, trocar o tipo da zona no passo de Zonas deixaria a tira do
+    // gancho mostrando a placa de uma zona que ja nao existe.
+    paintPlateFields();
   }
 
   // ---------- interacoes ----------
@@ -1772,9 +2420,25 @@
     state.zones[index] = Object.assign({}, state.zones[index], patch);
   }
 
+  // O seletor e a PORTA do listener: o que ele nao lista nunca chega aos ramos
+  // abaixo, e o clique morre no `if (!target) return`. Por isso `data-hook-size`
+  // entrou aqui ao lado de `data-pov-size` — os dois sao chips de tamanho de
+  // texto, e o do gancho sem esta lista era um botao que nao fazia nada (e sem
+  // erro nenhum: o `paintHookFields` continuava marcando o chip errado).
   document.addEventListener("click", function (event) {
-    var target = event.target.closest("[data-act], [data-goto], [data-axis], [data-copy], [data-gallery], [data-pov-size]");
+    var target = event.target.closest(
+      "[data-act], [data-goto], [data-axis], [data-copy], [data-gallery], " +
+      "[data-pov-size], [data-hook-size], [data-plate]");
     if (!target) return;
+
+    // Modelos de fundo da placa: um item da tira. `data-plate` esta na lista do
+    // seletor pelo mesmo motivo que `data-hook-size` entrou — o que o seletor
+    // nao lista morre no `if (!target) return`, e o botao vira uma imagem que
+    // nao faz nada e nao acusa nada.
+    if (target.hasAttribute("data-plate")) {
+      applyPlate(target.value || "");
+      return;
+    }
 
     // Tamanhos prontos da faixa de texto (Pequeno/Medio/Grande): um clique reduz o
     // corpo sem cacar o slider. Escreve o MESMO `zone.textSize` que o slider do POV
@@ -1783,6 +2447,22 @@
       var sizeZone = povZone();
       if (sizeZone) {
         sizeZone.textSize = Number(target.dataset.povSize);
+        paintPovFields();
+        renderPreview();
+        renderOutputs();
+      }
+      return;
+    }
+
+    // Tamanhos prontos do GANCHO (Pequeno/Do modelo/Grande): um clique ajusta o
+    // corpo sem cacar o slider. Escreve o MESMO `zone.textSize` que o slider deste
+    // painel e o do passo de Zonas, entao os tres nunca divergem — e o que vai
+    // para o `.toml` como `text_size`.
+    if (target.dataset.hookSize !== undefined) {
+      var hookChip = povZone();
+      if (hookChip) {
+        hookChip.textSize = Number(target.dataset.hookSize);
+        paintHookFields();
         paintPovFields();
         renderPreview();
         renderOutputs();
@@ -1936,7 +2616,22 @@
     else if (act === "marginBottom") updateZone(index, { marginBottom: Number(target.value) });
     else if (act === "marginLeft") updateZone(index, { marginLeft: Number(target.value) });
     else if (act === "marginRight") updateZone(index, { marginRight: Number(target.value) });
+    else if (act === "bandDy") updateZone(index, { bandDy: Number(target.value) });
     else if (act === "source") updateZone(index, { source: target.value });
+    else if (act === "plateImage") {
+      // Digitar o caminho e a MESMA ajuste que escolher na tira: uma chave, uma
+      // zona. O `delete` no vazio e o que impede `plate_image = ""` de ir para o
+      // `.toml` — o motor recusa a chave vazia, e o painel nao pode gerar um
+      // arquivo que ele mesmo nao aceitaria.
+      if (target.value.trim()) updateZone(index, { plateImage: target.value.trim() });
+      else { var semPlaca = Object.assign({}, state.zones[index]); delete semPlaca.plateImage; state.zones[index] = semPlaca; }
+      // O `select` e a tira do painel do gancho editam a mesma chave; sem esta
+      // repintura eles ficariam mostrando a placa anterior.
+      paintPlateFields();
+      renderPreview();
+      renderGallery();
+      renderOutputs();
+    }
     else if (act === "color") updateZone(index, { color: target.value });
     else if (act === "textOffX" || act === "textOffY") {
       // O numero escreve o MESMO objeto que o arraste move (o `textOff` da zona),
@@ -1977,6 +2672,12 @@
     } else if (act === "fit") {
       updateZone(Number(target.dataset.i), { fit: target.value });
       renderAll();
+    } else if (target.id === "hook-plate") {
+      // O `<select>` e a tira de modelos escrevem a MESMA chave da zona. O teclado
+      // e a lista sao o caminho sem mouse, entao os dois passam por `applyPlate` —
+      // senao o campo mostraria uma placa e a zona nenhuma, e o `.toml` sairia
+      // com a cor.
+      applyPlate(target.value || "");
     } else if (target.id === "tpl-canvas") {
       var parts = target.value.split("x");
       state.width = Number(parts[0]);
@@ -1984,8 +2685,14 @@
       renderAll();
     } else if (target.id === "tpl-preset") {
       state.preset = target.value;
+      // Escolher um preset religa a legenda: e a unica forma de religar, e
+      // desligar e uma opcao do painel, nao um preset. Sem esta linha, o item
+      // "Sem legenda" ficava marcado e o preset escolhido nao aparecia em
+      // lugar nenhum.
+      state.captions = true;
       renderPresetHint();
       renderAll();
+      paintPresetPreview();
     } else if (target.id === "tpl-layout") {
       state.layout = target.value;
       renderOutputs();
@@ -2101,6 +2808,57 @@
         renderPreview();
         renderOutputs();
       }
+    } else if (target.id === "hook-text") {
+      // A frase e `zone.text`, que o motor queima e o `.toml` leva como `text`.
+      var hookTexto = povZone();
+      if (hookTexto) {
+        hookTexto.text = target.value;
+        renderPreview();
+        renderGallery();
+        // A frase vai para o `.toml` como `text`: e conteudo do template, e nao
+        // so desenho. Sem o `renderOutputs` o arquivo mostraria a frase antiga
+        // enquanto a previa ja mostrava a nova.
+        renderOutputs();
+      }
+    } else if (target.id === "hook-size") {
+      // O corpo: `zone.textSize`, a MESMA chave que o slider do passo de Zonas
+      // escreve. Por isso os dois controles nunca divergem — e `renderOutputs`
+      // leva o valor para o `.toml`, que e onde o motor vai ler.
+      var hookSize = povZone();
+      if (hookSize) {
+        hookSize.textSize = Number(target.value);
+        // Repinta os DOIS paineis (o do gancho e o do POV): sao a mesma zona, e um
+        // slider aceso com o tamanho antigo mentiria.
+        paintHookFields();
+        paintPovFields();
+        renderPreview();
+        renderOutputs();
+      }
+    } else if (target.id === "hook-pad") {
+      // O respiro da placa virou as MARGENS da zona (`marginTop`/`marginBottom`),
+      // que o motor ja le. O horizontal e 1,7x o vertical porque a frase quebra
+      // em varias linhas: com o mesmo respiro nos dois, a linha mais larga encosta
+      // na borda enquanto a ultima tem folga.
+      var hookPad = povZone();
+      if (hookPad) {
+        var p = Number(target.value);
+        hookPad.marginTop = p;
+        hookPad.marginBottom = p;
+        hookPad.marginLeft = p * 1.7;
+        hookPad.marginRight = p * 1.7;
+        paintHookFields();
+        renderPreview();
+        renderOutputs();
+      }
+    } else if (target.id === "hook-color") {
+      // A placa e a cor da ZONA: e o fundo que o motor pinta atras do texto.
+      var hookCor = povZone();
+      if (hookCor) {
+        hookCor.color = target.value;
+        renderPreview();
+        renderGallery();
+        renderOutputs();
+      }
     } else if (target.id.indexOf("tw-pos-") === 0) {
       // Slider do grid de posicao: `tw-pos-<item>-<eixo>`. O arraste e esta rota
       // escrevem o MESMO `state.tweetOffset`, entao os dois controles nunca ficam
@@ -2127,8 +2885,11 @@
 
   function renderPresetHint() {
     var preset = PRESETS[state.preset] || PRESETS.karaoke;
-    $("#preset-hint").textContent = preset.desc + " · " + preset.font + " " + preset.size +
+    var look = preset.desc + " · " + preset.font + " " + preset.size +
       (preset.box ? " · caixa " + preset.box : " · contorno");
+    $("#preset-hint").textContent = state.captions
+      ? look
+      : "Legenda DESLIGADA — o vídeo sai limpo. " + look;
     paintPresetCombo();
   }
 
@@ -2204,7 +2965,9 @@
     }
     state.zones.splice(insertAt, 0, {
       kind: kind, fraction: 0.25, fit: "cover", frameAt: 0, source: "",
-      marginTop: 1.2, marginBottom: 1.2, marginLeft: 3, marginRight: 3,
+      // Zona nova entra antes da de legenda, ou seja no rodape: respiro so em
+      // cima, pelos mesmos motivos das zonas de imagem dos templates.
+      marginTop: 1.2, marginBottom: 0, marginLeft: 3, marginRight: 3,
       radius: kind === "solid" ? 0 : 3.5, color: "black"
     });
     state.previewMock = "";
@@ -2262,7 +3025,12 @@
       { kind: "video", fraction: 0.62, fit: "cover", frameAt: 0, source: "",
         marginTop: 0, marginBottom: 0, marginLeft: 0, marginRight: 0, radius: 0, color: "black" },
       { kind: "frame", fraction: 0.38, fit: "cover", frameAt: 0, source: "",
-        marginTop: 1.2, marginBottom: 1.2, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" }
+        // Respiro SO em cima: e o vao que separa o video do cartao. Embaixo o
+        // margem e zero de proposito — ela aparecia como uma faixa preta solta
+        // antes da borda da tela, sem nada abaixo para separar. As duas copias
+        // deste layout (estado padrao e loadSplitCard) precisam combinar com o
+        // SPLIT_CARD do motor, entao a mudanca vem nas duas.
+        marginTop: 1.2, marginBottom: 0, marginLeft: 3, marginRight: 3, radius: 3.5, color: "black" }
     ];
     state.preset = "social";
     state.variantPresets = [];
@@ -2276,6 +3044,11 @@
     state.headlineOn = false; state.progressOn = false;
     state.headlineAlign = "center";
     state.captionTheme = "";
+    // Legenda DESLIGADA, como o estado inicial. Escolher um formato da galeria
+    // nao religa: o padrao do painel e "Sem legenda" e um formato novo nasce
+    // nele. Quem quiser legenda escolhe um preset — a lista mostra o item
+    // marcado, entao o estado real fica a vista em vez de so no .toml.
+    state.captions = false;
     // O TEXTO e conteudo do projeto e nao vaza para o template novo. O perfil
     // (titulo, @handle, foto) fica: os campos do passo Aparencia editam TODOS os
     // formatos que desenham o cartao, entao trocar de formato nao pode devolver
@@ -2444,6 +3217,7 @@
       });
     paintTweetAvatar();
     paintPovFields();
+    paintHookFields();
   }
 
   // O painel da faixa de texto so existe quando ha uma zona de texto. Escondido
@@ -2460,6 +3234,67 @@
     // usuario digitaria e o cursor saltaria a cada tecla.
     if (text && text.value !== (zone.text || "")) text.value = zone.text || "";
     paintPovSize(zone);
+  }
+
+  // O painel do GANCHO existe so no Viral, que e onde a frase e o gancho: no Meme
+  // a zona de texto e a faixa do POV, e o painel dela ja cobre o mesmo ajuste.
+  // Escondido nao basta: um campo visivel escrevendo num lugar que a previa nao
+  // le e o defeito que o usuario nao consegue diagnosticar — ele mexe no slider,
+  // nada muda na tela, e nao ha onde procurar.
+  //
+  // Todos os valores sao da ZONA (`povZone()`), e nao de um estado do gancho: e a
+  // zona que o motor queima, entao o que o painel mostra e o que sai no clipe.
+  function paintHookFields() {
+    var box = document.getElementById("hook-box");
+    var zone = povZone();
+    // So no Viral: no Meme a zona de texto e o POV, e o painel dele e o dono.
+    // Os outros formatos nao tem zona de texto, e o painel nao teria o que pintar.
+    var temGancho = state.previewMock === "viral" && !!zone;
+    if (box) box.hidden = !temGancho;
+    if (!temGancho) return;
+    // A frase mora em `zone.text`, que o motor leva como `text`. Nao ha valor
+    // inicial vindo do catalogo: o texto da zona ja vem do formato, e o estado
+    // so e reescrito quando o usuario digita.
+    var text = document.getElementById("hook-text");
+    var frase = zone.text || "";
+    if (text && text.value !== frase) text.value = frase;
+
+    // O corpo: `zone.textSize`, a MESMA unidade que o motor chama de `text_size`
+    // (fracao da altura do quadro). Slider + chips, o mesmo par de controles da
+    // faixa do POV.
+    var size = zone.textSize != null ? zone.textSize : 3;
+    var sSlider = document.getElementById("hook-size");
+    if (sSlider) { sSlider.value = size; paintSlideFill(sSlider); }
+    var sHint = document.getElementById("hook-size-hint");
+    if (sHint) sHint.textContent = size.toFixed(1) + "%";
+    var sUnit = document.getElementById("hook-size-unit");
+    if (sUnit) sUnit.textContent = Math.round(size / 100 * state.height) + " px de altura";
+    var sChips = document.querySelectorAll("#hook-size-chips [data-hook-size]");
+    Array.prototype.forEach.call(sChips, function (chip) {
+      // Igualdade exata: o slider aceita qualquer valor, e nesse caso nenhum chip
+      // esta ligado — o conjunto e o mesmo, mas nao ha "o escolhido".
+      var on = Math.abs(Number(chip.dataset.hookSize) - size) < 0.05;
+      chip.setAttribute("aria-checked", on ? "true" : "false");
+      if (on) chip.removeAttribute("tabindex"); else chip.setAttribute("tabindex", "-1");
+    });
+
+    // O respiro da placa: as MARGENS da zona (`marginTop`/`marginBottom`), que o
+    // motor ja le e a previa ja desenha. Antes era um `pad` que so existia no
+    // desenho; agora e o mesmo numero que vai para o `.toml`.
+    var p = zone.marginTop != null ? zone.marginTop : 0;
+    var pSlider = document.getElementById("hook-pad");
+    if (pSlider) { pSlider.value = p; paintSlideFill(pSlider); }
+    var pHint = document.getElementById("hook-pad-hint");
+    if (pHint) pHint.textContent = p.toFixed(1) + "%";
+    var pUnit = document.getElementById("hook-pad-unit");
+    if (pUnit) pUnit.textContent = Math.round(p / 100 * state.height) + " px de altura";
+    // A placa e a COR DA ZONA: e o fundo que o motor pinta atras do texto.
+    var cor = document.getElementById("hook-color");
+    if (cor && cor.value !== (zone.color || "")) cor.value = zone.color || "";
+    // O `select` e a tira de modelos leem a MESMA chave, e `paintPlatePicker` e
+    // quem os pinta — por isso aqui so se garante que a pintura aconteceu, e nao
+    // se escreve o valor de novo.
+    paintPlatePicker();
   }
 
   // Tamanho do texto: um valor so (`zone.textSize`, porcentagem da altura do
@@ -2549,7 +3384,7 @@
   function galTextBand(z) {
     var align = z.textAlign || "center";
     return "<div class='gal-band gal-text-band' style='flex-grow:" + (z.fraction * 100).toFixed(1) +
-        ";background:" + (z.color || "#000") + "'>" +
+        ";" + plateStyle(z) + "'>" +
         "<span class='gal-pov' style='text-align:" + align + ";color:" +
           (z.textColor || "#ffffff") + ";font-weight:" + (z.textBold === false ? "500" : "800") +
           ";text-transform:" + (z.textUppercase ? "uppercase" : "none") + "'>" +
@@ -2557,29 +3392,19 @@
         "<span class='gal-pct gal-pct--corner'>" + Math.round(z.fraction * 100) + "%</span></div>";
   }
 
-  function galleryCard(key, g) {
-    // As frações das zonas mandam em tudo: cada zona vira UMA faixa. Nenhuma
-    // decoração de formato é mais sobreposta na tela — o que existe é a zona.
-    var bands = g.mock === "meme" ? memeBands(g) :
-      g.mock === "viral" ? viralBands(g) : g.zones.map(function (z) {
-      if (z.mock === "tweet") return tweetBand(z);
-      return mediaBand(z);
-    }).join("");
-    var overlay = "";
-
   // Placeholder genérico de mídia: ícone + nome + % na cor do tipo. A
   // legenda mora na faixa de vídeo: é ali que o motor a queima (margem do
   // preset, erguida até a borda da banda em template dividido).
   function mediaBand(z) {
-      var meta = KINDS[z.kind] || { label: z.kind, color: "#888" };
-      var icon = GAL_ICONS[z.kind] || GAL_ICONS.solid;
-      var short = GAL_SHORT[z.kind] || meta.label;
-      return "<div class='gal-band' style='flex-grow:" + (z.fraction * 100).toFixed(1) + "'>" +
-        "<svg viewBox='0 0 24 24' fill='none' stroke='" + meta.color + "' stroke-width='1.8'" +
-          " stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>" + icon + "</svg>" +
-        "<span class='gal-kind'>" + short + "</span>" +
-        "<span class='gal-pct'>" + Math.round(z.fraction * 100) + "%</span>" +
-        (z.kind === "video" ? "<span class='gal-cap'>Legenda</span>" : "") + "</div>";
+    var meta = KINDS[z.kind] || { label: z.kind, color: "#888" };
+    var icon = GAL_ICONS[z.kind] || GAL_ICONS.solid;
+    var short = GAL_SHORT[z.kind] || meta.label;
+    return "<div class='gal-band' style='flex-grow:" + (z.fraction * 100).toFixed(1) + "'>" +
+      "<svg viewBox='0 0 24 24' fill='none' stroke='" + meta.color + "' stroke-width='1.8'" +
+        " stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>" + icon + "</svg>" +
+      "<span class='gal-kind'>" + short + "</span>" +
+      "<span class='gal-pct'>" + Math.round(z.fraction * 100) + "%</span>" +
+      (z.kind === "video" ? "<span class='gal-cap'>Legenda</span>" : "") + "</div>";
   }
 
   // Composição Meme: faixa de texto no topo (fundo preto), vídeo reduzido e a barra
@@ -2608,6 +3433,39 @@
         "<small>" + esc(tweetHandle()) + "</small></span>" +
         "<span class='gal-pct gal-pct--corner'>" + Math.round(z.fraction * 100) + "%</span></div>";
   }
+
+  // A faixa de texto do GANCHO no card do Viral. Igual a `galTextBand` do Meme,
+  // com uma diferenca: o texto vem do ESTADO (`zone.text` da zona carregada),
+  // e nao do catalogo — a frase e editavel no passo Aparencia, e o card e o que o
+  // usuario ve ANTES de abrir o formato.
+  //
+  // A placa e a `color` da zona e o respiro as margens: e a MESMA zona que a
+  // previa desenha e que o motor queima, entao o card promete o layout real.
+  function galHookBand(z) {
+    var editada = state.zones.find(function (s) { return s.kind === "text"; });
+    var zona = editada || z;
+    var align = zona.textAlign || "center";
+    // O corpo nao e lido do CSS: o card nao tem a mesma escala da janela, e o
+    // que importa aqui e que a frase e a placa batem com a previa.
+    return "<div class='gal-band gal-text-band gal-hook-band' style='flex-grow:" +
+        (z.fraction * 100).toFixed(1) + ";" + plateStyle(zona) + "'>" +
+        "<span class='gal-pov gal-pov--hook' style='text-align:" + align + ";color:" +
+          (zona.textColor || "#ffffff") + ";font-weight:" +
+          (zona.textBold === false ? "500" : "800") +
+          ";text-transform:" + (zona.textUppercase ? "uppercase" : "none") + "'>" +
+          esc(zona.text || "") + "</span>" +
+        "<span class='gal-pct gal-pct--corner'>" + Math.round(z.fraction * 100) + "%</span></div>";
+  }
+
+  function galleryCard(key, g) {
+    // As frações das zonas mandam em tudo: cada zona vira UMA faixa. Nenhuma
+    // decoração de formato é mais sobreposta na tela — o que existe é a zona.
+    var bands = g.mock === "meme" ? memeBands(g) :
+      g.mock === "viral" ? viralBands(g) : g.zones.map(function (z) {
+      if (z.mock === "tweet") return tweetBand(z);
+      return mediaBand(z);
+    }).join("");
+    var overlay = "";
     return "<article class='gal-card'>" +
       "<div class='gal-prev' aria-hidden='true'><div class='gal-screen'>" + bands + overlay +
         "<span class='gal-notch'></span></div>" +
@@ -2618,25 +3476,30 @@
     "</article>";
   }
 
-  // Composição Vídeo Viral: vídeo em cima, gancho na base DO VÍDEO e imagem
-  // embaixo. O gancho é a legenda em contexto, e o motor a posiciona dentro da
-  // faixa de vídeo (`captionMargin`); a prévia faz o mesmo.
+  // Composição Vídeo Viral: vídeo em cima, faixa de texto com o gancho no meio e
+  // imagem embaixo. O gancho e a ZONA DE TEXTO do template — o motor queima a
+  // frase nela, entao a faixa sai pela `galHookBand`, a versao do card que le a
+  // frase editada.
   //
-  // Ele era faixa irmã (`flex: none`): consumia 12% da altura e o card mostrava
-  // [48, 12, 40] onde as zonas declaradas são [58, 42]. Sobreposto, o card passa
-  // a bater com o modelo.
+  // Antes o gancho era um `<span class="gal-hook">` SOBREPOSTO na base do video
+  // (`position: absolute`, fora do fluxo), e por isso nao ocupava altura: o card
+  // contava [58, 42] com a frase empilhada em cima. Agora ele e uma zona, e o
+  // card conta [44, 16, 40] — o que o motor monta de verdade.
+  //
+  // O texto vem do ESTADO, e nao do `g.zones`: ele e editavel no passo Aparencia,
+  // e o card e o que o usuario ve ANTES de abrir o formato. Com o texto do
+  // catalogo, o card prometeria uma frase que a janela nao mostraria.
   function viralBands(g) {
     return g.zones.map(function (z) {
+      if (z.kind === "text") return galHookBand(z);
       var meta = KINDS[z.kind] || { label: z.kind, color: "#888" };
       var icon = GAL_ICONS[z.kind] || GAL_ICONS.solid;
       var short = GAL_SHORT[z.kind] || meta.label;
-      var hook = z.kind === "video"
-        ? "<span class='gal-hook'>" + esc(g.hook || "") + "</span>" : "";
       return "<div class='gal-band' style='flex-grow:" + (z.fraction * 100).toFixed(1) + "'>" +
-        hook +
         "<svg viewBox='0 0 24 24' fill='none' stroke='" + meta.color + "' stroke-width='1.8'" +
           " stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>" + icon + "</svg>" +
         "<span class='gal-kind'>" + short + "</span>" +
+        (z.kind === "video" ? "<span class='gal-cap'>Legenda</span>" : "") +
         "<span class='gal-pct'>" + Math.round(z.fraction * 100) + "%</span></div>";
     }).join("");
   }
@@ -2669,6 +3532,75 @@
   // "Usar" carrega nome, preset e zonas e leva ao Passo 1 (Aparência):
   // as etapas seguintes — Zonas, Frases, Mídia, Estilo, Variações, Gerar —
   // são a personalização, já preenchidas com o formato escolhido.
+  // ---------- galeria ----------
+  // Carrega a posicao do perfil que o catalogo declara para o formato. E o
+  // UNICO lugar que escreve `state.tweetOffset` a partir da galeria: o arrasto e
+  // dos sliders continuam mandando no dia a dia, mas carregar um formato parte
+  // do que o catalogo diz, e nao do que ficou da ultima visita.
+  //
+  // O `y` do catalogo esta em % DO QUADRO; o estado guarda em PX DO QUADRO (a
+  // unidade dos sliders e do arraste, e a que o POV tambem usa para virar
+  // `text_dy`). A conversao e feita AQUI, uma vez: o resto da pagina continua
+  // falando em px e nao precisa saber que o catalogo pensava em fracao.
+  //
+  // A conversao tem de existir, e nao o inverso: a folga da barra ate o topo e a
+  // MESMA fracao nas tres resolucoes (medida: 9,7%), mas em px de quadro ela e
+  // 124, 187 e 249. Guardar -2 como "2% do quadro" da o mesmo desenho em
+  // qualquer resolucao; guardar -2 como px daria um arranco minimo em 720p, um
+  // movimento visivel em 1080p, e em 2560p o avatar ainda sairia da faixa.
+  //
+  // Os valores sao COPIADOS. Sem o clone, `state.tweetOffset.avatar` passaria a
+  // ser o MESMO objeto de `GALLERY.meme.idOffset.avatar`, e o primeiro arraste
+  // na previa reescreveria o catalogo — que a galeria redesenha a cada
+  // `renderGallery`, entao o card piscaria junto com a previa. O `textOff` das
+  // zonas tem o mesmo cuidado em `loadGallery`.
+  // O deslocamento que o MODELO declara para um item do perfil, ja em PX DO
+  // QUADRO — a mesma unidade do estado. Le o `idOffset` do formato carregado e
+  // converte, que e o que `applyGalleryIdOffset` faz ao carregar.
+  //
+  // Separate de `applyGalleryIdOffset` porque os dois sao momentos diferentes: um
+  // carrega o formato (escreve o estado), este le o catalogo a pedido do botao
+  // "voltar ao modelo". Sem o `previewMock` caindo para um formato sem
+  // `idOffset`, devolve zero — que e o certo para o X e o Viral.
+  function modelIdOffset(item) {
+    var entry = GALLERY[state.previewMock] || {};
+    return idOffsetPx((entry.idOffset || {})[item]);
+  }
+
+  // O `idOffset` do catalogo fala em % DO QUADRO, e nos DOIS eixos: o X pela
+  // LARGURA e o Y pela ALTURA. O estado (sliders, arraste) fala em px do quadro.
+  //
+  // Os dois eixos sao convertidos, e nao so o Y: o X tambem e fracao, e o
+  // `xOffsetPx` do cartao do X multiplica o valor por `--framepx` (px do QUADRO
+  // em px de TELA, medido pela LARGURA). Passar a fracao direto para esse
+  // multiplicador punha 2,78% do quadro virando 2,78 px de tela — 30px viravam
+  // 3px, e o ajuste sumia sem erro nenhum.
+  //
+  // A conversao mora numa porta so, e as DUAS funcoes que leem o catalogo a
+  // usam: com a conta repetida, uma delas pode perder a divisao e o desenho
+  // mudar de tamanho conforme a resolucao — sem erro, so com o avatar mais alto
+  // num canvas e mais baixo no outro.
+  function idOffsetPx(off) {
+    off = off || {};
+    return {
+      x: Math.round((off.x || 0) / 100 * state.width),
+      y: Math.round((off.y || 0) / 100 * state.height),
+    };
+  }
+
+  function applyGalleryIdOffset(g) {
+    var declared = g.idOffset || {};
+    ["avatar", "name", "body"].forEach(function (item) {
+      state.tweetOffset[item] = idOffsetPx(declared[item]);
+    });
+  }
+
+  // Nao ha `applyGalleryHookStyle` anymore: o corpo, o respiro e a cor do gancho
+  // sao campos da ZONA (`textSize`, margens, `color`), e a zona ja entra em
+  // `state.zones` pelo clone de `loadGallery`. O que antes era um estado
+  // separado do gancho virou a zona que o motor queima — entao nao ha mais o que
+  // repintar para dentro: `paintHookFields` le a zona, e ela ja veio do formato.
+
   function loadGallery(key) {
     var g = GALLERY[key];
     if (!g) return;
@@ -2702,9 +3634,28 @@
     state.headlineOn = false; state.progressOn = false;
     state.headlineAlign = "center";
     state.captionTheme = "";
+    // Mesmo do padrao do painel: formato novo nasce com a legenda DESLIGADA.
+    // Religar aqui esconderia o "Sem legenda" que o item marcado da lista
+    // advertise — o usuario veria o preset e receberia legenda sem pedir.
+    state.captions = false;
     // Igual ao Carregar split-card: o texto sai, o perfil fica (a secao Aparencia
     // edita todos os formatos, e o perfil e do usuario, nao do template).
     state.tweetText = "";
+    // A POSICAO do perfil, ao contrario do nome e da foto, e do template: cada
+    // formato pode ter a sua. Sem isto o arrasto vivia so em `state.tweetOffset`
+    // e sobrevivia a virada — o usuario saia do Meme torto, ia ao Viral, voltava,
+    // e o Meme mantinha o arrasto. `idOffset` ausente = zerar, que e o que os
+    // formatos sem barra (X, Viral) ja faziam so por acaso.
+    //
+    // ANTES de `paintTweetFields`, e nao depois: os campos de posicao sao
+    // pintados a partir de `state.tweetOffset`, entao pintar antes deixaria os
+    // sliders mostrando o offset do formato ANTERIOR enquanto a previa ja
+    // desenhava o novo. Salvar -146px, recarregar o formato e os campos voltavam
+    // a 0px — o catalogo estava certo e a interface mentia. O estado e a previa
+    // concordavam; so o numero na tela nao.
+    applyGalleryIdOffset(g);
+    // O corpo, o respiro e a cor do gancho NAO precisam de repintura: eles sao
+    // campos da zona de texto, e a zona veio inteira no clone acima.
     paintTweetFields();
 
     var phIdea = $("#ph-idea");
@@ -2915,6 +3866,12 @@
     });
     paintTweetFields();
 
+    // Os modelos de placa vem do servidor: `/templates/plates` le a pasta
+    // `web/fundo titulo/`. O fetch NAO bloqueia o boot — a pagina abre e a tira
+    // aparece logo depois. `loadPlates` chama `paintPlateFields` quando a lista
+    // chega, entao um formato com placa carregado antes disso se repinta sozinho.
+    loadPlates();
+
     // Editor da previa: arraste, clique duplo, setas e `--framepx`. Depois do
     // boot porque ele mede a tela e liga ouvintes no #canvas ja renderizado.
     initTweetEditor();
@@ -3015,30 +3972,47 @@
   // dispara change, então hint, prévia, renderAll e delegation não mudam.
   var comboActive = null;
 
+  // "Desligar a legenda" mora aqui, e NAO no catalogo: e uma opcao do painel,
+  // nao um preset do motor (que nem existe — o motor tem `caption_style =
+  // "none"`). Por isso fica fora de PRESETS: aquele bloco espelha
+  // caption_presets.py e o teste compara as chaves.
+  var NO_CAPTIONS = "none";
+  var NO_CAPTIONS_DESC = "Desligada — sem legenda queimada";
+
   function presetKeys(filter) {
     var q = (filter || "").toLowerCase();
-    return Object.keys(PRESETS).sort().filter(function (key) {
+    var keys = Object.keys(PRESETS).sort().filter(function (key) {
       return !q || key.indexOf(q) >= 0 ||
         PRESETS[key].desc.toLowerCase().indexOf(q) >= 0;
     });
+    // Fica no topo e nao some da busca por "deslig"/"legenda": e a primeira
+    // escolha de quem nao quer legender, e esconder isso atras de 38 presets
+    // seria bury the lede.
+    if (!q || NO_CAPTIONS.indexOf(q) >= 0 || NO_CAPTIONS_DESC.toLowerCase().indexOf(q) >= 0)
+      keys.unshift(NO_CAPTIONS);
+    return keys;
   }
 
+  // A amostra do botão desce para o preset escolhido mesmo com a legenda
+  // desligada: o preset continua no .toml e continua pintando o headline e o
+  // texto das faixas. Desligar e nao escolher outro visual.
   function paintPresetCombo() {
     var btn = document.getElementById("preset-combo-btn");
     if (!btn) return;
     var preset = PRESETS[state.preset] || PRESETS.karaoke;
     var sw = document.getElementById("preset-combo-swatch");
     if (sw) {
-      sw.style.background = preset.box || "rgba(255,255,255,0.05)";
-      sw.style.color = preset.color;
-      sw.style.borderColor = preset.accent;
+      sw.style.background = state.captions ? (preset.box || "rgba(255,255,255,0.05)") : "rgba(255,255,255,0.02)";
+      sw.style.color = state.captions ? preset.color : "#8b8b93";
+      sw.style.borderColor = state.captions ? preset.accent : "#4a4a52";
       sw.style.fontFamily = "'" + preset.font + "', sans-serif";
-      sw.style.textShadow = preset.box ? "none" : "0 0 8px " + preset.accent;
+      sw.style.textShadow = (!state.captions || preset.box) ? "none" : "0 0 8px " + preset.accent;
+      sw.style.opacity = state.captions ? "1" : "0.55";
     }
     var name = document.getElementById("preset-combo-name");
     if (name) name.textContent = state.preset;
     var desc = document.getElementById("preset-combo-desc");
-    if (desc) desc.textContent = preset.desc;
+    if (desc) desc.textContent = state.captions ? preset.desc : preset.desc + " · " + NO_CAPTIONS_DESC;
     renderPresetList();
   }
 
@@ -3052,14 +4026,20 @@
       return;
     }
     list.innerHTML = keys.map(function (key) {
-      var p = PRESETS[key];
-      var on = key === state.preset;
+      var off = key === NO_CAPTIONS;
+      var p = off ? null : PRESETS[key];
+      // Com a legenda desligada o item do topo e o marcado; com ela ligada, o
+      // marcado e o preset. Exatamente um dos dois, nunca os dois.
+      var on = off ? !state.captions : (key === state.preset && state.captions);
       return "<div class='combo-item pressable' role='option' data-value='" + key + "'" +
         " aria-selected='" + (on ? "true" : "false") + "'" +
         (key === comboActive ? " data-active='true'" : "") + ">" +
-        "<span class='combo-dot' style='background:" + (p.box || "rgba(255,255,255,0.05)") +
-          ";border-color:" + p.accent + "'></span>" +
-        "<span class='combo-item-text'><strong>" + key + "</strong><small>" + p.desc + "</small></span>" +
+        (off
+          ? "<span class='combo-dot combo-dot--off' aria-hidden='true'></span>"
+          : "<span class='combo-dot' style='background:" + (p.box || "rgba(255,255,255,0.05)") +
+            ";border-color:" + p.accent + "'></span>") +
+        "<span class='combo-item-text'><strong>" + (off ? "Sem legenda" : key) + "</strong><small>" +
+        (off ? NO_CAPTIONS_DESC : p.desc) + "</small></span>" +
         (on ? "<span class='combo-check' aria-hidden='true'>✓</span>" : "") + "</div>";
     }).join("");
   }
@@ -3084,7 +4064,9 @@
     btn.setAttribute("aria-expanded", open ? "true" : "false");
     panel.hidden = !open;
     if (open) {
-      comboActive = state.preset;
+      // O item ativo da lista e o que describe o estado real: com a legenda
+      // desligada e "Sem legenda", nao o preset guardado por tras dele.
+      comboActive = state.captions ? state.preset : NO_CAPTIONS;
       var search = document.getElementById("preset-combo-search");
       if (search) {
         search.value = "";
@@ -3098,6 +4080,17 @@
   }
 
   function selectPresetCombo(key) {
+    if (key === NO_CAPTIONS) {
+      // Só o flag muda: o preset continua no .toml (o headline e as faixas de
+      // texto continuam saindo com o visual dele), então voltar e so escolher o
+      // preset de novo.
+      state.captions = false;
+      setComboOpen(false, true);
+      renderPresetHint();
+      renderAll();
+      paintPresetPreview();
+      return;
+    }
     var sel = document.getElementById("tpl-preset");
     if (!sel || !PRESETS[key]) return;
     sel.value = key;
@@ -3133,6 +4126,9 @@
       seg.addEventListener("keydown", function (event) { segKeys(seg, event); });
     });
     // Prévia por plataforma: só troca a moldura do palco (o render é o mesmo).
+    // O `data-platform` é a chave — a CSS mostra uma UI ou a outra por ele. O
+    // rótulo simples (`#platform-name`) foi embora junto com o `platform-chrome`:
+    // com o Reels desenhado, ele duplicaria o cabeçalho do app em cima do app.
     var pfSeg = document.getElementById("platform-seg");
     if (pfSeg) {
       pfSeg.addEventListener("click", function (event) {
@@ -3140,9 +4136,7 @@
         if (!btn) return;
         var v = btn.getAttribute("data-value") || "tiktok";
         var stage = document.getElementById("stage");
-        var name = document.getElementById("platform-name");
         if (stage) stage.setAttribute("data-platform", v);
-        if (name) name.textContent = v === "instagram" ? "Instagram" : "TikTok";
         Array.prototype.forEach.call(pfSeg.querySelectorAll("[data-value]"), function (b) {
           var on = b === btn;
           b.setAttribute("aria-checked", on ? "true" : "false");
@@ -3170,8 +4164,17 @@
     if (comboSearch) {
       comboSearch.addEventListener("input", function () {
         renderPresetList();
-        var first = comboList ? comboList.querySelector(".combo-item") : null;
-        comboActive = first ? first.getAttribute("data-value") : null;
+        // Digitar filtra a lista, mas nao muda o que esta EM VIGOR. O cursor de
+        // teclado e a selecao real: sem esta linha, a busca vazia (que traz o
+        // item "Sem legenda" no topo) deixaria o cursor pronto nele, e o Enter
+        // seguinte desligaria a legenda que o usuario nao tocou.
+        var list = comboList ? Array.prototype.slice.call(
+          comboList.querySelectorAll(".combo-item")) : [];
+        var current = list.filter(function (item) {
+          return item.getAttribute("aria-selected") === "true";
+        })[0];
+        if (!current) current = list[0];
+        comboActive = current ? current.getAttribute("data-value") : null;
         markComboActive();
       });
       comboSearch.addEventListener("keydown", function (event) {
@@ -3186,9 +4189,13 @@
         } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault();
           if (!items.length) return;
+          // A seta navega a partir do que esta em vigor, nao da posicao zero: sem
+          // isto, com a legenda desligada a primeira seta para cima saltaria do
+          // "Sem legenda" (indice 0) para o ultimo preset e voltaria a ligar.
           var i = items.indexOf(comboList.querySelector("[data-active='true']"));
           if (i < 0) i = items.indexOf(comboList.querySelector("[aria-selected='true']"));
-          i = (i + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+          if (i < 0) i = 0;
+          else i = (i + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
           comboActive = items[i].getAttribute("data-value");
           markComboActive();
         }

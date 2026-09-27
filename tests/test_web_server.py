@@ -4969,6 +4969,25 @@ class PublicationStepTests(unittest.TestCase):
         kit = fn_body(self.js, "generatePostKit")
         self.assertIn("state.videoIdea", kit)
 
+    def test_the_fallback_runs_when_the_clipboard_api_rejects(self):
+        """A Clipboard API REJEITA sem foco de usuario, e nao so esta ausente.
+
+        `writeText` lanca `NotAllowedError` numa aba em segundo plano, que e o
+        caso de qualquer headless. Um fallback so no caminho sincrono — quando
+        `navigator.clipboard` nao existe — daria um botao que funciona na mao e
+        falha sozinho. O `.catch(viaExec)` e o que segura a promessa.
+        """
+        corpo = fn_body(self.js, "copyText")
+        self.assertIn(".catch(viaExec)", corpo,
+                      "o fallback nao roda quando a API rejeita")
+        self.assertIn("execCommand", corpo)
+        # E o fallback tem de existir de verdade, nao so o nome: um textarea
+        # temporario, porque `execCommand` copia a selecao, e `text` nao e
+        # selecionavel.
+        self.assertIn("createElement(\"textarea\")", corpo)
+        self.assertIn(".select()", corpo)
+
+
     def test_the_post_text_is_never_published_by_the_panel(self):
         """O botao copia. Nao ha endpoint de publicacao, e `ig_profile.py` so
         le posts existentes: fingir que publica seria um botao que mente."""

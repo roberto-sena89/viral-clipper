@@ -4166,31 +4166,38 @@
     return desc + (desc && tags ? "\n\n" : "") + tags;
   }
 
-  // `navigator.clipboard` exige contexto seguro e some em `file://`, entao o
-  // caminho antigo fica como reserva: sem isto o botao funciona no servidor e
-  // quebra em quem abriu a pagina por duplo clique no HTML.
+  // A Clipboard API exige contexto seguro, e `writeText` ainda REJEITA com
+  // `NotAllowedError` quando a pagina nao tem foco de usuario — que e o caso de
+  // qualquer headless, e de uma aba em segundo plano. Por isso o fallback
+  // roda na rejeição, e nao so quando a API esta ausente: testar so o caminho
+  // sincrono dava um botao que funciona na mao e falha sozinho.
   function copyText(text) {
     if (!text) return Promise.reject(new Error("vazio"));
-    if (navigator.clipboard && window.isSecureContext) {
-      return navigator.clipboard.writeText(text);
-    }
-    return new Promise(function (resolve, reject) {
-      var ta = document.createElement("textarea");
-      ta.value = text;
-      ta.setAttribute("readonly", "");
-      ta.style.position = "fixed";
-      ta.style.left = "-9999px";
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        var ok = document.execCommand("copy");
+    var viaExec = function () {
+      return new Promise(function (resolve, reject) {
+        var ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = false;
+        try {
+          ok = document.execCommand("copy");
+        } catch (err) {
+          document.body.removeChild(ta);
+          reject(err);
+          return;
+        }
         document.body.removeChild(ta);
         if (ok) resolve(); else reject(new Error("execCommand negou"));
-      } catch (err) {
-        document.body.removeChild(ta);
-        reject(err);
-      }
-    });
+      });
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(viaExec);
+    }
+    return viaExec();
   }
 
   function generatePostKit(event) {

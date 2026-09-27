@@ -496,6 +496,49 @@ class TextZoneCaptionTests(unittest.TestCase):
         )
         return path.read_text(encoding="utf-8")
 
+    def test_the_switch_the_panel_writes_reaches_the_ass(self):
+        """O caminho inteiro: ``captions = false`` no .toml vira um ASS mudo.
+
+        Cada peça já tem teste: o painel escreve a chave, ``apply_to_config``
+        traduz, ``build_captions`` respeita. Nenhum deles sozinho prova que os
+        três se encaixam — e é a concatenação que o render usa, não
+        qualquer um deles isolado. Se um passo deixar de repassar o valor, o
+        clipe sai com a legenda queimada e nenhum teste isolado acusa.
+        """
+        template = tpl.from_dict(
+            {
+                "name": "mudo",
+                "caption_preset": "ultra-impact",
+                "captions": False,
+                "headline_seconds": 3.0,
+                "zones": [
+                    {
+                        "kind": "text",
+                        "fraction": 0.16,
+                        "text": "POV: voce viralizou",
+                    },
+                    {"kind": "video", "fraction": 0.84},
+                ],
+            }
+        )
+        config = tpl.apply_to_config(make_config(), template)
+        path = render.build_captions(
+            [make_word(10.0, 10.4, "ola.")],
+            10.0,
+            Path(self.tmp) / "captions.ass",
+            config,
+            template,
+            5.0,
+        )
+        body = path.read_text(encoding="utf-8")
+        # A palavra falada NÃO sai...
+        self.assertNotIn(",Default,,", body)
+        # ... mas o gancho e a faixa de texto saem: o preset do .toml continua
+        # valendo para os dois, e desligar a legenda não é escolher outro visual.
+        self.assertIn(",Headline,,", body)
+        self.assertIn(",Zona1,,", body)
+        self.assertIn("POV", body.upper())
+
     def test_the_style_is_named_after_the_zone_and_wears_the_caption_font(self):
         # O nome é o que o `Dialogue` procura: repetido ou trocado, o libass
         # aborta com "Unable to find style" e o clipe sai sem a faixa. A fonte
@@ -631,6 +674,91 @@ class TemplateComposeIntegrationTests(unittest.TestCase):
 
     def _graph(self, command) -> str:
         return command[command.index("-filter_complex") + 1]
+
+    def test_a_plate_becomes_an_input_and_keeps_the_zone_order(self):
+        """A placa entra na lista de `-i` na ordem em que a pilha de zonas lê.
+
+        O compositor endereça os stills por posição (`[1:v]`, `[2:v]`...), não
+        por nome, então a lista e o grafo têm de concordar. Aqui a faixa de texto
+        vem PRIMEIRA e a barra de identidade por último: se a placa fosse anexada
+        no fim, a barra leria o papel de textura e a faixa sairia com o logo.
+        """
+        paper = self.tmp / "paper.jpg"
+        paper.write_bytes(b"x")
+        logo = self.tmp / "logo.png"
+        logo.write_bytes(b"x")
+        config = make_config(width=1080, height=1920, output_dir=self.tmp)
+        template = tpl.Template(
+            name="com-placa",
+            zones=(
+                tpl.Zone(kind="text", fraction=0.2, text="olha", plate_image="paper.jpg"),
+                tpl.Zone(kind="video", fraction=0.5),
+                tpl.Zone(kind="image", fraction=0.3, source="logo.png"),
+            ),
+        )
+        inputs, zones = render._template_stills(
+            template, config, "ffmpeg", self.tmp / "src.mp4", self.tmp / "z", 10.0, None
+        )
+        self.assertEqual(
+            [Path(p).name for p in inputs], ["paper.jpg", "logo.png"],
+            "os stills sairam na ordem errada da pilha de zonas",
+        )
+        graph, _ = tpl.compose(
+            tpl.Template(name="x", zones=zones), 1080, 1920
+        )
+        self.assertIn("[1:v]scale", graph)
+        self.assertIn("[2:v]scale", graph)
+
+    def test_a_missing_plate_falls_back_to_colour_without_shifting_the_inputs(self):
+        """Placa introuvável: a faixa vira cor E a zona perde a chave.
+
+        Este é o ponto onde a degradação travaria se ficasse só no render. O
+        compositor decide quantos stills existem lendo `plate_image` da zona, e
+        `_template_stills` decide quantos `-i` anexar. Degradar a placa no render
+        e deixar a chave na zona faria o grafo pedir um input a mais do que a
+        lista tem, e a barra de identidade — que vem DEPOIS da placa — leria o
+        arquivo da própria placa.
+        """
+        logo = self.tmp / "logo.png"
+        logo.write_bytes(b"x")
+        config = make_config(width=1080, height=1920, output_dir=self.tmp)
+        template = tpl.Template(
+            name="placa-sumida",
+            zones=(
+                tpl.Zone(kind="text", fraction=0.2, text="olha", plate_image="nao-existe.jpg"),
+                tpl.Zone(kind="video", fraction=0.5),
+                tpl.Zone(kind="image", fraction=0.3, source="logo.png"),
+            ),
+        )
+        inputs, zones = render._template_stills(
+            template, config, "ffmpeg", self.tmp / "src.mp4", self.tmp / "z", 10.0, None
+        )
+        # So o logo: a placa nao virou input.
+        self.assertEqual([Path(p).name for p in inputs], ["logo.png"])
+        # E a chave saiu da zona, que e o que mantem grafo e lista do mesmo tamanho.
+        self.assertIsNone(zones[0].plate_image)
+        graph, _ = tpl.compose(tpl.Template(name="x", zones=zones), 1080, 1920)
+        # A faixa pintou cor de novo, e o logo virou o unico still do grafo.
+        self.assertIn("color=c=black", graph)
+        self.assertIn("[1:v]scale", graph)
+        self.assertNotIn("[2:v]", graph)
+
+    def test_a_plate_counts_as_a_stream_of_its_own(self):
+        """Uma faixa texturizada de altura INTEIRA não usa o caminho simples.
+
+        O caminho sem compositor é o `layout` de faixa cheia, que só produz um
+        stream. A placa é um segundo stream, então uma zona que a carrega precisa
+        do grafo — sem esta contagem o `render_clip` iria pelo `layout` simples,
+        que ignora a placa, e o quadro sairia com a faixa colorida e o clipe por
+        cima, sem o fundo que o usuário configurou.
+        """
+        self.assertEqual(render.len_for_compose(tpl.FULL_FRAME), 1)
+        # Uma faixa `solid` de altura inteira com placa: um stream, não dois.
+        whole = tpl.Template(
+            name="facha-inteira",
+            zones=(tpl.Zone(kind="solid", fraction=1.0, plate_image="p.jpg"),),
+        )
+        self.assertEqual(render.len_for_compose(whole), 2)
 
     def test_no_template_uses_the_plain_layout(self):
         graph = self._graph(self._render())

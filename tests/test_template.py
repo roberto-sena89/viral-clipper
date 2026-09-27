@@ -736,6 +736,121 @@ class ComposeTests(unittest.TestCase):
         self.assertEqual(graph.count("[1:v]"), 1)
         self.assertIn("[1:v]scale=1080:500", graph)  # o still da identidade, não o texto
 
+    def test_a_plate_image_replaces_the_flat_colour(self):
+        """Uma placa e um still: ela entra no grafo como input, não como `color=`.
+
+        A faixa para de ser a chapa sólida e passa a ler um arquivo pelo mesmo
+        `scale_into` de uma zona `image`. É o que faz `fit` querer dizer a mesma
+        coisa nas duas: `cover` preenche e corta, `contain` encaixa e deixa a cor
+        no letterbox.
+        """
+        plated = _text_template(plate_image="paper.jpg")
+        graph, _ = tpl.compose(plated, 1080, 1920)
+        self.assertNotIn("color=c=black:s=972x274", graph,
+                         "a faixa pintou cor E placa: a imagem tem que ser o fundo")
+        self.assertIn("[1:v]scale=972:274", graph)
+        # A placa consome o PRIMEIRO still, e a barra de identidade o segundo: a
+        # ordem é a da pilha de zonas, e invertê-la trocaria as duas figuras.
+        self.assertIn("[2:v]scale=1080:500", graph)
+
+    def test_a_contain_plate_lets_the_colour_fill_the_letterbox(self):
+        # `contain` é o `pad` do `scale_into`, e o `pad` é a cor da zona — o mesmo
+        # caminho de sempre, agora com uma imagem no lugar da cor chapada.
+        plated = _text_template(plate_image="paper.jpg", fit="contain")
+        graph, _ = tpl.compose(plated, 1080, 1920)
+        self.assertIn("force_original_aspect_ratio=decrease", graph)
+        self.assertIn("pad=972:274", graph)
+        self.assertIn("color=black", graph)
+
+    def test_a_solid_zone_can_carry_a_plate_too(self):
+        # `solid` e `text` pintam a mesma chapa, entao a chave vale nas duas. Se
+        # so a zona de texto aceitasse, um separador texturizado seria impossivel
+        # apesar de ser a mesma operacao no grafo.
+        solid = tpl.Template(
+            name="solido-texturizado",
+            zones=(
+                tpl.Zone(kind="video", fraction=0.8),
+                tpl.Zone(kind="solid", fraction=0.2, plate_image="wood.jpg"),
+            ),
+        )
+        graph, _ = tpl.compose(solid, 1080, 1920)
+        self.assertIn("[1:v]scale=1080:384", graph)
+
+    def test_a_zone_that_cannot_hold_a_plate_says_so(self):
+        # Uma chave que carrega, valida e serializa sem efeito é o erro de
+        # digitação silencioso que o `from_dict` existe para impedir. Uma placa
+        # numa zona de vídeo não teria para onde ser pintada.
+        for kind in ("video", "image", "frame", "captions"):
+            with self.subTest(kind=kind):
+                with self.assertRaises(ClipperError) as ctx:
+                    tpl.Zone(kind=kind, fraction=0.5, plate_image="p.jpg").validate(1)
+                self.assertIn("plate_image", str(ctx.exception))
+
+    def test_an_empty_plate_is_refused(self):
+        # `plate_image = ""` é o que um campo de formulário não preenchido
+        # posts. Aceitar como "sem placa" faria a chave vazia e a chave ausente
+        # significarem a mesma coisa no arquivo — e o arquivo é escrito por
+        # código, então são duas grafias para um estado.
+        with self.assertRaises(ClipperError) as ctx:
+            tpl.Zone(kind="text", fraction=0.5, text="oi", plate_image="  ").validate(1)
+        self.assertIn("plate_image", str(ctx.exception))
+
+    def test_a_plate_round_trips_through_the_file(self):
+        parsed = tpl.from_dict({
+            "name": "com-placa",
+            "zones": [
+                {"kind": "text", "fraction": 0.2, "text": "olha", "plate_image": "p.jpg"},
+                {"kind": "video", "fraction": 0.8},
+            ],
+        })
+        self.assertEqual(parsed.zones[0].plate_image, "p.jpg")
+
+    def test_a_plate_takes_the_zoom_and_pan_of_any_band(self):
+        """O enquadramento de uma placa e o mesmo de uma imagem, e as mesmas chaves.
+
+        `plate_image` nao abriu uma familia nova de ajustes: a placa e um still
+        dentro da faixa, entao passa pelo mesmo `scale_into` que a zona `image` e
+        nao devia ter um `plate_zoom` proprio. Este teste existe para travar essa
+        DECISAO — o dia em que alguem criar `plate_zoom`, o `scale_into` ganha um
+        caso novo e a previa, o card da galeria e o `.toml` passam a falar duas
+        linguagens para o mesmo gesto.
+        """
+        zona = tpl.Zone(
+            kind="text", fraction=0.2, text="olha", plate_image="p.jpg",
+            zoom=1.5, pan_x=0.25, pan_y=0.75,
+        )
+        t = tpl.Template(
+            name="t",
+            zones=(tpl.Zone(kind="video", fraction=0.3), zona,
+                   tpl.Zone(kind="image", fraction=0.5, source="f.png")),
+        )
+        graph, _ = tpl.compose(t, 1080, 1920)
+        self.assertIn("in_w-out_w)*0.25", graph, "o pan_x da placa nao chegou no crop")
+        self.assertIn("in_h-out_h)*0.75", graph, "o pan_y da placa nao chegou no crop")
+        # A banda interna tem 1080 px de largura (sem margens), e o zoom 1.5
+        # pede 1,5x disso no `scale`. Conferir a expressao do pan ja prova que a
+        # zona entrou no `scale_into`; o numero do zoom fecha a conta.
+        self.assertIn("scale=1620:", graph)
+
+    def test_a_plate_without_zoom_keeps_the_plain_cover_graph(self):
+        """Placa sem ajuste nao pode inventar filtro: o grafo fica o de sempre.
+
+        O `scale_into` so troca o `crop` simples por `crop` com expressao quando
+        ha zoom ou pan. Sem os dois, a placa tem de sair pelo caminho de `cover`
+        puro — o mesmo grafo de antes das placas existirem, byte a byte na parte
+        que importa.
+        """
+        zona = tpl.Zone(kind="text", fraction=0.2, text="olha", plate_image="p.jpg")
+        t = tpl.Template(
+            name="t",
+            zones=(tpl.Zone(kind="video", fraction=0.3), zona,
+                   tpl.Zone(kind="image", fraction=0.5, source="f.png")),
+        )
+        graph, _ = tpl.compose(t, 1080, 1920)
+        self.assertIn("scale=1080:384:force_original_aspect_ratio=increase,crop=1080:384",
+                      graph)
+        self.assertNotIn("in_w-out_w", graph)
+
     def test_caption_only_template_is_a_passthrough(self):
         only = tpl.Template(name="caps", zones=(tpl.Zone(kind="captions", fraction=0.0),))
         graph, label = tpl.compose(only, 1080, 1920)
@@ -856,6 +971,71 @@ class TemplateFileTests(unittest.TestCase):
         self.assertEqual(len(loaded.zones), 2)
         self.assertAlmostEqual(loaded.zones[1].margin_left, 0.03)
 
+    def test_the_switches_the_panel_writes_all_load(self):
+        """Toda chave que o painel de templates escreve é conhecida do motor.
+
+        ``from_dict`` rejeita chave desconhecida em vez de ignorar, e é o
+        comportamento certo para um arquivo escrito à mão. Mas o painel
+        ``.toml`` é gerado por código, então uma chave que ele emita e o motor
+        não conheça não é erro de usuário: é o arquivo inteiro recusado, com
+        todo o trabalho do template perdido. Este teste carrega o arquivo exato
+        que a página produz com a legenda desligada e um headline escrito à mão.
+        """
+        path = self.tmp / "painel.toml"
+        path.write_text(
+            "name = \"meme\"\n"
+            "caption_preset = \"ultra-impact\"\n"
+            "captions = false\n"
+            "caption_box_theme = \"light\"\n"
+            "headline_seconds = 3.0\n"
+            "headline_text = \"VOCE USOU O FORMATO DE MEME\"\n"
+            "headline_align = \"center\"\n"
+            "progress_bar = true\n"
+            "[[zones]]\n"
+            "kind = \"text\"\n"
+            "fraction = 0.16\n"
+            "text = \"POV: voce viralizou\"\n"
+            "[[zones]]\n"
+            "kind = \"video\"\n"
+            "fraction = 0.58\n"
+            "[[zones]]\n"
+            "kind = \"image\"\n"
+            "fraction = 0.26\n"
+            "source = \"id.png\"\n",
+            encoding="utf-8",
+        )
+        loaded = tpl.load_template(path)
+        self.assertFalse(loaded.captions)
+        self.assertEqual(loaded.headline_text, "VOCE USOU O FORMATO DE MEME")
+        self.assertEqual(loaded.caption_preset, "ultra-impact")
+        # E o arquivo carregado realmente desliga a legenda no motor.
+        config = make_config()
+        self.assertEqual(tpl.apply_to_config(config, loaded).caption_style, "none")
+
+    def test_captions_only_accepts_a_real_boolean(self):
+        """``captions = "sim"`` é erro, não ``True``.
+
+        O campo é um switch de três estados (``None`` = o chamador decide), e
+        passar por ``bool()`` transformaria o erro de digitação no resultado
+        oposto ao desejado, sem nenhuma pista do porquê.
+        """
+        data = {
+            "name": "x",
+            "captions": "sim",
+            "zones": [{"kind": "video", "fraction": 1.0}],
+        }
+        with self.assertRaises(ClipperError):
+            tpl.from_dict(data)
+
+    def test_captions_absent_stays_absent(self):
+        loaded = tpl.from_dict(
+            {
+                "name": "x",
+                "zones": [{"kind": "video", "fraction": 1.0}],
+            }
+        )
+        self.assertIsNone(loaded.captions)
+
     def test_yaml_round_trip(self):
         try:
             import yaml  # noqa: F401
@@ -881,6 +1061,152 @@ class TemplateFileTests(unittest.TestCase):
         path.write_text("name = x", encoding="utf-8")
         with self.assertRaises(ClipperError):
             tpl.load_template(path)
+
+
+class MemePovFileTests(unittest.TestCase):
+    """``templates/meme-pov.toml`` é o formato Meme, e o motor tem que montá-lo.
+
+    O arquivo é a versão que o painel baixa, e a prévia da página promete a
+    mesma divisão. A trava é a GEOMETRIA, não a presença do arquivo: um
+    ``fraction`` que alguém ajuste faria o render trocar a faixa de lugar sem
+    que nada reclamasse, e o vídeo deixaria de caber onde a prévia mostra.
+    """
+
+    PATH = Path(__file__).resolve().parents[1] / "templates" / "meme-pov.toml"
+
+    # (kind, y, height) em 1080x1920. As frações são frações do canvas e caem em
+    # altura par (o composite yuv420p exige), então os pixels não são o obvious:
+    # 22% de 1920 = 422,4 -> 422, 52% = 998,4 -> 998, 26% = 499,2 -> 498, e a
+    # sobra de 2px vai para a última faixa, fechando em 500. Soma 1920.
+    ESPERADO = (("text", 0, 422), ("video", 422, 998), ("image", 1420, 500))
+
+    def setUp(self):
+        self.tpl = tpl.load_template(self.PATH)
+
+    def test_o_arquivo_carrega_e_valida(self):
+        self.tpl.validate()
+        self.assertEqual(self.tpl.name, "meme-pov")
+        self.assertEqual(self.tpl.caption_preset, "ultra-impact")
+
+    def test_a_geometria_e_a_mesma_da_previa(self):
+        bands = [b for b in tpl.plan_bands(self.tpl, 1080, 1920) if b.kind != "captions"]
+        for band, (kind, y, height) in zip(bands, self.ESPERADO):
+            with self.subTest(zona=kind):
+                self.assertEqual(band.kind, kind)
+                self.assertEqual(band.y, y)
+                self.assertEqual(band.height, height)
+
+    def test_o_video_ocupa_52_porque_a_faixa_de_texto_tem_altura(self):
+        """A fração do vídeo é consequência, não escolha.
+
+        A faixa de texto é altura própria: é ela que encolhe o vídeo dos 100%
+        para 52%. Se alguém "acertar" o vídeo para 0.74 sem mexer na faixa, as
+        zonas passam de 1.0 e o motor recusa o arquivo — mas se mexer nos dois,
+        o formato muda de propósito e o render sai diferente da prévia sem erro.
+        """
+        pixel = [z for z in self.tpl.zones if z.kind != "captions"]
+        self.assertAlmostEqual(sum(z.fraction for z in pixel), 1.0, places=6)
+        video = self.tpl.video_zone
+        text = [z for z in pixel if z.kind == "text"][0]
+        self.assertEqual(video.fraction, 0.52)
+        self.assertEqual(text.fraction, 0.22)
+
+    def test_a_faixa_do_pov_tem_respiro_para_o_texto(self):
+        """22%, e não 16%: abaixo disso o texto sai DA placa preta.
+
+        Medido na prévia nas três resoluções que o painel oferece: a 16% a placa
+        tem 306px para um corpo de 73px, e com o ``text_dy`` de 46px o texto
+        encostava na borda — 2px para fora em 1080x1920 e 10px em 720x1280. A 20%
+        cabia nas duas maiores, mas em 720x1280 (onde o texto quebra em QUATRO
+        linhas) sobrava só 2px. 22% é o menor valor que passa nas três.
+
+        A trava é a folga, não a fração: ela diz que a placa precisa de altura
+        para o texto e o deslocamento, que é a razão de o número existir.
+        """
+        band = [b for b in tpl.plan_bands(self.tpl, 1080, 1920) if b.kind == "text"][0]
+        # Corpo do texto: text_size é fração da altura, mais a entrelinha (1,25).
+        corpo = round(band.zone.text_size * 1920 * 1.25)
+        folga = band.height - corpo
+        self.assertGreaterEqual(
+            folga, band.zone.text_dy * 1920 + 8,
+            "a faixa do POV nao tem respiro para o texto e o deslocamento dele",
+        )
+
+    def test_a_faixa_de_texto_tem_o_texto_do_modelo(self):
+        """Zona `text` sem texto é placa preta vazia — e o validador recusa.
+
+        O texto é o que o motor queima, então o arquivo precisa carregar a frase;
+        um campo vazio aqui passaria pela galeria (que só desenha) e falharia
+        só no render, com o clipe já gravado.
+        """
+        text = [z for z in self.tpl.zones if z.kind == "text"][0]
+        self.assertIn("POV", text.text)
+        self.assertEqual(text.text_align, "center")
+        self.assertEqual(text.text_valign, "middle")
+        # 0.038 da altura = 73px num quadro de 1920.
+        self.assertAlmostEqual(text.text_size * 1920, 73, delta=1)
+
+    def test_o_pov_desce_46px_porque_e_o_modelo(self):
+        """O `text_dy` do POV é ajuste do modelo, não resto de arrasto.
+
+        Com ``an=5`` o libass centraliza a CAIXA da fonte, e a caixa tem mais
+        altura acima da linha-base do que abaixo: o centro visual do texto fica
+        acima do centro geométrico da faixa. Os 46px descendem esse desnível.
+
+        A trava importa porque o valor é pequeno e pareceria descuido: zerado, o
+        render sai com o texto uns 3% mais alto e ninguém reclama — só fica
+        diferente da prévia que o painel promete.
+        """
+        text = [z for z in self.tpl.zones if z.kind == "text"][0]
+        self.assertAlmostEqual(text.text_dy, 0.024, places=4)
+        self.assertEqual(text.text_dx, 0.0)
+        # 0.024 do canvas = 46px num quadro de 1920.
+        self.assertAlmostEqual(text.text_dy * 1920, 46, delta=0.5)
+
+    def test_a_ancora_desce_46px_da_area_interna(self):
+        """O que o render usa: a âncora, e ela tem de carregar o mesmo deslocamento.
+
+        O offset é medido a partir do centro da ÁREA INTERNA, não da faixa: o
+        `text_anchor` resolve o ponto de alinhamento depois de tirar as margens,
+        para que elas sejam o respiro dentro do qual o texto vive. A faixa tem
+        14px de respiro em cima, então a âncora medida contra a faixa daria 44 e
+        contra a área interna dá 46 — os 46px do modelo.
+        """
+        band = [b for b in tpl.plan_bands(self.tpl, 1080, 1920) if b.kind == "text"][0]
+        x, y, an = tpl.text_anchor(band, band.zone, 1080, 1920)
+        self.assertEqual(an, 5)
+        # 422 e não 422,4: o composite yuv420p exige altura par.
+        self.assertEqual(band.height, 422)
+        centro_interno = band.inner_y + band.inner_height / 2
+        self.assertAlmostEqual(y - centro_interno, 46, delta=0.5)
+        # E continua no eixo horizontal, senão o texto sai da placa preta.
+        self.assertEqual(x, 540)
+
+    def test_a_legenda_e_a_ultima_zona(self):
+        """O ``captions`` precisa vir por último, e ``validate`` cobra isso.
+
+        A faixa de legenda é desenhada depois das outras justamente para poder
+        passar por cima delas; fora de ordem, a zona de cima a cobriria.
+        """
+        self.assertEqual(self.tpl.zones[-1].kind, "captions")
+        # A zona de legenda não conta na soma das frações.
+        self.assertEqual(self.tpl.zones[-1].fraction, 0.0)
+
+    def test_a_chave_captions_e_aceita_pelo_arquivo(self):
+        """Descomentar ``captions = false`` no arquivo tem que funcionar.
+
+        A linha está comentada no arquivo entregue porque a legenda entra por
+        padrão, mas é a mesma chave que o painel escreve. Se o motor deixasse de
+        aceitar, o único jeito de desligar a legenda seria reescrever o arquivo
+        inteiro a mão.
+        """
+        tmp = Path(tempfile.mkdtemp(prefix="vc_meme_")) / "mudo.toml"
+        source = self.PATH.read_text(encoding="utf-8").replace(
+            "# captions = false", "captions = false"
+        )
+        tmp.write_text(source, encoding="utf-8")
+        loaded = tpl.load_template(tmp)
+        self.assertFalse(loaded.captions)
 
 
 class GetTemplateTests(unittest.TestCase):
@@ -980,6 +1306,61 @@ class ApplyToConfigTests(unittest.TestCase):
         )
         tpl.apply_to_config(config, loud)
         self.assertEqual(config.caption_preset, "karaoke")
+
+    def test_captions_false_turns_the_burned_words_off(self):
+        """``captions = false`` é ``caption_style = "none"``.
+
+        Desligar a legenda não é escolher outro visual: o preset continua no
+        arquivo e continua pintando o headline e as faixas de texto. O que o
+        motor precisa é do switch que ``build_captions`` consulta.
+        """
+        config = make_config()
+        off = tpl.Template(
+            name="mudo",
+            zones=(tpl.Zone(kind="video", fraction=1.0),),
+            caption_preset="ultra-impact",
+            captions=False,
+        )
+        result = tpl.apply_to_config(config, off)
+        self.assertEqual(result.caption_style, "none")
+        # O preset NÃO é o que foi desligado: o headline continua saindo com ele.
+        self.assertEqual(result.caption_preset, "ultra-impact")
+
+    def test_an_absent_switch_leaves_the_chosen_style_alone(self):
+        config = make_config(caption_style="block")
+        quiet = tpl.Template(name="quiet", zones=(tpl.Zone(kind="video", fraction=1.0),))
+        self.assertEqual(tpl.apply_to_config(config, quiet).caption_style, "block")
+
+    def test_captions_true_never_guesses_a_style(self):
+        """Religar pelo template não pode chutar "karaoke".
+
+        Não existe valor "volta ao que eu tinha" no ``caption_style``, e chutar um
+        apagaria um ``--caption-style block`` escolhido na linha de comando sem
+        o usuário ter pedido nada. Quem religa é o painel, omitindo a chave.
+        """
+        config = make_config(caption_style="block")
+        back_on = tpl.Template(
+            name="ligada",
+            zones=(tpl.Zone(kind="video", fraction=1.0),),
+            captions=True,
+        )
+        self.assertEqual(tpl.apply_to_config(config, back_on).caption_style, "block")
+
+    def test_the_headline_text_rides_along_only_when_written(self):
+        """String vazia é "deixa o motor derivar", não "apaga o que eu digitei"."""
+        config = make_config(headline_text="do comando")
+        said = tpl.Template(
+            name="com-frase",
+            zones=(tpl.Zone(kind="video", fraction=1.0),),
+            headline_text="minha frase",
+        )
+        blank = tpl.Template(
+            name="sem-frase",
+            zones=(tpl.Zone(kind="video", fraction=1.0),),
+            headline_text="",
+        )
+        self.assertEqual(tpl.apply_to_config(config, said).headline_text, "minha frase")
+        self.assertEqual(tpl.apply_to_config(config, blank).headline_text, "do comando")
 
     def test_headline_align_rides_along_when_set(self):
         config = make_config()

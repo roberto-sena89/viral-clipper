@@ -1,0 +1,94 @@
+# Meme POV — faixa de texto no topo, video reduzido, barra de identidade embaixo.
+#
+# A faixa de texto e ALTURA PROPRIA (16% do quadro), nao uma sobreposicao: e por
+# isso que o video fica em 58% e nao nos 100% de um template comum. O texto e
+# queimado pelo motor no render, entao o que esta em `text` e o que sai no clipe
+# -- ajustar a posicao e o estilo na previa e o mesmo que editar aqui.
+#
+# As tres zonas somam 1.0 exato: o motor recusa o arquivo se sobra ou falta.
+# A zona `captions` nao conta na soma (o libass a posiciona de forma absoluta).
+name = "meme-pov"
+caption_preset = "ultra-impact"
+background = "black"
+
+# A legenda queimada. Comente esta linha para religar; `caption_preset` acima
+# continua no arquivo de proposito -- ele tambem pinta o headline e a faixa de
+# texto, que sao coisas diferentes da legenda.
+# captions = false
+
+# ---------- Passo 3: frases ----------
+# O headline e independente do preset de legenda: mesmo um render sem legenda
+# ainda ganha o hook, porque os dois resolvem problemas diferentes.
+headline_seconds = 3.0
+# Vazio = o motor deriva do inicio do corte. Escreva para fixar a frase.
+# headline_text = "VOCE USOU O FORMATO DE MEME"
+headline_align = "center"
+headline_font_size = 100
+headline_margin_side = 60
+progress_bar = false
+
+# ---------- Passo 4: recorte ----------
+reframe_zoom = 1.0
+reframe_pan_x = 0.5
+reframe_pan_y = 0.5
+
+# ---------- Passo 2: zonas ----------
+# As tres zonas somam 1.0 exato: 0.22 + 0.52 + 0.26. O motor recusa o arquivo se
+# sobra ou falta. A fracao do video e CONSEQUENCIA da faixa de texto, nao escolha:
+# e a faixa que ocupa altura de verdade e encolhe o video.
+#
+# A faixa e 22%, e nao 16%: a 16% a placa tem 306px e o corpo do texto 73px, e
+# sobrava pouco respiro para o `text_dy` de 46px logo abaixo — medido nas tres
+# resolucoes, o texto saia DA placa em 1080p e 720p. A 20% cabia em 1080p e
+# 2560p mas apertava em 720x1280 (2px de folga, porque o texto quebra em quatro
+# linhas nessa resolucao). 22% e o menor valor que passa nas tres.
+[[zones]]
+kind = "text"
+fraction = 0.22
+color = "black"
+text = "POV: Você usou o formato de meme e VIRALIZOU com 3x mais!"
+# Fracao da ALTURA: 0.038 = 73px num quadro de 1920. E o corpo da fonte, nao a
+# altura da faixa -- o texto quebra em quantas linhas couberem na largura.
+text_size = 0.038
+text_color = "#ffffff"
+text_align = "center"
+text_valign = "middle"
+text_bold = true
+text_uppercase = false
+text_outline = 0.0
+# Ajuste fino, em fracao do canvas. O `text_dy` de 0.024 NAO e sobra de arrasto:
+# e o modelo. Com `an=5` o libass centraliza a CAIXA da fonte, e a caixa tem mais
+# altura acima da linha-base do que abaixo, entao o centro visual do texto fica
+# acima do centro geometrico da faixa. Os 0.024 (46px em 1920) sao o que faz a
+# previa e o render lerem iguais. Zere para o texto voltar ao centro exato.
+text_dx = 0.0
+text_dy = 0.024
+margin_top = 0.008
+margin_bottom = 0.008
+margin_left = 0.05
+margin_right = 0.05
+
+# O video. Ocupa 52% porque a faixa de cima e altura propria -- e a diferenca
+# para os 74% de quando o POV era sobreposto e por isso nao era queimado.
+[[zones]]
+kind = "video"
+fraction = 0.52
+fit = "cover"
+
+# A barra de identidade. Sem `source` a faixa degrada para o proprio clipe: e
+# um estado VALIDO, nao um erro -- troque pelo print do perfil quando quiser.
+[[zones]]
+kind = "image"
+fraction = 0.26
+fit = "cover"
+margin_top = 0.012
+margin_bottom = 0.012
+margin_left = 0.03
+margin_right = 0.03
+corner_radius = 0.035
+
+# A legenda queimada por cima do video. Tem de ser a ULTIMA zona: e desenhada por
+# ultimo para poder passar por cima das faixas de cima.
+[[zones]]
+kind = "captions"
+fraction = 0.0

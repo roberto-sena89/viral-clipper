@@ -43,11 +43,11 @@ web/1.jfif
 web/2.jpg
 web/3.jpg
 
-# The hero preview clip (see web/index.html). Personal footage, out of the repo
-# for the same reason as the images above. Missing it degrades the first card
-# back to the schematic placeholder, which is the designed behaviour — the page
-# never depends on this file.
-web/1.mp4
+# The hero preview clips (see web/index.html). Personal footage, out of the repo
+# for the same reason as the images above. Missing one degrades that card back to
+# the schematic placeholder, which is the designed behaviour — the page never
+# depends on these files.
+web/[0-9]*.mp4
 
 # Cache of scrap thumbnails: third-party video frames downloaded so the result
 # cards can show them. Rebuilt on demand, and not ours to redistribute -- so it

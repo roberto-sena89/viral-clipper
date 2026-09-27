@@ -137,17 +137,27 @@
         <span style="color:var(--success); font-weight:600;">9:16 · 1080×1920</span>
       </div>
       <div class="preview-stack">
-        <!-- O primeiro card toca um clip de verdade: o mesmo 9:16 da saida, em
-             loop, para a previa mostrar o produto e nao um esqueleto. O estado
-             mora em data-live e so o JS o liga, quando o arquivo tem um frame
-             decodificado; sem o arquivo o card fica exatamente como era. -->
-        <div class="preview-card" id="preview-live" data-live="0">
+        <!-- Os cards com data-live tocam um clip de verdade: o mesmo 9:16 da
+             saida, em loop, para a previa mostrar o produto e nao um esqueleto.
+             O estado mora em data-live e so o JS o liga, quando o arquivo tem
+             um frame decodificado; um card sem arquivo (clone limpo) ou cujo
+             arquivo falhou fica exatamente como era, com o esquema. Os clipes
+             vivem em web/ e sao gitignored: a pagina nunca depende deles. -->
+        <div class="preview-card" data-live="0">
           <video class="preview-video" src="/1.mp4" muted playsinline loop autoplay
                  preload="auto" aria-hidden="true"></video>
           <span class="tag">0:42 → 1:24</span>
         </div>
-        <div class="preview-card"><span class="tag">3:10 → 3:58</span></div>
-        <div class="preview-card"><span class="tag">7:02 → 7:47</span></div>
+        <div class="preview-card" data-live="0">
+          <video class="preview-video" src="/2.mp4" muted playsinline loop autoplay
+                 preload="auto" aria-hidden="true"></video>
+          <span class="tag">3:10 → 3:58</span>
+        </div>
+        <div class="preview-card" data-live="0">
+          <video class="preview-video" src="/3.mp4" muted playsinline loop autoplay
+                 preload="auto" aria-hidden="true"></video>
+          <span class="tag">7:02 → 7:47</span>
+        </div>
       </div>
     </div>
   </section>

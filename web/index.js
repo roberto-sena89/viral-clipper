@@ -799,56 +799,57 @@
     $$('#btn-run, #btn-run-side, #btn-plan').forEach((b) => b.disabled = false);
   }
 
-  // ---------- previa do hero (video real, quando existe) ----------
-  // O card e uma campanha: toca sozinho, mudo, em loop, sem controle nenhum.
-  // O estado visual e do CSS (data-live); aqui so se pede o play, em todo
-  // evento que indica que o arquivo esta pronto. Autoplay mudo e permitido, mas
-  // nao e garantido (aba em segundo plano, politica do navegador, economia de
-  // energia no aparelho), e video parado parece imagem quebrada — entao a
-  // primeira interacao do usuario tenta de novo, que e exatamente o momento em
-  // que a politica de autoplay deixa de valer.
-  (function initHeroPreview() {
-    const card = $('#preview-live');
-    if (!card) return;
-    const video = card.querySelector('.preview-video');
-    if (!video) return;
-
-    const resume = () => {
-      const attempt = video.play();
-      if (attempt && attempt.catch) attempt.catch(() => {});
-    };
-
-    // Os gestos so ficam escutando enquanto o video esta parado: sem interacao
-    // o navegador recusa o autoplay, e depois de aceitar nao ha nada a
-    // destravar. Sao rearmados no pause — economia de energia, aba em segundo
-    // plano e falta de foco pausam midia, e um card que parou por conta propria
-    // nao pode voltar por conta propria: ele recebe uma nova chance no proximo
-    // toque, em vez de ficar estatico para sempre.
+  // ---------- previa do hero (videos reais, quando existem) ----------
+  // Cada card marcado com data-live toca o proprio clip: sozinho, mudo, em
+  // loop, sem controle nenhum. O estado visual e do CSS (data-live); aqui so se
+  // pede o play, em todo evento que indica que o arquivo esta pronto. Autoplay
+  // mudo e permitido, mas nao e garantido (aba em segundo plano, politica do
+  // navegador, economia de energia), e video parado parece imagem quebrada —
+  // entao a primeira interacao do usuario tenta de novo, que e exatamente o
+  // momento em que a politica de autoplay deixa de valer.
+  (function initHeroPreviews() {
     const gestures = ['pointerdown', 'keydown', 'touchstart', 'scroll'];
-    const arm = () => gestures.forEach((type) => document.addEventListener(type, resume, true));
-    const disarm = () => gestures.forEach((type) => document.removeEventListener(type, resume, true));
 
-    video.addEventListener('loadeddata', () => {
-      card.setAttribute('data-live', '1');
+    $$('.preview-card[data-live]').forEach((card) => {
+      const video = card.querySelector('.preview-video');
+      if (!video) return;
+
+      const resume = () => {
+        const attempt = video.play();
+        if (attempt && attempt.catch) attempt.catch(() => {});
+      };
+
+      // Os gestos so ficam escutando enquanto o video esta parado: sem
+      // interacao o navegador recusa o autoplay, e depois de aceitar nao ha
+      // nada a destravar. Sao rearmados no pause — economia de energia, aba em
+      // segundo plano e falta de foco pausam midia, e um card que parou por
+      // conta propria nao pode voltar por conta propria: ele recebe uma nova
+      // chance no proximo toque, em vez de ficar estatico para sempre.
+      const arm = () => gestures.forEach((type) => document.addEventListener(type, resume, true));
+      const disarm = () => gestures.forEach((type) => document.removeEventListener(type, resume, true));
+
+      video.addEventListener('loadeddata', () => {
+        card.setAttribute('data-live', '1');
+        resume();
+      });
+      video.addEventListener('canplay', resume);
+      // Tocou: nao ha mais nada a destravar.
+      video.addEventListener('playing', () => {
+        card.setAttribute('data-live', '1');
+        disarm();
+      });
+      video.addEventListener('pause', arm);
+      arm();
+      // Ao voltar de uma aba em segundo plano o navegador pode ter pausado.
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) resume();
+      });
+
+      // Arquivo ausente ou codec recusado: volta ao esquema, sem icone quebrado.
+      video.addEventListener('error', () => card.setAttribute('data-live', '0'));
+
       resume();
     });
-    video.addEventListener('canplay', resume);
-    // Tocou: nao ha mais nada a destravar.
-    video.addEventListener('playing', () => {
-      card.setAttribute('data-live', '1');
-      disarm();
-    });
-    video.addEventListener('pause', arm);
-    arm();
-    // Ao voltar de uma aba em segundo plano o navegador pode ter pausado.
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) resume();
-    });
-
-    // Arquivo ausente ou codec recusado: volta ao esquema, sem icone quebrado.
-    video.addEventListener('error', () => card.setAttribute('data-live', '0'));
-
-    resume();
   })();
 
   // ---------- eventos ----------

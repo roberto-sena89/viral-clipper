@@ -281,6 +281,126 @@ def _run_job(options: dict, plan_only: bool) -> dict:
                 pass
 
 
+#: Folder the templates page offers as ready-made text plates. It lives inside
+#: ``web/`` on purpose: the static route already serves anything under there with
+#: the right Content-Type, so the preview can show the very file the render will
+#: read without a second endpoint and a second copy of the bytes.
+PLATES_DIR = WEB_DIR / "fundo titulo"
+
+#: Suffixes offered as plates. Every one of them is a still ffmpeg decodes, and
+#: every one is a type the static route serves with an image Content-Type.
+PLATE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp"})
+
+
+def _image_size(path: Path) -> tuple[int, int] | None:
+    """Read ``(width, height)`` out of an image header, without decoding it.
+
+    The templates page shows each plate as a thumbnail with its real size, and
+    that is a header read: pulling in Pillow to learn that a JPEG is 1904x544
+    would add a dependency to a server that is stdlib-only on purpose. Returns
+    ``None`` for a format it cannot read, which the page renders as "?" rather
+    than as a broken image.
+    """
+    try:
+        data = path.read_bytes()[:64]
+    except OSError:
+        return None
+    # PNG: an 8-byte signature, then an IHDR chunk whose payload starts with the
+    # two big-endian 32-bit dimensions.
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return (
+            int.from_bytes(data[16:20], "big"),
+            int.from_bytes(data[20:24], "big"),
+        )
+    # WebP: a RIFF container whose first chunk is VP8 (lossy), VP8L (lossless) or
+    # VP8X (extended). Each spells its dimensions differently and none of them is
+    # worth a decoder here, so only the two fixed-layout ones are read.
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        chunk = data[12:16]
+        if chunk == b"VP8 ":
+            return (
+                int.from_bytes(data[26:28], "little") & 0x3FFF,
+                int.from_bytes(data[28:30], "little") & 0x3FFF,
+            )
+        if chunk == b"VP8L":
+            bits = int.from_bytes(data[21:25], "little")
+            return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+        if chunk == b"VP8X":
+            return (
+                int.from_bytes(data[24:27], "little") + 1,
+                int.from_bytes(data[27:30], "little") + 1,
+            )
+        return None
+    # JPEG: walk the marker segments to the frame header, which is the first SOF
+    # and carries the dimensions. Segments are length-prefixed, so this is a real
+    # walk and not a fixed offset — and a truncated read stops it by running out
+    # of bytes, which the length check below turns into "unknown size".
+    if data[:2] != b"\xff\xd8":
+        return None
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    at = 2
+    while at + 9 < len(raw):
+        if raw[at] != 0xFF:
+            at += 1
+            continue
+        marker = raw[at + 1]
+        # SOF0..SOF15, minus the four markers in that range that are not frame
+        # headers (DHT, JPG and DAC), each of which would carry other bytes.
+        if 0xC0 <= marker <= 0xCF and marker not in {0xC4, 0xC8, 0xCC}:
+            return (
+                int.from_bytes(raw[at + 7 : at + 9], "big"),
+                int.from_bytes(raw[at + 5 : at + 7], "big"),
+            )
+        at += 2 + int.from_bytes(raw[at + 2 : at + 4], "big")
+    return None
+
+
+def _relative_to(path: Path, base: Path) -> str:
+    """``path`` as seen from ``base``, with forward slashes.
+
+    Falls back to the file name when ``path`` is not under ``base``: the callers
+    pass a folder that may be a temporary one (the tests), and raising there would
+    make a read-only listing fail on an unrelated path question.
+    """
+    try:
+        return path.relative_to(base).as_posix()
+    except ValueError:
+        return path.name
+
+
+def list_plates(base: Path | None = None) -> list[dict]:
+    """The ready-made plates on offer, with the URL that serves each one.
+
+    The URL is built with :func:`urllib.parse.quote` because the folder name has
+    a space in it, and the static route percent-decodes before touching the disk —
+    an unquoted space would arrive as a literal and 404. The path handed to the
+    engine is the repo-relative one, because that is what a template file
+    records: the CLI is run from the repo root, and a repo-relative path is the
+    only spelling that still points at the file when the template moves.
+    """
+    folder = base if base is not None else PLATES_DIR
+    if not folder.is_dir():
+        return []
+    plates: list[dict] = []
+    for path in sorted(folder.iterdir(), key=lambda p: p.name.lower()):
+        if not path.is_file() or path.suffix.lower() not in PLATE_SUFFIXES:
+            continue
+        size = _image_size(path)
+        plates.append(
+            {
+                "name": path.name,
+                "path": _relative_to(path, REPO_ROOT),
+                "url": "/" + quote(_relative_to(path, WEB_DIR)),
+                "width": size[0] if size else 0,
+                "height": size[1] if size else 0,
+            }
+        )
+    return plates
+
+
 #: Content types for the files served straight out of ``web/``. Every response
 #: carries ``X-Content-Type-Options: nosniff``, so a type that is only "close
 #: enough" is refused: a script sent as ``octet-stream`` never runs, and the
@@ -1395,6 +1515,12 @@ class Handler(http_server.BaseHTTPRequestHandler):
                     "builtin": sorted(template_mod.BUILTIN),
                 }
             )
+            return
+        if path == "/templates/plates":
+            # The ready-made text plates, read from disk rather than listed in the
+            # page: dropping a file into the folder is how the user adds one, and a
+            # list hardcoded here would be a second truth to keep in step.
+            self._send_json({"plates": list_plates()})
             return
         if path == "/status":
             with _lock:

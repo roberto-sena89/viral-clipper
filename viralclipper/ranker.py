@@ -109,6 +109,15 @@ class HttpChatProvider:
     Deliberately generic: OpenAI, DeepSeek, Groq, Together, OpenRouter, a local
     Ollama or LM Studio all speak this shape, so the same provider covers every
     option without a vendor SDK.
+
+    The payload carries no ``max_tokens``, and that is load-bearing for the
+    reasoning models. A budget low enough to look polite (16 was enough to
+    empty `content`) goes entirely into ``reasoning_content``: the model
+    thinks, runs out of room, and answers with a null. Measured on
+    ``deepseek-ai/deepseek-v4.1-flash``: 16 gave `content: None` after 13 s,
+    while no cap gave `"OK"` after 36 s. The caller that asked for a short
+    answer would see a None it cannot explain, so the cap stays unset and the
+    latency budget lives in ``ranker_timeout`` instead.
     """
 
     name = "http"

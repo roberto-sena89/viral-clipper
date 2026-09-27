@@ -4203,21 +4203,35 @@
   function generatePostKit(event) {
     if (event) event.preventDefault();
     var btn = $("#btn-postkit");
+    var rotulo = btn ? btn.textContent : "";
     var idea = (state.videoIdea || ($("#ph-idea") && $("#ph-idea").value) || "").trim();
     if (!idea) {
       toast("Descreva a ideia no passo Frases primeiro.", "bad");
       return;
     }
     if (btn) { btn.disabled = true; btn.textContent = "Gerando…"; }
+    // Medido contra o modelo: mais de um minuto por chamada. Sem o relogio, o
+    // botao ficava "Gerando..." com a mesma cara de um travamento, e o
+    // primeiro impulso seria clicar de novo e pagar por duas geracoes.
+    var t0 = Date.now();
+    var relogio = setInterval(function () {
+      if (!btn) return;
+      var s = Math.round((Date.now() - t0) / 1000);
+      btn.textContent = "Gerando… " + s + "s";
+    }, 1000);
+    var restaura = function () {
+      clearInterval(relogio);
+      if (btn) { btn.disabled = false; btn.textContent = rotulo; }
+    };
     postJSON("/postkit", { idea: idea }).then(function (r) {
-      if (btn) { btn.disabled = false; btn.textContent = "Gerar descrição e hashtags"; }
+      restaura();
       if (r.error) { toast(String(r.error).slice(0, 120), "bad"); return; }
       state.postDescription = (r.description || "").trim();
       state.postHashtags = (r.hashtags || "").trim();
       paintPostFields();
       toast("Descrição e hashtags geradas.", "ok");
     }).catch(function () {
-      if (btn) { btn.disabled = false; btn.textContent = "Gerar descrição e hashtags"; }
+      restaura();
       toast("Falha ao falar com o servidor.", "bad");
     });
   }

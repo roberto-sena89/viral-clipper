@@ -280,14 +280,15 @@
   };
 
   var STEPS = [
-    { key: "aparencia",  label: "Aparencia" },
-    { key: "cores",      label: "Cores" },
-    { key: "zonas",      label: "Zonas" },
-    { key: "frases",     label: "Frases" },
-    { key: "midia",      label: "Midia" },
-    { key: "estilo",     label: "Estilo" },
-    { key: "variacoes",  label: "Variacoes" },
-    { key: "gerar",      label: "Gerar" }
+    { key: "aparencia",    label: "Aparencia" },
+    { key: "cores",        label: "Cores" },
+    { key: "zonas",        label: "Zonas" },
+    { key: "frases",       label: "Frases" },
+    { key: "publicacao",   label: "Publicacao" },
+    { key: "midia",        label: "Midia" },
+    { key: "estilo",       label: "Estilo" },
+    { key: "variacoes",    label: "Variacoes" },
+    { key: "gerar",        label: "Gerar" }
   ];
 
   // ---------- estado ----------
@@ -358,6 +359,17 @@
     previewVideos: [],
     // Biblioteca de frases do projeto (Passo 3).
     phrases: [],
+    // A ideia do video, digitada no passo Frases. Fica no estado porque DOIS
+    // passos sao dela: as frases e a descricao com hashtags. Sem isto, o passo
+    // Publicacao pediria a mesma ideia de novo — e o usuario colaria duas vezes
+    // a mesma frase, ou peor, escreveria uma e a outra sairia diferente.
+    videoIdea: "",
+    // Descricao e hashtags do post (Passo 5). NAO entram no `toToml()`: o
+    // arquivo do parser rejeita chave desconhecida, e o `.toml` descreve o
+    // TEMPLATE, que se repete entre videos, enquanto uma hashtag pertence ao
+    // video. Sao metadados de publicacao, e publicacao nao acontece pelo motor.
+    postDescription: "",
+    postHashtags: "",
     // Qual mock da galeria a prévia espelha ("x", "meme", "viral" ou "").
     // Qualquer edição estrutural limpa e volta ao esquema abstrato.
     previewMock: "",
@@ -3210,6 +3222,13 @@
     if (phList) phList.innerHTML = "";
     state.phrases = [];
     renderProjectPhrases();
+    // A ideia e a publicacao andam com as frases: trocar de formato devolve a
+    // pagina ao estado de chegada, e deixar a descricao do video anterior ali
+    // seria o usuario postando o texto do clip que acabou de trocar.
+    state.videoIdea = "";
+    state.postDescription = "";
+    state.postHashtags = "";
+    paintPostFields();
     clearPreviewVideos();
     state.headlineSize = 100;
     state.headlineMargin = 60;
@@ -3988,6 +4007,13 @@
     if (phList) phList.innerHTML = "";
     state.phrases = [];
     renderProjectPhrases();
+    // A ideia e a publicacao andam com as frases: trocar de formato devolve a
+    // pagina ao estado de chegada, e deixar a descricao do video anterior ali
+    // seria o usuario postando o texto do clip que acabou de trocar.
+    state.videoIdea = "";
+    state.postDescription = "";
+    state.postHashtags = "";
+    paintPostFields();
     clearPreviewVideos();
     state.headlineSize = 100;
     state.headlineMargin = 60;
@@ -4067,6 +4093,10 @@
       toast("Descreva a ideia do vídeo primeiro.", "bad");
       return;
     }
+    // A ideia e lida por DOIS passos. Fica no estado para que o passo
+    // Publicacao gere descricao e hashtags a partir do MESMO texto, sem o
+    // usuario colar de novo.
+    state.videoIdea = idea;
     var count = Math.max(1, Math.min(10, Number($("#ph-count").value) || 5));
     if (btn) { btn.disabled = true; btn.textContent = "Gerando…"; }
     postJSON("/phrases", { idea: idea, count: count }).then(function (r) {
@@ -4103,6 +4133,108 @@
     // galeria e a previa continuava com o texto antigo.
     renderPreview();
     toast("Frase aplicada ao headline e ao tweet.", "ok");
+  }
+
+  // ---------- Passo 5: Publicacao ----------
+
+  // Os dois campos sao estado de PREVIA, como o avatar do cartao e os videos
+  // de referencia: vivem na sessao da pagina e nao sobem para o servidor nem
+  // entram no `.toml`. A razao nao e convenience — e que `from_dict` RECUSA
+  // chave desconhecida (template.py:790-821), entao escrever `hashtags` no
+  // arquivo produziria um template que o proprio motor rejeita ao ler.
+  function paintPostFields() {
+    var desc = $("#post-desc");
+    var tags = $("#post-tags");
+    if (desc && desc.value !== state.postDescription) desc.value = state.postDescription;
+    if (tags && tags.value !== state.postHashtags) tags.value = state.postHashtags;
+    var dCount = $("#post-desc-count");
+    if (dCount) {
+      var len = state.postDescription.length;
+      dCount.textContent = len + (len === 1 ? " caracter" : " caracteres");
+    }
+    var tCount = $("#post-tags-count");
+    if (tCount) {
+      var n = (state.postHashtags.match(/#[\p{L}\p{N}_]+/gu) || []).length;
+      tCount.textContent = n + (n === 1 ? " hashtag" : " hashtags");
+    }
+  }
+
+  function postText() {
+    var desc = (state.postDescription || "").trim();
+    var tags = (state.postHashtags || "").trim();
+    if (!desc && !tags) return "";
+    return desc + (desc && tags ? "\n\n" : "") + tags;
+  }
+
+  // `navigator.clipboard` exige contexto seguro e some em `file://`, entao o
+  // caminho antigo fica como reserva: sem isto o botao funciona no servidor e
+  // quebra em quem abriu a pagina por duplo clique no HTML.
+  function copyText(text) {
+    if (!text) return Promise.reject(new Error("vazio"));
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        var ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        if (ok) resolve(); else reject(new Error("execCommand negou"));
+      } catch (err) {
+        document.body.removeChild(ta);
+        reject(err);
+      }
+    });
+  }
+
+  function generatePostKit(event) {
+    if (event) event.preventDefault();
+    var btn = $("#btn-postkit");
+    var idea = (state.videoIdea || ($("#ph-idea") && $("#ph-idea").value) || "").trim();
+    if (!idea) {
+      toast("Descreva a ideia no passo Frases primeiro.", "bad");
+      return;
+    }
+    if (btn) { btn.disabled = true; btn.textContent = "Gerando…"; }
+    postJSON("/postkit", { idea: idea }).then(function (r) {
+      if (btn) { btn.disabled = false; btn.textContent = "Gerar descrição e hashtags"; }
+      if (r.error) { toast(String(r.error).slice(0, 120), "bad"); return; }
+      state.postDescription = (r.description || "").trim();
+      state.postHashtags = (r.hashtags || "").trim();
+      paintPostFields();
+      toast("Descrição e hashtags geradas.", "ok");
+    }).catch(function () {
+      if (btn) { btn.disabled = false; btn.textContent = "Gerar descrição e hashtags"; }
+      toast("Falha ao falar com o servidor.", "bad");
+    });
+  }
+
+  function copyPost(event) {
+    if (event) event.preventDefault();
+    var text = postText();
+    if (!text) { toast("Escreva a descrição ou as hashtags primeiro.", "bad"); return; }
+    copyText(text).then(function () {
+      toast("Post copiado: descrição e hashtags.", "ok");
+    }).catch(function () {
+      toast("O navegador bloqueou a cópia. Selecione o texto à mão.", "bad");
+    });
+  }
+
+  function copyTags(event) {
+    if (event) event.preventDefault();
+    var tags = (state.postHashtags || "").trim();
+    if (!tags) { toast("Escreva as hashtags primeiro.", "bad"); return; }
+    copyText(tags).then(function () {
+      toast("Hashtags copiadas.", "ok");
+    }).catch(function () {
+      toast("O navegador bloqueou a cópia. Selecione o texto à mão.", "bad");
+    });
   }
 
   function download() {
@@ -4149,6 +4281,20 @@
     $("#btn-preset-split").addEventListener("click", loadSplitCard);
     $("#btn-phrases").addEventListener("click", generatePhrases);
     $("#btn-phrase-add").addEventListener("click", useCustomPhrase);
+    // Passo 5 (Publicacao). Os dois textareas escrevem no estado e nao chamam
+    // renderPreview: nada aqui entra no desenho do quadro, entao redesenhar a
+    // previa a cada tecla seria trabalho sem efeito visivel.
+    $("#btn-postkit").addEventListener("click", generatePostKit);
+    $("#btn-copy-post").addEventListener("click", copyPost);
+    $("#btn-copy-tags").addEventListener("click", copyTags);
+    $("#post-desc").addEventListener("input", function () {
+      state.postDescription = this.value;
+      paintPostFields();
+    });
+    $("#post-tags").addEventListener("input", function () {
+      state.postHashtags = this.value;
+      paintPostFields();
+    });
     // A foto do avatar e da PREVIA: o botao so existe na pagina (a tile de upload
     // e estatica), entao o ouvinte entra no init junto dos outros.
     var clearAvatar = $("#tw-avatar-clear");

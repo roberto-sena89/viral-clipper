@@ -726,9 +726,45 @@
         </div>
       </section>
 
-      <!-- PASSO 5 — MIDIA -->
+      <!-- PASSO 5 — PUBLICACAO -->
       <section class="card" data-step="4" hidden>
-        <h2><span class="ico">5</span> Midia</h2>
+        <h2><span class="ico">5</span> Publicação</h2>
+        <p class="card-sub">
+          O texto que acompanha o vídeo na rede: a descrição e as hashtags.
+          Ambos vivem <strong>só nesta página</strong> — o <code>.toml</code>
+          descreve o template, que você reaproveita em vários vídeos, e uma
+          hashtag pertence ao vídeo, não ao template. Nada aqui entra no
+          arquivo.
+        </p>
+
+        <div class="tool-box ph-box">
+          <div class="mini-label">Gerar com o modelo</div>
+          <p class="hint" style="margin:0 0 2px">Usa a mesma ideia do passo Frases. Reescreve os dois campos: o que você já digitado é sugestão, e o botão não pergunta se pode substituir.</p>
+          <button class="btn pressable" id="btn-postkit" type="button">Gerar descrição e hashtags</button>
+        </div>
+
+        <div class="field" style="margin-top:16px">
+          <label for="post-desc">Descrição do vídeo</label>
+          <textarea id="post-desc" rows="4" placeholder="Ex.: Ninguém tava pronto pra esse final. O áudio no fundo é a melhor parte." style="min-height:96px"></textarea>
+          <span class="hint" id="post-desc-count">0 caracteres</span>
+        </div>
+
+        <div class="field">
+          <label for="post-tags">Hashtags</label>
+          <textarea id="post-tags" rows="2" placeholder="#fyp #viralkbrasil" spellcheck="false" style="min-height:56px"></textarea>
+          <span class="hint" id="post-tags-count">0 hashtags</span>
+        </div>
+
+        <div class="ph-row" style="margin-top:16px">
+          <button class="btn pressable btn-primary" id="btn-copy-post" type="button">Copiar post</button>
+          <button class="btn pressable" id="btn-copy-tags" type="button">Copiar hashtags</button>
+        </div>
+        <p class="hint" style="margin:8px 0 0">A descrição e as hashtags não são publicadas automaticamente: o botão só leva o texto pronto para a área de transferência.</p>
+      </section>
+
+      <!-- PASSO 6 — MIDIA -->
+      <section class="card" data-step="5" hidden>
+        <h2><span class="ico">6</span> Midia</h2>
         <p class="card-sub">
           De onde vem cada zona. A zona de video e sempre o corte; <strong>frame</strong>
           extrai um quadro do proprio video (nenhum arquivo externo) e
@@ -748,9 +784,9 @@
         </div>
       </section>
 
-      <!-- PASSO 6 — ESTILO -->
-      <section class="card" data-step="5" hidden>
-        <h2><span class="ico">6</span> Estilo</h2>
+      <!-- PASSO 7 — ESTILO -->
+      <section class="card" data-step="6" hidden>
+        <h2><span class="ico">7</span> Estilo</h2>
         <p class="card-sub">
           Ajustes de recorte e acabamento por zona. O raio de canto e uma fracao
           da largura do canvas, entao o mesmo numero da o mesmo visual em 720p e
@@ -774,9 +810,9 @@
         </div>
       </section>
 
-      <!-- PASSO 7 — VARIACOES -->
-      <section class="card" data-step="6" hidden>
-        <h2><span class="ico">7</span> Variacoes</h2>
+      <!-- PASSO 8 — VARIACOES -->
+      <section class="card" data-step="7" hidden>
+        <h2><span class="ico">8</span> Variacoes</h2>
         <p class="card-sub">
           O multiplicador. Cada corte e re-encodado uma vez por combinacao, mas
           <strong>nada e rebaixado nem reanalisado</strong>: uma secao baixada
@@ -801,9 +837,9 @@
         <div id="matrix-out"></div>
       </section>
 
-      <!-- PASSO 8 — GERAR -->
-      <section class="card" data-step="7" hidden>
-        <h2><span class="ico">8</span> Gerar</h2>
+      <!-- PASSO 9 — GERAR -->
+      <section class="card" data-step="8" hidden>
+        <h2><span class="ico">9</span> Gerar</h2>
         <p class="card-sub">
           Salve o arquivo e rode. O template e um <code>.toml</code> que o motor
           le direto — nao ha passo de build.

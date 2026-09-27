@@ -4898,5 +4898,142 @@ class HeroPreviewTests(unittest.TestCase):
             self.assertIn(tag, body, f"{src} com o rotulo de outro card")
 
 
+class PublicationStepTests(unittest.TestCase):
+    """Passo 5: descricao e hashtags do post, e por que nao vao no arquivo."""
+
+    def setUp(self):
+        self.page = page_source("templates.html")
+        self.js = (server.WEB_DIR / "templates.js").read_text(encoding="utf-8")
+
+    def _cards(self):
+        return re.findall(r'<section class="card" data-step="(\d+)"[^>]*>\s*'
+                          r'<h2><span class="ico">(\d+)</span>', self.page)
+
+    def test_the_step_bar_and_the_cards_agree(self):
+        """`STEPS` gera a barra e `data-step` escolhe o card.
+
+        Um lado ganhar uma entrada e o outro nao mostra o passo na barra e nao
+        abre: a barra lista nove botoes e o wizard para em oito.
+        """
+        steps = re.search(r"var STEPS = \[(.*?)\n  \];", self.js, re.S)
+        self.assertIsNotNone(steps, "STEPS nao encontrado")
+        labels = re.findall(r'key: "([a-z]+)"', steps.group(1))
+        cards = self._cards()
+        self.assertEqual(len(cards), len(labels),
+                         f"{len(cards)} cards para {len(labels)} passos")
+        for index, (data_step, ico) in enumerate(cards):
+            self.assertEqual(int(data_step), index, f"card fora de ordem: {index}")
+            # O numero do h2 e escrito a mao no HTML, e o comentario do passo
+            # aindapz existindo e o unico lugar que o confere.
+            self.assertEqual(int(ico), index + 1,
+                             f"o icone do card {index} mostra {ico}, esperava {index + 1}")
+
+    def test_the_publication_step_exists(self):
+        self.assertIn('key: "publicacao"', self.js)
+        self.assertIn("Publicação</h2>", self.page)
+        for marker in ('id="post-desc"', 'id="post-tags"',
+                       'id="btn-postkit"', 'id="btn-copy-post"', 'id="btn-copy-tags"'):
+            self.assertIn(marker, self.page, f"{marker} fora do card")
+
+    def test_the_step_says_the_text_never_reaches_the_file(self):
+        """A aba promete que nada vai para o `.toml`; a promessa e o contrato.
+
+        `from_dict` recusa chave desconhecida (template.py:790-821), entao
+        escrever `hashtags` no arquivo produziria um template que o proprio
+        motor rejeita ao ler. O texto no card e o que avisa disso.
+
+        O `card-sub` quebra a frase em varias linhas, entao a busca normaliza
+        os espacos antes: casar a frase inteira num HTML indentado prenderia o
+        teste numa quebra de linha e nao na promessa.
+        """
+        plano = re.sub(r"\s+", " ", self.page)
+        self.assertIn("Nada aqui entra no arquivo", plano)
+        self.assertIn("não são publicadas automaticamente", plano)
+
+    def test_the_state_holds_the_post_and_the_toml_does_not(self):
+        for field in ("videoIdea", "postDescription", "postHashtags"):
+            self.assertIn(f"{field}:", self.js, f"{field} fora do estado")
+        toml = fn_body(self.js, "toToml")
+        for chave in ("postDescription", "postHashtags", "hashtags", "description ="):
+            self.assertNotIn(chave, toml,
+                             f"`{chave}` no .toml: o parser recusa chave desconhecida")
+
+    def test_the_idea_reaches_both_steps_from_one_field(self):
+        """Frases e publicacao saem da MESMA ideia.
+
+        Duas textareas para a mesma coisa fariam o usuario colar duas vezes, e
+        as duas metades do post acabariam falando de videos diferentes.
+        """
+        generate = fn_body(self.js, "generatePhrases")
+        self.assertIn("state.videoIdea = idea", generate)
+        kit = fn_body(self.js, "generatePostKit")
+        self.assertIn("state.videoIdea", kit)
+
+    def test_the_post_text_is_never_published_by_the_panel(self):
+        """O botao copia. Nao ha endpoint de publicacao, e `ig_profile.py` so
+        le posts existentes: fingir que publica seria um botao que mente."""
+        for nome in ("copyPost", "copyTags"):
+            corpo = fn_body(self.js, nome)
+            self.assertIn("copyText(", corpo)
+            self.assertNotIn("postJSON(", corpo, f"{nome} mandou algo para o servidor")
+        self.assertNotIn("/postkit", fn_body(self.js, "copyPost"))
+
+
+class PostkitRouteTests(unittest.TestCase):
+    """/postkit sugere descricao e hashtags via o mesmo LLM do ranker."""
+
+    def setUp(self):
+        self.sent: dict = {}
+        self.handler = object.__new__(server.Handler)
+        self.handler._send_json = lambda payload, code=200: self.sent.update(payload, _code=code)
+
+    def test_missing_idea_is_rejected(self):
+        server.Handler._handle_postkit(self.handler, {})
+        self.assertEqual(self.sent["_code"], 400)
+        server.Handler._handle_postkit(self.handler, {"idea": "   "})
+        self.assertEqual(self.sent["_code"], 400)
+
+    def test_both_fields_come_back_together(self):
+        from unittest import mock
+
+        with mock.patch.object(server, "_suggest_post", return_value=("um texto", "#a #b")):
+            server.Handler._handle_postkit(self.handler, {"idea": "fuga de moto"})
+        self.assertEqual(self.sent["description"], "um texto")
+        self.assertEqual(self.sent["hashtags"], "#a #b")
+
+    def test_a_provider_error_surfaces_as_text(self):
+        from unittest import mock
+
+        with mock.patch.object(server, "_suggest_post", side_effect=server.ClipperError("sem chave")):
+            server.Handler._handle_postkit(self.handler, {"idea": "fuga de moto"})
+        self.assertEqual(self.sent["_code"], 400)
+        self.assertIn("sem chave", self.sent["error"])
+
+    def test_the_two_lines_are_read_positional(self):
+        """O prompt pede duas linhas: a descricao na primeira, as hashtags na
+        segunda. Um modelo que devolve so hashtags nao vira legenda."""
+        class FakeProvider:
+            def complete(self, system, user):
+                return "Ninguem tava pronto pra isso.\n#fyp #clutch #1v4\n"
+
+        from unittest import mock
+
+        with mock.patch("viralclipper.ranker.build_provider", return_value=FakeProvider()):
+            description, tags = server._suggest_post("fuga de moto")
+        self.assertEqual(description, "Ninguem tava pronto pra isso.")
+        self.assertEqual(tags, "#fyp #clutch #1v4")
+
+    def test_prose_without_hashtags_is_an_error_not_a_silent_caption(self):
+        class FakeProvider:
+            def complete(self, system, user):
+                return "Este video mostra uma fuga de moto incrivel happening\n"
+
+        from unittest import mock
+
+        with mock.patch("viralclipper.ranker.build_provider", return_value=FakeProvider()):
+            with self.assertRaises(server.ClipperError):
+                server._suggest_post("fuga de moto")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

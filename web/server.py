@@ -875,6 +875,51 @@ def _suggest_phrases(idea: str, count: int) -> list[str]:
     return phrases
 
 
+def _suggest_post(idea: str) -> tuple[str, str]:
+    """Ask the ranker LLM for a caption and hashtags about a video idea.
+
+    Reuses the ranker provider exactly like :func:`_suggest_phrases`, so the
+    panel needs no second LLM configured. One call for both fields: the two
+    come from the same idea and splitting them would pay twice for a caption
+    and a tag list that read as one post.
+
+    The response is two lines by contract, so the parse is positional. A model
+    that ignores the format and answers in a paragraph yields an empty
+    caption, and the handler says so rather than posting prose as a caption.
+    """
+    from viralclipper import ranker
+
+    config = config_mod.ClipConfig(url="", ranker="llm")
+    provider = ranker.build_provider(config)
+    if provider is None:  # pragma: no cover - build_provider raises first
+        raise ClipperError("LLM desligado: use ranker='llm' com API key.")
+    text = provider.complete(
+        "Voce escreve a legenda de posts em pt-BR para videos verticais. "
+        "Responda em EXATAMENTE duas linhas: na primeira, a descricao do video "
+        "em ate 300 caracteres, sem aspas e sem hashtags; na segunda, as "
+        "hashtags separadas por espaco, cada uma comecando em #. "
+        "Nao numere, nao escreva nada alem das duas linhas e nao invente fatos "
+        "alem da ideia.",
+        f"Ideia: {idea}",
+    )
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        raise ClipperError("o modelo nao devolveu nada; tente outra ideia.")
+    description = lines[0].strip('"').strip()[:300]
+    tags = ""
+    # A classe `re` nao conhece `\p{L}`: o unico motor aqui aceita `\w` com
+    # re.UNICODE por padrao, e hashtag de rede nao tem acento nem espaco, entao
+    # `#\w+` corta exatamente no que importa.
+    for line in lines[1:]:
+        found = re.findall(r"#\w+", line, re.UNICODE)
+        if found:
+            tags = " ".join(found[:30])
+            break
+    if not tags:
+        raise ClipperError("o modelo nao devolveu hashtags; tente outra ideia.")
+    return description, tags
+
+
 def _relative_to_repo(path: Path | None) -> str:
     """A path as the UI shows it: inside the repo when it fits, absolute when not.
 
@@ -1601,6 +1646,9 @@ class Handler(http_server.BaseHTTPRequestHandler):
         if path == "/phrases":
             self._handle_phrases(payload)
             return
+        if path == "/postkit":
+            self._handle_postkit(payload)
+            return
         if path != "/run":
             self._send_json({"error": "not found"}, 404)
             return
@@ -1878,6 +1926,22 @@ class Handler(http_server.BaseHTTPRequestHandler):
             self._send_json({"error": f"modelo indisponivel: {exc}"}, 400)
             return
         self._send_json({"phrases": phrases})
+
+    def _handle_postkit(self, payload: dict) -> None:
+        """Suggest a caption and hashtags for a video idea, via the ranker LLM."""
+        idea = payload.get("idea")
+        if not isinstance(idea, str) or not idea.strip():
+            self._send_json({"error": "idea is required"}, 400)
+            return
+        try:
+            description, hashtags = _suggest_post(idea.strip())
+        except ClipperError as exc:
+            self._send_json({"error": str(exc)}, 400)
+            return
+        except Exception as exc:  # noqa: BLE001 - network errors surface as text
+            self._send_json({"error": f"modelo indisponivel: {exc}"}, 400)
+            return
+        self._send_json({"description": description, "hashtags": hashtags})
 
     def log_message(self, *args) -> None:  # keep the console quiet
         return

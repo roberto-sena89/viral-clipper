@@ -414,9 +414,19 @@ body { padding-left: var(--rail-w); }
   color: var(--text-primary); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
 }
 
-/* ---------- LAYOUT PRINCIPAL ---------- */
+/* ---------- LAYOUT PRINCIPAL ----------
+   `minmax(0, …)` nas DUAS colunas, e nao `1fr 360px`: filho de grid tem
+   `min-width: auto` por padrao, ou seja, nunca encolhe abaixo do seu conteudo.
+   A coluna da esquerda e o formulario — com `<textarea>` de transcricao e
+   `<select>` de 36 presets — e qualquer um deles com largura minima
+   intrinseca maior que a coluna empurra o track, e o `1fr` cresce alem da tela.
+   O `min-width: 0` nos filhos (acima, na trava de overflow) resolve o mesmo caso
+   um nivel abaixo; este resolve o do proprio track. E o mesmo motivo do
+   `minmax(0, 400px) minmax(0, 1fr)` do `.scrap-grid`. */
 .main-grid {
-  display: grid; grid-template-columns: 1fr 360px; gap: 28px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+  gap: 28px;
   padding-bottom: 60px;
 }
 @media (max-width: 960px) {

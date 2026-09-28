@@ -13,7 +13,6 @@
   // que adicionar uma pagina nova nao exija mexer em estado.
   const PAGES = {
     '/':          'Cortes',
-    '/templates': 'Templates',
     '/scrap':     'Scrap',
   };
 
@@ -852,6 +851,35 @@
     });
   })();
 
+  // ---------- seletor de pasta de saída ----------
+  // ---------- seletor de pasta de saída ----------
+  // <input type="file" webkitdirectory> não serve: o navegador esconde o
+  // caminho real, e quem escreve os clips é o servidor. Então o clique abre
+  // o diálogo nativo na máquina do servidor (tkinter) e o caminho escolhido
+  // cai direto no campo.
+  async function browseNative() {
+    const btn = $('#btn-browse');
+    const old = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Aguardando…';
+    try {
+      const r = await api('/browse/native');
+      if (r.error) {
+        toast(r.offline ? 'Backend offline: inicie web/server.py.' : r.error, 'err');
+        return;
+      }
+      if (r.cancelled || !r.path) {
+        toast('Nenhuma pasta escolhida.');
+        return;
+      }
+      $('#output').value = r.path;
+      toast('Pasta de saída: ' + r.path);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = old;
+    }
+  }
+
   // ---------- eventos ----------
   $('#btn-run').addEventListener('click', () => run(false));
   $('#btn-run-side').addEventListener('click', () => run(false));
@@ -897,6 +925,7 @@
     document.getElementById('config').scrollIntoView({ behavior: 'smooth' });
     setTimeout(() => $('#url').focus(), 500);
   });
+  $('#btn-browse').addEventListener('click', browseNative);
 
   // ---------- entrada vinda da pagina Scrap ----------
   // A pagina de Scrap nao guarda estado (nenhuma pagina guarda), entao o item
@@ -918,6 +947,22 @@
   })();
 
   // ---------- sondagem de estado (se houver servidor) ----------
+  //
+  // O `poll` do scrap e ligado a um `stop`/`follow` porque ele SÓ existe durante
+  // um download. Aqui e diferente: a sondagem e permanente, a pagina mostra o
+  // estado da fila e da galeria o tempo todo. Mesmo assim ela para quando a aba
+  // nao esta a vista — um `setInterval` de 4s em segundo plano e uma requisicao
+  // a cada 4s para sempre, e o `visibilitychange` e o que corta isso. Ao voltar
+  // a aba, um `poll` imediato traz o estado novo em vez de esperar o proximo
+  // tique.
+  let pollTimer = null;
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+  function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(poll, 4000);
+  }
   async function poll() {
     const r = await api('/status');
     if (r.offline || r.error) return;
@@ -930,7 +975,12 @@
       renderQueue();
     }
   }
-  setInterval(poll, 4000);
+  document.addEventListener('visibilitychange', () => {
+    // Tab escondida: para de pedir. Tab de volta: retoma e traz o estado agora,
+    // para a fila nao ficar desatualizada ate o proximo tique.
+    if (document.hidden) stopPolling(); else { startPolling(); poll(); }
+  });
+  startPolling();
 
   renderQueue();
   renderClips();

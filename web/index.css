@@ -1,114 +1,10 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-:root {
-  /* --- paleta bruta ------------------------------------------------------ */
-  --bg-deep: #0b0d12;
-  --bg-surface: #14171f;
-  --bg-card: rgba(22, 26, 35, 0.72);
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-strong: rgba(255, 255, 255, 0.10);
-  --accent-primary: #6366f1;
-  --accent-glow: rgba(99, 102, 241, 0.28);
-  --accent-soft: #818cf8;
-  --accent-warm: #fbbf24;
-  --success: #34d399;
-  --danger: #f87171;
 
-  /* --- escala tipografica semantica --------------------------------------
-     Nomes de papel, nao de tamanho: trocar os valores aqui reescala a
-     interface inteira sem tocar no markup. Os valores seguem a escala do
-     ViceScale (2xs .6875 / caption .78125 / body-sm .84375 / body .875 /
-     cta .90625 / subtitle .9375 / title 1.0625 / heading-sm 1.375), que e
-     mais densa que a media porque a interface tem muito numero e rotulo.
 
-     O degrau `caption` subiu de 0,78125rem para 0,8rem. Ele e o corpo das dicas
-     de campo (`.field-hint`, `.auth-note` e o `.hint` do index), e dica e o
-     texto que menos pode sumir: ela carrega a explicacao de por que o campo
-     existe, e nao o rotulo. A 0,78rem em um texto de 14px isso e ~11px — le no
-     monitor, ilegivel no celular, que e onde a pessoa esta quando tem duvida. */
-  --text-2xs: 0.6875rem;
-  --text-2xs-lh: 1.35;
-  --text-caption: 0.8rem;
-  --text-caption-lh: 1.5;
-  --text-body-sm: 0.84375rem;
-  --text-body-sm-lh: 1.5;
-  --text-body: 0.875rem;
-  --text-body-lh: 1.5;
-  --text-cta: 0.90625rem;
-  --text-cta-lh: 1.4;
-  --text-subtitle: 0.9375rem;
-  --text-title: 1.0625rem;
-  --text-title-lh: 1.35;
-  --text-heading-sm: 1.375rem;
-  --text-heading-sm-lh: 1.25;
-  --text-heading: 1.5rem;
-  --text-heading-lh: 1.2;
-  --text-display: clamp(2.2rem, 5vw, 3.4rem);
-  --text-display-lh: 1.12;
 
-  /* --- tokens de papel (o que cada superficie significa) -----------------
-     Separados da paleta bruta de proposito: um card e uma superficie de
-     conteudo, o log e um poco, o input e uma superficie de entrada. Sem essa
-     separacao o mesmo #0b0d12 aparece com tres significados diferentes e o
-     tema fica impossivel de ajustar. */
-  --content-bg: var(--bg-deep);
-  --shell-bg: #0e1017;
-  --shell-surface: var(--bg-surface);
-  --shell-border: var(--border-subtle);
-  --active-tint: rgba(99, 102, 241, 0.10);
-  --well-bg: rgba(0, 0, 0, 0.35);
 
-  /* Texto: os nomes --text-* colidem com a escala tipografica acima, entao o
-     papel de cor usa o sufixo -ink.
 
-     O degrau `subtle` e o piso de legibilidade, nao um tom decorativo. Com
-     #6b7280 ele dava 3,71:1 sobre `--bg-surface` e 4,02:1 sobre `--bg-deep`, e a
-     WCAG exige 4,5:1 para texto normal — que e o caso dele: e a cor das dicas de
-     campo, em 0,8rem. Subiu para #818896: 5,03:1 no surface e 5,46:1 no deep.
-     A folga acima de 4,5 e deliberada — um token que passa por 0,01 falha por
-     0,01 assim que o fundo real deixa de ser o token (uma placa com alpha, um
-     gradiente) ou a tela tem calibracao diferente. E continua sendo um degrau:
-     0,12 de luminancia abaixo do `muted`, entao a hierarquia de tres niveis
-     continua legivel. */
-  --text-ink: #f3f4f6;
-  --text-ink-muted: #9ca3af;
-  --text-ink-subtle: #818896;
-
-  /* Cor de marca: magenta chapado, nao gradiente. O token de gradiente da
-     referencia aponta para uma cor solida, sem linear-gradient nenhum. O nome
-     "grad" foi mantido porque e o que o markup ja usa, mas o valor e solido —
-     e o -ink e escuro (#1c1024), porque texto preto sobre magenta le mais que
-     branco. */
-  --grad: #ff4fae;
-  --grad-ink: #1c1024;
-
-  --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 22px;
-  --shadow-card: 0 18px 40px -14px rgba(0, 0, 0, 0.6);
-
-  /* --- movimento ---------------------------------------------------------
-     O ease-spring passa de 1 (.34, 1.4, .64, 1): e o overshoot que da o
-     "pop". O .pressable da referencia encolhe no :active em .1s, nao sobe no
-     hover — a coisa so reage quando voce de fato aperta. */
-  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --motion-instant: 0.1s;
-  --motion-fast: 0.2s;
-  --motion-base: 0.3s;
-  --transition: var(--motion-fast) var(--ease-out-expo);
-}
-
-/* Aliases de compatibilidade: o CSS antigo (e uns style="" inline no corpo)
-   ainda leem os nomes --text-primary/secondary/muted. Mantidos apontando para
-   os tokens de papel para que os dois vocabularios coexistam. */
-:root {
-  --text-primary: var(--text-ink);
-  --text-secondary: var(--text-ink-muted);
-  --text-muted: var(--text-ink-subtle);
-}
-
-html { scroll-behavior: smooth; }
 
 /* ---------- TRAVA DE OVERFLOW HORIZONTAL ----------
    Três fontes somavam a barra de rolagem horizontal:
@@ -124,48 +20,16 @@ html, body { overflow-x: hidden; overflow-x: clip; }
 .main-grid > *, .hero > *, .field { min-width: 0; }
 .field input, .field select, .field textarea { min-width: 0; }
 
-body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: var(--bg-deep);
-  color: var(--text-primary);
-  line-height: 1.55;
-  min-height: 100vh;
-  background-image:
-    radial-gradient(1200px 600px at 80% -10%, rgba(99, 102, 241, 0.10), transparent 60%),
-    radial-gradient(900px 500px at 10% 110%, rgba(251, 191, 36, 0.05), transparent 60%);
-  background-attachment: fixed;
-  -webkit-font-smoothing: antialiased;
-}
 
-.wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+
+
 
 /* ---------- UTILITARIOS ---------- */
-/* Micro-interacao unica para todo elemento clicavel. Duas decisoes copiadas
-   da referencia: o elemento NAO sobe no hover (so reage no :active, que e
-   quando o dedo/cursor de fato apertou) e o ease-spring tem overshoot, que e
-   o que da o "pop". O :focus-visible e a parte que a referencia tem e o painel
-   nao tinha: sem ele, quem navega por teclado nos dropdowns ricos fica sem
-   anel de foco. */
-.pressable {
-  transition:
-    transform var(--motion-fast) var(--ease-spring),
-    background-color var(--motion-fast) ease,
-    border-color var(--motion-fast) ease,
-    color var(--motion-fast) ease,
-    box-shadow var(--motion-fast) ease,
-    opacity var(--motion-fast) ease;
-}
-.pressable:active {
-  transition-duration: var(--motion-instant);
-  transition-timing-function: ease-out;
-  transform: scale(0.97);
-}
-.pressable:disabled { cursor: not-allowed; }
-.pressable:disabled:active { transform: none; }
-.pressable:focus-visible {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
-}
+
+
+
+
+
 @media (prefers-reduced-motion: reduce) {
   .pressable { transition: none; }
   .pressable:active { transform: none; }
@@ -196,132 +60,53 @@ body {
 .skeleton-line.w-40 { width: 40%; }
 .skeleton-line.w-80 { width: 80%; }
 
-/* ---------- HEADER ---------- */
-header {
-  position: sticky; top: 0; z-index: 50;
-  backdrop-filter: blur(14px) saturate(180%);
-  background: rgba(11, 13, 18, 0.72);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.header-inner {
-  display: flex; align-items: center; justify-content: space-between;
-  height: 68px;
-}
+
+
 .brand {
   display: flex; align-items: center; gap: 12px;
   font-weight: 600; letter-spacing: -0.02em;
   font-size: 1.25rem;
 }
-.brand-mark {
-  width: 36px; height: 36px; border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-soft));
-  display: grid; place-items: center;
-  box-shadow: 0 8px 20px -6px var(--accent-glow);
-  color: white; font-weight: 700; font-size: 1.1rem;
-}
+
 .brand small {
   color: var(--text-secondary); font-weight: 400; font-size: 0.85rem;
   margin-left: 6px;
 }
-.nav-actions { display: flex; gap: 10px; align-items: center; }
 
-/* ---------- RAIL LATERAL ----------
-   Coluna fixa a esquerda com os destinos do app, sempre visiveis: cada pagina
-   e uma linha propria, e a atual fica destacada. Antes isso era um botao que
-   abria um menu sobreposto; virou lista fixa porque um menu que esconde dois
-   itens esconde tambem a propria existencia da outra pagina.
 
-   Fica FORA do <header> de proposito: o header e sticky e cobre a largura
-   toda, entao um rail dentro dele nao teria altura. Aqui ele e
-   position:fixed do topo ate o fim da viewport, e o conteudo ganha --rail-w
-   de recuo no body.
 
-   Em <=920px o rail some e os destinos reaparecem como menu no header —
-   sem isso a pagina ficaria sem navegacao no celular. */
-:root {
-  --rail-w: 244px;
-}
 body { padding-left: var(--rail-w); }
 
-.rail {
-  position: fixed; top: 0; left: 0; bottom: 0; width: var(--rail-w); z-index: 60;
-  display: flex; flex-direction: column;
-  background: linear-gradient(180deg, var(--bg-surface), var(--bg-deep));
-  border-right: 1px solid var(--border-subtle);
-  padding: 18px 14px;
-}
-.rail-brand {
-  display: flex; align-items: center; gap: 10px;
-  font-weight: 600; font-size: 1rem; letter-spacing: -0.02em;
-  padding: 0 6px 16px; border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: 14px;
-}
-.rail-brand .brand-mark { width: 30px; height: 30px; border-radius: 9px; font-size: 0.9rem; flex: none; }
-.rail-brand small { display: block; color: var(--text-muted); font-weight: 400; font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; }
 
-.rail-label {
-  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
-  color: var(--text-muted); padding: 0 10px; margin: 4px 0 8px;
-}
 
-/* A lista de destinos. <nav> + lista de links: um leitor de tela anuncia
-   "navegacao, 2 itens" e cada link diz para onde vai. O menu anterior
-   precisava de role=listbox/option para se comportar como widget; uma lista
-   estatica de links nao precisa de nada disso. */
-.rail-menu {
-  display: flex; flex-direction: column; gap: 2px;
-  list-style: none; margin: 0; padding: 0;
-}
-/* O rail nao usa os papeis de listbox; o fallback do header (mais abaixo)
-   tambem e uma lista de links, entao herda o mesmo tratamento. */
-.rail-menu[hidden] { display: none; }
 
-.rail-item {
-  display: flex; align-items: flex-start; gap: 11px;
-  padding: 10px 11px; border-radius: var(--radius-sm);
-  border: 1px solid transparent; background: transparent;
-  color: var(--text-primary); font-family: inherit; font-size: 0.86rem;
-  text-align: left; cursor: pointer; text-decoration: none;
-}
-.rail-item:hover { background: rgba(255, 255, 255, 0.04); border-color: var(--border-subtle); }
-/* O item da pagina atual fica marcado. aria-current e a fonte da verdade
-   para o leitor de tela; a cor e a contraparte visual. */
-.rail-item[aria-current="page"] {
-  background: var(--active-tint); border-color: var(--accent-primary); color: var(--accent-soft);
-}
-.rail-item[aria-current="page"] .ri-desc { color: var(--text-secondary); }
-.rail-item .ri-ico { font-size: 1.05rem; line-height: 1.3; width: 20px; text-align: center; flex: none; }
-.rail-item .ri-title { display: block; font-weight: 600; }
-.rail-item .ri-desc { display: block; font-size: 0.73rem; color: var(--text-muted); line-height: 1.4; }
 
-.rail-foot { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--border-subtle); }
-.rail-foot span { display: block; font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; }
 
-/* ---------- MENU DO HEADER (<=920px) ----------
-   Substitui o rail quando nao ha largura para ele. Mesmo padrao de botao +
-   painel sobreposto, mas aqui o menu PRECISA de widget semantics: ele abre e
-   fecha, entao aria-expanded e o estado tem que existir. */
-.rail-dropdown { position: relative; display: none; }
 
-.menu-btn {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-family: inherit; font-size: var(--text-cta); font-weight: 600;
-  border: 1px solid var(--border-strong); background: var(--bg-surface);
-  color: var(--text-primary); padding: 10px 14px; border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.menu-btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }
-.menu-btn .mb-bars { font-size: 1rem; line-height: 1; }
-.menu-btn .mb-caret { color: var(--accent-soft); font-size: 0.75rem; transition: transform var(--transition); }
-.menu-btn[aria-expanded="true"] .mb-caret { transform: rotate(180deg); }
 
-.rail-dropdown .rail-menu {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 70; min-width: 258px;
-  background: var(--bg-surface); border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md); box-shadow: var(--shadow-card);
-  padding: 6px;
-  animation: railMenuIn 180ms var(--ease-out-expo);
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @keyframes railMenuIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .rail-dropdown .rail-menu { animation: none; }
@@ -333,14 +118,9 @@ body { padding-left: var(--rail-w); }
   cursor: pointer;
   display: inline-flex; align-items: center; gap: 8px;
 }
-/* O hover do botao muda cor/borda; o movimento fica por conta do .pressable
-   (que encolhe no :active). Antes esta regra tambem subia o botao, o que
-   somava com o .pressable e dobrava a animacao. */
-.btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }
-.btn:disabled { opacity: 0.5; }
-/* O anel de foco dos botoes herda do .pressable; aqui so garantimos que o
-   disabled nao receba destaque de foco. */
-.btn:disabled:focus-visible { outline: none; }
+
+
+
 .btn-primary {
   background: var(--grad);
   border-color: transparent; color: var(--grad-ink);
@@ -369,7 +149,7 @@ body { padding-left: var(--rail-w); }
   background: var(--bg-card); border: 1px solid var(--border-subtle);
   padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; color: var(--text-secondary);
 }
-.chip strong { color: var(--text-primary); font-weight: 600; }
+
 
 .hero-visual {
   background: var(--bg-card); border: 1px solid var(--border-subtle);
@@ -715,9 +495,9 @@ body { padding-left: var(--rail-w); }
   max-height: 180px; overflow-y: auto; margin-top: 12px;
   white-space: pre-wrap; word-break: break-word;
 }
-.log-box .ln-ok { color: var(--success); }
-.log-box .ln-err { color: var(--danger); }
-.log-box .ln-warn { color: var(--accent-warm); }
+
+
+
 
 .queue-list { display: flex; flex-direction: column; gap: 10px; }
 .job {
@@ -827,10 +607,4 @@ footer {
   .nav-actions .btn, .menu-btn { padding: 9px 11px; font-size: 0.84rem; }
 }
 
-a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
-  outline: 2px solid var(--accent-soft); outline-offset: 2px;
-}
-.sr-only {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
-}
+

@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared.css">
 <link rel="stylesheet" href="/index.css">
 </head>
 <body>
@@ -30,15 +31,6 @@
         <span>
           <span class="ri-title">Cortes</span>
           <span class="ri-desc">Configurar e gerar os clips de um vídeo longo.</span>
-        </span>
-      </a>
-    </li>
-    <li>
-      <a class="rail-item pressable" href="/templates" data-rail-page="/templates">
-        <span class="ri-ico" aria-hidden="true">▣</span>
-        <span>
-          <span class="ri-title">Templates</span>
-          <span class="ri-desc">Montar o layout das faixas e as variações.</span>
         </span>
       </a>
     </li>
@@ -80,15 +72,6 @@
               <span>
                 <span class="ri-title">Cortes</span>
                 <span class="ri-desc">Configurar e gerar os clips de um vídeo longo.</span>
-              </span>
-            </a>
-          </li>
-          <li>
-            <a class="rail-item pressable" href="/templates" data-rail-page="/templates">
-              <span class="ri-ico" aria-hidden="true">▣</span>
-              <span>
-                <span class="ri-title">Templates</span>
-                <span class="ri-desc">Montar o layout das faixas e as variações.</span>
               </span>
             </a>
           </li>
@@ -179,14 +162,20 @@
             <div class="field-row single">
               <div class="field">
                 <label for="url">URL do vídeo (YouTube)</label>
-                <input type="url" id="url" name="url" placeholder="https://www.youtube.com/watch?v=..." required>
-                <span class="hint">Uma URL por execução. Para várias, use a aba <strong>Lote</strong>.</span>
+                <input type="url" id="url" name="url" placeholder="https://www.youtube.com/watch?v=..." required
+                       aria-describedby="url-hint">
+                <span class="hint" id="url-hint">Uma URL por execução. Para várias, use a aba <strong>Lote</strong>.</span>
               </div>
             </div>
             <div class="field-row">
               <div class="field">
                 <label for="output">Pasta de saída</label>
-                <input type="text" id="output" name="output" value="output">
+                <div style="display:flex; gap:8px;">
+                  <input type="text" id="output" name="output" value="output" style="flex:1; min-width:0;"
+                         aria-describedby="output-hint">
+                  <button class="btn pressable" type="button" id="btn-browse">Selecionar</button>
+                </div>
+                <span class="hint" id="output-hint">Local ou sincronizada (Drive, OneDrive, Dropbox): abre o seletor do computador. Relativa = a partir de onde o servidor roda.</span>
               </div>
               <div class="field">
                 <label for="count">Quantidade de clips</label>
@@ -203,20 +192,20 @@
               </div>
               <div class="field">
                 <label for="cookies-from-browser">Cookies do navegador</label>
-                <select id="cookies-from-browser" name="cookies-from-browser">
+                <select id="cookies-from-browser" name="cookies-from-browser" aria-describedby="cookies-browser-hint">
                   <option value="" selected data-title="Não usar" data-desc="Baixa sem cookies do navegador">nenhum</option>
                   <option value="chrome" data-title="Chrome" data-desc="Usa os cookies do Chrome instalado">chrome</option>
                   <option value="firefox" data-title="Firefox" data-desc="Usa os cookies do Firefox instalado">firefox</option>
                   <option value="edge" data-title="Edge" data-desc="Usa os cookies do Edge instalado">edge</option>
                 </select>
-                <span class="hint">Para vídeos com restrição de idade. No Chrome/Edge 127+
+                <span class="hint" id="cookies-browser-hint">Para vídeos com restrição de idade. No Chrome/Edge 127+
                   isto sempre falha (App-Bound Encryption) — use o arquivo abaixo.</span>
               </div>
               <div class="field">
                 <label for="cookies-file">Arquivo cookies.txt</label>
-                <input type="text" id="cookies-file" name="cookies-file"
+                <input type="text" id="cookies-file" name="cookies-file" aria-describedby="cookies-file-hint"
                        placeholder="C:\caminho\cookies.txt">
-                <span class="hint">Tem precedência sobre o seletor acima. Exporte com uma
+                <span class="hint" id="cookies-file-hint">Tem precedência sobre o seletor acima. Exporte com uma
                   extensão do navegador.</span>
               </div>
             </div>
@@ -230,19 +219,19 @@
             <div class="field-row single">
               <div class="field">
                 <label for="transcript">Cole aqui a transcrição do vídeo</label>
-                <textarea id="transcript" name="transcript" rows="7"
+                <textarea id="transcript" name="transcript" rows="7" aria-describedby="transcript-hint"
                   placeholder="0:03&#10;Abertura chocante questionando o vazamento...&#10;0:21&#10;O cara nao e o pica das magias de tecnologia..."></textarea>
-                <span class="hint">
+                <span class="hint" id="transcript-hint">
                   Aceita SRT, WebVTT, o painel de legendas do YouTube (<code>0:05</code>) ou texto puro.
                   Preenchida, ela <strong>substitui o Whisper</strong> — muito mais rápido e sem gastar RAM.
                 </span>
               </div>
             </div>
             <div class="row-actions">
-              <button class="btn pressable btn-primary" type="button" id="btn-analyze">Analisar transcrição</button>
+              <button class="btn pressable btn-primary" type="button" id="btn-analyze" aria-describedby="organize-hint">Analisar transcrição</button>
               <button class="btn pressable" type="button" id="btn-organize">Organizar transcrição</button>
               <button class="btn pressable" type="button" id="btn-clear-transcript">Limpar</button>
-              <span class="hint">Ao colar, o texto é organizado sozinho: minutos em ordem, falas alinhadas à esquerda.</span>
+              <span class="hint" id="organize-hint">Ao colar, o texto é organizado sozinho: minutos em ordem, falas alinhadas à esquerda.</span>
             </div>
             <div class="cue-preview" id="cue-preview" hidden>
               <div class="cue-stats" id="cue-stats"></div>
@@ -279,8 +268,9 @@
             <div class="field-row triple">
               <div class="field">
                 <label for="min-score">Nota mínima (0-100)</label>
-                <input type="number" id="min-score" name="min-score" min="0" max="100" step="1" value="0">
-                <span class="hint">0 desliga o portão.</span>
+                <input type="number" id="min-score" name="min-score" min="0" max="100" step="1" value="0"
+                       aria-describedby="min-score-hint">
+                <span class="hint" id="min-score-hint">0 desliga o portão.</span>
               </div>
               <div class="field">
                 <label for="min-gap">Silêncio entre clips (s)</label>
@@ -330,8 +320,9 @@
             <div class="field-row">
               <div class="field">
                 <label for="cache-dir">Pasta do cache de transcrição</label>
-                <input type="text" id="cache-dir" name="cache-dir" value="output/cache/transcripts">
-                <span class="hint">Persiste entre execuções. Deixa vazio para o padrão.</span>
+                <input type="text" id="cache-dir" name="cache-dir" value="output/cache/transcripts"
+                       aria-describedby="cache-dir-hint">
+                <span class="hint" id="cache-dir-hint">Persiste entre execuções. Deixa vazio para o padrão.</span>
               </div>
             </div>
             <div class="toggle-wrap">
@@ -361,7 +352,7 @@
               </div>
               <div class="field">
                 <label for="caption-preset">Modelo de legenda</label>
-                <select id="caption-preset" name="caption-preset">
+                <select id="caption-preset" name="caption-preset" aria-describedby="caption-preset-hint">
                   <option value="karaoke" selected data-title="Karaokê" data-desc="Branco, destaque amarelo por palavra — o visual viral clássico">karaoke</option>
                   <option value="bold-box" data-title="Bold Box" data-desc="Texto branco sobre caixa escura — legível em qualquer fundo">bold-box</option>
                   <option value="minimal" data-title="Minimal" data-desc="Caixa de frase, contorno fino — discreto e elegante">minimal</option>
@@ -399,7 +390,7 @@
                   <option value="merriweather-black" data-title="Merriweather" data-desc="Serifada editorial para ritmo lento">merriweather-black</option>
                   <option value="arvo-bold" data-title="Arvo" data-desc="Serifada de telão para entrevistas">arvo-bold</option>
                 </select>
-                <span class="hint">Define fonte, cor, caixa e destaque de uma vez. Campos vazios abaixo herdam do preset.</span>
+                <span class="hint" id="caption-preset-hint">Define fonte, cor, caixa e destaque de uma vez. Campos vazios abaixo herdam do preset.</span>
               </div>
               <div class="field">
                 <label for="caption-style">Legendas</label>
@@ -411,15 +402,17 @@
               </div>
               <div class="field">
                 <label for="font-size">Tamanho da fonte</label>
-                <input type="number" id="font-size" name="font-size" min="20" max="200" value="" placeholder="do preset">
-                <span class="hint">Vazio = usa o tamanho do modelo de legenda.</span>
+                <input type="number" id="font-size" name="font-size" min="20" max="200" value="" placeholder="do preset"
+                       aria-describedby="font-size-hint">
+                <span class="hint" id="font-size-hint">Vazio = usa o tamanho do modelo de legenda.</span>
               </div>
             </div>
             <div class="field-row triple">
               <div class="field">
                 <label for="crf">CRF (qualidade)</label>
-                <input type="number" id="crf" name="crf" min="0" max="51" value="20">
-                <span class="hint">Menor = melhor qualidade.</span>
+                <input type="number" id="crf" name="crf" min="0" max="51" value="20"
+                       aria-describedby="crf-hint">
+                <span class="hint" id="crf-hint">Menor = melhor qualidade.</span>
               </div>
               <div class="field">
                 <label for="lufs">Loudness alvo (LUFS)</label>
@@ -427,8 +420,9 @@
               </div>
               <div class="field">
                 <label for="workers">Workers paralelos</label>
-                <input type="number" id="workers" name="workers" min="1" max="16" value="2">
-                <span class="hint">Reduza se faltar RAM.</span>
+                <input type="number" id="workers" name="workers" min="1" max="16" value="2"
+                       aria-describedby="workers-hint">
+                <span class="hint" id="workers-hint">Reduza se faltar RAM.</span>
               </div>
             </div>
             <div class="toggle-wrap">
@@ -438,8 +432,9 @@
             <div class="field-row">
               <div class="field">
                 <label for="headline-seconds">Duração do título no topo (s)</label>
-                <input type="number" id="headline-seconds" name="headline-seconds" min="0" max="10" step="0.5" value="3">
-                <span class="hint">Só se aplica com o título ligado acima.</span>
+                <input type="number" id="headline-seconds" name="headline-seconds" min="0" max="10" step="0.5" value="3"
+                       aria-describedby="headline-seconds-hint">
+                <span class="hint" id="headline-seconds-hint">Só se aplica com o título ligado acima.</span>
               </div>
             </div>
             <div class="toggle-wrap">
@@ -550,8 +545,8 @@
     <div class="card">
       <div class="viral-list" id="viral-list"></div>
       <div class="row-actions">
-        <button class="btn pressable btn-primary" type="button" id="btn-render">Renderizar estes cortes</button>
-        <span class="hint">Roda o mesmo job com render: os arquivos aparecem na galeria.</span>
+        <button class="btn pressable btn-primary" type="button" id="btn-render" aria-describedby="render-hint">Renderizar estes cortes</button>
+        <span class="hint" id="render-hint">Roda o mesmo job com render: os arquivos aparecem na galeria.</span>
       </div>
     </div>
   </section>

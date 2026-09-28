@@ -1,204 +1,54 @@
-/* A camada de tokens e identica a do index.html de
-   proposito: as duas paginas sao o mesmo produto, e um token duplicado com
-   valor diferente seria duas verdades. Se mudar um valor aqui, mude la tambem. */
-:root {
-  --bg-deep: #0b0d12;
-  --bg-surface: #14171f;
-  --bg-card: rgba(22, 26, 35, 0.72);
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-strong: rgba(255, 255, 255, 0.10);
-  --accent-primary: #6366f1;
-  --accent-glow: rgba(99, 102, 241, 0.28);
-  --accent-soft: #818cf8;
-  --accent-warm: #fbbf24;
-  --success: #34d399;
-  --danger: #f87171;
 
-  --text-2xs: 0.6875rem;
-  --text-2xs-lh: 1.35;
-  --text-caption: 0.8rem;
-  --text-caption-lh: 1.5;
-  --text-body-sm: 0.84375rem;
-  --text-body-sm-lh: 1.5;
-  --text-body: 0.875rem;
-  --text-body-lh: 1.5;
-  --text-cta: 0.90625rem;
-  --text-cta-lh: 1.4;
-  --text-subtitle: 0.9375rem;
-  --text-title: 1.0625rem;
-  --text-title-lh: 1.35;
-  --text-heading-sm: 1.375rem;
-  --text-heading-sm-lh: 1.25;
-  --text-heading: 1.5rem;
-  --text-heading-lh: 1.2;
-  --text-display: clamp(2.2rem, 5vw, 3.4rem);
-  --text-display-lh: 1.12;
 
-  --content-bg: var(--bg-deep);
-  --shell-bg: #0e1017;
-  --shell-surface: var(--bg-surface);
-  --shell-border: var(--border-subtle);
-  --active-tint: rgba(99, 102, 241, 0.10);
-  --well-bg: rgba(0, 0, 0, 0.35);
 
-  /* O degrau `subtle` e o piso de legibilidade: com #6b7280 dava 3,71:1 sobre
-     `--bg-surface`, e a WCAG exige 4,5:1 para texto normal — que e o caso dele,
-     a cor das dicas. #818896 da 5,03:1 aqui. Ver o comentario longo em
-     `index.css`: a alteracao e identica nas duas folhas, e o motivo de folga
-     vale para as duas. */
-  --text-ink: #f3f4f6;
-  --text-ink-muted: #9ca3af;
-  --text-ink-subtle: #818896;
 
-  --grad: #ff4fae;
-  --grad-ink: #1c1024;
 
-  --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 22px;
-  --shadow-card: 0 18px 40px -14px rgba(0, 0, 0, 0.6);
 
-  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --motion-instant: 0.1s;
-  --motion-fast: 0.2s;
-  --motion-base: 0.3s;
-  --transition: var(--motion-fast) var(--ease-out-expo);
 
-  --text-primary: var(--text-ink);
-  --text-secondary: var(--text-ink-muted);
-  --text-muted: var(--text-ink-subtle);
-}
 
-html { scroll-behavior: smooth; }
 
-body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: var(--bg-deep);
-  color: var(--text-primary);
-  line-height: 1.55;
-  min-height: 100vh;
-  background-image:
-    radial-gradient(1200px 600px at 80% -10%, rgba(99, 102, 241, 0.10), transparent 60%),
-    radial-gradient(900px 500px at 10% 110%, rgba(251, 191, 36, 0.05), transparent 60%);
-  background-attachment: fixed;
-  -webkit-font-smoothing: antialiased;
-}
 
-.wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
 
-/* ---------- UTILITARIOS ---------- */
-.pressable {
-  transition:
-    transform var(--motion-fast) var(--ease-spring),
-    background-color var(--motion-fast) ease,
-    border-color var(--motion-fast) ease,
-    color var(--motion-fast) ease,
-    box-shadow var(--motion-fast) ease,
-    opacity var(--motion-fast) ease;
-}
-.pressable:active {
-  transition-duration: var(--motion-instant);
-  transition-timing-function: ease-out;
-  transform: scale(0.97);
-}
-.pressable:disabled { cursor: not-allowed; }
-.pressable:disabled:active { transform: none; }
-.pressable:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+
+
 @media (prefers-reduced-motion: reduce) {
   .pressable { transition: none; }
   .pressable:active { transform: none; }
 }
 
-/* ---------- RAIL LATERAL ----------
-   Mesma coluna do index.html. As duas paginas sao servidas soltas (sem
-   build), entao a duplicacao e deliberada: um @import custaria uma requisicao
-   extra e um arquivo a mais para manter sincronizado. Se mexer aqui, mexa la
-   tambem — RailNavigationTests em tests/test_web_server.py trava a deriva. */
-:root {
-  --rail-w: 244px;
-}
+
 body { padding-left: var(--rail-w); }
 
-.rail {
-  position: fixed; top: 0; left: 0; bottom: 0; width: var(--rail-w); z-index: 60;
-  display: flex; flex-direction: column;
-  background: linear-gradient(180deg, var(--bg-surface), var(--bg-deep));
-  border-right: 1px solid var(--border-subtle);
-  padding: 18px 14px;
-}
-.rail-brand {
-  display: flex; align-items: center; gap: 10px;
-  font-weight: 600; font-size: 1rem; letter-spacing: -0.02em;
-  padding: 0 6px 16px; border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: 14px;
-}
-.rail-brand .brand-mark { width: 30px; height: 30px; border-radius: 9px; font-size: 0.9rem; flex: none; }
-.rail-brand small { display: block; color: var(--text-muted); font-weight: 400; font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; }
 
-.rail-label {
-  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
-  color: var(--text-muted); padding: 0 10px; margin: 4px 0 8px;
-}
 
-/* A lista de destinos. <nav> + lista de links: um leitor de tela anuncia
-   "navegacao, 2 itens" e cada link diz para onde vai. O menu anterior
-   precisava de role=listbox/option para se comportar como widget; uma lista
-   estatica de links nao precisa de nada disso. */
-.rail-menu {
-  display: flex; flex-direction: column; gap: 2px;
-  list-style: none; margin: 0; padding: 0;
-}
-/* O rail nao usa os papeis de listbox; o fallback do header (mais abaixo)
-   tambem e uma lista de links, entao herda o mesmo tratamento. */
-.rail-menu[hidden] { display: none; }
 
-.rail-item {
-  display: flex; align-items: flex-start; gap: 11px;
-  padding: 10px 11px; border-radius: var(--radius-sm);
-  border: 1px solid transparent; background: transparent;
-  color: var(--text-primary); font-family: inherit; font-size: 0.86rem;
-  text-align: left; cursor: pointer; text-decoration: none;
-}
-.rail-item:hover { background: rgba(255, 255, 255, 0.04); border-color: var(--border-subtle); }
-/* O item da pagina atual fica marcado. aria-current e a fonte da verdade
-   para o leitor de tela; a cor e a contraparte visual. */
-.rail-item[aria-current="page"] {
-  background: var(--active-tint); border-color: var(--accent-primary); color: var(--accent-soft);
-}
-.rail-item[aria-current="page"] .ri-desc { color: var(--text-secondary); }
-.rail-item .ri-ico { font-size: 1.05rem; line-height: 1.3; width: 20px; text-align: center; flex: none; }
-.rail-item .ri-title { display: block; font-weight: 600; }
-.rail-item .ri-desc { display: block; font-size: 0.73rem; color: var(--text-muted); line-height: 1.4; }
 
-.rail-foot { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--border-subtle); }
-.rail-foot span { display: block; font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; }
 
-/* ---------- MENU DO HEADER (<=920px) ----------
-   Substitui o rail quando nao ha largura para ele. Mesmo padrao de botao +
-   painel sobreposto, mas aqui o menu PRECISA de widget semantics: ele abre e
-   fecha, entao aria-expanded e o estado tem que existir. */
-.rail-dropdown { position: relative; display: none; }
 
-.menu-btn {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-family: inherit; font-size: var(--text-cta); font-weight: 600;
-  border: 1px solid var(--border-strong); background: var(--bg-surface);
-  color: var(--text-primary); padding: 10px 14px; border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.menu-btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }
-.menu-btn .mb-bars { font-size: 1rem; line-height: 1; }
-.menu-btn .mb-caret { color: var(--accent-soft); font-size: 0.75rem; transition: transform var(--transition); }
-.menu-btn[aria-expanded="true"] .mb-caret { transform: rotate(180deg); }
 
-.rail-dropdown .rail-menu {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 70; min-width: 258px;
-  background: var(--bg-surface); border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md); box-shadow: var(--shadow-card);
-  padding: 6px;
-  animation: railMenuIn 180ms var(--ease-out-expo);
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @keyframes railMenuIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .rail-dropdown .rail-menu { animation: none; }
@@ -211,30 +61,15 @@ body { padding-left: var(--rail-w); }
   .rail-dropdown { display: block; }
 }
 
-/* ---------- HEADER ---------- */
-header {
-  position: sticky; top: 0; z-index: 50;
-  backdrop-filter: blur(14px) saturate(180%);
-  background: rgba(11, 13, 18, 0.72);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.header-inner {
-  display: flex; align-items: center; justify-content: space-between;
-  height: 68px;
-}
+
+
 .brand {
   display: flex; align-items: center; gap: 12px;
   font-weight: 600; letter-spacing: -0.02em; font-size: 1.25rem;
   color: var(--text-primary); text-decoration: none;
 }
-.brand-mark {
-  width: 36px; height: 36px; border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-soft));
-  display: grid; place-items: center;
-  box-shadow: 0 8px 20px -6px var(--accent-glow);
-  color: white; font-weight: 700; font-size: 1.1rem;
-}
-.nav-actions { display: flex; gap: 10px; align-items: center; }
+
+
 .btn {
   font-family: inherit; font-size: var(--text-cta); font-weight: 600;
   border: 1px solid var(--border-strong); background: var(--bg-surface);
@@ -242,9 +77,9 @@ header {
   cursor: pointer; text-decoration: none;
   display: inline-flex; align-items: center; gap: 8px;
 }
-.btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }
-.btn:disabled { opacity: 0.5; }
-.btn:disabled:focus-visible { outline: none; }
+
+
+
 .btn-primary {
   background: var(--grad);
   border-color: transparent; color: var(--grad-ink);
@@ -260,7 +95,7 @@ header {
   padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; color: var(--text-secondary);
   display: inline-block;
 }
-.chip strong { color: var(--text-primary); font-weight: 600; }
+
 .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
 
 
@@ -975,9 +810,9 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: var(--text-2xs); line-height: 1.7; color: var(--text-secondary);
 }
-.log-box .ln-err { color: var(--danger); }
-.log-box .ln-ok { color: var(--success); }
-.log-box .ln-warn { color: var(--accent-warm); }
+
+
+
 .log-box .ln-sys { color: var(--accent-soft); }
 .log-box p { margin: 0; }
 
@@ -1011,10 +846,4 @@ footer {
   border-top: 1px solid var(--border-subtle);
   padding: 26px 0 40px; color: var(--text-muted); font-size: var(--text-caption);
 }
-a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
-  outline: 2px solid var(--accent-soft); outline-offset: 2px;
-}
-.sr-only {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
-}
+

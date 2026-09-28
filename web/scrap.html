@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared.css">
 <link rel="stylesheet" href="/scrap.css">
 </head>
 <body>
@@ -30,15 +31,6 @@
         <span>
           <span class="ri-title">Cortes</span>
           <span class="ri-desc">Configurar e gerar os clips de um vídeo longo.</span>
-        </span>
-      </a>
-    </li>
-    <li>
-      <a class="rail-item pressable" href="/templates" data-rail-page="/templates">
-        <span class="ri-ico" aria-hidden="true">▣</span>
-        <span>
-          <span class="ri-title">Templates</span>
-          <span class="ri-desc">Montar o layout das faixas e as variações.</span>
         </span>
       </a>
     </li>
@@ -80,15 +72,6 @@
               <span>
                 <span class="ri-title">Cortes</span>
                 <span class="ri-desc">Configurar e gerar os clips de um vídeo longo.</span>
-              </span>
-            </a>
-          </li>
-          <li>
-            <a class="rail-item pressable" href="/templates" data-rail-page="/templates">
-              <span class="ri-ico" aria-hidden="true">▣</span>
-              <span>
-                <span class="ri-title">Templates</span>
-                <span class="ri-desc">Montar o layout das faixas e as variações.</span>
               </span>
             </a>
           </li>
@@ -168,6 +151,7 @@
         <form class="scrap-form" id="scrap-form" novalidate>
           <label class="sr-only" for="scrap-url">Endereço do vídeo ou do perfil</label>
           <input type="url" id="scrap-url" name="url" autocomplete="off"
+                 aria-describedby="scrap-hint"
                  placeholder="https://www.instagram.com/reel/... ou https://www.tiktok.com/@.../video/..."
                  required>
           <button class="btn pressable btn-primary" type="submit" id="btn-scrap">Buscar</button>
@@ -176,12 +160,11 @@
         <p class="field-hint" id="scrap-hint">
           Modo <strong>Link</strong>: aceita um post, reel ou vídeo.
         </p>
-
         <fieldset id="perfil-opts" hidden class="form-row form-row--stack">
           <legend class="sr-only">Opções do perfil</legend>
           <div class="form-field form-field--grow">
             <button class="btn pressable" type="button" id="btn-viral"
-                    aria-pressed="false"
+                    aria-pressed="false" aria-describedby="viral-hint"
                     title="Lista até 100 itens e mostra primeiro os de mais views">
               🔥 Mais viralizados
             </button>
@@ -193,6 +176,11 @@
             <input type="number" id="scrap-limit" name="limit" min="1" max="100" value="20">
           </div>
         </fieldset>
+        <p class="field-hint" id="viral-hint">
+          <strong>Mais viralizados</strong> lista até 100 itens e mostra primeiro os de mais
+          views; a lista normal respeita a ordem do perfil. Os dois modos pegam o mesmo
+          limite de <em>Itens a listar</em>.
+        </p>
 
         <div class="auth-card" id="auth-card">
           <div class="auth-head">
@@ -207,7 +195,7 @@
               <div class="auth-block-head">
                 <span class="field-label" id="scrap-cookies-label">Navegador</span>
               </div>
-              <div class="seg" role="radiogroup" aria-labelledby="scrap-cookies-label" id="cookies-seg">
+              <div class="seg" role="radiogroup" aria-labelledby="scrap-cookies-label" aria-describedby="scrap-cookies-hint" id="cookies-seg">
                 <button type="button" class="seg-btn pressable" role="radio" data-value="" aria-checked="true" aria-label="Nenhum" title="Nenhum"><span class="seg-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="15" fill="none" stroke="currentColor" stroke-width="5"/><path d="M13.4 34.6 34.6 13.4" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></span></button>
                 <button type="button" class="seg-btn pressable" role="radio" data-value="chrome" aria-checked="false" tabindex="-1" aria-label="Google Chrome" title="Google Chrome"><span class="seg-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="#fff"/><circle cx="24" cy="24" r="15" fill="none" stroke="#EA4335" stroke-width="8" stroke-dasharray="30 64.25" transform="rotate(210 24 24)"/><circle cx="24" cy="24" r="15" fill="none" stroke="#FBBC05" stroke-width="8" stroke-dasharray="30 64.25" transform="rotate(330 24 24)"/><circle cx="24" cy="24" r="15" fill="none" stroke="#34A853" stroke-width="8" stroke-dasharray="30 64.25" transform="rotate(90 24 24)"/><circle cx="24" cy="24" r="11.5" fill="#fff"/><circle cx="24" cy="24" r="7.5" fill="#4285F4"/></svg></span></button>
                 <button type="button" class="seg-btn pressable" role="radio" data-value="firefox" aria-checked="false" tabindex="-1" aria-label="Mozilla Firefox" title="Mozilla Firefox"><span class="seg-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><defs><linearGradient id="ffx-a" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFDD5C"/><stop offset=".55" stop-color="#FF9E3D"/><stop offset="1" stop-color="#FF7139"/></linearGradient></defs><circle cx="24" cy="24" r="17" fill="url(#ffx-a)"/><path d="M24 7c4 5 6 9 6 14a6 6 0 0 1-12 0c0-5 2-9 6-14z" fill="#FFE9A8" opacity=".85"/><circle cx="17" cy="29" r="9.5" fill="#0060DF"/><path d="M10.5 26.5c2-1.5 5-1.5 7 0" stroke="#73A7FD" stroke-width="2" fill="none" stroke-linecap="round"/></svg></span></button>
@@ -229,12 +217,13 @@
               <div class="auth-file-row">
                 <input type="text" id="scrap-cookies-file" name="cookies-file"
                        value="C:\Users\USUARIO\viral-clipper\cookies.txt"
+                       aria-describedby="scrap-cookies-file-hint"
                        placeholder="C:\caminho\cookies.txt" autocomplete="off" spellcheck="false">
                 <button type="button" class="auth-icon-btn pressable" id="btn-cookies-browse" title="Escolher arquivo">📁</button>
                 <button type="button" class="auth-icon-btn auth-icon-btn--ghost pressable" id="btn-cookies-clear" title="Limpar caminho">✕</button>
               </div>
               <input type="file" id="cookies-file-picker" accept=".txt" hidden>
-              <p class="auth-note">Tem precedência sobre o navegador. Necessário no Chrome/Edge 127+, onde os cookies são selados com App-Bound Encryption.</p>
+              <p class="auth-note" id="scrap-cookies-file-hint">Tem precedência sobre o navegador. Necessário no Chrome/Edge 127+, onde os cookies são selados com App-Bound Encryption.</p>
             </div>
             <div class="auth-block auth-block--wide">
               <div class="auth-block-head">
@@ -243,13 +232,14 @@
               </div>
               <div class="auth-file-row">
                 <input type="password" id="scrap-ig-session" name="ig-session"
+                       aria-describedby="scrap-ig-session-hint"
                        placeholder="12345678%3AAbCdEfGhIjKl%3A12%3AAY..." autocomplete="off" spellcheck="false">
                 <button type="button" class="auth-icon-btn pressable" id="btn-session-reveal"
                         aria-label="Mostrar o valor" aria-pressed="false" title="Mostrar o valor">👁</button>
                 <button type="button" class="auth-icon-btn auth-icon-btn--ghost pressable" id="btn-session-clear"
                         aria-label="Limpar o campo" title="Limpar o campo">✕</button>
               </div>
-              <p class="auth-note">
+              <p class="auth-note" id="scrap-ig-session-hint">
                 Este cookie é <strong>HttpOnly</strong>: o export não consegue vê-lo, e sem ele o
                 Instagram responde como se ninguém estivesse logado. Abra DevTools (<kbd>F12</kbd>) →
                 <em>Application</em> → <em>Cookies</em> → <code>https://www.instagram.com</code> →

@@ -281,83 +281,6 @@ def _run_job(options: dict, plan_only: bool) -> dict:
                 pass
 
 
-#: Folder the templates page offers as ready-made text plates. It lives inside
-#: ``web/`` on purpose: the static route already serves anything under there with
-#: the right Content-Type, so the preview can show the very file the render will
-#: read without a second endpoint and a second copy of the bytes.
-PLATES_DIR = WEB_DIR / "fundo titulo"
-
-#: Suffixes offered as plates. Every one of them is a still ffmpeg decodes, and
-#: every one is a type the static route serves with an image Content-Type.
-PLATE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp"})
-
-
-def _image_size(path: Path) -> tuple[int, int] | None:
-    """Read ``(width, height)`` out of an image header, without decoding it.
-
-    The templates page shows each plate as a thumbnail with its real size, and
-    that is a header read: pulling in Pillow to learn that a JPEG is 1904x544
-    would add a dependency to a server that is stdlib-only on purpose. Returns
-    ``None`` for a format it cannot read, which the page renders as "?" rather
-    than as a broken image.
-    """
-    try:
-        data = path.read_bytes()[:64]
-    except OSError:
-        return None
-    # PNG: an 8-byte signature, then an IHDR chunk whose payload starts with the
-    # two big-endian 32-bit dimensions.
-    if data[:8] == b"\x89PNG\r\n\x1a\n":
-        return (
-            int.from_bytes(data[16:20], "big"),
-            int.from_bytes(data[20:24], "big"),
-        )
-    # WebP: a RIFF container whose first chunk is VP8 (lossy), VP8L (lossless) or
-    # VP8X (extended). Each spells its dimensions differently and none of them is
-    # worth a decoder here, so only the two fixed-layout ones are read.
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        chunk = data[12:16]
-        if chunk == b"VP8 ":
-            return (
-                int.from_bytes(data[26:28], "little") & 0x3FFF,
-                int.from_bytes(data[28:30], "little") & 0x3FFF,
-            )
-        if chunk == b"VP8L":
-            bits = int.from_bytes(data[21:25], "little")
-            return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
-        if chunk == b"VP8X":
-            return (
-                int.from_bytes(data[24:27], "little") + 1,
-                int.from_bytes(data[27:30], "little") + 1,
-            )
-        return None
-    # JPEG: walk the marker segments to the frame header, which is the first SOF
-    # and carries the dimensions. Segments are length-prefixed, so this is a real
-    # walk and not a fixed offset — and a truncated read stops it by running out
-    # of bytes, which the length check below turns into "unknown size".
-    if data[:2] != b"\xff\xd8":
-        return None
-    try:
-        raw = path.read_bytes()
-    except OSError:
-        return None
-    at = 2
-    while at + 9 < len(raw):
-        if raw[at] != 0xFF:
-            at += 1
-            continue
-        marker = raw[at + 1]
-        # SOF0..SOF15, minus the four markers in that range that are not frame
-        # headers (DHT, JPG and DAC), each of which would carry other bytes.
-        if 0xC0 <= marker <= 0xCF and marker not in {0xC4, 0xC8, 0xCC}:
-            return (
-                int.from_bytes(raw[at + 7 : at + 9], "big"),
-                int.from_bytes(raw[at + 5 : at + 7], "big"),
-            )
-        at += 2 + int.from_bytes(raw[at + 2 : at + 4], "big")
-    return None
-
-
 def _relative_to(path: Path, base: Path) -> str:
     """``path`` as seen from ``base``, with forward slashes.
 
@@ -369,36 +292,6 @@ def _relative_to(path: Path, base: Path) -> str:
         return path.relative_to(base).as_posix()
     except ValueError:
         return path.name
-
-
-def list_plates(base: Path | None = None) -> list[dict]:
-    """The ready-made plates on offer, with the URL that serves each one.
-
-    The URL is built with :func:`urllib.parse.quote` because the folder name has
-    a space in it, and the static route percent-decodes before touching the disk —
-    an unquoted space would arrive as a literal and 404. The path handed to the
-    engine is the repo-relative one, because that is what a template file
-    records: the CLI is run from the repo root, and a repo-relative path is the
-    only spelling that still points at the file when the template moves.
-    """
-    folder = base if base is not None else PLATES_DIR
-    if not folder.is_dir():
-        return []
-    plates: list[dict] = []
-    for path in sorted(folder.iterdir(), key=lambda p: p.name.lower()):
-        if not path.is_file() or path.suffix.lower() not in PLATE_SUFFIXES:
-            continue
-        size = _image_size(path)
-        plates.append(
-            {
-                "name": path.name,
-                "path": _relative_to(path, REPO_ROOT),
-                "url": "/" + quote(_relative_to(path, WEB_DIR)),
-                "width": size[0] if size else 0,
-                "height": size[1] if size else 0,
-            }
-        )
-    return plates
 
 
 #: Content types for the files served straight out of ``web/``. Every response
@@ -842,82 +735,6 @@ _THUMB_MAX_BYTES = 6 * 1024 * 1024
 #: itens (o limite da busca), entao o teto existe para uma requisicao forjada
 #: nao transformar o servidor num downloader de mil URLs de uma vez so.
 _MAX_SELECTED_DOWNLOADS = 200
-
-
-def _suggest_phrases(idea: str, count: int) -> list[str]:
-    """Ask the ranker LLM for short hook phrases about a video idea.
-
-    Reuses the ranker provider (model, URL and key), so phrases cost nothing
-    new to configure. One phrase per line, faithful to the idea, caps the
-    response at ``count`` non-empty lines.
-    """
-    from viralclipper import ranker
-
-    config = config_mod.ClipConfig(url="", ranker="llm")
-    provider = ranker.build_provider(config)
-    if provider is None:  # pragma: no cover - build_provider raises first
-        raise ClipperError("LLM desligado: use ranker='llm' com API key.")
-    text = provider.complete(
-        "Voce escreve ganchos curtos em pt-BR para videos verticais. "
-        "Responda só com as frases, uma por linha, sem numerar, sem aspas, "
-        "sem inventar fatos alem da ideia. Maximo 120 caracteres por frase.",
-        f"Ideia: {idea}\nQuantidade: {count}",
-    )
-    phrases = []
-    for line in text.splitlines():
-        clean = re.sub(r"^[\s\-\*\d\.\)\]]+", "", line).strip().strip("\"'")
-        if clean:
-            phrases.append(clean[:140])
-        if len(phrases) >= count:
-            break
-    if not phrases:
-        raise ClipperError("o modelo nao devolveu frases; tente outra ideia.")
-    return phrases
-
-
-def _suggest_post(idea: str) -> tuple[str, str]:
-    """Ask the ranker LLM for a caption and hashtags about a video idea.
-
-    Reuses the ranker provider exactly like :func:`_suggest_phrases`, so the
-    panel needs no second LLM configured. One call for both fields: the two
-    come from the same idea and splitting them would pay twice for a caption
-    and a tag list that read as one post.
-
-    The response is two lines by contract, so the parse is positional. A model
-    that ignores the format and answers in a paragraph yields an empty
-    caption, and the handler says so rather than posting prose as a caption.
-    """
-    from viralclipper import ranker
-
-    config = config_mod.ClipConfig(url="", ranker="llm")
-    provider = ranker.build_provider(config)
-    if provider is None:  # pragma: no cover - build_provider raises first
-        raise ClipperError("LLM desligado: use ranker='llm' com API key.")
-    text = provider.complete(
-        "Voce escreve a legenda de posts em pt-BR para videos verticais. "
-        "Responda em EXATAMENTE duas linhas: na primeira, a descricao do video "
-        "em ate 300 caracteres, sem aspas e sem hashtags; na segunda, as "
-        "hashtags separadas por espaco, cada uma comecando em #. "
-        "Nao numere, nao escreva nada alem das duas linhas e nao invente fatos "
-        "alem da ideia.",
-        f"Ideia: {idea}",
-    )
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    if not lines:
-        raise ClipperError("o modelo nao devolveu nada; tente outra ideia.")
-    description = lines[0].strip('"').strip()[:300]
-    tags = ""
-    # A classe `re` nao conhece `\p{L}`: o unico motor aqui aceita `\w` com
-    # re.UNICODE por padrao, e hashtag de rede nao tem acento nem espaco, entao
-    # `#\w+` corta exatamente no que importa.
-    for line in lines[1:]:
-        found = re.findall(r"#\w+", line, re.UNICODE)
-        if found:
-            tags = " ".join(found[:30])
-            break
-    if not tags:
-        raise ClipperError("o modelo nao devolveu hashtags; tente outra ideia.")
-    return description, tags
 
 
 def _relative_to_repo(path: Path | None) -> str:
@@ -1484,13 +1301,6 @@ class Handler(http_server.BaseHTTPRequestHandler):
             else:
                 self._send_json({"error": "index.html missing"}, 404)
             return
-        if path in {"/templates", "/templates.html"}:
-            page = WEB_DIR / "templates.html"
-            if page.exists():
-                self._send_file(page.read_bytes(), "text/html; charset=utf-8")
-            else:
-                self._send_json({"error": "templates.html missing"}, 404)
-            return
         if path in {"/scrap", "/scrap.html"}:
             page = WEB_DIR / "scrap.html"
             if page.exists():
@@ -1544,28 +1354,6 @@ class Handler(http_server.BaseHTTPRequestHandler):
                 self._send_file(candidate.read_bytes(), "image/jpeg")
             else:
                 self._send_json({"error": "not found"}, 404)
-            return
-        if path == "/templates/catalog":
-            # The zone kinds and caption presets the wizard offers, read from
-            # the engine rather than duplicated a third time in the page. The
-            # page keeps its own copy for the numeric preview; this endpoint is
-            # what keeps the two from drifting silently.
-            from viralclipper import caption_presets, template as template_mod
-
-            self._send_json(
-                {
-                    "presets": sorted(caption_presets.PRESETS),
-                    "zone_kinds": list(template_mod.ZONE_KINDS),
-                    "fit_modes": list(template_mod.FIT_MODES),
-                    "builtin": sorted(template_mod.BUILTIN),
-                }
-            )
-            return
-        if path == "/templates/plates":
-            # The ready-made text plates, read from disk rather than listed in the
-            # page: dropping a file into the folder is how the user adds one, and a
-            # list hardcoded here would be a second truth to keep in step.
-            self._send_json({"plates": list_plates()})
             return
         if path == "/status":
             with _lock:
@@ -1642,12 +1430,6 @@ class Handler(http_server.BaseHTTPRequestHandler):
             return
         if path == "/transcript/normalize":
             self._handle_normalize(payload)
-            return
-        if path == "/phrases":
-            self._handle_phrases(payload)
-            return
-        if path == "/postkit":
-            self._handle_postkit(payload)
             return
         if path != "/run":
             self._send_json({"error": "not found"}, 404)
@@ -1907,42 +1689,6 @@ class Handler(http_server.BaseHTTPRequestHandler):
             return
         self._send_json(result.to_dict())
 
-    def _handle_phrases(self, payload: dict) -> None:
-        """Suggest short hook phrases for a video idea, via the ranker LLM."""
-        idea = payload.get("idea")
-        if not isinstance(idea, str) or not idea.strip():
-            self._send_json({"error": "idea is required"}, 400)
-            return
-        try:
-            count = max(1, min(10, int(payload.get("count") or 5)))
-        except (TypeError, ValueError):
-            count = 5
-        try:
-            phrases = _suggest_phrases(idea.strip(), count)
-        except ClipperError as exc:
-            self._send_json({"error": str(exc)}, 400)
-            return
-        except Exception as exc:  # noqa: BLE001 - network errors surface as text
-            self._send_json({"error": f"modelo indisponivel: {exc}"}, 400)
-            return
-        self._send_json({"phrases": phrases})
-
-    def _handle_postkit(self, payload: dict) -> None:
-        """Suggest a caption and hashtags for a video idea, via the ranker LLM."""
-        idea = payload.get("idea")
-        if not isinstance(idea, str) or not idea.strip():
-            self._send_json({"error": "idea is required"}, 400)
-            return
-        try:
-            description, hashtags = _suggest_post(idea.strip())
-        except ClipperError as exc:
-            self._send_json({"error": str(exc)}, 400)
-            return
-        except Exception as exc:  # noqa: BLE001 - network errors surface as text
-            self._send_json({"error": f"modelo indisponivel: {exc}"}, 400)
-            return
-        self._send_json({"description": description, "hashtags": hashtags})
-
     def log_message(self, *args) -> None:  # keep the console quiet
         return
 
@@ -1987,7 +1733,6 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     url = f"http://{HOST}:{port}/"
     print(f"[*] viral-clipper web UI: {url}")
-    print(f"[*] templates: {url}templates")
     print("[*] CTRL+C para parar")
     try:
         webbrowser.open(url)

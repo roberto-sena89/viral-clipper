@@ -198,6 +198,13 @@ body { padding-left: var(--rail-w); }
 @media (prefers-reduced-motion: reduce) {
   .rail-dropdown .rail-menu { animation: none; }
 }
+/* Abaixo de 920px nao cabe rail + conteudo: os destinos viram menu no header,
+   igual ao index.html. Sem isso a pagina ficaria sem navegacao no celular. */
+@media (max-width: 920px) {
+  body { padding-left: 0; }
+  .rail { display: none; }
+  .rail-dropdown { display: block; }
+}
 
 /* ---------- HEADER ---------- */
 header {

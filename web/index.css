@@ -94,6 +94,20 @@
 
 html { scroll-behavior: smooth; }
 
+/* ---------- TRAVA DE OVERFLOW HORIZONTAL ----------
+   Três fontes somavam a barra de rolagem horizontal:
+   1. `.select-panel` fechado: `position: fixed` sem largura, então mede o
+      conteúdo (36 presets com demo de legenda). Invisível (`opacity: 0`) mas
+      com caixa — e caixa fixed fora da viewport entra na área rolável.
+   2. Filhos de grid/flex sem `min-width: 0`: input carrega largura mínima
+      intrínseca e empurra `.field-row`/`main-grid` para além da tela.
+   3. Qualquer resto: `overflow-x: clip` no root corta a sobra sem criar
+      container de rolagem (o `hidden` quebraria o `sticky` da lateral; o
+      `clip` não, e a linha de cima é o fallback para navegador antigo). */
+html, body { overflow-x: hidden; overflow-x: clip; }
+.main-grid > *, .hero > *, .field { min-width: 0; }
+.field input, .field select, .field textarea { min-width: 0; }
+
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--bg-deep);
@@ -484,7 +498,7 @@ body { padding-left: var(--rail-w); }
   padding: 10px 14px; font-size: 0.78rem; color: var(--text-secondary);
   border-bottom: 1px solid var(--border-subtle); background: rgba(99, 102, 241, 0.06);
 }
-.cue-table-wrap { max-height: 320px; overflow-y: auto; }
+.cue-table-wrap { max-height: 320px; overflow-y: auto; overflow-x: auto; }
 .cue-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
 .cue-table thead th {
   position: sticky; top: 0; z-index: 1; text-align: left;

@@ -19,11 +19,17 @@
      interface inteira sem tocar no markup. Os valores seguem a escala do
      ViceScale (2xs .6875 / caption .78125 / body-sm .84375 / body .875 /
      cta .90625 / subtitle .9375 / title 1.0625 / heading-sm 1.375), que e
-     mais densa que a media porque a interface tem muito numero e rotulo. */
+     mais densa que a media porque a interface tem muito numero e rotulo.
+
+     O degrau `caption` subiu de 0,78125rem para 0,8rem. Ele e o corpo das dicas
+     de campo (`.field-hint`, `.auth-note` e o `.hint` do index), e dica e o
+     texto que menos pode sumir: ela carrega a explicacao de por que o campo
+     existe, e nao o rotulo. A 0,78rem em um texto de 14px isso e ~11px — le no
+     monitor, ilegivel no celular, que e onde a pessoa esta quando tem duvida. */
   --text-2xs: 0.6875rem;
   --text-2xs-lh: 1.35;
-  --text-caption: 0.78125rem;
-  --text-caption-lh: 1.45;
+  --text-caption: 0.8rem;
+  --text-caption-lh: 1.5;
   --text-body-sm: 0.84375rem;
   --text-body-sm-lh: 1.5;
   --text-body: 0.875rem;
@@ -53,10 +59,20 @@
   --well-bg: rgba(0, 0, 0, 0.35);
 
   /* Texto: os nomes --text-* colidem com a escala tipografica acima, entao o
-     papel de cor usa o sufixo -ink. */
+     papel de cor usa o sufixo -ink.
+
+     O degrau `subtle` e o piso de legibilidade, nao um tom decorativo. Com
+     #6b7280 ele dava 3,71:1 sobre `--bg-surface` e 4,02:1 sobre `--bg-deep`, e a
+     WCAG exige 4,5:1 para texto normal — que e o caso dele: e a cor das dicas de
+     campo, em 0,8rem. Subiu para #818896: 5,03:1 no surface e 5,46:1 no deep.
+     A folga acima de 4,5 e deliberada — um token que passa por 0,01 falha por
+     0,01 assim que o fundo real deixa de ser o token (uma placa com alpha, um
+     gradiente) ou a tela tem calibracao diferente. E continua sendo um degrau:
+     0,12 de luminancia abaixo do `muted`, entao a hierarquia de tres niveis
+     continua legivel. */
   --text-ink: #f3f4f6;
   --text-ink-muted: #9ca3af;
-  --text-ink-subtle: #6b7280;
+  --text-ink-subtle: #818896;
 
   /* Cor de marca: magenta chapado, nao gradiente. O token de gradiente da
      referencia aponta para uma cor solida, sem linear-gradient nenhum. O nome
@@ -475,7 +491,12 @@ body { padding-left: var(--rail-w); }
   outline: none; border-color: var(--accent-primary);
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
-.field .hint { font-size: 0.78rem; color: var(--text-muted); }
+/* A dica carrega a explicacao de por que o campo existe, entao ela e o
+     ultimo lugar onde o corpo pode ser pequeno. Vai no degrau `caption`
+     (0,8rem agora) em vez do literal antigo de 0,78rem: a escala e a fonte
+     da verdade, e um literal aqui ficaria para tras na proxima vez que a
+     escala subisse. */
+  .field .hint { font-size: var(--text-caption); color: var(--text-muted); }
 .field textarea {
   background: rgba(0, 0, 0, 0.35); border: 1px solid var(--border-subtle);
   color: var(--text-primary); font-family: inherit; font-size: 0.88rem;
@@ -589,6 +610,9 @@ body { padding-left: var(--rail-w); }
   border-radius: var(--radius-sm); padding: 6px;
   box-shadow: var(--shadow-card); backdrop-filter: blur(12px);
   max-height: 290px; overflow-y: auto;
+  /* Fechado ele mede o conteúdo (sem largura do JS): capa em 100vw para a
+     caixa invisível nunca vazar da viewport — ver a trava no topo. */
+  max-width: calc(100vw - 24px);
   opacity: 0; transform: translateY(-6px) scale(0.985); pointer-events: none;
   transition: opacity 160ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
   /* o painel vive no <body> (portal): nenhum stacking context dos cards o
@@ -761,7 +785,8 @@ footer {
 /* ---------- TOAST ---------- */
 .toast-zone {
   position: fixed; bottom: 20px; right: 20px; z-index: 100;
-  display: flex; flex-direction: column; gap: 10px; max-width: 340px;
+  display: flex; flex-direction: column; gap: 10px;
+  max-width: 340px; max-width: min(340px, calc(100vw - 40px));
 }
 .toast {
   background: var(--bg-surface); border: 1px solid var(--border-strong);

@@ -1,5 +1,5 @@
-/* A camada de tokens e identica a do index.html e do templates.html de
-   proposito: as tres paginas sao o mesmo produto, e um token duplicado com
+/* A camada de tokens e identica a do index.html de
+   proposito: as duas paginas sao o mesmo produto, e um token duplicado com
    valor diferente seria duas verdades. Se mudar um valor aqui, mude la tambem. */
 :root {
   --bg-deep: #0b0d12;
@@ -16,8 +16,8 @@
 
   --text-2xs: 0.6875rem;
   --text-2xs-lh: 1.35;
-  --text-caption: 0.78125rem;
-  --text-caption-lh: 1.45;
+  --text-caption: 0.8rem;
+  --text-caption-lh: 1.5;
   --text-body-sm: 0.84375rem;
   --text-body-sm-lh: 1.5;
   --text-body: 0.875rem;
@@ -41,9 +41,14 @@
   --active-tint: rgba(99, 102, 241, 0.10);
   --well-bg: rgba(0, 0, 0, 0.35);
 
+  /* O degrau `subtle` e o piso de legibilidade: com #6b7280 dava 3,71:1 sobre
+     `--bg-surface`, e a WCAG exige 4,5:1 para texto normal — que e o caso dele,
+     a cor das dicas. #818896 da 5,03:1 aqui. Ver o comentario longo em
+     `index.css`: a alteracao e identica nas duas folhas, e o motivo de folga
+     vale para as duas. */
   --text-ink: #f3f4f6;
   --text-ink-muted: #9ca3af;
-  --text-ink-subtle: #6b7280;
+  --text-ink-subtle: #818896;
 
   --grad: #ff4fae;
   --grad-ink: #1c1024;

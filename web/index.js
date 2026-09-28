@@ -506,11 +506,9 @@
   }
 
   // ---------- relatorio de viralizacao ----------
-  function esc(text) {
-    const d = document.createElement('div');
-    d.textContent = text == null ? '' : String(text);
-    return d.innerHTML;
-  }
+  // `esc` mora em `comum.js`: as duas paginas precisam do mesmo escapamento
+  // e divergentes entre si, e a versao fraca (que nao escapa aspas) era o
+  // risco embutido. Ver o comentario de la.
 
   function potentialClass(value) {
     if (value >= 70) return '';

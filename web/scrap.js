@@ -8,7 +8,6 @@
   // que adicionar uma pagina nova nao exija mexer em estado.
   const PAGES = {
     "/":          "Cortes",
-    "/templates": "Templates",
     "/scrap":     "Scrap",
   };
 
@@ -279,13 +278,9 @@
 
   // Os cards sao HTML montado a mao (nao ha template engine nem build nesta
   // pagina), e o titulo de um video e texto de terceiro. Tudo que entra no
-  // markup passa por aqui — inclusive o que vai dentro de um atributo, onde
-  // uma aspa fecharia o valor e o resto viraria markup.
-  function esc(value) {
-    return String(value == null ? "" : value)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-  }
+  // markup passa por `esc`, que mora em `comum.js` — inclusive o que vai
+  // dentro de um atributo, onde uma aspa fecharia o valor e o resto viraria
+  // markup. Ver o comentario de la.
 
   // O src e uma URL que veio de fora (CDN do Instagram/YouTube) OU um caminho
   // desta origem. As duas formas entram: absoluta http(s), ou relativa

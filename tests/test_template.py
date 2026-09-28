@@ -18,7 +18,6 @@ from viralclipper.util import ClipperError
 
 from ._fixtures import make_config
 
-
 def _text_template(**overrides):
     """O formato Meme: faixa de texto preta, vídeo reduzido, barra de identidade.
 
@@ -45,11 +44,9 @@ def _text_template(**overrides):
         ),
     )
 
-
 def _text_band(**overrides):
     """A faixa (com margens já em pixels) da zona de texto do formato Meme."""
     return tpl.plan_bands(_text_template(**overrides), 1080, 1920)[0]
-
 
 class ZoneValidationTests(unittest.TestCase):
     def test_unknown_kind_is_refused(self):
@@ -126,7 +123,6 @@ class ZoneValidationTests(unittest.TestCase):
         with self.assertRaises(ClipperError):
             tpl.Zone(kind="text", fraction=1.0, text="oi", text_outline=-0.01).validate(1)
 
-
 class TemplateValidationTests(unittest.TestCase):
     def test_zones_must_sum_to_one(self):
         broken = tpl.Template(
@@ -195,7 +191,6 @@ class TemplateValidationTests(unittest.TestCase):
             short.validate()
         self.assertIn("0.7400", str(ctx.exception))
 
-
 class PlanBandsTests(unittest.TestCase):
     def test_full_frame_is_exactly_the_canvas(self):
         bands = tpl.plan_bands(tpl.FULL_FRAME, 1080, 1920)
@@ -242,7 +237,6 @@ class PlanBandsTests(unittest.TestCase):
         self.assertEqual(bands[-1].kind, "captions")
         self.assertEqual(bands[-1].height, 1920)
 
-
 def _produced_size(fragment: str) -> tuple[int, int]:
     """O tamanho que o fragmento do still realmente produz.
 
@@ -255,11 +249,9 @@ def _produced_size(fragment: str) -> tuple[int, int]:
         match = re.search(r"scale=(\d+):(\d+)", fragment)
     return int(match.group(1)), int(match.group(2))
 
-
 def _mask_size(fragment: str) -> tuple[int, int]:
     match = re.search(r"s=(\d+)x(\d+)", fragment)
     return int(match.group(1)), int(match.group(2))
-
 
 class ChromaGridTests(unittest.TestCase):
     """Todo retângulo que o motor desenha cai na grade do yuv420p.
@@ -504,7 +496,6 @@ class ChromaGridTests(unittest.TestCase):
                         mask = _mask_size(tpl.rounded_mask(band, band.zone))
                         self.assertEqual(still, mask)
 
-
 class TextZoneTests(unittest.TestCase):
     """Onde as palavras de uma zona ``text`` caem no quadro, em pixels.
 
@@ -597,7 +588,6 @@ class TextZoneTests(unittest.TestCase):
             cursor += item.height
         self.assertEqual(cursor, 1920)
 
-
 def _edge(band, which: str) -> int:
     """A coordenada nomeada do retângulo interno da faixa, em pixels."""
     if which == "inner_x":
@@ -611,7 +601,6 @@ def _edge(band, which: str) -> int:
     if which == "center_x":
         return band.inner_x + band.inner_width / 2
     return band.inner_y + band.inner_height / 2
-
 
 class ComposeTests(unittest.TestCase):
     def test_full_frame_needs_no_overlay(self):
@@ -736,121 +725,6 @@ class ComposeTests(unittest.TestCase):
         self.assertEqual(graph.count("[1:v]"), 1)
         self.assertIn("[1:v]scale=1080:500", graph)  # o still da identidade, não o texto
 
-    def test_a_plate_image_replaces_the_flat_colour(self):
-        """Uma placa e um still: ela entra no grafo como input, não como `color=`.
-
-        A faixa para de ser a chapa sólida e passa a ler um arquivo pelo mesmo
-        `scale_into` de uma zona `image`. É o que faz `fit` querer dizer a mesma
-        coisa nas duas: `cover` preenche e corta, `contain` encaixa e deixa a cor
-        no letterbox.
-        """
-        plated = _text_template(plate_image="paper.jpg")
-        graph, _ = tpl.compose(plated, 1080, 1920)
-        self.assertNotIn("color=c=black:s=972x274", graph,
-                         "a faixa pintou cor E placa: a imagem tem que ser o fundo")
-        self.assertIn("[1:v]scale=972:274", graph)
-        # A placa consome o PRIMEIRO still, e a barra de identidade o segundo: a
-        # ordem é a da pilha de zonas, e invertê-la trocaria as duas figuras.
-        self.assertIn("[2:v]scale=1080:500", graph)
-
-    def test_a_contain_plate_lets_the_colour_fill_the_letterbox(self):
-        # `contain` é o `pad` do `scale_into`, e o `pad` é a cor da zona — o mesmo
-        # caminho de sempre, agora com uma imagem no lugar da cor chapada.
-        plated = _text_template(plate_image="paper.jpg", fit="contain")
-        graph, _ = tpl.compose(plated, 1080, 1920)
-        self.assertIn("force_original_aspect_ratio=decrease", graph)
-        self.assertIn("pad=972:274", graph)
-        self.assertIn("color=black", graph)
-
-    def test_a_solid_zone_can_carry_a_plate_too(self):
-        # `solid` e `text` pintam a mesma chapa, entao a chave vale nas duas. Se
-        # so a zona de texto aceitasse, um separador texturizado seria impossivel
-        # apesar de ser a mesma operacao no grafo.
-        solid = tpl.Template(
-            name="solido-texturizado",
-            zones=(
-                tpl.Zone(kind="video", fraction=0.8),
-                tpl.Zone(kind="solid", fraction=0.2, plate_image="wood.jpg"),
-            ),
-        )
-        graph, _ = tpl.compose(solid, 1080, 1920)
-        self.assertIn("[1:v]scale=1080:384", graph)
-
-    def test_a_zone_that_cannot_hold_a_plate_says_so(self):
-        # Uma chave que carrega, valida e serializa sem efeito é o erro de
-        # digitação silencioso que o `from_dict` existe para impedir. Uma placa
-        # numa zona de vídeo não teria para onde ser pintada.
-        for kind in ("video", "image", "frame", "captions"):
-            with self.subTest(kind=kind):
-                with self.assertRaises(ClipperError) as ctx:
-                    tpl.Zone(kind=kind, fraction=0.5, plate_image="p.jpg").validate(1)
-                self.assertIn("plate_image", str(ctx.exception))
-
-    def test_an_empty_plate_is_refused(self):
-        # `plate_image = ""` é o que um campo de formulário não preenchido
-        # posts. Aceitar como "sem placa" faria a chave vazia e a chave ausente
-        # significarem a mesma coisa no arquivo — e o arquivo é escrito por
-        # código, então são duas grafias para um estado.
-        with self.assertRaises(ClipperError) as ctx:
-            tpl.Zone(kind="text", fraction=0.5, text="oi", plate_image="  ").validate(1)
-        self.assertIn("plate_image", str(ctx.exception))
-
-    def test_a_plate_round_trips_through_the_file(self):
-        parsed = tpl.from_dict({
-            "name": "com-placa",
-            "zones": [
-                {"kind": "text", "fraction": 0.2, "text": "olha", "plate_image": "p.jpg"},
-                {"kind": "video", "fraction": 0.8},
-            ],
-        })
-        self.assertEqual(parsed.zones[0].plate_image, "p.jpg")
-
-    def test_a_plate_takes_the_zoom_and_pan_of_any_band(self):
-        """O enquadramento de uma placa e o mesmo de uma imagem, e as mesmas chaves.
-
-        `plate_image` nao abriu uma familia nova de ajustes: a placa e um still
-        dentro da faixa, entao passa pelo mesmo `scale_into` que a zona `image` e
-        nao devia ter um `plate_zoom` proprio. Este teste existe para travar essa
-        DECISAO — o dia em que alguem criar `plate_zoom`, o `scale_into` ganha um
-        caso novo e a previa, o card da galeria e o `.toml` passam a falar duas
-        linguagens para o mesmo gesto.
-        """
-        zona = tpl.Zone(
-            kind="text", fraction=0.2, text="olha", plate_image="p.jpg",
-            zoom=1.5, pan_x=0.25, pan_y=0.75,
-        )
-        t = tpl.Template(
-            name="t",
-            zones=(tpl.Zone(kind="video", fraction=0.3), zona,
-                   tpl.Zone(kind="image", fraction=0.5, source="f.png")),
-        )
-        graph, _ = tpl.compose(t, 1080, 1920)
-        self.assertIn("in_w-out_w)*0.25", graph, "o pan_x da placa nao chegou no crop")
-        self.assertIn("in_h-out_h)*0.75", graph, "o pan_y da placa nao chegou no crop")
-        # A banda interna tem 1080 px de largura (sem margens), e o zoom 1.5
-        # pede 1,5x disso no `scale`. Conferir a expressao do pan ja prova que a
-        # zona entrou no `scale_into`; o numero do zoom fecha a conta.
-        self.assertIn("scale=1620:", graph)
-
-    def test_a_plate_without_zoom_keeps_the_plain_cover_graph(self):
-        """Placa sem ajuste nao pode inventar filtro: o grafo fica o de sempre.
-
-        O `scale_into` so troca o `crop` simples por `crop` com expressao quando
-        ha zoom ou pan. Sem os dois, a placa tem de sair pelo caminho de `cover`
-        puro — o mesmo grafo de antes das placas existirem, byte a byte na parte
-        que importa.
-        """
-        zona = tpl.Zone(kind="text", fraction=0.2, text="olha", plate_image="p.jpg")
-        t = tpl.Template(
-            name="t",
-            zones=(tpl.Zone(kind="video", fraction=0.3), zona,
-                   tpl.Zone(kind="image", fraction=0.5, source="f.png")),
-        )
-        graph, _ = tpl.compose(t, 1080, 1920)
-        self.assertIn("scale=1080:384:force_original_aspect_ratio=increase,crop=1080:384",
-                      graph)
-        self.assertNotIn("in_w-out_w", graph)
-
     def test_caption_only_template_is_a_passthrough(self):
         only = tpl.Template(name="caps", zones=(tpl.Zone(kind="captions", fraction=0.0),))
         graph, label = tpl.compose(only, 1080, 1920)
@@ -876,7 +750,6 @@ class ComposeTests(unittest.TestCase):
         for name in tpl.BUILTIN:
             graph, _ = tpl.compose(tpl.BUILTIN[name], 1080, 1920)
             self.assertEqual(graph.count("["), graph.count("]"), f"unbalanced in {name}")
-
 
 class FromDictTests(unittest.TestCase):
     def _payload(self, **overrides):
@@ -945,7 +818,6 @@ class FromDictTests(unittest.TestCase):
         self.assertFalse(zone.text_bold)
         self.assertTrue(zone.text_uppercase)
         self.assertEqual(zone.text_outline, 0.003)
-
 
 class TemplateFileTests(unittest.TestCase):
     def setUp(self):
@@ -1061,7 +933,6 @@ class TemplateFileTests(unittest.TestCase):
         path.write_text("name = x", encoding="utf-8")
         with self.assertRaises(ClipperError):
             tpl.load_template(path)
-
 
 class MemePovFileTests(unittest.TestCase):
     """``templates/meme-pov.toml`` é o formato Meme, e o motor tem que montá-lo.
@@ -1208,7 +1079,6 @@ class MemePovFileTests(unittest.TestCase):
         loaded = tpl.load_template(tmp)
         self.assertFalse(loaded.captions)
 
-
 class GetTemplateTests(unittest.TestCase):
     def test_builtins_load_by_name(self):
         for name in tpl.BUILTIN:
@@ -1223,7 +1093,6 @@ class GetTemplateTests(unittest.TestCase):
         message = str(ctx.exception)
         self.assertIn("full-frame", message)
         self.assertIn("split-card", message)
-
 
 class ExpandVariationsTests(unittest.TestCase):
     def test_no_axes_returns_the_base_template(self):
@@ -1272,7 +1141,6 @@ class ExpandVariationsTests(unittest.TestCase):
         self.assertEqual(len(variants), 1)
         self.assertEqual(variants[0].caption_preset, "neon")
         self.assertEqual(variants[0].layout, "focus")
-
 
 class ApplyToConfigTests(unittest.TestCase):
     def test_none_fields_leave_the_config_alone(self):
@@ -1471,6 +1339,85 @@ class ApplyToConfigTests(unittest.TestCase):
         with self.assertRaises(ClipperError):
             tpl.Zone(kind="frame", fraction=1.0, pan_x=2).validate(1)
 
+class PlateImageIsGoneTests(unittest.TestCase):
+    """``plate_image`` foi removida do motor, e o recusa e o que sobra.
+
+    A chave existia para a pagina de templates, que saiu: ela escolhia a placa
+    de uma faixa e escrevia o caminho no ``.toml``. Nao havia outra fonte de
+    uso — `web/fundo titulo` era a pasta de imagens que a pagina oferecia, e
+    o motor so resolvia o caminho que ela apontasse.
+
+    Este teste nao mede o que sobrou; mede o que acontece com quem ainda tem a
+    chave. Quem guardou um ``.toml`` com `plate_image` precisa de uma falha que
+    diga o nome da chave, e nao de um ``TypeError`` ou de uma faixa que sai
+    muda. E o risco real de remover uma chave: sem esta verificacao, o
+    caminho e silencioso, e a descoberta acontece no primeiro render do
+    usuario.
+    """
+
+    #: O que um ``.toml`` antigo traz. Escrito inteiro, e nao montado com
+    #: concatenacao, porque o teste E o exemplo que o README ja nao tem mais.
+    COM_CHAVE = """name = "com-placa"
+
+[[zones]]
+kind = "text"
+fraction = 0.2
+color = "black"
+plate_image = "web/fundo titulo/1.jpg"
+text = "ISSO AQUI VAI VIRALIZAR"
+"""
+
+    def test_a_file_that_still_names_the_key_is_refused(self):
+        p = Path(tempfile.mkdtemp()) / "com-placa.toml"
+        p.write_text(self.COM_CHAVE, encoding="utf-8")
+        with self.assertRaises(ClipperError) as erro:
+            tpl.load_template(p)
+        # A mensagem tem que NOMEAR a chave. "Chave desconhecida na zona: X" e o
+        # que permite ao usuario saber o que tirar do arquivo dele; uma falha
+        # generica deixaria o template inteiro como suspeito.
+        self.assertIn("plate_image", str(erro.exception))
+
+    def test_the_key_is_not_on_the_zone_anymore(self):
+        self.assertFalse(
+            hasattr(tpl.Zone, "plate_image"),
+            "a chave continua no dataclass: passaria a carregar e a validar, "
+            "e so nao faria nada")
+        self.assertNotIn("plate_image", [f.name for f in
+                                         __import__("dataclasses").fields(tpl.Zone)])
+
+    def test_the_key_is_not_in_the_files_accepted_set(self):
+        """A lista de chaves conhecidas do arquivo tambem perdeu a entrada.
+
+        `from_dict` mantem o conjunto do que aceita. Uma chave esquecida nessa
+        lista, com o campo ja fora do dataclass, passaria pelo `from_dict` e
+        falharia mais tarde, no `Zone(...)`, com um erro que fala de tipo e nao
+        de template. A lista e a primeira coisa a conferir depois de remover
+        uma chave.
+        """
+        import inspect
+
+        fonte = inspect.getsource(tpl.from_dict)
+        self.assertNotIn("plate_image", fonte)
+
+    def test_nothing_in_the_repo_still_points_at_the_removed_folder(self):
+        """Nem o README, nem o config de exemplo, nem um script de conferencia.
+
+        As imagens sairam junto com a chave, e qualquer arquivo que ainda aponte
+        para `web/fundo titulo` esta apontando para o vazio. A busca e no disco
+        inteiro e nao so nos arquivos versionados, porque um script esquecido
+        na raiz e exatamente o tipo de coisa que nao aparece no `git status`.
+        """
+        raiz = Path(__file__).resolve().parent.parent
+        for caminho in sorted(raiz.glob("*.py")):
+            with self.subTest(arquivo=caminho.name):
+                self.assertNotIn("fundo titulo", caminho.read_text("utf-8"),
+                                 f"{caminho.name} ainda aponta para a pasta "
+                                 "que foi removida")
+        readme = raiz / "README.md"
+        self.assertNotIn("fundo titulo", readme.read_text("utf-8"))
+        self.assertNotIn("plate_image", readme.read_text("utf-8"))
+        self.assertFalse((raiz / "placa_check.py").exists(),
+                         "placa_check.py existia so para medir plate_image")
 
 class DescribeTests(unittest.TestCase):
     def test_description_mentions_every_band(self):
@@ -1490,7 +1437,6 @@ class DescribeTests(unittest.TestCase):
         x, y, an = tpl.text_anchor(band, band.zone, 1080, 1920)
         self.assertIn(f"texto ancorado em ({x},{y}) an={an}", text)
         self.assertIn("text", text)
-
 
 if __name__ == "__main__":
     unittest.main()

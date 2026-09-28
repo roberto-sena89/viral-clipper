@@ -55,11 +55,6 @@ FIT_MODES = ("cover", "contain")
 TEXT_ALIGNS = ("left", "center", "right")
 TEXT_VALIGNS = ("top", "middle", "bottom")
 
-# The zone kinds that paint a PLATE behind their band, and therefore the only
-# ones that accept ``plate_image``. ``solid`` and ``text`` share the plate code
-# path in :func:`compose`, so the key means the same thing on both.
-PLATE_KINDS = ("solid", "text")
-
 # A zone fraction is meaningless below this; refusing it early beats producing a
 # 2-pixel band that ffmpeg crops to nothing.
 MIN_ZONE_FRACTION = 0.02
@@ -100,14 +95,6 @@ class Zone:
     fit: str = "cover"
     # Flat colour for ``solid``, and the letterbox colour for ``contain``.
     color: str = "black"
-    # Path to a still that REPLACES the flat plate of a ``text``/``solid`` band:
-    # a paper texture, a paint stroke, a logo. It is a separate ffmpeg input and
-    # goes through the same ``scale_into`` as any other still, which is what
-    # makes ``fit`` mean the same thing here as on an ``image`` zone (cover fills
-    # and crops; contain keeps the whole picture and lets ``color`` fill the
-    # letterbox). Absent or empty = the flat plate, so every existing template
-    # keeps the graph it had.
-    plate_image: str | None = None
     # Fractions of the canvas, applied inside the band.
     margin_top: float = 0.0
     margin_bottom: float = 0.0
@@ -207,23 +194,6 @@ class Zone:
                     f"{where}: text_outline nao pode ser negativo, "
                     f"recebido {self.text_outline}."
                 )
-        # ``plate_image`` is the plate of a band, so only the two kinds that PAINT
-        # a plate can carry one. Accepting it on a ``video`` or ``image`` zone
-        # would be a key that loads, validates, serialises and does nothing —
-        # exactly the silent-typo failure the unknown-key check exists to stop.
-        if self.plate_image is not None and self.kind not in PLATE_KINDS:
-            raise ClipperError(
-                f"{where}: plate_image so existe em zona "
-                f"{' ou '.join(PLATE_KINDS)}."
-            )
-        if self.plate_image is not None and not self.plate_image.strip():
-            # An empty string is what an unfilled form field posts. Treating it
-            # as "no plate" would be friendlier, but it would also make
-            # ``plate_image = ""`` and an absent key mean the same thing in the
-            # file, and the file is written by the panel: one spelling per state.
-            raise ClipperError(
-                f"{where}: plate_image vazio; apague a chave para voltar a placa de cor."
-            )
         if self.corner_radius < 0:
             raise ClipperError(f"{where}: corner_radius nao pode ser negativo.")
         if self.zoom is not None and self.zoom < 1:
@@ -590,12 +560,25 @@ def text_anchor(band: Band, zone: Zone, width: int, height: int) -> tuple[int, i
 
 # --- filtergraph ----------------------------------------------------------
 
-def scale_into(band: Band, zone: Zone, label_in: str) -> str:
+def scale_into(
+    band: Band,
+    zone: Zone,
+    label_in: str,
+    *,
+    reframe_zoom: float | None = None,
+    reframe_pan_x: float | None = None,
+    reframe_pan_y: float | None = None,
+) -> str:
     """Build the scale/pad fragment that fits ``label_in`` inside a band.
 
     ``cover`` fills the band and crops the overflow (the usual choice for
     footage: no letterbox bars). ``contain`` shrinks to fit and pads with the
     zone colour, which is right for a logo that must never be cropped.
+
+    For a ``video`` zone, ``reframe_zoom`` / ``reframe_pan_x`` / ``reframe_pan_y``
+    override the zone-level ``zoom`` / ``pan_x`` / ``pan_y``: the template-level
+    reframe keys are the ones the web panel writes for the clip band, and they
+    must land in the same place whether the template composes or not.
     """
     w, h = band.inner_width, band.inner_height
     if zone.fit == "contain":
@@ -603,9 +586,14 @@ def scale_into(band: Band, zone: Zone, label_in: str) -> str:
             f"[{label_in}]scale={w}:{h}:force_original_aspect_ratio=decrease,"
             f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color={zone.color},setsar=1"
         )
-    zoom = zone.zoom or 1.0
-    pan_x = zone.pan_x if zone.pan_x is not None else 0.5
-    pan_y = zone.pan_y if zone.pan_y is not None else 0.5
+    if zone.kind == "video":
+        zoom = reframe_zoom if reframe_zoom is not None else (zone.zoom or 1.0)
+        pan_x = reframe_pan_x if reframe_pan_x is not None else (zone.pan_x if zone.pan_x is not None else 0.5)
+        pan_y = reframe_pan_y if reframe_pan_y is not None else (zone.pan_y if zone.pan_y is not None else 0.5)
+    else:
+        zoom = zone.zoom or 1.0
+        pan_x = zone.pan_x if zone.pan_x is not None else 0.5
+        pan_y = zone.pan_y if zone.pan_y is not None else 0.5
     if zoom != 1 or pan_x != 0.5 or pan_y != 0.5:
         scaled_w, scaled_h = int(round(w * zoom)), int(round(h * zoom))
         return (
@@ -696,7 +684,7 @@ def compose(
         # ``image`` and ``frame`` both draw a still, which is always a separate
         # ffmpeg input - never the canvas built so far. Feeding a still zone the
         # running composite would nest the video band inside its own poster.
-        if zone.kind in {"image", "frame"} or zone.plate_image:
+        if zone.kind in {"image", "frame"}:
             source = f"{image_index}:v"
             image_index += 1
 
@@ -704,25 +692,24 @@ def compose(
         first = current is None
 
         if zone.kind == "solid" or zone.kind == "text":
-            if zone.plate_image:
-                # A textured plate is a still, so it reads the input above and
-                # goes through the SAME ``scale_into`` as an image zone. Sharing
-                # the function is what makes ``fit`` mean one thing across the
-                # page: cover fills the band and crops the overflow, contain
-                # keeps the whole picture and lets ``color`` fill the letterbox.
-                parts.append(scale_into(band, zone, source) + f"[{label}s]")
-            else:
-                # A text zone's band is a flat plate like ``solid``: the words are
-                # burned later by libass, which is the only stage that knows about
-                # fonts. The plate is what makes the text legible over anything, and
-                # it is the reason the zone carries a ``color``.
-                parts.append(
-                    f"color=c={zone.color}:s={band.inner_width}x{band.inner_height}"
-                    f":d=1,format=yuva420p,setsar=1[{label}s]"
-                )
+            # A text zone's band is a flat plate like ``solid``: the words are
+            # burned later by libass, which is the only stage that knows about
+            # fonts. The plate is what makes the text legible over anything, and
+            # it is the reason the zone carries a ``color``.
+            parts.append(
+                f"color=c={zone.color}:s={band.inner_width}x{band.inner_height}"
+                f":d=1,format=yuva420p,setsar=1[{label}s]"
+            )
             drawn = f"{label}s"
         else:
-            parts.append(scale_into(band, zone, source) + f"[{label}s]")
+            parts.append(
+                scale_into(
+                    band, zone, source,
+                    reframe_zoom=template.reframe_zoom,
+                    reframe_pan_x=template.reframe_pan_x,
+                    reframe_pan_y=template.reframe_pan_y,
+                ) + f"[{label}s]"
+            )
             drawn = f"{label}s"
             if zone.corner_radius > 0:
                 mask_label = f"m{index}"
@@ -834,7 +821,6 @@ def from_dict(data: dict[str, Any], *, name: str | None = None) -> Template:
             "frame_at",
             "fit",
             "color",
-            "plate_image",
             "margin_top",
             "margin_bottom",
             "margin_left",
@@ -1006,13 +992,5 @@ def describe(template: Template, width: int, height: int) -> str:
                 f"           texto ancorado em ({x},{y}) an={an} "
                 f"size={band.zone.text_size:.3f} align={band.zone.text_align}"
                 f"/{band.zone.text_valign}"
-            )
-        if band.zone.plate_image:
-            # The plate is a file, not a colour, so the colour alone no longer
-            # describes the band: saying which file the render will read is the
-            # difference between a useful summary and a misleading one.
-            lines.append(
-                f"           placa={band.zone.plate_image} "
-                f"fit={band.zone.fit} (cor {band.zone.color} no letterbox)"
             )
     return "\n".join(lines)

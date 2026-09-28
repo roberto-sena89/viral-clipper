@@ -344,51 +344,6 @@ text_dx = 0.0              # nudge, share of the frame WIDTH
 text_dy = 0.0              # nudge, share of the frame HEIGHT
 ```
 
-`plate_image` puts a still where the flat colour would go — a paper texture, a
-paint stroke, a logo. It replaces the plate rather than sitting on top of it,
-and `fit` means the same thing it means on an `image` zone: `cover` (the
-default) fills the band and crops the overflow, `contain` keeps the whole
-picture and lets `color` fill the letterbox. The path is read from the output
-directory, like an `image` zone's `source`:
-
-```toml
-[[zones]]
-kind = "text"
-fraction = 0.16
-color = "black"           # only shows in the letterbox when fit = "contain"
-plate_image = "web/fundo titulo/1.jpg"
-fit = "cover"
-text = "ISSO AQUI VAI VIRALIZAR"
-text_size = 0.03
-```
-
-A plate file that cannot be found is a warning, not a failure: the band falls
-back to `color`. The `web` templates page offers the ready-made plates in
-`web/fundo titulo/` — dropping a file in that folder is what adds it to the
-picker, no code change. Both kinds that paint a plate (`solid` and `text`)
-accept the key; the others refuse it rather than loading a key that does
-nothing.
-
-### Framing the plate
-
-A plate is a still inside the band, so it takes the same `zoom`/`pan_x`/`pan_y`
-as an `image` zone — the same keys, the same meaning, the same filter. The
-templates page exposes them under **Ajustar posição**: drag the point on the pad
-(or use the arrow keys, `Shift` for bigger steps) and set the zoom. What lands
-in the file is the framing, not the plate's own vocabulary:
-
-```toml
-plate_image = "web/fundo titulo/1.jpg"
-zoom = 1.4          # >= 1; magnifies around the pan point
-pan_x = 0.25        # 0..1; which part of the overflow stays in frame
-pan_y = 0.75
-```
-
-`cover` is what makes framing matter: the plate is wider than the band, so there
-is overflow to slide through. `contain` shows the whole plate and the engine
-ignores all three keys — the page greys the pad out rather than writing values
-the render would drop.
-
 Built-ins ship with the tool:
 
 ```bash
@@ -463,27 +418,9 @@ That is 3 x 2 = **6 renders per clip**, each named
 re-scored: the section download happens once per window and only the encode
 repeats.
 
-A browser wizard for building templates (with a live 9:16 preview) is served at
-`http://127.0.0.1:7755/templates` when the web UI is running. The preview is
-editable: drag an item to move it, arrow keys nudge it by 1 px (Shift = 10), and
-a crosshair follows its centre and snaps to the band centre and the frame
-centre. For the `text` zone every path writes the same `text_dx`/`text_dy` the
-engine reads, so a nudge in the preview survives into the downloaded `.toml`.
-Its size sits next to the field where the words are typed — a slider plus three
-ready sizes, the largest being the model's own (the biggest body that still fits
-its band) — and all three controls write the same `text_size` the engine burns.
-The same section carries the band's own plate: its height, its colour, and the
-**Fundo da placa** picker with the files from `web/fundo titulo/`. Picking one
-reveals **Ajustar posição**, a pad where the point is dragged (or moved with the
-arrow keys, `Shift` for bigger steps) to write `pan_x`/`pan_y` plus a `zoom`
-slider — the same keys an `image` zone carries, so the crop you set in the page
-is the crop in the file. `contain` greys the pad out instead of writing values
-the render would drop.
-
-Two platform chrome sets sit over the preview (TikTok's rail and header, the
-Instagram one), and the stage's `data-platform` picks which is visible. They are
-**illustration, not content**: the switch changes what surrounds the frame, and
-no template key comes out of it.
+Templates are `.toml` files (see `templates/meme-pov.toml` and the
+`### Templates` section above): write one by hand or by another tool and pass
+it with `--template`. The engine reads it directly — there is no build step.
 
 Run `python -m viralclipper --help` for the full list.
 
@@ -724,31 +661,6 @@ The server serves `web/index.html` and exposes:
   lines, or `{"error": ...}`.
 - `GET /status` — current queue and generated clips.
 - `GET /clips/<relpath>` — serves a rendered clip from `output/`.
-- `GET /templates` — the template wizard (`web/templates.html`), an 8-step
-  editor with a live 9:16 preview that writes a `.toml` and the matching
-  command. The preview recomputes the zone geometry with the same rules as
-  `template.plan_bands`, and `tests/test_web_server.py` fails if the page's
-  catalog drifts from the engine's. Its canvas is an editor: items are dragged
-  in place, nudged with the arrow keys or the H/V fields, and a `text` zone is
-  typed straight onto the preview.
-- Step 2, **Cores da frase**, is a palette for the central phrase: eight named
-  colours plus a free field, all writing the same `text_color` the zone editor
-  edits, so the preview, the gallery card and the `.toml` move together. What it
-  adds over an `<input type="color">` is the **contrast readout**: the ratio is
-  measured against the *plate* (the background the phrase is burned on), using
-  the WCAG formula, and 4.5:1 / 3:1 are the two floors the label names. With an
-  image plate there is no known background, and the tab says so instead of
-  printing a number it cannot justify. The whole section hides on formats with
-  no text zone — there is no phrase to colour, and a live control that writes
-  where the preview does not read is an invisible adjustment.
-- `GET /templates/catalog` — the presets, zone kinds and built-in templates, read
-  from `viralclipper` rather than duplicated in the page.
-- `GET /templates/plates` — the ready-made text plates in `web/fundo titulo/`,
-  each with its real pixel size. The list is **read from the folder**, so
-  dropping an image in it is what adds it to the picker; a list written in the
-  page would be a second truth to keep in step. The thumbnails are served by the
-  same static route as the rest of `web/`, so the preview shows the very bytes
-  the render will read.
 - `GET /scrap` — the scrap page (`web/scrap.html`): expand a link or an account
   feed into a list of downloadable videos, pick one, and hand it to the
   clipper. `POST /scrap` runs the search; `GET /scrap/thumb?i=N` serves the
@@ -883,13 +795,12 @@ A fake can still lie about the process boundary, so the render tests also run th
 task through a pickle round trip before handing it to the pool — that is what
 catches a parent reading its own unmodified copy instead of the worker's result.
 
-Seven scripts go one level deeper against real binaries:
+Six scripts go one level deeper against real binaries:
 
 ```powershell
 python smoke_test.py --threads 2     # analysis, selection, render, report
 python reframe_check.py              # frame extraction + the real detector
 python band_parity_check.py          # zone geometry, one rendered frame per layout
-python placa_check.py                # a text band with a plate, sampled by pixel
 python cache_e2e_test.py --model tiny  # transcript cache round trip
 python bench_transcribe.py --wav a.wav # throughput per checkpoint
 python ig_session_check.py           # --ig-session -> jar -> Cookie header
@@ -905,15 +816,6 @@ layouts, renders one frame with four distinguishable colours (background, text
 plate, clip, still) and compares it with the band plan row by row and column by
 column. It exits non-zero on a single wrong pixel, so it is the check to run
 after touching `plan_bands`.
-
-`placa_check.py` asks the same question about `plate_image`, and the answer is
-by **pixel sample** rather than by exit code — ffmpeg leaves 0 even when a
-filter did nothing, so the only way to know the plate reached the file is to
-read a 16x16 block back out of it. It renders at 1080x1920, 720x1280 and
-1440x2560, and it checks that `pan_x`/`pan_y`/`zoom` really move the plate in
-the file (two pan corners and the zoomed frame must differ by more than the
-sensor noise) with a sentinel band colour that exists in neither model, so a
-missing plate fails loudly instead of reading as "the right colour".
 
 `ig_session_check.py` runs `run_profile_mode` against a fake Instagram with
 `urlopen` patched out, and asserts the pasted session reaches the `Cookie`

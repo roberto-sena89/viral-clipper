@@ -804,6 +804,21 @@
   // navegador, economia de energia), e video parado parece imagem quebrada —
   // entao a primeira interacao do usuario tenta de novo, que e exatamente o
   // momento em que a politica de autoplay deixa de valer.
+  //
+  // O card TOCA sempre, sem excecao, e e uma decisao, nao um esquecimento.
+  // Duas versoes anteriores paravam o video — uma quando a maquina pedia
+  // movimento reduzido, outra quando o card saia do viewport — e as duas
+  // falhavam do mesmo jeito: com `data-live` em 0 o CSS deixa o video com
+  // `opacity: 0`, entao "parar" nao deixava um quadro parado, deixava o
+  // ESQUEMA. Quem tem a animacao do Windows desligada (MinAnimate=0, que e o
+  // que o Chromium le como `prefers-reduced-motion: reduce`) via os tres cards
+  // vazios, com o ▶ e o gradiente, e nenhuma pista do motivo.
+  //
+  // A economia de CPU de pausar fora da tela era real, e foi descartada de
+  // proposito: o elemento e decorativo (`aria-hidden`), mudo e pequeno, e o
+  // custo de o card nao mostrar o produto e maior que o de decodificar tres
+  // loops curtos enquanto a pagina esta aberta. Quem trava isso e
+  // `test_the_clip_is_never_paused`, e o nome dele e literal.
   (function initHeroPreviews() {
     const gestures = ['pointerdown', 'keydown', 'touchstart', 'scroll'];
 
@@ -817,8 +832,8 @@
       };
 
       // Os gestos so ficam escutando enquanto o video esta parado: sem
-      // interacao o navegador recusa o autoplay, e depois de aceitar nao ha
-      // nada a destravar. Sao rearmados no pause — economia de energia, aba em
+      // interacao o navegador recusa o autoplay, e depois de aceito nao ha
+      // nada a destruar. Sao rearmados no pause — economia de energia, aba em
       // segundo plano e falta de foco pausam midia, e um card que parou por
       // conta propria nao pode voltar por conta propria: ele recebe uma nova
       // chance no proximo toque, em vez de ficar estatico para sempre.
@@ -850,7 +865,6 @@
   })();
 
   // ---------- seletor de pasta de saída ----------
-  // ---------- seletor de pasta de saída ----------
   // <input type="file" webkitdirectory> não serve: o navegador esconde o
   // caminho real, e quem escreve os clips é o servidor. Então o clique abre
   // o diálogo nativo na máquina do servidor (tkinter) e o caminho escolhido
@@ -860,6 +874,19 @@
     const old = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Aguardando…';
+    // Sem abort: o request vive enquanto o diálogo está aberto, e uma escolha
+    // demorada é legítima — matar o fetch no meio deixaria o servidor com o
+    // diálogo aberto e o caminho perdido. O que o estado precisa é mostrar
+    // que está vivo: o contador tica, e aos 45s a dica diz onde procurar a
+    // janela (o caso real de "travou" foi o diálogo aberto atrás do navegador).
+    let secs = 0;
+    const tick = setInterval(() => {
+      secs += 1;
+      btn.textContent = 'Aguardando… ' + secs + 's';
+      if (secs === 45) {
+        toast('O diálogo segue aberto no servidor. Se a janela não apareceu, ela deve estar atrás de outra — confira também outro monitor.');
+      }
+    }, 1000);
     try {
       const r = await api('/browse/native');
       if (r.error) {
@@ -873,6 +900,7 @@
       $('#output').value = r.path;
       toast('Pasta de saída: ' + r.path);
     } finally {
+      clearInterval(tick);
       btn.disabled = false;
       btn.textContent = old;
     }
@@ -917,7 +945,10 @@
     log('# modo lote (CLI):\npython -m viralclipper --batch urls.txt -o output --retry-failed');
   });
   $('#btn-docs').addEventListener('click', () => {
-    window.open('https://github.com/roberto-sena89/viral-clipper#readme', '_blank');
+    // Local: o README do repo renderizado pelo próprio servidor. O link pro
+    // GitHub dava 404 (repo privado/renomeado) — a única ajuda do produto
+    // não pode depender de endereço externo.
+    window.open('/docs', '_blank');
   });
   $('#hero-cta').addEventListener('click', () => {
     document.getElementById('config').scrollIntoView({ behavior: 'smooth' });

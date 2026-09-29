@@ -9,15 +9,19 @@ Endpoints:
   GET  /status      -> {jobs, clips} current state
   POST /run         -> {options: {...}, plan_only: bool} -> {clips, log_lines} | {error}
   GET  /clips/<id>  -> static clip file from the output dir
+  GET  /browse/native -> OS folder dialog on the server machine
 """
 
 from __future__ import annotations
 
+import ctypes
 import html
 import json
+import os
 import threading
 import unicodedata
 import webbrowser
+from ctypes import wintypes
 from http import server as http_server
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
@@ -311,6 +315,7 @@ _ASSET_TYPES = {
     ".webp": "image/webp",
     ".svg": "image/svg+xml",
     ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
 }
 
 
@@ -722,6 +727,156 @@ def esc(text: object) -> str:
     rest of the string become markup.
     """
     return html.escape(str(text if text is not None else ""), quote=True)
+
+
+def _md_inline(text: str) -> str:
+    """Inline markdown → HTML. The text arrives escaped, so the patterns only
+    see literal backticks/asterisks/brackets — never markup to preserve."""
+    out = esc(text)
+    out = re.sub(r"`([^`]+)`", lambda m: "<code>%s</code>" % m.group(1), out)
+    out = re.sub(r"\*\*([^*]+)\*\*", lambda m: "<strong>%s</strong>" % m.group(1), out)
+    out = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)",
+                 lambda m: '<a href="%s">%s</a>' % (m.group(2), m.group(1)), out)
+    return out
+
+
+def _md_to_html(md: str) -> str:
+    """Render the README subset this repo actually uses: ATX headings, fenced
+    code, pipe tables, dash/numbered lists, paragraphs.
+
+    Deliberately not a full markdown engine — no dependency, no build step,
+    and the surface is the README itself (a bug here would hide the docs the
+    button sends you to). Everything is escaped before any tag is added, so a
+    README line containing ``<script>`` renders as text.
+    """
+    lines = md.splitlines()
+    out: list[str] = []
+    para: list[str] = []
+    list_tag: str | None = None
+
+    def flush_para() -> None:
+        if para:
+            out.append("<p>" + _md_inline(" ".join(para)) + "</p>")
+            para.clear()
+
+    def close_list() -> None:
+        nonlocal list_tag
+        if list_tag:
+            out.append("</%s>" % list_tag)
+            list_tag = None
+
+    def open_list(tag: str) -> None:
+        nonlocal list_tag
+        if list_tag != tag:
+            close_list()
+            list_tag = tag
+            out.append("<%s>" % tag)
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        if line.startswith("```"):
+            flush_para()
+            close_list()
+            i += 1
+            block: list[str] = []
+            while i < len(lines) and not lines[i].startswith("```"):
+                block.append(lines[i])
+                i += 1
+            i += 1  # closing fence (or EOF)
+            out.append("<pre><code>" + esc("\n".join(block)) + "</code></pre>")
+            continue
+
+        heading = re.match(r"^(#{1,6})\s+(.*)$", line)
+        if heading:
+            flush_para()
+            close_list()
+            level = len(heading.group(1))
+            out.append("<h%d>%s</h%d>" % (level, _md_inline(heading.group(2)), level))
+            i += 1
+            continue
+
+        if (line.lstrip().startswith("|") and i + 1 < len(lines)
+                and re.match(r"^\s*\|[\s:|-]+\|\s*$", lines[i + 1])
+                and "-" in lines[i + 1]):
+            flush_para()
+            close_list()
+
+            def cells(row: str) -> list[str]:
+                return [c.strip() for c in row.strip().strip("|").split("|")]
+
+            out.append("<table><thead><tr>"
+                       + "".join("<th>%s</th>" % _md_inline(c) for c in cells(line))
+                       + "</tr></thead><tbody>")
+            i += 2
+            while i < len(lines) and lines[i].lstrip().startswith("|"):
+                out.append("<tr>"
+                           + "".join("<td>%s</td>" % _md_inline(c) for c in cells(lines[i]))
+                           + "</tr>")
+                i += 1
+            out.append("</tbody></table>")
+            continue
+
+        if re.match(r"^- \S", line):
+            flush_para()
+            open_list("ul")
+            out.append("<li>" + _md_inline(line[2:]) + "</li>")
+            i += 1
+            continue
+        ordered = re.match(r"^\d+\.\s+(.*)$", line)
+        if ordered:
+            flush_para()
+            open_list("ol")
+            out.append("<li>" + _md_inline(ordered.group(1)) + "</li>")
+            i += 1
+            continue
+
+        if not line.strip():
+            flush_para()
+            close_list()
+            i += 1
+            continue
+
+        para.append(line.strip())
+        i += 1
+
+    flush_para()
+    close_list()
+    return "\n".join(out)
+
+
+def _docs_page(md: str) -> str:
+    """README as a standalone page: same dark shell as the panel, no external
+    font (docs must render offline — that is what the button is for)."""
+    return (
+        "<!DOCTYPE html>\n"
+        '<html lang="pt-BR"><head><meta charset="UTF-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
+        "<title>Documentação · Viral Clipper</title>\n"
+        "<style>\n"
+        "body{margin:0;background:#0b0d12;color:#f3f4f6;"
+        "font:16px/1.65 -apple-system,'Segoe UI',Roboto,Arial,sans-serif;}\n"
+        ".doc-bar{position:sticky;top:0;background:#14171f;border-bottom:1px solid #262b36;"
+        "padding:12px 20px;font-size:.9rem;z-index:5;}\n"
+        ".doc-bar a{color:#a5b4fc;text-decoration:none;}\n"
+        ".doc-bar a:hover{text-decoration:underline;}\n"
+        ".doc{max-width:860px;margin:0 auto;padding:28px 20px 60px;}\n"
+        "h1,h2,h3{line-height:1.25;} h1{font-size:1.9rem;}\n"
+        "h2{font-size:1.35rem;margin-top:2em;border-bottom:1px solid #262b36;padding-bottom:.3em;}\n"
+        "a{color:#a5b4fc;} code{background:#1b1f2a;border:1px solid #262b36;border-radius:5px;"
+        "padding:.1em .35em;font:.9em Consolas,'Courier New',monospace;}\n"
+        "pre{background:#14171f;border:1px solid #262b36;border-radius:8px;padding:14px 16px;"
+        "overflow-x:auto;} pre code{background:none;border:0;padding:0;}\n"
+        "table{border-collapse:collapse;width:100%;font-size:.92rem;}\n"
+        "th,td{border:1px solid #262b36;padding:7px 10px;text-align:left;vertical-align:top;}\n"
+        "th{background:#14171f;} tr:nth-child(even) td{background:rgba(22,26,35,.5);}\n"
+        "li{margin:.25em 0;} strong{color:#f3f4f6;}\n"
+        "</style></head><body>\n"
+        '<div class="doc-bar"><a href="/">&larr; Voltar ao painel</a></div>\n'
+        '<main class="doc">' + _md_to_html(md) + "</main>\n"
+        "</body></html>"
+    )
 
 
 #: Thumbnail bytes are proxied, not hot-linked: Instagram and YouTube serve
@@ -1206,6 +1361,155 @@ def list_library(base: Path, limit: int = 200) -> list[dict]:
     return found[:limit]
 
 
+def _tk_askdirectory() -> str:
+    """Open the OS folder dialog on the server machine, return the path.
+
+    The browser sandbox never reveals real local paths to the page, so no
+    HTML picker can feed the server a folder. But the server runs on the
+    user's own machine — tkinter (stdlib) opens the native dialog there, and
+    the chosen path comes back through this endpoint.
+    """
+    import tkinter
+    from tkinter import filedialog
+
+    root = tkinter.Tk()
+    try:
+        root.withdraw()
+        root.attributes("-topmost", True)
+        return filedialog.askdirectory(title="Escolher pasta de saída")
+    finally:
+        try:
+            root.destroy()
+        except Exception:  # noqa: BLE001 - teardown must not mask the choice
+            pass
+
+
+class _BROWSEINFOW(ctypes.Structure):
+    """Param block for ``SHBrowseForFolderW``. Module level so tests build it.
+
+    A plain unicode array does NOT fit the ``LPWSTR`` field — assigning it
+    raises ``incompatible types`` — hence the :func:`ctypes.cast` in
+    :func:`_browse_info`, which is exactly the line that broke the picker.
+    """
+
+    _fields_ = [
+        ("hwndOwner", wintypes.HWND),
+        ("pidlRoot", ctypes.c_void_p),
+        ("pszDisplayName", wintypes.LPWSTR),
+        ("lpszTitle", wintypes.LPCWSTR),
+        ("ulFlags", wintypes.UINT),
+        ("lpfn", ctypes.c_void_p),
+        ("lParam", ctypes.c_void_p),
+        ("iImage", ctypes.c_int),
+    ]
+
+
+_BFFM_INITIALIZED = 1
+
+
+def _browse_initialized(hwnd, msg, _lp, _data):
+    """Bring the folder dialog forward the moment it opens.
+
+    Without an owner it lands BEHIND a maximized browser: the page stays on
+    "Aguardando…" and there is nothing to choose. A plain TOPMOST is refused
+    here (SetWindowPos returns 0), so this uses the attach-input trick — the
+    user just clicked for this dialog, which is what makes stealing foreground
+    legitimate — plus a taskbar flash as fallback. It dies with the choice,
+    so nothing is forced afterwards.
+    """
+    if msg != _BFFM_INITIALIZED:
+        return 0
+    try:
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        if user32.GetForegroundWindow() != hwnd:
+            cur = kernel32.GetCurrentThreadId()
+            ftid = user32.GetWindowThreadProcessId(user32.GetForegroundWindow(), None)
+            user32.AttachThreadInput(cur, ftid, True)
+            try:
+                user32.SetForegroundWindow(hwnd)
+                user32.BringWindowToTop(hwnd)
+            finally:
+                user32.AttachThreadInput(cur, ftid, False)
+        user32.FlashWindowW(hwnd, True)
+    except Exception:  # noqa: BLE001 - a missed flash must not kill the dialog
+        pass
+    return 0
+
+
+#: Single callback instance: the struct only keeps the address, so a local
+#: would be garbage-collected mid-dialog and the callback would crash it.
+_BROWSE_CALLBACK = ctypes.WINFUNCTYPE(
+    ctypes.c_int, wintypes.HWND, wintypes.UINT, wintypes.LPARAM, wintypes.LPARAM
+)(_browse_initialized)
+
+
+def _browse_info(buf, title: str) -> "_BROWSEINFOW":
+    """Fill the dialog param block: display buffer (cast), title, flags."""
+    info = _BROWSEINFOW()
+    info.hwndOwner = None
+    info.pszDisplayName = ctypes.cast(buf, wintypes.LPWSTR)
+    info.lpszTitle = title
+    info.ulFlags = 0x00000001 | 0x00000040  # BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE
+    info.lpfn = ctypes.cast(_BROWSE_CALLBACK, ctypes.c_void_p).value
+    return info
+
+
+def _win32_askdirectory() -> str:
+    """Same native dialog via Win32, for Pythons without tkinter (venvs).
+
+    ``ctypes`` is stdlib everywhere, so this needs no install: it calls
+    ``SHBrowseForFolderW`` straight from shell32. Empty string = cancelled,
+    same contract as the tkinter path above.
+    """
+    shell32 = ctypes.windll.shell32
+    shell32.SHBrowseForFolderW.restype = ctypes.c_void_p
+    shell32.SHGetPathFromIDListW.restype = wintypes.BOOL
+    ole32 = ctypes.windll.ole32
+    buf = ctypes.create_unicode_buffer(260)
+    info = _browse_info(buf, "Escolher pasta de saída")
+    ole32.CoInitialize(None)
+    try:
+        pidl = shell32.SHBrowseForFolderW(ctypes.byref(info))
+        if not pidl:
+            return ""
+        try:
+            out = ctypes.create_unicode_buffer(32767)
+            return out.value if shell32.SHGetPathFromIDListW(pidl, out) else ""
+        finally:
+            ole32.CoTaskMemFree(pidl)
+    finally:
+        ole32.CoUninitialize()
+
+
+def _native_askdirectory() -> str:
+    """The OS dialog by whatever means this Python has: tkinter, else Win32."""
+    try:
+        return _tk_askdirectory()
+    except ImportError:
+        pass
+    if os.name != "nt":
+        raise ImportError("tkinter indisponivel neste Python")
+    return _win32_askdirectory()
+
+
+def _browse_native(ask=None) -> dict:
+    """Run the native folder dialog and answer with the chosen path.
+
+    ``ask`` is injected by the tests so they never pop a real dialog:
+    production passes nothing and gets :func:`_native_askdirectory`.
+    """
+    try:
+        path = (ask or _native_askdirectory)()
+    except ImportError:
+        return {"error": "nenhum dialogo disponivel neste Python"}
+    except Exception as exc:  # noqa: BLE001 - headless server
+        return {"error": f"dialogo indisponivel: {exc}"}
+    if not path:
+        return {"cancelled": True}
+    return {"path": str(path)}
+
+
 class UiServer(http_server.ThreadingHTTPServer):
     """HTTP server that refuses a silent duplicate bind on Windows.
 
@@ -1236,15 +1540,18 @@ class Handler(http_server.BaseHTTPRequestHandler):
     # blank every image the day a host changes. The styles and scripts are
     # external files served from 'self', so script-src needs no 'unsafe-inline';
     # it stays on style-src because the markup still carries inline style
-    # attributes.
+    # attributes. The font is self-hosted too (web/fonts), so no fonts origin
+    # is allowlisted — the page renders with zero external requests.
     CSP = (
         "default-src 'self'; "
         "img-src 'self' data:; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "font-src 'self'; "
         "script-src 'self'; "
         "connect-src 'self'; "
-        "media-src 'self' blob:"
+        "media-src 'self' blob:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'none'"
     )
 
     def end_headers(self) -> None:
@@ -1259,14 +1566,42 @@ class Handler(http_server.BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        # State, not content: /status and the progress endpoints are the same
+        # URL with different bytes a second later, and a cached 200 would show
+        # a job as "running" after it already finished.
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_file(self, data: bytes, content_type: str, code: int = 200) -> None:
+    #: Freshness for files whose name never changes (style.css, 1.mp4): five
+    #: minutes absorbs a burst of reloads during a session, and a revalidation
+    #: via ETag still picks up an edit immediately after.
+    _CACHE_ASSET = "public, max-age=300"
+    #: HTML is assembled per request and is what the app version lives in.
+    _CACHE_PAGE = "no-cache"
+
+    @staticmethod
+    def _etag_for(path: Path) -> str:
+        """Validator from mtime+size: no hashing of 10 MB videos per request."""
+        st = path.stat()
+        return '"%x-%x"' % (st.st_mtime_ns, st.st_size)
+
+    def _send_file(self, data: bytes, content_type: str, code: int = 200,
+                   cache: str | None = None, etag: str | None = None) -> None:
         # Range support so the <video> elements can seek and lazy-load: the
         # browser asks for "bytes=start-" chunks instead of whole files.
         range_header = self.headers.get("Range")
+        # Revalidation first: without it every reload re-downloaded all assets
+        # (≈10 MB of hero videos included) because no response ever carried a
+        # validator the browser could ask about.
+        if etag and self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            if cache:
+                self.send_header("Cache-Control", cache)
+            self.send_header("ETag", etag)
+            self.end_headers()
+            return
         if code == 200 and range_header and range_header.startswith("bytes="):
             start_str, _, end_str = range_header[len("bytes="):].partition("-")
             try:
@@ -1280,6 +1615,10 @@ class Handler(http_server.BaseHTTPRequestHandler):
                 self.send_response(206)
                 self.send_header("Content-Type", content_type)
                 self.send_header("Accept-Ranges", "bytes")
+                if cache:
+                    self.send_header("Cache-Control", cache)
+                if etag:
+                    self.send_header("ETag", etag)
                 self.send_header("Content-Range", f"bytes {start}-{end}/{len(data)}")
                 self.send_header("Content-Length", str(len(chunk)))
                 self.end_headers()
@@ -1288,6 +1627,10 @@ class Handler(http_server.BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Accept-Ranges", "bytes")
+        if cache:
+            self.send_header("Cache-Control", cache)
+        if etag:
+            self.send_header("ETag", etag)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -1297,16 +1640,30 @@ class Handler(http_server.BaseHTTPRequestHandler):
         if path == "/" or path == "/index.html":
             index = WEB_DIR / "index.html"
             if index.exists():
-                self._send_file(index.read_bytes(), "text/html; charset=utf-8")
+                self._send_file(index.read_bytes(), "text/html; charset=utf-8",
+                                cache=self._CACHE_PAGE, etag=self._etag_for(index))
             else:
                 self._send_json({"error": "index.html missing"}, 404)
             return
         if path in {"/scrap", "/scrap.html"}:
             page = WEB_DIR / "scrap.html"
             if page.exists():
-                self._send_file(page.read_bytes(), "text/html; charset=utf-8")
+                self._send_file(page.read_bytes(), "text/html; charset=utf-8",
+                                cache=self._CACHE_PAGE, etag=self._etag_for(page))
             else:
                 self._send_json({"error": "scrap.html missing"}, 404)
+            return
+        if path == "/docs":
+            # The README, rendered here instead of sent to GitHub: the old
+            # button opened a repo URL that 404s (private/renamed), so the
+            # one help button in the product led to nothing.
+            readme = REPO_ROOT / "README.md"
+            if readme.exists():
+                body = _docs_page(readme.read_text(encoding="utf-8"))
+                self._send_file(body.encode("utf-8"), "text/html; charset=utf-8",
+                                cache=self._CACHE_PAGE, etag=self._etag_for(readme))
+            else:
+                self._send_json({"error": "README.md missing"}, 404)
             return
         if path == "/scrap/thumb":
             # The <img> tag hits this directly: a GET, not the POST above.
@@ -1336,7 +1693,8 @@ class Handler(http_server.BaseHTTPRequestHandler):
             if target is None or not target.is_file():
                 self._send_json({"error": "no thumbnail"}, 404)
                 return
-            self._send_file(target.read_bytes(), "image/jpeg")
+            self._send_file(target.read_bytes(), "image/jpeg",
+                            cache=self._CACHE_ASSET, etag=self._etag_for(target))
             return
         if path.startswith("/thumb/"):
             # Cached thumbnail bytes. The name is validated against the cache
@@ -1351,7 +1709,8 @@ class Handler(http_server.BaseHTTPRequestHandler):
                 self._send_json({"error": "not found"}, 404)
                 return
             if candidate.is_file():
-                self._send_file(candidate.read_bytes(), "image/jpeg")
+                self._send_file(candidate.read_bytes(), "image/jpeg",
+                                cache=self._CACHE_ASSET, etag=self._etag_for(candidate))
             else:
                 self._send_json({"error": "not found"}, 404)
             return
@@ -1379,6 +1738,12 @@ class Handler(http_server.BaseHTTPRequestHandler):
             base = (REPO_ROOT / "output").resolve()
             self._send_json({"files": list_library(base)})
             return
+        if path == "/browse/native":
+            # Native OS dialog on the server machine: the only picker that
+            # returns a real local path, since the browser hides them all.
+            # The request hangs while the dialog is open — same as /run.
+            self._send_json(_browse_native())
+            return
         if path.startswith("/clips/"):
             # Serve a rendered clip from the output dir. The UI passes the
             # relative path it received from /run. The browser percent-encodes
@@ -1393,17 +1758,27 @@ class Handler(http_server.BaseHTTPRequestHandler):
                 self._send_json({"error": "not found"}, 404)
                 return
             ctype = "video/mp4" if candidate.suffix.lower() == ".mp4" else "application/octet-stream"
-            self._send_file(candidate.read_bytes(), ctype)
+            self._send_file(candidate.read_bytes(), ctype,
+                            cache=self._CACHE_ASSET, etag=self._etag_for(candidate))
             return
         # Static assets inside web/ (also percent-decoded, same reason).
         asset = resolve_within(WEB_DIR, unquote(path.lstrip("/")))
         if asset is not None:
+            # Sufixos que as paginas carregam, e nada mais: `server.py` mora em
+            # web/ junto com o CSS, entao sem este corte `GET /server.py` — e
+            # qualquer `__pycache__/*.pyc` que uma edicao deixe para tras —
+            # sairia servido pelo mesmo ramo que serve os assets. 404 igual a
+            # arquivo inexistente: a resposta nao confirma o que existe.
+            if asset.suffix.lower() not in _ASSET_TYPES:
+                self._send_json({"error": "not found"}, 404)
+                return
             # The pages keep their CSS, JS and preview media in sibling files,
             # so the type has to be named correctly: nosniff is on, and a
             # script served as octet-stream is refused by the browser while the
             # hero video just never plays.
             ctype = asset_content_type(asset)
-            self._send_file(asset.read_bytes(), ctype)
+            self._send_file(asset.read_bytes(), ctype,
+                            cache=self._CACHE_ASSET, etag=self._etag_for(asset))
             return
         self._send_json({"error": "not found"}, 404)
 
@@ -1481,7 +1856,8 @@ class Handler(http_server.BaseHTTPRequestHandler):
         if not candidate.is_file():
             self._send_json({"error": "no thumbnail"}, 404)
             return
-        self._send_file(candidate.read_bytes(), "image/jpeg")
+        self._send_file(candidate.read_bytes(), "image/jpeg",
+                        cache=self._CACHE_ASSET, etag=self._etag_for(candidate))
 
     def _handle_scrap(self, payload: dict) -> None:
         """Answer the ViceScrap search box.

@@ -1972,6 +1972,46 @@ class SharedStyleSheetTests(unittest.TestCase):
             d.update(self.declaracoes(self.css(nome), ":root"))
         return d
 
+    def test_favicon_has_a_real_brand_mark(self):
+        """O favicon nao e o play generico: a marca mora em `web/favicon.svg`.
+
+        Desenho geometrico (clipe 9:16 renderizado, sem letra): o teste mede a
+        semantica que distingue marca de placeholder — o retangulo do clipe e o
+        triangulo do play juntos. Um `VC` em texto, uma letra so, ou um play
+        avulso num retangulo chapado continuam sendo generico, e o teste recusa
+        os tres pela mesma razao: marca e o que NAO se confunde com UI.
+        """
+        svg = (server.WEB_DIR / "favicon.svg").read_text(encoding="utf-8")
+        self.assertIn("<svg", svg)
+        self.assertNotIn(">VC<", svg, "a marca voltou a ser texto")
+        # O clipe: retangulo 9:16 com cantos suaves. Nao e o retangulo externo
+        # do favicon (esse e o fundo): o que importa e a proporcao do interno.
+        internos = re.findall(r"<rect[^>]*>", svg)
+        formas = "".join(internos)
+        self.assertIn("rx=", formas, "o clipe nao tem cantos suaves")
+        self.assertIn("<path", svg, "o play sumiu do favicon")
+
+    def test_every_brand_mark_shows_the_icon_not_the_letters(self):
+        """Os 4 `.brand-mark` carregam o SVG, nao o texto `VC`.
+
+        Ha dois por pagina (cabecalho e rail). Se um terceiro aparecer ou o
+        texto voltar, e porque a marca foi recolocada a mao: este teste conta
+        certo os dois.
+        """
+        for pagina, total in (("index.html", 2), ("scrap.html", 2)):
+            with self.subTest(pagina=pagina):
+                html = (server.WEB_DIR / pagina).read_text(encoding="utf-8")
+                self.assertNotIn(">VC<", html, f"{pagina} traz o VC em texto")
+                imgs = re.findall(r'class="brand-mark"[^>]*><img[^>]*>', html)
+                self.assertEqual(len(imgs), total,
+                                 f"{pagina}: esperava {total} marcas, achei {len(imgs)}")
+                for img in imgs:
+                    self.assertIn("/favicon.svg", img,
+                                  "a marca aponta para outro arquivo")
+                    self.assertIn('alt=""', img,
+                                  "a imagem decorativa ganhou nome: o produto "
+                                  "ja esta escrito no elemento vizinho")
+
     def test_the_shared_sheet_is_linked_first_by_both_pages(self):
         """As duas paginas carregam o compartilhado, e ele PRIMEIRO.
 

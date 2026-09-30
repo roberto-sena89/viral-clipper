@@ -1012,12 +1012,25 @@
     toast('Modo lote: use python -m viralclipper --batch urls.txt -o output');
     log('# modo lote (CLI):\npython -m viralclipper --batch urls.txt -o output --retry-failed');
   });
-  $('#btn-docs').addEventListener('click', () => {
+  const abrirDocs = () => {
     // Local: o README do repo renderizado pelo próprio servidor. O link pro
     // GitHub dava 404 (repo privado/renomeado) — a única ajuda do produto
     // não pode depender de endereço externo.
     window.open('/docs', '_blank');
-  });
+  };
+  $('#btn-docs').addEventListener('click', abrirDocs);
+  // O rodape repete os mesmos destinos do rail: quem chega ao fim da pagina
+  // (ou esta no celular, onde o rail virou hamburguer) precisa de uma saida
+  // ali. Os elementos vivem no HTML com id proprio; o JS so liga a acao, para
+  // a lista de rotas continuar num lugar so.
+  const irPara = (rota) => { window.location.href = rota; };
+  const liga = (id, acao) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', acao);
+  };
+  liga('btn-docs-foot', abrirDocs);
+  liga('btn-rail-cortes', () => irPara('/'));
+  liga('btn-rail-scrap', () => irPara('/scrap'));
   $('#hero-cta').addEventListener('click', () => {
     document.getElementById('config').scrollIntoView({ behavior: 'smooth' });
     setTimeout(() => $('#url').focus(), 500);

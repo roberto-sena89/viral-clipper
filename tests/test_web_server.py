@@ -3143,6 +3143,135 @@ class CacheTests(unittest.TestCase):
             path.unlink()
 
 
+class FirstVisitTests(unittest.TestCase):
+    """O primeiro minuto de quem nunca viu o produto.
+
+    Cada teste daqui trava um ponto em que o visitante de primeira viagem
+    ficava sem resposta: onde esta o campo que importa, o que a espera longa
+    esta fazendo, para onde ir do rodape, e o que aparece primeiro na tela
+    estreita. Nao sao detalhes de estilo — sao as perguntas que decidem se a
+    pessoa chega a gerar um clip.
+    """
+
+    def html(self, nome: str = "index.html") -> str:
+        return (server.WEB_DIR / nome).read_text(encoding="utf-8")
+
+    def css(self, nome: str = "index.css") -> str:
+        return (server.WEB_DIR / nome).read_text(encoding="utf-8")
+
+    def test_the_url_hint_says_it_is_the_only_required_field(self):
+        """A dica da URL responde "quanto eu preciso preencher?".
+
+        Sem isso o formulario de 29 campos nao diz onde ele termina para quem
+        so quer o caminho curto, e a pessoa assume que precisa de todos.
+        """
+        html = self.html()
+        self.assertIn("único campo obrigatório", html)
+        self.assertIn('id="url-hint"', html)
+
+    def test_the_hero_promises_the_short_path(self):
+        """O lead diz que so o endereco e obrigatorio, antes do formulario."""
+        html = self.html()
+        trecho = html[html.index('class="lead"'):html.index('id="hero-cta"')]
+        self.assertIn("Só", trecho)
+        self.assertIn("padrão", trecho)
+
+    def test_the_cookies_warning_is_not_the_first_thing_read(self):
+        """O aviso de "sempre falha" mora dentro de um disclosure, e aberto.
+
+        Aberto porque o conteudo e curto e escondido vira o detalhe que a
+        pessoa precisava ter visto; dentro de um disclosure porque ele e
+        condicional — a maioria dos videos publicos nao passa por ali. As
+        duas coisas juntas: visivel, e claramente opcional.
+        """
+        html = self.html()
+        inicio = html.index('class="cookies-box"')
+        bloco = html[inicio:html.index("</details>", inicio)]
+        self.assertIn(" open>", html[inicio - 40:inicio + 60])
+        self.assertIn("Acessar vídeo restrito (opcional)", bloco)
+        # E o resumo explica que da para ignorar, antes de falar de falha.
+        self.assertLess(bloco.index("passa sem isto"), bloco.index("sempre falha"))
+
+    def test_the_cookies_summary_is_described_by_its_hint(self):
+        """O resumo tem nome e descricao: leitor de tela le as duas."""
+        html = self.html()
+        self.assertIn('id="cookies-summary"', html)
+        self.assertIn('aria-describedby="cookies-summary-hint"', html)
+
+    def test_the_transcript_card_says_it_can_be_skipped(self):
+        """O card da transcricao diz o que acontece se ficar em branco."""
+        html = self.html()
+        self.assertIn("só se já tiver uma", html)
+        self.assertIn("o próprio site transcreve", html)
+
+    def test_the_empty_states_tell_the_next_step(self):
+        """Estado vazio aponta o proximo passo, e nao um log que nao existe."""
+        html = self.html()
+        self.assertIn("Cole a URL acima", html)
+        # A galeria nao pode mandar olhar um log que ainda nao foi escrito.
+        self.assertNotIn("Verifique o log acima", html)
+
+    def test_the_footer_has_an_exit(self):
+        """O rodape oferece os mesmos destinos do rail.
+
+        Era o unico lugar da pagina sem saida. Importa sobretudo no celular,
+        onde o rail vira um hamburguer e o Scrap fica a dois toques.
+        """
+        html = self.html()
+        self.assertIn('class="footer-nav"', html)
+        for alvo in ("btn-docs-foot", "btn-rail-cortes", "btn-rail-scrap"):
+            with self.subTest(alvo=alvo):
+                self.assertIn(f'id="{alvo}"', html)
+        js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        self.assertIn("liga('btn-rail-scrap'", js)
+        self.assertIn("liga('btn-docs-foot'", js)
+
+    def test_the_headline_comes_before_the_decorative_video_on_mobile(self):
+        """No celular o H1 vem primeiro, e nao os videos decorativos.
+
+        `order: -1` empurrava o `.hero-visual` (que e `aria-hidden`, ou seja,
+        nada para leitor de tela) para cima do titulo. A primeira dobra virava
+        vitrine sem frase, e a unica linha que diz o que o site faz saia da
+        tela.
+        """
+        css = self.css()
+        inicio = css.index("@media (max-width: 960px)")
+        # O bloco vai ate a chave que FECHA a media query, e nao ate a primeira
+        # que aparece: `@media (...) {` abre, e cada seletor dentro dela abre e
+        # fecha a sua. Cortar na primeira fecharia o `.main-grid` e leria so
+        # tres linhas do bloco.
+        profundidade, fim = 0, inicio
+        for fim in range(css.index("{", inicio), len(css)):
+            if css[fim] == "{":
+                profundidade += 1
+            elif css[fim] == "}":
+                profundidade -= 1
+                if profundidade == 0:
+                    break
+        bloco = css[inicio:fim]
+        # Os comentarios saem ANTES da checagem: o proprio comentario que
+        # registra a decisao cita `order: -1` para explicar por que ele nao
+        # esta ali, e a assercao o encontrava — o teste reprovava a sua
+        # documentacao.
+        sem_comentario = re.sub(r"/\*.*?\*/", "", bloco, flags=re.S)
+        self.assertNotIn("order: -1", sem_comentario)
+        # E o comentario registra a decisao, para a linha nao voltar sozinha.
+        self.assertIn("SEM order: -1", bloco)
+
+    def test_the_step_ladder_never_shows_a_percentage(self):
+        """A escada fala em etapas; quem responde "quanto falta" e a barra.
+
+        Misturar as duas linguagens foi o defeito original: a barra parada em
+        0% durante um job de minutos parecia travamento, porque ela era a
+        unica coisa na tela tentando responder "quanto falta".
+        """
+        js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        inicio = js.index("function renderSteps")
+        corpo = js[inicio:js.index("\n  }", inicio)]
+        self.assertNotIn("%", corpo)
+        self.assertIn("data-state", corpo)
+
+
 class FrontendPolishTests(unittest.TestCase):
     """Higiene do frontend que o audit apontou e não dá para ver num F5 só.
 

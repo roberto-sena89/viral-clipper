@@ -534,7 +534,7 @@
     <p class="section-sub">Jobs enviados pela interface. O modo lote usa um manifesto SQLite retomável.</p>
     <div class="card">
       <div class="queue-list" id="queue-list">
-        <div class="empty-state">Nenhum job na fila ainda.<br>Gere clips para vê-lo aqui.</div>
+        <div class="empty-state">Nenhum job na fila ainda.<br>Cole a URL acima e clique em <strong>Gerar clips</strong>.</div>
       </div>
     </div>
   </section>
@@ -548,7 +548,7 @@
     <p class="section-sub" id="gallery-sub">Pré-visualização 9:16 dos cortes renderizados. Clique para reproduzir.</p>
     <div class="card">
       <div class="gallery" id="gallery">
-        <div class="empty-state" style="grid-column: 1 / -1;">Ainda não há clips.<br>Rodou um job e nada apareceu? Verifique o log acima.</div>
+        <div class="empty-state" style="grid-column: 1 / -1;">Ainda não há clips.<br>Os cortados pelo job aparecem aqui ao terminar.</div>
       </div>
     </div>
   </section>
@@ -574,7 +574,13 @@
 <footer>
   <div class="wrap footer-inner">
     <span>viral-clipper · interface web · CLI <code>python -m viralclipper</code></span>
-    <span>Whisper · yt-dlp · ffmpeg</span>
+    <nav class="footer-nav" aria-label="Rodapé">
+      <button class="footer-link" type="button" id="btn-docs-foot">Como usar</button>
+      <span aria-hidden="true">·</span>
+      <button class="footer-link" type="button" id="btn-rail-cortes">Cortes</button>
+      <span aria-hidden="true">·</span>
+      <button class="footer-link" type="button" id="btn-rail-scrap">Scrap</button>
+    </nav>
   </div>
 </footer>
 

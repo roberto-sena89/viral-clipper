@@ -212,7 +212,10 @@ body { padding-left: var(--rail-w); }
 @media (max-width: 960px) {
   .hero { grid-template-columns: 1fr; }
   .main-grid { grid-template-columns: 1fr; }
-  .hero-visual { order: -1; }
+  /* SEM order: -1 no visual. Ele empurrava tres videos decorativos (e
+     aria-hidden, ou seja, nada para leitor de tela) para cima do H1 —
+     no celular a primeira dobra virava vitrine sem frase, e o titulo,
+     que e a unica coisa que diz o que o site faz, descia para fora. */
 }
 
 /* ---------- CARTÕES ---------- */
@@ -570,6 +573,22 @@ footer {
 }
 .footer-inner {
   display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+}
+/* Navegacao do rodape. Existe porque o rodape era o unico lugar sem saida:
+   quem rolava ate o fim e nao achava o Scrap no menu (ou estava no celular,
+   onde o rail virou hamburguer) nao tinha para onde ir. Os destinos sao os
+   mesmos do rail, e sao <button> porque quem navega e o JS — manter os hrefs
+   aqui seria uma segunda lista de rotas para manter em sincronia. */
+.footer-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.footer-link {
+  background: none; border: none; padding: 2px 0; cursor: pointer;
+  font: inherit; color: var(--text-secondary);
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.footer-link:hover { color: var(--text-primary); }
+.footer-link:focus-visible {
+  outline: 2px solid var(--accent-soft); outline-offset: 2px;
+  border-radius: 3px;
 }
 
 /* ---------- TOAST ---------- */

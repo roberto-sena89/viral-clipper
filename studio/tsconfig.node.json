@@ -45,8 +45,8 @@
     "noEmit": true
   },
 
-  // Inclui o servidor, o vite.config e o planParser de src, que os testes do
-  // servidor importam de verdade.
+  // Inclui o servidor, o vite.config e os modulos puros de src que os testes do
+  // servidor importam de verdade (planParser e exitCodes).
   //
   // Nao inclui `src/**` de proposito: src e codigo de browser (JSX, DOM,
   // localStorage) e pertence ao projeto de tsconfig.json. Arrasta-lo para ca
@@ -55,5 +55,10 @@
   // `src/types.ts` saiu daqui: nada no servidor o importa. Estava listado com
   // a justificativa de ser "import de tipo do servidor", o que nunca foi
   // verdade — e era justamente o que criava a sombra sobre o fonte.
-  "include": ["vite.config.ts", "server/**/*.ts", "src/utils/planParser.ts"]
+  "include": [
+    "vite.config.ts",
+    "server/**/*.ts",
+    "src/utils/planParser.ts",
+    "src/utils/exitCodes.ts"
+  ]
 }

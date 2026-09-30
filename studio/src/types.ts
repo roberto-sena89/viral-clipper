@@ -58,14 +58,19 @@ export interface RunLogLine {
 export interface RunState {
   runId: string | null;
   /**
-   * 'idle' antes de disparar; 'running' durante; no fim, um de três:
-   * 'done', 'failed' ou 'cancelled'.
+   * 'idle' antes de disparar; 'running' durante; no fim, um de quatro:
+   * 'done', 'failed', 'cancelled' ou 'degraded'.
    *
    * 'cancelled' é separado de 'failed' de propósito: o processo morre com
    * código não-zero nos dois casos, mas mostrar "Falhou" em vermelho para uma
    * ação que o usuário pediu seria mentir sobre o que aconteceu.
+   *
+   * 'degraded' segue a mesma lógica e existe pelo mesmo motivo: exit 4 significa
+   * que os cortes FORAM produzidos, só que sem legenda e com seleção por energia
+   * de áudio. É pior que 'done' e melhor que 'failed' — pintar de vermelho
+   * esconderia que há clipe no disco.
    */
-  phase: 'idle' | 'running' | 'done' | 'failed' | 'cancelled';
+  phase: 'idle' | 'running' | 'done' | 'failed' | 'cancelled' | 'degraded' | 'ocupado';
   lines: RunLogLine[];
   exitCode: number | null;
 }

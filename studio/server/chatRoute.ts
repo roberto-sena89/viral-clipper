@@ -31,7 +31,12 @@ import { optionsForAgent, ParamError } from './clipOptions.js';
 import { createPlan, commitPlan, getPlan, renderCommand } from './clipRunner.js';
 import { buildPlanPayload } from './planPayload.js';
 import { runPreflight } from './preflight.js';
-import { DIRECTOR_SYSTEM_PROMPT } from './directorPrompt.js';
+import {
+  buildHistory,
+  composeSystemPrompt,
+  type StoredMessage,
+  type StoredPreference,
+} from './chatContext.js';
 
 /** Modelo padrao. 4/4 na sonda de protocolo, com 270k de contexto. */
 export const DEFAULT_MODEL_ID = 'claude-sonnet-4-6';
@@ -162,7 +167,12 @@ export function orientacaoDoCommit(error: unknown): string {
   return 'Apresente o resumo de novo e peça a confirmação. NÃO insista.';
 }
 
-export const directorTools: ToolDefinition[] = [
+/**
+ * As 4 ferramentas do pipeline. Nenhuma delas executa nada por conta própria:
+ * `clip_commit` recusa plano não aprovado, e é isso que mantém o gate no
+ * servidor em vez de na boa vontade do modelo.
+ */
+const clipTools: ToolDefinition[] = [
   {
     name: 'clip_get_options',
     description:
@@ -287,6 +297,98 @@ export const directorTools: ToolDefinition[] = [
   },
 ];
 
+/**
+ * Onde o agente guarda o que aprendeu sobre o usuário.
+ *
+ * Interface, e não o `db` direto: assim o teste da rota injeta um store em
+ * memória e verifica que a ferramenta GRAVOU, sem tocar no banco de produção.
+ */
+export interface PreferenceStore {
+  list: () => StoredPreference[];
+  remember: (key: string, value: string) => void;
+  forget: (key: string) => boolean;
+}
+
+/**
+ * As ferramentas do Diretor: as do pipeline + as duas de memória.
+ *
+ * ─── Por que a memória é uma FERRAMENTA, e não um resumo automático ──────────
+ *
+ * Um resumo automático da conversa guardaria o que foi dito numa terça (o vídeo
+ * específico, o número de cortes daquele pedido) e não o que o usuário quer
+ * SEMPRE. Pior: ele guardaria isso em silêncio, sem o usuário poder ver nem
+ * corrigir.
+ *
+ * Com a ferramenta, quem decide o que é durável é o próprio agente, e ele é
+ * obrigado a DIZER o que registrou — o usuário lê e discorda se estiver errado.
+ * O prompt diz explicitamente que pedido de agora não é preferência; a
+ * distinção entre "faz 3 cortes deste vídeo" e "eu sempre quero 3 cortes" é o
+ * que separa memória útil de lixo acumulado.
+ */
+export function buildDirectorTools(prefs: PreferenceStore): ToolDefinition[] {
+  return [
+    ...clipTools,
+    {
+      name: 'lembrar_preferencia',
+      description:
+        'Guarda uma preferência DURÁVEL do usuário, para valer nas próximas ' +
+        'conversas. Use quando ele disser algo que continuaria verdade no ' +
+        'próximo vídeo: quantos cortes costuma querer, duração, estilo de ' +
+        'legenda, plataforma de destino, tom, o tipo de conteúdo que publica. ' +
+        'NÃO use para o pedido de agora — "faz 3 cortes deste vídeo" é um ' +
+        'pedido, não uma preferência. Grave no máximo 1 ou 2 por vez, e depois ' +
+        'diga em uma linha o que registrou: o usuário precisa poder discordar.',
+      parameters: {
+        type: 'object',
+        properties: {
+          chave: {
+            type: 'string',
+            description:
+              'Nome curto em snake_case. Ex.: count, target_duration, ' +
+              'caption_preset, plataforma, tom, nicho.',
+          },
+          valor: { type: 'string', description: 'O valor, em texto curto.' },
+        },
+        required: ['chave', 'valor'],
+      },
+      handler: (args) => {
+        const chave = String(args.chave ?? '').trim();
+        const valor = String(args.valor ?? '').trim();
+        if (!chave || !valor) {
+          return JSON.stringify({ erro: 'chave e valor são obrigatórios.' });
+        }
+        prefs.remember(chave, valor);
+        return JSON.stringify({
+          ok: true,
+          registrado: { [chave]: valor },
+          total: prefs.list().length,
+        });
+      },
+    },
+    {
+      name: 'esquecer_preferencia',
+      description:
+        'Apaga uma preferência registrada. Use quando o usuário disser que ' +
+        'mudou de ideia, ou que você entendeu errado o que ele quer. Sem ' +
+        'argumento, lista o que está registrado em vez de apagar nada.',
+      parameters: {
+        type: 'object',
+        properties: { chave: { type: 'string', description: 'A chave a apagar.' } },
+      },
+      handler: (args) => {
+        const chave = String(args.chave ?? '').trim();
+        if (!chave) return JSON.stringify({ registradas: prefs.list() });
+        const removida = prefs.forget(chave);
+        return JSON.stringify({
+          ok: removida,
+          motivo: removida ? undefined : `não havia preferência com a chave "${chave}"`,
+          restantes: prefs.list(),
+        });
+      },
+    },
+  ];
+}
+
 // ─── Carga dos modelos ───────────────────────────────────────────────────────
 
 interface RawModels {
@@ -346,20 +448,26 @@ export function listModels(chain: LlmModel[]): {
 
 // ─── Rota de chat ────────────────────────────────────────────────────────────
 
-/** Historico enviado pelo cliente: so papel e texto, sem tool_calls internas. */
-interface ClientHistoryItem {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
 export function registerChatRoute(app: Express, deps: {
   projectRoot: () => string;
   saveUserMessage: (sessionId: string, content: string) => string;
   saveAssistantMessage: (sessionId: string, content: string, model: string, toolCalls: unknown[]) => void;
   ensureSession: (sessionId: string | undefined, firstMessage: string, model: string) => string;
+  /**
+   * Mensagens ja gravadas da sessao, em ordem cronologica.
+   *
+   * E daqui que sai o historico, e nao do corpo da requisicao. O cliente nunca
+   * enviou `history` — `src/` nao tem uma ocorrencia sequer do campo — e o
+   * efeito era o agente receber cada mensagem como conversa nova. Ver
+   * `chatContext.ts`.
+   */
+  getMessages: (sessionId: string) => StoredMessage[];
+  preferences: PreferenceStore;
 }): void {
   app.post('/api/chat', async (req: Request, res: Response) => {
-    const { sessionId, message, model, history } = req.body ?? {};
+    // `history` nao entra na desestruturacao de proposito: o contexto vem do
+    // banco (ver abaixo), e ler um campo que o cliente nao manda foi o defeito.
+    const { sessionId, message, model, systemPrompt } = req.body ?? {};
 
     if (typeof message !== 'string' || message.trim().length === 0) {
       res.status(400).json({ error: 'mensagem vazia' });
@@ -403,24 +511,25 @@ export function registerChatRoute(app: Express, deps: {
       })}\n\n`,
     );
 
-    // Monta o historico: system prompt do Diretor + o que o cliente mandou.
-    // O cliente manda so texto (sem tool_calls), de proposito: reidratar
-    // tool_calls antigos exigiria trafegar ids e argumentos que o modelo atual
-    // nao reconhece. O texto das respostas anteriores ja da o contexto.
-    const messages: ChatMessage[] = [{ role: 'system', content: DIRECTOR_SYSTEM_PROMPT }];
-
-    if (Array.isArray(history)) {
-      for (const item of history as ClientHistoryItem[]) {
-        if (
-          item &&
-          (item.role === 'user' || item.role === 'assistant') &&
-          typeof item.content === 'string' &&
-          item.content.length > 0
-        ) {
-          messages.push({ role: item.role, content: item.content });
-        }
-      }
-    }
+    // Monta o contexto do turno: system prompt do Diretor (com o que ja se sabe
+    // do usuario) + a conversa gravada + a mensagem de agora.
+    //
+    // O historico vem do BANCO. Ate aqui ele vinha de `history` no corpo da
+    // requisicao, que o cliente nunca mandava — o agente recebia so a mensagem
+    // atual e por isso repetia a mesma pergunta a cada turno. Se o cliente
+    // MANDAR `history` (versoes antigas), ele e ignorado de proposito: duas
+    // fontes de contexto divergem, e a do servidor e a que tem a conversa
+    // inteira, inclusive depois de um recarregamento de pagina.
+    const messages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: composeSystemPrompt({
+          userPrompt: typeof systemPrompt === 'string' ? systemPrompt : null,
+          preferences: deps.preferences.list(),
+        }),
+      },
+      ...buildHistory(deps.getMessages(session), userMessageId),
+    ];
     messages.push({ role: 'user', content: message });
 
     const toolCalls: Array<{
@@ -433,7 +542,7 @@ export function registerChatRoute(app: Express, deps: {
     }> = [];
 
     try {
-      const result = await chat(chain, messages, directorTools, {
+      const result = await chat(chain, messages, buildDirectorTools(deps.preferences), {
         maxTurns: 8,
         // A regra fica fora daqui de proposito: assim o teste pode exercitar a
         // POLITICA real, e nao uma copia dela. Ver `directorContinuation`.

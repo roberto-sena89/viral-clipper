@@ -19,6 +19,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Button, Popconfirm, Tooltip } from 'tdesign-react';
 import { CloseIcon, DeleteIcon, MoveIcon, StopCircleIcon } from 'tdesign-icons-react';
 import type { RunState } from '../types';
+import { describeExitCode } from '../utils/exitCodes';
 
 interface RunLogPanelProps {
   state: RunState;
@@ -70,6 +71,10 @@ function phaseLabel(phase: RunState['phase']): string {
       return 'Concluído';
     case 'failed':
       return 'Falhou';
+    case 'degraded':
+      return 'Degradado';
+    case 'ocupado':
+      return 'Ocupado';
     case 'cancelled':
       return 'Cancelado';
     default:
@@ -85,6 +90,13 @@ function phaseColor(phase: RunState['phase']): string {
       return '#2ba471';
     case 'failed':
       return '#e34d59';
+    case 'degraded':
+      return CANCELLED_COLOR;
+    case 'ocupado':
+      // Laranja, não vermelho: nada quebrou. Outra execução está usando a
+      // pasta, e a ação é esperar e rodar de novo — pintar de vermelho diria
+      // "falhou" para algo que só precisa de vez.
+      return CANCELLED_COLOR;
     case 'cancelled':
       return CANCELLED_COLOR;
     default:
@@ -109,6 +121,20 @@ function footerFor(state: RunState): { text: string; color: string } | null {
       return { text: 'Processo finalizado com sucesso.', color: '#2ba471' };
     case 'cancelled':
       return { text: 'Execução cancelada pelo usuário.', color: CANCELLED_COLOR };
+    case 'degraded':
+      // Os cortes existem; o que faltou foi a legenda. Dizer só "código 4"
+      // obrigaria o usuário a subir o log para descobrir o que perdeu.
+      return {
+        text: describeExitCode(state.exitCode) ?? 'Execução degradada.',
+        color: CANCELLED_COLOR,
+      };
+    case 'ocupado':
+      // O rodapé é onde a instrução vive: "espere e rode de novo" é a ação, e
+      // ela não cabe no rótulo curto da fase.
+      return {
+        text: describeExitCode(state.exitCode) ?? 'Pasta de saída ocupada.',
+        color: CANCELLED_COLOR,
+      };
     case 'failed':
       return state.exitCode === null
         ? {
@@ -116,7 +142,7 @@ function footerFor(state: RunState): { text: string; color: string } | null {
             color: '#e34d59',
           }
         : {
-            text: `Processo finalizado com código ${state.exitCode}. Veja o log acima.`,
+            text: describeExitCode(state.exitCode) ?? `Código ${state.exitCode}.`,
             color: '#e34d59',
           };
     default:

@@ -36,7 +36,16 @@ function fail(res: Response, error: unknown, status = 400): void {
   res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
 }
 
-export function registerStudioRoutes(app: Express): void {
+export function registerStudioRoutes(
+  app: Express,
+  deps: {
+    /** O que o agente aprendeu sobre o usuário. Ver `PreferenceStore`. */
+    preferences: {
+      list: () => Array<{ key: string; value: string }>;
+      forget: (key: string) => boolean;
+    };
+  },
+): void {
   /** Estado do ambiente. O frontend chama isto ao abrir e mostra um banner. */
   app.get('/api/studio/preflight', async (_req: Request, res: Response) => {
     try {
@@ -45,6 +54,28 @@ export function registerStudioRoutes(app: Express): void {
     } catch (error) {
       fail(res, error, 500);
     }
+  });
+
+  /**
+   * O que o agente aprendeu sobre o usuário, e o que dá para apagar.
+   *
+   * Existe porque memória que o usuário não consegue LER não é confiável: se o
+   * agente registrar algo errado ("ele sempre quer 10 cortes") e isso passar a
+   * valer em toda conversa, ele não tem como descobrir de onde veio. Poder ver
+   * e apagar é o que torna a memória uma ferramenta e não um passivo.
+   */
+  app.get('/api/studio/preferences', (_req: Request, res: Response) => {
+    const preferences = deps.preferences.list();
+    res.json({ ok: true, count: preferences.length, preferences });
+  });
+
+  app.delete('/api/studio/preferences/:key', (req: Request, res: Response) => {
+    const removed = deps.preferences.forget(req.params.key);
+    if (!removed) {
+      res.status(404).json({ ok: false, error: 'preferência não encontrada' });
+      return;
+    }
+    res.json({ ok: true, preferences: deps.preferences.list() });
   });
 
   /** Cardápio de parâmetros: os presets e o que cada um faz. */

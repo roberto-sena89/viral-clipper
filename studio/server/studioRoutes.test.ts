@@ -99,6 +99,22 @@ test('rotas HTTP do Studio', async (t) => {
   assert.ok(typeof options.json.director_prompt === 'string');
   assert.ok(options.json.director_prompt.length > 200, 'director_prompt veio vazio');
 
+  // GUARDA DE REGRESSÃO da memória. O prompt é o único lugar onde o agente
+  // aprende que existem as ferramentas de memória e que pergunta repetida é
+  // proibida. Se esta seção sair do prompt, as ferramentas continuam existindo
+  // (o teste do payload as vê) e o agente simplesmente nunca as usa — falha
+  // silenciosa, que é o modo como o defeito original sobreviveu.
+  assert.match(
+    options.json.director_prompt,
+    /lembrar_preferencia/,
+    'o prompt tem de ensinar a ferramenta de memória ao agente',
+  );
+  assert.match(
+    options.json.director_prompt,
+    /nunca pergunte o que já está respondido/i,
+    'o prompt tem de proibir a pergunta repetida',
+  );
+
   // ── /api/studio/catalog ─────────────────────────────────────────────────
   const catalog = await request('/api/studio/catalog');
   assert.equal(catalog.status, 200);
@@ -179,6 +195,36 @@ test('rotas HTTP do Studio', async (t) => {
   assert.match(primeiroFrame, /^data: /, 'o primeiro frame deve ser um evento SSE');
   const evento = JSON.parse(primeiroFrame.replace(/^data: /, '').split('\n')[0]);
   assert.equal(evento.type, 'hello', 'o primeiro evento do canal é hello');
+
+  // ── /api/studio/preferences ─────────────────────────────────────────────
+  //
+  // Estas duas rotas são o que torna a memória do agente uma ferramenta em vez
+  // de um passivo: sem poder LER o que o agente registrou, o usuário não tem
+  // como descobrir de onde veio uma preferência errada ("ele sempre quer 10
+  // cortes") nem como desfazê-la.
+  const prefsVazias = await request('/api/studio/preferences');
+  assert.equal(prefsVazias.status, 200);
+  assert.equal(prefsVazias.json?.ok, true);
+  assert.equal(prefsVazias.json?.count, 0, 'banco em memória: começa sem preferências');
+
+  // A gravação é feita pelo mesmo módulo do banco que o servidor usa (o cache de
+  // módulo do ESM garante a instância). É o caminho que a ferramenta
+  // `lembrar_preferencia` percorre.
+  const db = await import('./db.ts');
+  db.setPreference('count', '4');
+
+  const prefsComUma = await request('/api/studio/preferences');
+  assert.equal(prefsComUma.json?.count, 1);
+  assert.equal(prefsComUma.json?.preferences?.[0]?.key, 'count');
+  assert.equal(prefsComUma.json?.preferences?.[0]?.value, '4');
+
+  const esquecer = await request('/api/studio/preferences/count', { method: 'DELETE' });
+  assert.equal(esquecer.status, 200);
+  assert.equal(esquecer.json?.ok, true);
+  assert.equal(esquecer.json?.preferences?.length, 0, 'a preferência tem de sumir da lista');
+
+  const esquecerDeNovo = await request('/api/studio/preferences/count', { method: 'DELETE' });
+  assert.equal(esquecerDeNovo.status, 404, 'apagar o que não existe é 404, não sucesso');
 
   // ── A API NÃO serve a interface, de propósito ───────────────────────────
   //

@@ -353,16 +353,19 @@ qualquer decisão de modo. O que resolve é repetir. `cookies_from_browser` est�
 fora da allowlist de propósito (é um vetor de leitura do perfil do navegador),
 então esse caminho é terminal, não do chat.
 
-### 8. Quando a transcrição falha: o penhasco silencioso
+### 8. Quando a transcrição falha: degradado, mas não silencioso
 
-Se o Whisper não conseguir alocar memória, o run **não** morre — ele degrada e
-continua, com uma única linha de aviso:
+Se o Whisper não conseguir alocar memória, o run **não** morre — ele tenta **uma
+vez** de novo e, se falhar de novo, degrada e continua, com uma linha de aviso:
 
 ```
 [>] Loading whisper model 'small' on auto (int8)
+! Transcription ran out of memory; retrying once (Transcription failed: Unable to
+  allocate 241. MiB for an array with shape (1, 78957, 400) and data type float64)
 ! Transcription unavailable (Transcription failed: Unable to allocate 241. MiB
-  for an array with shape (1, 78957, 400) and data type float64); scoring on
-  audio alone
+  for an array with shape (1, 78957, 400) and data type float64). The clips will
+  have NO burned captions, and the selection falls back to audio energy alone —
+  which scores far lower and picks different moments.
 ```
 
 O resultado não parece quebrado: os clipes saem, `clips.json` é escrito, o
@@ -376,15 +379,52 @@ transcrição OK contra transcrição ausente:
 
 Sem transcrição, o hook e a densidade de fala zeram e o ranking passa a decidir
 por energia. Pior: sem palavras não há legenda para queimar, que é o padrão do
-pipeline. Os dois casos terminam com **exit 0**.
+pipeline.
 
-Sinais de que aconteceu, em ordem de facilidade: a linha `!` no painel; o
-`language` em `clips.json` (`nao transcrito`); o `text` de cada corte vazio.
+**O run degradado termina com exit 4, não com 0.** Antes os dois casos terminavam
+com exit 0 — indistinguível de um sucesso — e o custo prático era um lote não ter
+como retentar justamente a falha transitória. O lote já trata `code != 0` como
+falha retentável (`batch.py`), então o 4 vira retentativa de graça.
 
-Isto é contenção de memória, não defeito de lógica — mas o desfecho merecia um
-sinal mais forte do que uma linha de aviso. O gatilho medido foi uma máquina de
-**8 GB com ~0,9 GB livres** durante um `npm run build` em paralelo. Rodar
-sozinho, com o navegador fechado, passou.
+| Código | Significa |
+|---|---|
+| 0 | Sucesso. |
+| 1 | Erro de execução (`ClipperError`), com a mensagem no log. |
+| 2 | Erro de uso/argumentos. |
+| 3 | Algum clipe ficou abaixo da duração mínima. |
+| **4** | **Run degradado: clipes renderizados sem legenda, seleção só por áudio.** |
+| **5** | **Pasta de saída ocupada: outra execução está usando. Nada quebrou — espere e rode de novo.** |
+| 130 | Interrompido pelo usuário (`Ctrl-C` / botão Parar). |
+
+O 4 vem **antes** do 3: os dois podem ser verdade juntos, e "degradado" é mais
+acionável — a duração curta é consequência da seleção degradada, não um problema
+independente. E ele **não** dispara em `--plan-only`: um plano não renderizou
+nada, então não há legenda para perder.
+
+Sinais de que aconteceu, em ordem de facilidade: o **exit 4** (ou a fase
+"Degradado" em laranja no painel); a linha `!` no log; o `language` em
+`clips.json` (`nao transcrito`); o `text` de cada corte vazio.
+
+#### Por que uma retentativa, e por que só nesta falha
+
+A retentativa vale aqui porque a causa é **estado da máquina naquele instante**
+(um build em paralelo, um navegador com cinquenta abas), não a entrada. Um wav
+corrompido ou um checkpoint ausente falha idêntico na segunda vez — esses não
+podem pagar por uma retentativa.
+
+Foi por isso que a falha precisou virar um **tipo** (`TranscriptionOutOfMemory`),
+em vez de continuar sendo uma mensagem. E havia uma armadilha: o detector que já
+existia (`is_memory_error`) **não reconhecia a falha que de fato aconteceu**. Ele
+casava `"failed to allocate"`, mas a mensagem real era `"Unable to allocate 241.
+MiB for an array with shape ..."`. Medido: `is_memory_error(MemoryError(<msg
+real>))` devolvia `False`. O conserto foi checar o **tipo** primeiro
+(`isinstance(exc, MemoryError)` — e `numpy._ArrayMemoryError` herda de
+`MemoryError`), deixando os marcadores de texto como rede para erros de terceiros
+que chegam como string.
+
+Isto é contenção de memória, não defeito de lógica. O gatilho medido foi uma
+máquina de **8 GB com ~0,9 GB livres** durante um `npm run build` em paralelo.
+Rodar sozinho, com o navegador fechado, passou.
 
 Sintoma que **não** é isso: se falhar em `GET /api/models` ou o chat responder
 503, é chave de modelo faltando — veja o passo 2.
@@ -789,9 +829,9 @@ O lixo em `_work/` continua sendo o preço aceito.
 
 #### Dois renders ao mesmo tempo: a trava
 
-`work_path()` é `output/_work` para **qualquer** execução — sem id de run, sem
-trava. Dois processos escrevem os mesmos `source_audio.webm` e `analysis.wav`. O
-sintoma não é erro, é **resultado errado em silêncio**.
+`work_path()` é `output/_work` para **qualquer** execução — sem id de run. Dois
+processos escrevem os mesmos `source_audio.webm` e `analysis.wav`. O sintoma não é
+erro, é **resultado errado em silêncio**.
 
 Medido, ao disparar dois planos em paralelo: um run analisou **1127 s** de um
 vídeo de **793,5 s**, porque reaproveitou o áudio que o outro processo tinha
@@ -823,6 +863,28 @@ que são decisão, não acaso:
 `approveAndRun` (aprovar, commitar, exceção) entram no log do painel — que é onde
 o usuário está olhando. A recusa é uma frase inteira, escrita para ele; não
 adiantava escrevê-la e não entregar.
+
+#### As duas travas, e por que não são duplicatas
+
+Esta trava cobre o **Studio**. Ela nunca cobriu o resto: um `python -m
+viralclipper` rodando num terminal escrevia no mesmo `output/` sem ninguém
+recusar. O lado Python agora tem a **sua** trava — lock exclusivo do SO em
+`output_dir`, em `viralclipper/lock.py`, com recusa por **exit 5**.
+
+As duas continuam valendo, porque resolvem momentos diferentes:
+
+- **A do Studio recusa antes de spawnar.** Consequência prática: o plano **não é
+  queimado**. Se dependesse só do lock do Python, o processo subiria, seria
+  recusado com 5 e o plano já estaria `consumed` — o usuário teria de gerar outro
+  para fazer exatamente a mesma coisa.
+- **A do Python alcança o que a do Studio não vê.** É ela que pega o terminal
+  contra o Studio, e um lote contra outro lote.
+
+Quando a recusa vem do Python, o painel mostra a fase **"Ocupado"**, em laranja e
+não vermelho: nada quebrou, a ação é esperar e rodar de novo. O rodapé traz a
+frase do exit 5, que diz isso em palavras. Detalhes do desenho (por que lock do
+SO e não arquivo-pid, e as duas armadilhas de offset medidas) estão no
+`README.md` da raiz, em "One run per output directory".
 
 ### Sobre a entrega do plano
 
@@ -892,15 +954,118 @@ A política testada é a **real**, importada de `chatRoute.ts`. Uma cópia da re
 no teste provaria o mecanismo e deixaria sem cobertura justamente onde o
 comportamento mora.
 
+### Sobre o agente que perguntava a mesma coisa
+
+Queixa relatada, e reproduzida: *"ele fica me perguntando a mesma coisa várias
+vezes e não consegue seguir adiante"*. Não era o prompt. Eram **dois defeitos de
+fiação**, os dois medidos:
+
+**1. O histórico nunca chegava ao modelo.** O `chatRoute` lia `history` do corpo
+da requisição, e o cliente **nunca enviava esse campo** — `grep -rn history src/`
+não devolvia uma ocorrência sequer. Cada mensagem era uma conversa nova, com o
+system prompt e mais nada. O sintoma é a consequência direta: o agente pergunta
+*"quantos cortes?"*, o usuário responde *"4"*, e no turno seguinte o modelo
+recebe **só a palavra "4"** — sem URL, sem a própria pergunta. Não tem como agir
+sobre isso, então pergunta de novo. Para sempre.
+
+**2. O `systemPrompt` do usuário era ignorado.** A interface tem um
+`AgentConfigDialog` que deixa escrever o prompt do agente, com validação de
+não-vazio, e o cliente o envia em todo POST (`useChat.ts:152`). O servidor não
+tinha **nenhuma** referência ao campo e usava sempre o prompt fixo. Quem
+escrevesse *"sempre 4 cortes de 45s com legenda neon"* não via efeito nenhum — a
+queixa *"não entende o tipo de trabalho que desejo"* era literal.
+
+> Os dois defeitos sobreviveram porque **nenhum teste os tocava**. O
+> `gateLlm.test.ts` manda `history: []` explícito, e array vazio se comporta
+> igual a campo ausente; e nenhum teste jamais olhou o `systemPrompt`. Um campo
+> que ninguém lê é indistinguível de um campo que não existe.
+
+#### O desenho: histórico do banco, memória explícita
+
+**O histórico vem do BANCO** (`chatContext.ts` + `getMessagesBySession`), não do
+cliente. O servidor já grava cada mensagem, então é ele que sabe a conversa —
+o contexto sobrevive a um recarregamento de página e não depende de o frontend
+lembrar de mandar. Se um cliente antigo MANDAR `history`, ele é ignorado de
+propósito: duas fontes de contexto divergem, e a do servidor é a que tem a
+conversa inteira.
+
+Teto de 30 mensagens. Uma conversa longa estoura a janela do modelo e o custo por
+turno cresce sem limite. O que precisa durar mais que isso é **preferência**, e
+preferência tem lugar próprio.
+
+**As instruções do usuário são ANEXADAS, nunca substitutas.** Deixar o
+`systemPrompt` da interface substituir o prompt do Diretor entregaria a quem
+escreve ali o poder de apagar o protocolo de execução — inclusive a exigência de
+aprovação humana, que é a única coisa que impede o agente de rodar um pipeline
+caro sozinho. Então o texto vai junto com uma frase explícita dizendo qual regra
+vence: as instruções mandam no **padrão** (quantos cortes, qual legenda, que
+duração); o protocolo continua mandando em si mesmo.
+
+**A memória é uma FERRAMENTA, não um resumo automático.** Duas ferramentas novas,
+`lembrar_preferencia` e `esquecer_preferencia`, gravando numa tabela
+`preferences` (chave/valor, inspecionável e apagável).
+
+A alternativa óbvia — resumir a conversa automaticamente — foi descartada, e por
+um motivo que vale registrar: um resumo guardaria **o que foi dito numa terça** (o
+vídeo específico, o número de cortes daquele pedido), não o que o usuário quer
+**sempre**. E guardaria em silêncio, sem o usuário poder ver nem corrigir. Com a
+ferramenta, quem decide o que é durável é o próprio agente, e ele é obrigado a
+**dizer o que registrou** — o usuário lê e discorda se estiver errado.
+
+A distinção está escrita no prompt, porque é ela que separa memória útil de lixo
+acumulado:
+
+| É preferência (vale no próximo vídeo) | Não é (vale só para este pedido) |
+|---|---|
+| `count`, `target_duration`, `caption_preset` | "corta ESTE vídeo em 3" |
+| plataforma de destino, nicho, tom | a URL |
+| "eu sempre quero...", "no meu perfil eu posto..." | um ajuste pontual porque um corte ficou ruim |
+
+O prompt também ganhou a proibição explícita de repetir pergunta já respondida,
+com a instrução de reler o histórico e a lista de preferências **antes** de
+escrever qualquer pergunta.
+
+`GET /api/studio/preferences` e `DELETE /api/studio/preferences/:key` existem
+porque memória que o usuário não consegue LER não é confiável: se o agente
+registrar algo errado ("ele sempre quer 10 cortes") e isso passar a valer em toda
+conversa, ele não tem como descobrir de onde veio.
+
+#### Cobertura
+
+`npm run test:context` — **19 testes**, sem rede externa, sem LLM real.
+
+Os testes puros (`chatContext.test.ts`) provam `buildHistory`,
+`renderPreferences` e `composeSystemPrompt` — inclusive que a mensagem de agora é
+excluída **por id** e não por posição (dois registros podem empatar no mesmo
+milissegundo) e que o corte no teto mantém o **mais recente**, não o mais antigo.
+
+Mas função pura correta e não usada tem o mesmo efeito de função errada — era
+exatamente esse o defeito. Por isso `chatContextRoute.test.ts` sobe a rota de
+verdade contra um **provedor OpenAI-compatible falso** em localhost e inspeciona
+o que o servidor **mandou**: o histórico do banco na ordem, a mensagem de agora
+uma única vez, o `systemPrompt` do usuário no bloco de sistema, as ferramentas de
+memória no payload.
+
+O último teste é a **prova negativa**: o corpo da requisição inclui um
+`history: [{content: 'TEXTO-DO-CLIENTE-QUE-NAO-PODE-APARECER'}]`. Se alguém
+voltar a ler o campo do cliente, a isca aparece no payload e o teste falha. Sem
+ela, reverter ao defeito antigo passaria despercebido — que é precisamente como
+ele sobreviveu até aqui.
+
+Ambos os defeitos foram confirmados por **mutação**: reintroduzir a leitura de
+`history` do corpo derruba 2 testes; trocar `userPrompt` por `null` derruba 1.
+
 ## Rotas
 
 | Rota | O que faz |
 |---|---|
 | `GET /api/health` | Liveness. |
 | `GET /api/models` | Modelos utilizáveis, lidos de `models.json` com as chaves resolvidas. |
-| `POST /api/chat` | SSE. Laço de agente próprio + 4 ferramentas do Diretor. |
+| `POST /api/chat` | SSE. Laço de agente próprio + 4 ferramentas do Diretor + 2 de memória. O contexto vem do banco, não do cliente. |
 | `GET /api/studio/preflight` | Estado do ambiente (raiz, python, deps, ffmpeg, capacidades). |
 | `GET /api/studio/options` | Cardápio de parâmetros + presets + system prompt. |
+| `GET /api/studio/preferences` | O que o agente aprendeu sobre o usuário, para poder conferir e apagar. |
+| `DELETE /api/studio/preferences/:key` | Esquece uma preferência. 404 se a chave não existe. |
 | `POST /api/studio/plan` | Valida a intenção e devolve o comando. **Não executa.** |
 | `POST /api/studio/approve/:planId` | Aprovação humana. |
 | `POST /api/studio/commit/:planId` | Executa. Recusa plano não aprovado, já executado, ou quando já existe um run vivo (400 com `em andamento`). |
@@ -941,9 +1106,14 @@ o segundo foi um pedido do usuário.
 ```powershell
 cd C:\Users\USUARIO\viral-clipper\studio
 
-# 53 testes unitarios: allowlist, duracoes, argv, .env, modelos, politica de
-# repeticao do validador e parser de plano. Sem rede.
+# 62 testes unitarios: allowlist, duracoes, argv, .env, modelos, politica de
+# repeticao do validador, parser de plano e traducao de codigo de saida. Sem rede.
 npm run test:unit
+
+# Contexto do agente: historico, preferencias e system prompt. 19 testes. Os
+# puros + a rota real contra um provedor falso em localhost, inspecionando o
+# payload que o servidor MANDA. ~17s.
+npm run test:context
 
 # O laço do agente: turno vazio depois de ferramenta. Provedor HTTP falso
 # local, sem LLM. ~1s.
@@ -960,7 +1130,12 @@ npm run test:gate
 # ~3s.
 npm run test:cancel
 
-# Tudo que e deterministico (unitarios + laco + rotas + gate + cancelamento). ~30s.
+# Execucao unica: o segundo commit e recusado, NAO queima o plano, e a trava
+# libera quando o run termina. Sobe o servidor na 3298. ~5s.
+npm run test:lock
+
+# Tudo que e deterministico (unitarios + contexto + laco + rotas + gate +
+# cancelamento + execucao unica). ~90s.
 npm test
 
 # Conferencia de tipos dos DOIS projetos (front e servidor). Nao emite nada.
@@ -978,7 +1153,7 @@ npm run verify:build
 npm run test:llm
 ```
 
-Total atual: **63 testes**, 0 falhas.
+Total atual: **93 testes**, 0 falhas.
 
 Os testes que valem mais, e por quê:
 
@@ -1028,11 +1203,39 @@ provedor falso com roteiro fixo, e por isso o **controle negativo**: sem a
 política, o mesmo roteiro tem de falhar. Sem esse controle, o teste passaria
 também se a correção não existisse.
 
+**`test:context` — o que o modelo vê.** O defeito era invisível para qualquer
+teste que observasse o caminho feliz: a rota funcionava, o SSE fechava, a
+resposta chegava. O que faltava era **contexto**. Um teste que passe `history: []`
+não distingue "campo ausente" de "campo vazio" — foi assim que o defeito
+sobreviveu. Aqui o teste alimenta histórico de verdade, sobe a rota contra um
+provedor falso e **inspeciona o payload que o servidor mandou**, que é o único
+lugar onde dá para verificar sem adivinhação.
+
+A prova negativa é o que o torna difícil de enganar: o corpo inclui um texto-isca
+em `history`. Se alguém voltar a ler o campo do cliente, a isca aparece no payload
+e o teste falha. Sem ela, reverter ao defeito antigo daria verde.
+
 **`modelCheckRetry.test.ts` — a espera.** O defeito que ele cobre **não era um
 erro, era uma lentidão**. Um bug que só se manifesta como espera não aparece em
 teste de unidade nenhum — a não ser que o teste cronometre. Por isso ele sobe um
 servidor local que manda headers e nunca fecha o corpo, e afirma um limite
 superior de tempo.
+
+**`exitCodes.test.ts` — o contrato entre dois processos.** O painel recebe o
+código de saída, não a causa. Traduzir é o que impede o usuário de ler "código 4"
+e não saber que perdeu a legenda de todos os cortes.
+
+O teste que vale ali **não é o do mapa** — é o que **lê o `cli.py` de verdade**,
+extrai todo `return <n>` e exige que cada um tenha descrição na interface. Um mapa
+copiado à mão no teste passaria a mentir no dia em que alguém adicionasse um
+código no Python, que é exatamente o que aconteceu com o exit 4. Verificado por
+mutação: removendo a entrada do `4` de `src/utils/exitCodes.ts`, o teste falha com
+*"código 4 caiu no texto genérico"*.
+
+E ele tem uma guarda contra virar vácuo: um primeiro teste exige que a extração
+tenha achado **vários** códigos. Se a formatação do `cli.py` mudar e o regex parar
+de casar, a lista viria vazia e o teste principal passaria sem verificar nada —
+verde por não ter olhado.
 
 ### O que `verify:build` cobre e mais nada cobre
 
@@ -1108,6 +1311,11 @@ a barra lateral do app enchia de `Corta https://www.youtube.com/...`.
 `STUDIO_DB` também aceita um caminho de arquivo, para quando for útil inspecionar
 o banco de um teste depois de ele rodar.
 
+O `test:context` não precisa disso: ele monta um `express` próprio e chama
+`registerChatRoute` com dependências de mentira. Só `server/index.ts` importa
+`db.ts`, então essa rota testada isoladamente não tem como tocar o banco de
+produção — nem por acidente.
+
 **Ao testar com `curl` neste ambiente, cuidado:** existe um proxy em
 `http_proxy` que intercepta `127.0.0.1` e devolve **502** com mensagem de
 "upstream connect failed". Parece servidor fora do ar e não é. Use o cliente
@@ -1148,6 +1356,51 @@ o typecheck pega e o navegador não: o componente renderiza, só que sem o estil
 **O TS2345 em `SettingsPage.tsx`** era um `setFormData` de template sem
 `permissionMode`. Corrigido explicitando o campo — os templates não o trazem, e
 o estado ficava incompleto em relação ao próprio tipo.
+
+### Sobre o `TS2769` no `app.listen` (por que `HOST` e `Number(process.env.PORT)` andam juntos)
+
+Há um erro de tipo no **servidor** que não é do `src/` e tem causa própria: o
+`app.listen` de `server/index.ts`. Vale registrar porque a correção *parece* um
+detalhe de estilo e não é, e porque o instinto de "reverter para sumir com o
+erro" quebra os testes.
+
+```ts
+const PORT = process.env.PORT || 3000;   // tipo: string | 3000
+const HOST = '127.0.0.1';
+
+app.listen(PORT, () => { … });           // compila
+app.listen(PORT, HOST, () => { … });     // TS2769
+```
+
+A causa está nas declarações de `@types/express-serve-static-core`: **toda**
+sobrecarga `listen(port, hostname, …)` declara `port: number`. Com
+`process.env.PORT` sendo `string | undefined`, a expressão `process.env.PORT ||
+3000` vira `string | 3000`, que não casa com `number`. Mas a forma de **dois**
+argumentos, `listen(path: string, callback?)`, aceita `string` — então o
+`app.listen(PORT, cb)` antigo passava, por acidente, e o tipo errado de `PORT`
+ficava escondido. **Foi acrescentar o `hostname` que removeu a única sobrecarga
+que casava.** O erro não veio de uma reversão de `Number(...)`; veio de ganhar um
+parâmetro.
+
+Por isso o conserto é o companheiro, não o reverso:
+
+```ts
+const PORT = Number(process.env.PORT) || 3000;
+const HOST = '127.0.0.1';
+```
+
+`Number(...)` não é estilo: converte `string | undefined` para `number` e, de
+quebra, faz `PORT=abc` cair no padrão (3000) em vez de chegar ao `listen` e
+falhar em runtime.
+
+**`HOST = '127.0.0.1'` é funcional, não cosmético — não reverter.** Todos os
+testes de rota e o probe do `verify:build` falam com `127.0.0.1` **explícito**
+(`host: '127.0.0.1'` em `gateFlow.test.ts`, `studioRoutes.test.ts`,
+`gateLm.test.ts`, `singleRun.test.ts`, `cancelRun.test.ts`). Um servidor que
+escuta no default (todas as interfaces / `::`) pode não responder em IPv4
+loopback no Windows. Reverter o `HOST` para "sumir com o TS2769" trocaria um erro
+de compilação por testes de rota que falham por conexão — o remédio seria pior
+que a doença.
 
 ### Sobre o `tsconfig.node.json` (era o que mantinha `npm run build` quebrado)
 

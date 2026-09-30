@@ -17,6 +17,7 @@ import {
 } from 'tdesign-icons-react';
 import { Bot, Sparkles, Code, FileText, Globe, Lightbulb } from 'lucide-react';
 import { CustomAgent, PermissionMode } from '../types';
+import { AgentMemoryPanel } from './AgentMemoryPanel';
 
 interface SettingsPageProps {
   agents: CustomAgent[];
@@ -416,6 +417,11 @@ export function SettingsPage({
               )}
             </div>
         </div>
+
+        {/* Memória do agente: o que ele aprendeu sobre o usuário, e o que dá
+            para apagar. Fica aqui, e não numa tela própria, porque é a mesma
+            decisão: o que este agente deve ser para você. */}
+        <AgentMemoryPanel />
       </div>
     </div>
   );

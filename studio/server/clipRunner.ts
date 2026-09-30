@@ -181,13 +181,22 @@ export function renderCommand(plan: PlanRecord): string {
  * Etapa 2: executa um plano aprovado. Recusa qualquer plano não aprovado,
  * expirado ou já consumido — o agente não tem como escapar disso.
  *
- * Recusa também quando JÁ existe um run vivo, e isso não é zelo: `work_path()`
- * do lado Python é `output/_work` para qualquer execução, sem id e sem trava.
- * Dois processos escrevem os mesmos `source_audio.webm` e `analysis.wav`, e o
- * sintoma não é erro — é resultado errado em silêncio. Medido, ao disparar dois
- * planos em paralelo: um run analisou 1127 s de um vídeo de 793,5 s, porque
- * reaproveitou o áudio que o outro processo tinha acabado de escrever. Passou
- * por todos os guardas seguintes e teria virado clipe publicado.
+ * Recusa também quando JÁ existe um run vivo. Isto não é zelo: `work_path()`
+ * do lado Python é `output/_work` para qualquer execução, e dois processos
+ * escrevem os mesmos `source_audio.webm` e `analysis.wav`. O sintoma não é
+ * erro — é resultado errado em silêncio. Medido, ao disparar dois planos em
+ * paralelo: um run analisou 1127 s de um vídeo de 793,5 s, porque reaproveitou
+ * o áudio que o outro processo tinha acabado de escrever. Passou por todos os
+ * guardas seguintes e teria virado clipe publicado.
+ *
+ * **Esta trava e a do `viralclipper/lock.py` são complementares, não
+ * duplicadas.** O lado Python agora trava o `output_dir` com lock do SO, e é
+ * ele que pega o caso que esta checagem não alcança: um `python -m viralclipper`
+ * rodando num terminal, fora do Studio. Mas a checagem aqui continua valendo
+ * porque ela acontece **antes de spawnar** — e, portanto, antes de o plano ser
+ * queimado. Se dependesse só do lock do Python, o processo subiria, seria
+ * recusado com exit 5 e o plano já estaria consumido: o usuário teria de gerar
+ * outro para fazer a mesma coisa.
  *
  * A checagem vem ANTES de `consumed = true` de propósito: recusar não pode
  * queimar o plano. Assim o usuário espera o run atual terminar e commita o

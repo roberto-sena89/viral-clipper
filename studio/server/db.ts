@@ -72,6 +72,20 @@ db.exec(`
 
   -- 为会话 ID 创建索引
   CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
+
+  -- Preferências duráveis que o agente aprendeu sobre o usuário.
+  --
+  -- Por que tabela própria em vez de "resumir a conversa": o que precisa durar
+  -- entre sessões é um punhado de fatos estáveis (quantos cortes ele costuma
+  -- querer, qual legenda, para qual plataforma), não o texto da conversa. Um
+  -- resumo automático guardaria o que foi dito numa terça e não o que ele quer
+  -- sempre — e ainda por cima sem o usuário poder ver nem corrigir. Aqui cada
+  -- linha é explícita, inspecionável e apagável.
+  CREATE TABLE IF NOT EXISTS preferences (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
 `);
 
 // 数据库迁移：添加 sdk_session_id 列（如果不存在）
@@ -177,8 +191,15 @@ export function deleteSession(id: string): boolean {
 // ============= 消息操作 =============
 
 // 获取会话的所有消息
+//
+// `rowid` como desempate NAO e decoracao: `created_at` tem precisao de
+// milissegundo e dois registros gravados no mesmo ms empatam. Sem desempate a
+// ordem fica indefinida, e o historico do chat montado a partir daqui poderia
+// sair com a resposta antes da pergunta.
 export function getMessagesBySession(sessionId: string): DbMessage[] {
-  const stmt = db.prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC');
+  const stmt = db.prepare(
+    'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC, rowid ASC',
+  );
   return stmt.all(sessionId) as DbMessage[];
 }
 
@@ -251,10 +272,49 @@ export function createMessages(messages: DbMessage[]): void {
   insertMany(messages);
 }
 
+// ============= Preferências =============
+
+export interface DbPreference {
+  key: string;
+  value: string;
+  updated_at: string;
+}
+
+/** Todas as preferências, em ordem estável (alfabética pela chave). */
+export function listPreferences(): DbPreference[] {
+  const stmt = db.prepare('SELECT * FROM preferences ORDER BY key ASC');
+  return stmt.all() as DbPreference[];
+}
+
+/**
+ * Grava (ou atualiza) uma preferência. Idempotente pela chave.
+ *
+ * `INSERT ... ON CONFLICT DO UPDATE` em vez de "apaga e insere": assim a
+ * operação é uma só, atômica, e uma falha no meio não deixa a preferência
+ * apagada sem substituta.
+ */
+export function setPreference(key: string, value: string): DbPreference {
+  const row: DbPreference = { key, value, updated_at: new Date().toISOString() };
+  const stmt = db.prepare(`
+    INSERT INTO preferences (key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `);
+  stmt.run(row.key, row.value, row.updated_at);
+  return row;
+}
+
+/** Remove uma preferência. `false` quando a chave não existia. */
+export function deletePreference(key: string): boolean {
+  const stmt = db.prepare('DELETE FROM preferences WHERE key = ?');
+  return stmt.run(key).changes > 0;
+}
+
 // 清空所有数据
 export function clearAllData(): void {
   db.exec('DELETE FROM messages');
   db.exec('DELETE FROM sessions');
+  db.exec('DELETE FROM preferences');
 }
 
 export default db;

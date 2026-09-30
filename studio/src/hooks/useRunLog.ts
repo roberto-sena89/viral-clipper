@@ -20,11 +20,37 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { ClipPlan, RunLogLine, RunState } from '../types';
+import { describeExitCode } from '../utils/exitCodes';
 
 /** Teto de linhas guardadas. O CLI pode imprimir muito; o painel não precisa. */
 const MAX_LINES = 2000;
 
 const EMPTY_STATE: RunState = { runId: null, phase: 'idle', lines: [], exitCode: null };
+
+/**
+ * A fase que um código de saída significa.
+ *
+ * Um código de saída não é binário, e reduzir tudo a "falhou" esconde
+ * justamente o que decide o próximo passo:
+ *
+ * - `0` — deu certo.
+ * - `4` — produziu, mas degradado: há clipe no disco, sem legenda. Pintar de
+ *   vermelho um run que entregou algo seria a mesma mentira que 'cancelled'
+ *   evita.
+ * - `5` — não produziu porque outra execução está usando a pasta. Nada
+ *   quebrou; a ação é esperar e rodar de novo, não consertar.
+ * - cancelado — o processo saiu com código não-zero, mas por pedido do usuário.
+ */
+function phaseFromExit(
+  code: number | null,
+  cancelled: boolean | undefined,
+): RunState['phase'] {
+  if (cancelled) return 'cancelled';
+  if (code === 0) return 'done';
+  if (code === 4) return 'degraded';
+  if (code === 5) return 'ocupado';
+  return 'failed';
+}
 
 export function useRunLog() {
   const [state, setState] = useState<RunState>(EMPTY_STATE);
@@ -93,7 +119,7 @@ export function useRunLog() {
         case 'exit':
           setState((prev) => ({
             ...prev,
-            phase: data.cancelled ? 'cancelled' : data.code === 0 ? 'done' : 'failed',
+            phase: phaseFromExit(data.code ?? null, data.cancelled),
             exitCode: data.code ?? null,
           }));
           pushLine({
@@ -101,9 +127,7 @@ export function useRunLog() {
             code: data.code ?? null,
             line: data.cancelled
               ? 'Cancelado pelo usuário.'
-              : data.code === 0
-                ? 'Concluído com sucesso (exit 0).'
-                : `Encerrado com código ${data.code}.`,
+              : (describeExitCode(data.code ?? null) ?? 'Encerrado.'),
           });
           // Execução terminou: não faz sentido manter o canal aberto.
           source.close();

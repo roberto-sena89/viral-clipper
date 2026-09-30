@@ -273,11 +273,32 @@ registerChatRoute(app, {
     });
     db.updateSession(sessionId, { model });
   },
+  // O historico do chat sai do banco, nao do corpo da requisicao: o servidor ja
+  // grava cada mensagem, entao e ele que sabe a conversa — inclusive depois de
+  // a pagina ser recarregada. Ver `chatContext.ts`.
+  getMessages: (sessionId) =>
+    db.getMessagesBySession(sessionId).map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+    })),
+  preferences: {
+    list: () => db.listPreferences().map((p) => ({ key: p.key, value: p.value })),
+    remember: (key, value) => {
+      db.setPreference(key, value);
+    },
+    forget: (key) => db.deletePreference(key),
+  },
 });
 
 // 启动服务器
 // Rotas do Studio (preflight, plano/confirmação e execução do viral-clipper).
-registerStudioRoutes(app);
+registerStudioRoutes(app, {
+  preferences: {
+    list: () => db.listPreferences().map((p) => ({ key: p.key, value: p.value })),
+    forget: (key) => db.deletePreference(key),
+  },
+});
 
 // Exportado para que os testes possam FECHAR o servidor.
 //

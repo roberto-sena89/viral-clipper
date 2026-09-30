@@ -121,18 +121,31 @@ class CacheKeyTests(unittest.TestCase):
 
 
 class ResolveCacheTests(unittest.TestCase):
-    def test_enabled_by_default_under_the_work_dir(self):
-        info = transcript_cache.resolve_cache(make_config(), Path("work"))
+    def test_enabled_by_default_outside_the_work_dir(self):
+        # O default PRECISA ficar fora do diretório de trabalho: `cli.py` apaga
+        # `work` inteiro no `finally`, então um cache lá dentro é escrito e
+        # destruído na mesma execução — e toda rodada do mesmo vídeo transcreve
+        # de novo. Este teste chamava-se "under_the_work_dir" e afirmava
+        # exatamente o comportamento errado.
+        config = make_config()
+        info = transcript_cache.resolve_cache(config)
         self.assertTrue(info.enabled)
-        self.assertEqual(info.directory, Path("work") / transcript_cache.DEFAULT_CACHE_DIR)
+        self.assertEqual(
+            info.directory, Path(config.output_dir) / transcript_cache.DEFAULT_CACHE_DIR
+        )
+        self.assertNotIn(
+            "work",
+            info.directory.parts,
+            "o cache não pode morar dentro do diretório de trabalho",
+        )
 
     def test_explicit_cache_dir_wins(self):
-        info = transcript_cache.resolve_cache(make_config(cache_dir=Path("meu/cache")), Path("work"))
+        info = transcript_cache.resolve_cache(make_config(cache_dir=Path("meu/cache")))
         self.assertTrue(info.enabled)
         self.assertEqual(info.directory, Path("meu/cache"))
 
     def test_disabled_by_flag(self):
-        info = transcript_cache.resolve_cache(make_config(transcript_cache=False), Path("work"))
+        info = transcript_cache.resolve_cache(make_config(transcript_cache=False))
         self.assertFalse(info.enabled)
         self.assertEqual(info.reason, "--no-transcript-cache")
 

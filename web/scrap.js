@@ -1561,6 +1561,18 @@
       setBrowser(btns[i].getAttribute("data-value") || "");
     });
     if (file) {
+      // O valor nao ve mais hardcoded no HTML: aquele default era o caminho da
+      // maquina de quem commitou (vazava o usuario em print/snapshot e nao
+      // existia em outra maquina). O caminho vale por navegador, entao ele
+      // e daqui: restaurado ao abrir, gravado a cada edicao. O sessionid NAO
+      // passa por aqui de proposito — e segredo, fica so na memoria.
+      try {
+        const saved = window.localStorage.getItem("vc-cookies-file");
+        if (saved && !file.value) file.value = saved;
+        file.addEventListener("input", () => {
+          try { window.localStorage.setItem("vc-cookies-file", file.value); } catch (_) {}
+        });
+      } catch (_) { /* storage bloqueado: segue sem memoria, sem quebrar */ }
       file.addEventListener("input", paintAuthStatus);
       file.addEventListener("change", paintAuthStatus);
     }

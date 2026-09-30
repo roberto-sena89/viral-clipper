@@ -95,7 +95,7 @@ threads: 2
 
 # templates
 # A named composition (full-frame, split-card) or a path to a .toml/.yaml file
-# written by the wizard at /templates. Empty keeps the original single-zone
+# (e.g. templates/meu.toml). Empty keeps the original single-zone
 # render, which is byte-identical to a run without this feature.
 template: ""            # e.g. "split-card" or "templates/meu.toml"
 # Cross the template with these axes: every preset x every layout re-encodes the

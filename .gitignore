@@ -63,3 +63,21 @@ _scratch/
 # Kept on disk for reference until the history is confirmed unrecoverable.
 .git-corrompido-*/
 
+# Viral Clip Studio (Node/React chat app). It is a separate application living
+# inside the repo: its dependency tree, its SQLite database and its credentials
+# have nothing to do with the Python pipeline. Ignored individually rather than
+# with a blanket `studio/` so the source, the .env.example and the README of the
+# Studio stay tracked.
+studio/node_modules/
+studio/dist/
+studio/data/
+studio/.env
+studio/*.log
+
+# Configuracao de modelos de terceiros do Studio. O arquivo versionado usa
+# ${VAR} para as chaves, entao nao carrega segredo — mas se alguem colar uma
+# chave em texto plano para testar, ela nao pode ir junto. A variante local
+# fica fora, e a versao ${VAR} entra.
+.codebuddy/models.local.json
+.codebuddy/settings.local.json
+

@@ -89,5 +89,60 @@ class ExitCodeTests(unittest.TestCase):
         self.assertEqual(self.run_single(clips=[]), 0)
 
 
+class PlanOnlyManifestTests(unittest.TestCase):
+    """``--plan-only`` nao pode apagar o manifesto do ultimo run de verdade.
+
+    Um plano nao renderiza nada, entao todo ``record`` sai com ``file`` vazio.
+    Gravar isso por cima de ``clips.json`` deixa os ``.mp4`` no disco, orfaos,
+    sem nada que os indexe. Medido: depois de um ``--plan-only``, ``output/``
+    tinha 3 clipes e ``clips.json`` listava 2 com ``file: ""``.
+    """
+
+    def run_single(self, *, dry_run: bool):
+        config = make_config(
+            url="https://youtu.be/x",
+            output_dir=Path("out"),
+            dry_run=dry_run,
+            quiet=True,
+            keep_temp=True,
+        )
+        analysis = make_analysis(duration=120.0)
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.object(
+                    cli.pipeline,
+                    "analyse",
+                    return_value=({"id": "abc", "title": "Titulo"}, analysis, None, []),
+                )
+            )
+            stack.enter_context(patch.object(cli.pipeline, "select_windows", return_value=[]))
+            stack.enter_context(
+                patch.object(
+                    cli.pipeline,
+                    "render_windows",
+                    return_value=[_clip(1, meets_minimum=True)],
+                )
+            )
+            stack.enter_context(
+                patch.object(cli.pipeline, "build_viral_report", return_value=[])
+            )
+            stack.enter_context(patch.object(cli.util, "ensure_dir", return_value=Path("out")))
+            write_json = stack.enter_context(patch.object(cli.report, "write_json"))
+            write_markdown = stack.enter_context(patch.object(cli.report, "write_markdown"))
+            cli.run_single(config, Logger(quiet=True))
+        return write_json, write_markdown
+
+    def test_a_plan_does_not_write_the_clip_manifest(self):
+        write_json, write_markdown = self.run_single(dry_run=True)
+        self.assertFalse(write_json.called)
+        self.assertFalse(write_markdown.called)
+
+    def test_a_real_run_still_writes_the_clip_manifest(self):
+        """O guarda nao pode ser largo demais: sem isto, nada seria gravado."""
+        write_json, write_markdown = self.run_single(dry_run=False)
+        self.assertTrue(write_json.called)
+        self.assertTrue(write_markdown.called)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

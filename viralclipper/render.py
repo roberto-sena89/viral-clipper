@@ -813,6 +813,24 @@ def render_clip(
         maps += ["-map", "[aout]"]
 
     temp_output = work / f"render{Path(destination).suffix or '.mp4'}"
+
+    # Um `render.mp4` sobrevivente de uma execucao ANTERIOR e um risco real, e
+    # nao teorico. O `finally` que apaga o diretorio de trabalho (cli.py) NAO
+    # roda quando o processo e morto a forca — que e exatamente o que o botao
+    # Parar do Studio faz (`taskkill /T /F`). E `util.ensure_dir` so faz
+    # `mkdir(exist_ok=True)`, entao a rodada seguinte herda o diretorio sujo.
+    #
+    # O caminho de falha: se o ffmpeg DESTA rodada morrer antes de escrever
+    # qualquer byte, o arquivo velho continua existindo, o guarda
+    # `if not temp_output.exists()` la embaixo passa, e o `replace` promove o
+    # arquivo truncado da rodada cancelada ao nome final. O `probe_duration`
+    # logo depois provavelmente pega (um mp4 cortado perde o `moov`, porque
+    # `+faststart` escreve ele no fim), mas "provavelmente pego por uma sonda
+    # mais adiante" e garantia fraca para um caminho de corrupcao que duas
+    # linhas eliminam. E o mesmo padrao defensivo que reframe.py ja usa com os
+    # `sample_*.jpg`.
+    temp_output.unlink(missing_ok=True)
+
     command = [
         ffmpeg,
         "-hide_banner",

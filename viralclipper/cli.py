@@ -521,9 +521,19 @@ def run_single(
             max_duration=config.max_duration,
             clips=records,
         )
-        output_dir = util.ensure_dir(config.output_dir)
-        json_path = report.write_json(run_report, output_dir / "clips.json")
-        markdown_path = report.write_markdown(run_report, output_dir / "clips.md")
+        # Um plano nao renderizou nada, entao todo `record` sai com ``file``
+        # vazio. Gravar isso por cima de `clips.json` apagaria o manifesto do
+        # ultimo run de verdade: os .mp4 continuariam no disco, orfaos, sem
+        # nada que os indexe. Medido — depois de um `--plan-only`, `output/`
+        # tinha 3 clipes e `clips.json` listava 2 com `file: ""`.
+        #
+        # O `viral_report.md` continua sendo escrito de proposito: ele e a
+        # leitura editorial das janelas escolhidas (uma previsao), nao um
+        # registro do que foi renderizado.
+        if not config.dry_run:
+            output_dir = util.ensure_dir(config.output_dir)
+            json_path = report.write_json(run_report, output_dir / "clips.json")
+            markdown_path = report.write_markdown(run_report, output_dir / "clips.md")
     except ClipperError as exc:
         logger.warn(str(exc))
         return 1, None, str(exc)
@@ -535,8 +545,12 @@ def run_single(
         print()
         print(report.format_table(run_report))
         print()
-        logger.ok(f"Relatorio: {json_path}")
-        logger.ok(f"Resumo: {markdown_path}")
+        # Num plano os dois caminhos sao ``None``: nao ha arquivo para anunciar,
+        # e "Relatorio: None" no log seria pior do que nao dizer nada.
+        if json_path is not None:
+            logger.ok(f"Relatorio: {json_path}")
+        if markdown_path is not None:
+            logger.ok(f"Resumo: {markdown_path}")
         if config.dry_run:
             logger.info("Plan-only: nenhum clip foi renderizado.")
 

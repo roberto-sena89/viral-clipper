@@ -273,10 +273,16 @@ def _save_cached(directory: Path, key: str, verdict: Verdict) -> None:
 
 
 def resolve_cache_dir(config: ClipConfig) -> Path:
-    """Rank cache lives next to the transcript cache, outside the run scratch."""
+    """Rank cache lives next to the transcript cache, outside the run scratch.
+
+    It used to be ``work_path()/cache/rank`` — inside the scratch, which
+    ``cli.py`` deletes in its ``finally``. With ``--ranker llm`` that meant the
+    LLM scoring calls were paid for again on every run of the same video, since
+    nothing ever survived to be reused.
+    """
     if config.cache_dir:
         return Path(config.cache_dir) / "rank"
-    return config.work_path() / "cache" / "rank"
+    return Path(config.output_dir) / "cache" / "rank"
 
 
 def build_provider(config: ClipConfig) -> RankProvider | None:

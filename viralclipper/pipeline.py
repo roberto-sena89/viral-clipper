@@ -155,7 +155,7 @@ def _transcribe_cached(
     that actually loaded - a fallback to a smaller model must not be served to,
     or hidden from, a run that asked for the full size one.
     """
-    info = transcript_cache.resolve_cache(config, work, logger)
+    info = transcript_cache.resolve_cache(config, logger)
     if not info.enabled:
         return transcribe.transcribe(wav_path, config, logger)
 

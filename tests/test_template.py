@@ -18,6 +18,7 @@ from viralclipper.util import ClipperError
 
 from ._fixtures import make_config
 
+
 def _text_template(**overrides):
     """O formato Meme: faixa de texto preta, vídeo reduzido, barra de identidade.
 
@@ -44,9 +45,11 @@ def _text_template(**overrides):
         ),
     )
 
+
 def _text_band(**overrides):
     """A faixa (com margens já em pixels) da zona de texto do formato Meme."""
     return tpl.plan_bands(_text_template(**overrides), 1080, 1920)[0]
+
 
 class ZoneValidationTests(unittest.TestCase):
     def test_unknown_kind_is_refused(self):
@@ -123,6 +126,7 @@ class ZoneValidationTests(unittest.TestCase):
         with self.assertRaises(ClipperError):
             tpl.Zone(kind="text", fraction=1.0, text="oi", text_outline=-0.01).validate(1)
 
+
 class TemplateValidationTests(unittest.TestCase):
     def test_zones_must_sum_to_one(self):
         broken = tpl.Template(
@@ -191,6 +195,7 @@ class TemplateValidationTests(unittest.TestCase):
             short.validate()
         self.assertIn("0.7400", str(ctx.exception))
 
+
 class PlanBandsTests(unittest.TestCase):
     def test_full_frame_is_exactly_the_canvas(self):
         bands = tpl.plan_bands(tpl.FULL_FRAME, 1080, 1920)
@@ -237,6 +242,7 @@ class PlanBandsTests(unittest.TestCase):
         self.assertEqual(bands[-1].kind, "captions")
         self.assertEqual(bands[-1].height, 1920)
 
+
 def _produced_size(fragment: str) -> tuple[int, int]:
     """O tamanho que o fragmento do still realmente produz.
 
@@ -249,9 +255,11 @@ def _produced_size(fragment: str) -> tuple[int, int]:
         match = re.search(r"scale=(\d+):(\d+)", fragment)
     return int(match.group(1)), int(match.group(2))
 
+
 def _mask_size(fragment: str) -> tuple[int, int]:
     match = re.search(r"s=(\d+)x(\d+)", fragment)
     return int(match.group(1)), int(match.group(2))
+
 
 class ChromaGridTests(unittest.TestCase):
     """Todo retângulo que o motor desenha cai na grade do yuv420p.
@@ -496,6 +504,7 @@ class ChromaGridTests(unittest.TestCase):
                         mask = _mask_size(tpl.rounded_mask(band, band.zone))
                         self.assertEqual(still, mask)
 
+
 class TextZoneTests(unittest.TestCase):
     """Onde as palavras de uma zona ``text`` caem no quadro, em pixels.
 
@@ -588,6 +597,7 @@ class TextZoneTests(unittest.TestCase):
             cursor += item.height
         self.assertEqual(cursor, 1920)
 
+
 def _edge(band, which: str) -> int:
     """A coordenada nomeada do retângulo interno da faixa, em pixels."""
     if which == "inner_x":
@@ -601,6 +611,7 @@ def _edge(band, which: str) -> int:
     if which == "center_x":
         return band.inner_x + band.inner_width / 2
     return band.inner_y + band.inner_height / 2
+
 
 class ComposeTests(unittest.TestCase):
     def test_full_frame_needs_no_overlay(self):
@@ -751,6 +762,80 @@ class ComposeTests(unittest.TestCase):
             graph, _ = tpl.compose(tpl.BUILTIN[name], 1080, 1920)
             self.assertEqual(graph.count("["), graph.count("]"), f"unbalanced in {name}")
 
+    def test_full_frame_with_reframe_produces_crop(self):
+        """Um full-frame com reframe passa a usar o crop com expressao.
+
+        Antes do passo 1, a chave era lida so no caminho legado
+        (``_layout_filter`` / ``render.py``) e sumcia no compose. Com a
+        correcao, ``scale_into`` recebe ``reframe_*`` e o zoom/pan chegam
+        ao filtro mesmo nele.
+        """
+        framed = tpl.Template(
+            name="framed",
+            zones=(tpl.Zone(kind="video", fraction=1.0),),
+            reframe_zoom=2,
+            reframe_pan_x=0.25,
+            reframe_pan_y=0.75,
+        )
+        graph, _ = tpl.compose(framed, 1080, 1920)
+        self.assertIn("scale=2160:3840", graph, "o zoom 2x nao chegou no scale")
+        self.assertIn("crop=1080:1920:x=(in_w-out_w)*0.25", graph, "o pan_x nao chegou no crop")
+        self.assertIn("y=(in_h-out_h)*0.75", graph, "o pan_y nao chegou no crop")
+
+    def test_split_card_with_reframe_applies_to_video_zone(self):
+        """split-card (2 zonas, compoe) passa a obedecer o reframe da zona de video.
+
+        E o unico template embutido que compoe: antes do passo 1, o reframe
+        da zona de video era descartado porque ``compose`` nunca olhava a
+        chave. Agora ``scale_into`` aplica, e o [0:v] escala com o crop certo.
+        """
+        framed = tpl.replace(tpl.SPLIT_CARD, reframe_zoom=1.5, reframe_pan_x=0.3, reframe_pan_y=0.7)
+        graph, _ = tpl.compose(framed, 1080, 1920)
+        # A zona de video ocupa 62% da altura (plan_bands arredonda para 1190px
+        # por causa do residual). Zoom 1.5 escala a largura para 1620px.
+        self.assertIn("scale=1620:1785", graph, "o zoom 1.5 nao foi aplicado ao video")
+        self.assertIn("crop=1080:1190:x=(in_w-out_w)*0.3", graph, "o pan_x do video nao chegou")
+        self.assertIn("y=(in_h-out_h)*0.7", graph, "o pan_y do video nao chegou")
+
+    def test_full_frame_neutral_still_identity_graph(self):
+        """full-frame sem reframe continua produzindo o grafo de identidade.
+
+        Garante que a mudanca nao quebra o invariante FULL_FRAME: o template
+        so com a zona de video ocupando o canvas inteiro nao pode passar a
+        gerar um crop com expressao quando nao ha reframe.
+        """
+        graph, _ = tpl.compose(tpl.FULL_FRAME, 1080, 1920)
+        self.assertIn("scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920", graph)
+        self.assertNotIn("in_w-out_w", graph)
+
+    def test_reframe_does_not_leak_into_still_zones(self):
+        """reframe_* so vale para a zona de video; stills continuam usando zone.zoom.
+
+        Uma zona image com zoom=1.5 e um template com reframe_zoom=2: o
+        still deve usar 1.5 (zone.zoom), nao 2 (reframe_zoom).
+        """
+        framed = tpl.Template(
+            name="mixed",
+            zones=(
+                tpl.Zone(kind="video", fraction=0.6),
+                tpl.Zone(kind="image", fraction=0.4, source="logo.png", zoom=1.5, pan_x=0.25, pan_y=0.75),
+            ),
+            reframe_zoom=2,
+            reframe_pan_x=0.3,
+            reframe_pan_y=0.7,
+        )
+        graph, _ = tpl.compose(framed, 1080, 1920)
+        # Video zona: scale com zoom 2 (reframe_zoom)
+        self.assertIn("scale=2160:", graph)
+        # Image zona: scale com zoom 1.5 (zone.zoom), nao 2
+        self.assertIn("scale=1620:", graph)
+        # pan_y da imagem: 0.75 (zone.pan_y), nao 0.7 (reframe_pan_y)
+        # O video usa 0.7 (reframe_pan_y) e a imagem usa 0.75 (zone.pan_y).
+        # Confirmado: o crop do image tem *0.75*, o do video tem *0.7.
+        self.assertIn("crop=1080:768:x=(in_w-out_w)*0.25:y=(in_h-out_h)*0.75", graph)
+        self.assertIn("crop=1080:1152:x=(in_w-out_w)*0.3:y=(in_h-out_h)*0.7", graph)
+
+
 class FromDictTests(unittest.TestCase):
     def _payload(self, **overrides):
         data = {
@@ -818,6 +903,7 @@ class FromDictTests(unittest.TestCase):
         self.assertFalse(zone.text_bold)
         self.assertTrue(zone.text_uppercase)
         self.assertEqual(zone.text_outline, 0.003)
+
 
 class TemplateFileTests(unittest.TestCase):
     def setUp(self):
@@ -933,6 +1019,7 @@ class TemplateFileTests(unittest.TestCase):
         path.write_text("name = x", encoding="utf-8")
         with self.assertRaises(ClipperError):
             tpl.load_template(path)
+
 
 class MemePovFileTests(unittest.TestCase):
     """``templates/meme-pov.toml`` é o formato Meme, e o motor tem que montá-lo.
@@ -1079,6 +1166,7 @@ class MemePovFileTests(unittest.TestCase):
         loaded = tpl.load_template(tmp)
         self.assertFalse(loaded.captions)
 
+
 class GetTemplateTests(unittest.TestCase):
     def test_builtins_load_by_name(self):
         for name in tpl.BUILTIN:
@@ -1093,6 +1181,7 @@ class GetTemplateTests(unittest.TestCase):
         message = str(ctx.exception)
         self.assertIn("full-frame", message)
         self.assertIn("split-card", message)
+
 
 class ExpandVariationsTests(unittest.TestCase):
     def test_no_axes_returns_the_base_template(self):
@@ -1141,6 +1230,7 @@ class ExpandVariationsTests(unittest.TestCase):
         self.assertEqual(len(variants), 1)
         self.assertEqual(variants[0].caption_preset, "neon")
         self.assertEqual(variants[0].layout, "focus")
+
 
 class ApplyToConfigTests(unittest.TestCase):
     def test_none_fields_leave_the_config_alone(self):
@@ -1339,6 +1429,7 @@ class ApplyToConfigTests(unittest.TestCase):
         with self.assertRaises(ClipperError):
             tpl.Zone(kind="frame", fraction=1.0, pan_x=2).validate(1)
 
+
 class PlateImageIsGoneTests(unittest.TestCase):
     """``plate_image`` foi removida do motor, e o recusa e o que sobra.
 
@@ -1419,6 +1510,7 @@ text = "ISSO AQUI VAI VIRALIZAR"
         self.assertFalse((raiz / "placa_check.py").exists(),
                          "placa_check.py existia so para medir plate_image")
 
+
 class DescribeTests(unittest.TestCase):
     def test_description_mentions_every_band(self):
         text = tpl.describe(tpl.SPLIT_CARD, 1080, 1920)
@@ -1437,6 +1529,7 @@ class DescribeTests(unittest.TestCase):
         x, y, an = tpl.text_anchor(band, band.zone, 1080, 1920)
         self.assertIn(f"texto ancorado em ({x},{y}) an={an}", text)
         self.assertIn("text", text)
+
 
 if __name__ == "__main__":
     unittest.main()

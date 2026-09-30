@@ -11,3 +11,10 @@ smoke_test.py
 *.md
 config.example.toml
 config.example.yaml
+
+# Viral Clip Studio: aplicação Node separada, não faz parte da imagem Python.
+# node_modules sozinho passaria de centenas de MB no build context.
+studio/node_modules
+studio/dist
+studio/data
+studio/.env

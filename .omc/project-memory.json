@@ -1,0 +1,150 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1790552409631,
+  "projectRoot": "C:\\Users\\USUARIO\\viral-clipper",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Python",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "requirements.txt"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "pip",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "tests"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 1,
+      "lastAccessed": 1790552409477,
+      "keyFiles": [
+        "modelos-nvidia.md"
+      ]
+    },
+    "out": {
+      "path": "out",
+      "purpose": "Build output",
+      "fileCount": 1,
+      "lastAccessed": 1790552409478,
+      "keyFiles": [
+        "viral_report.md"
+      ]
+    },
+    "output": {
+      "path": "output",
+      "purpose": null,
+      "fileCount": 8,
+      "lastAccessed": 1790552409478,
+      "keyFiles": [
+        "clips.json",
+        "clips.md",
+        "fQwp2m_O-Uk_01_o_cara_não_é_o_pica_das_magias_de_tecnol_000003.mp4",
+        "fQwp2m_O-Uk_02_uma_delas_tem_seis_dedos_o_telô_tem_o_qu_000112.mp4",
+        "fQwp2m_O-Uk_03_tem_que_ser_uma_espada_casca_agora_de_ma_000175.mp4"
+      ]
+    },
+    "templates": {
+      "path": "templates",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1790552409479,
+      "keyFiles": [
+        "meme-pov.toml"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 21,
+      "lastAccessed": 1790552409480,
+      "keyFiles": [
+        "test_archive.py",
+        "test_batch.py",
+        "test_cli.py",
+        "test_config_file.py",
+        "test_download.py"
+      ]
+    },
+    "viralclipper": {
+      "path": "viralclipper",
+      "purpose": null,
+      "fileCount": 25,
+      "lastAccessed": 1790552409481,
+      "keyFiles": [
+        "archive.py",
+        "audio.py",
+        "batch.py",
+        "caption_presets.py",
+        "cli.py"
+      ]
+    },
+    "web": {
+      "path": "web",
+      "purpose": null,
+      "fileCount": 13,
+      "lastAccessed": 1790552409482,
+      "keyFiles": [
+        "1.mp4",
+        "2.mp4",
+        "3.mp4",
+        "index.css",
+        "index.html"
+      ]
+    },
+    "_scratch": {
+      "path": "_scratch",
+      "purpose": null,
+      "fileCount": 185,
+      "lastAccessed": 1790552409483,
+      "keyFiles": [
+        "again_check.log",
+        "archive_farid.log",
+        "captured_graphql.json",
+        "capture_graphql.js",
+        "card_valid_check.js"
+      ]
+    },
+    "__pycache__": {
+      "path": "__pycache__",
+      "purpose": null,
+      "fileCount": 3,
+      "lastAccessed": 1790552409484,
+      "keyFiles": [
+        "cache_e2e_test.cpython-314-pytest-9.1.1.pyc",
+        "probe_ig_graphql.cpython-313.pyc",
+        "smoke_test.cpython-314-pytest-9.1.1.pyc"
+      ]
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}

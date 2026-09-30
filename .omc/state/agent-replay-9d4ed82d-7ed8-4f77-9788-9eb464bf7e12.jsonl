@@ -1,0 +1,4 @@
+{"t":0,"agent":"system","event":"skill_invoked","skill_name":"superpowers:brainstorming"}
+{"t":0,"agent":"a985ca4","agent_type":"Explore","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"a985ca4","agent_type":"Explore","event":"agent_stop","success":true,"duration_ms":657936}
+{"t":0,"agent":"a80d9d3","agent_type":"untracked-native-fork","event":"agent_stop","success":true,"synthetic":true,"telemetry_status":"unmatched_stop","reason":"SubagentStop arrived without a matching SubagentStart; native Agent/Task start telemetry was not observed."}

@@ -117,16 +117,19 @@ def cache_key(
 
 def resolve_cache(
     config: ClipConfig,
-    work: str | Path,
     logger: Logger | None = None,
 ) -> CacheInfo:
     """Decide which cache directory a run uses.
 
     ``config.cache_dir`` disables the cache, uses the given directory, or
-    defaults to a directory that survives the per-run cleanup. When the caller
-    does not override it, the cache lands under ``output/cache/transcripts``
-    rather than under the temporary work directory, so it is reusable across
-    runs of the same video.
+    defaults to ``output/cache/transcripts`` — *outside* the work directory, so
+    it survives the end-of-run cleanup.
+
+    That default used to be ``work/cache/transcripts``, and ``cli.py`` removes
+    the whole work directory in its ``finally``. The cache was written and then
+    destroyed in the same run, so every run of the same video re-transcribed —
+    the single most expensive step of the pipeline. The docstring here already
+    described the correct behaviour; the code simply never implemented it.
     """
     if not config.transcript_cache:
         if logger:
@@ -134,7 +137,11 @@ def resolve_cache(
         return CacheInfo(directory=Path(), enabled=False, reason="--no-transcript-cache")
 
     configured = getattr(config, "cache_dir", None)
-    directory = Path(configured) if configured is not None else Path(work) / DEFAULT_CACHE_DIR
+    directory = (
+        Path(configured)
+        if configured is not None
+        else Path(config.output_dir) / DEFAULT_CACHE_DIR
+    )
     return CacheInfo(directory=directory, enabled=True)
 
 

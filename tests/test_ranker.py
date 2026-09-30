@@ -314,12 +314,16 @@ class ApplyTests(RankerTestCase):
         config = self.config()
         self.assertEqual(ranker.resolve_cache_dir(config), self.tmp / "rank")
 
-    def test_cache_dir_falls_back_to_the_work_dir(self):
+    def test_cache_dir_falls_back_outside_the_work_dir(self):
+        # Não pode cair em `_work`: `cli.py` apaga esse diretório no `finally`,
+        # então um cache lá dentro nunca sobrevive para ser reusado — e com
+        # `--ranker llm` isso significa pagar as chamadas de novo a cada rodada.
+        # Este teste chamava-se "falls_back_to_the_work_dir" e afirmava o
+        # comportamento errado.
         config = ClipConfig(url="u", output_dir=self.tmp / "out", ranker="llm")
-        self.assertEqual(
-            ranker.resolve_cache_dir(config),
-            self.tmp / "out" / "_work" / "cache" / "rank",
-        )
+        resolved = ranker.resolve_cache_dir(config)
+        self.assertEqual(resolved, self.tmp / "out" / "cache" / "rank")
+        self.assertNotIn("_work", resolved.parts, "o cache não pode morar no scratch")
 
 
 class BlendTests(unittest.TestCase):

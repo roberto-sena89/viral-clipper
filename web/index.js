@@ -503,7 +503,12 @@
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return await res.json();
     } catch (e) {
-      return { error: e.message, offline: true };
+      // `sem_conexao` separa "o fetch nem saiu" de "o servidor respondeu com
+      // erro". Os dois cegam o mesmo aqui, mas so o primeiro se resolve
+      // subindo o servidor: um 500 quer outro conselho, e a nota que a pagina
+      // mostra nao pode mandar reiniciar algo que esta de pe.
+      const http = String(e.message).startsWith('HTTP ');
+      return { error: e.message, offline: true, sem_conexao: !http };
     }
   }
 
@@ -830,7 +835,10 @@
       log('Servidor local não encontrado em ' + API, 'ln-warn');
       log('Rode o comando acima no terminal, ou inicie web/server.py');
       setProgress(100, 'Comando pronto — execute no terminal.');
-      setStatus('error', 'Offline');
+      // A nota de prontidao fala o mesmo que aqui, e ela sabe se o problema
+      // e o arquivo aberto direto (nesse caso mandar subir o servidor e
+      // matar o servidor, que pode estar no ar).
+      prontidao(r);
       toast('Backend offline. Comando CLI copiado para o log.', 'err');
     } else if (r.error) {
       log('Erro: ' + r.error, 'ln-err');
@@ -1073,8 +1081,68 @@
     stopPolling();
     pollTimer = setInterval(poll, 4000);
   }
+
+  // ---------- prontidao do backend ----------
+  //
+  // A pagina abre sem servidor o tempo todo: metade das pessoas chega pelo
+  // arquivo direto, sem ter nunca subido o `web/server.py`. Antes, a unica
+  // dica era o pill virando "Offline" depois de um botao ser apertado — ja
+  // tarde, depois de um clique que parecia ter dado errado.
+  //
+  // Ha dois casos, e o conselho de cada um e diferente:
+  //   * `location.protocol === 'file:'` — o navegador bloqueia o fetch para
+  //     `http://127.0.0.1:7755` porque nao ha cabecalho CORS, entao a nota
+  //     diz para abrir pelo endereço. Matar o servidor aqui nao ajuda nada,
+  //     ele pode estar no ar.
+  //   * servidor de verdade e sem resposta — a nota diz o comando a rodar.
+  let ateve_pill_offline = false;
+  function prontidao(r) {
+    const el = $('#backend-state');
+    if (!el) return;
+    const tem_erro = !!(r && (r.offline || r.error));
+    if (!tem_erro) {
+      el.hidden = true;
+      // So desfaz se a gente foi quem marcou: o pill tambem carrega "Em
+      // execucao" e "Concluido", e zera-los aqui apagaria a resposta do
+      // trabalho que acabou de rodar.
+      if (ateve_pill_offline && !state.running) {
+        setStatus(null, 'Pronto');
+        ateve_pill_offline = false;
+      }
+      return;
+    }
+    el.hidden = false;
+    // A chave e a ORIGEM, nao o protocolo. Medido no navegador: a pagina
+    // servida em outra porta que 7755 tambem e bloqueada (nao ha cabecalho
+    // CORS), e a nota chegava a mandar "rode o servidor" enquanto o
+    // servidor estava de pe — conselho errado, e pior: parece que a pessoa
+    // tem que reiniciar algo que nunca parou.
+    //
+    // Isso inverte a conta: a pagina so recebeu a propria pagina do
+    // servidor, entao quem e servido pela 7755 ja tem servidor. O ramo
+    // "sem resposta" so existe para a pagina ter caido do ar depois.
+    if (location.origin !== API) {
+      el.textContent = 'Esta página não está sendo servida pelo painel '
+        + '(vinda de ' + location.origin + '), então o navegador recusa a '
+        + 'chamada para 127.0.0.1:7755 mesmo com o servidor no ar. Abra '
+        + 'http://127.0.0.1:7755/ e carregue de lá.';
+      setStatus('error', 'Endereço errado');
+    } else if (r.sem_conexao) {
+      el.textContent = 'O painel parou de responder em 127.0.0.1:7755. '
+        + 'Na pasta do projeto, rode "python web/server.py" e recarregue '
+        + 'esta página.';
+      setStatus('error', 'Sem servidor');
+    } else {
+      el.textContent = 'O servidor respondeu com erro (' + r.error + '). '
+        + 'A fila e a galeria podem estar desatualizadas.';
+      setStatus('error', 'Erro');
+    }
+    ateve_pill_offline = true;
+  }
+
   async function poll() {
     const r = await api('/status');
+    prontidao(r);
     if (r.offline || r.error) return;
     if (Array.isArray(r.clips) && r.clips.length !== state.clips.length) {
       state.clips = r.clips;
@@ -1090,7 +1158,11 @@
     // para a fila nao ficar desatualizada ate o proximo tique.
     if (document.hidden) stopPolling(); else { startPolling(); poll(); }
   });
+  // Um `poll` imediato em vez de esperar o primeiro tique de 4s: a nota de
+  // "sem servidor" e a primeira coisa que um visitante sem backend quer ver,
+  // e ela nao pode esperar quatro segundos para aparecer.
   startPolling();
+  poll();
 
   renderQueue();
   renderClips();

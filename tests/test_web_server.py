@@ -3345,5 +3345,140 @@ class FrontendPolishTests(unittest.TestCase):
         self.assertIn("vc-cookies-file", js, "o caminho deixou de ser lembrado por navegador")
 
 
+class BackendReadinessTests(unittest.TestCase):
+    """A pagina diz se ela mesma consegue falar com o servidor.
+
+    A meta inicial era responder "o servidor esta no ar?" numa linguagem que
+    o leigo entenda. A resposta estrutural foi esta: a pagina nao consegue
+    PERGUNTAR, ela so consegue tentar — e quando a tentativa falha ela diz o
+    que ela sabe, que e que a tentativa nao passou. O que muda entre os casos
+    e o conselho, e era para ai que o visitante se perdia: sem servidor e o
+    servidor sao duas falhas distintas, e mandar subir um processo que ja
+    esta rodando e mandar fazer nada.
+    """
+
+    def html(self) -> str:
+        return (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+
+    def js(self) -> str:
+        return (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+
+    def css(self) -> str:
+        return (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
+
+    def test_the_page_declares_whether_it_has_a_backend(self):
+        """A nota existe, nasce escondida, e mora onde a pessoa esta olhando.
+
+        Escondida e obrigatorio: numa pagina funcionando o painel nao pode
+        carregar uma linha de aviso a toa, senao o aviso vira ruido e para de
+        ser lido — e um aviso que sempre aparece nao informa nada.
+        """
+        html = self.html()
+        self.assertIn('id="backend-state"', html)
+        self.assertIn('class="backend-note" id="backend-state" hidden', html)
+        pino = html.index('id="backend-state"')
+        self.assertLess(html.index('id="status-pill"'), pino)
+        self.assertLess(pino, html.index('id="progress-track"'))
+
+    def test_the_advice_changes_with_what_actually_failed(self):
+        """Origem errada e servidor caido pedem coisas opostas.
+
+        Trava na ORIGEM e nao no protocolo, por medida no navegador: a pagina
+        servida em 7842 era bloqueada igual a de `file:` (nao ha cabecalho
+        CORS), e a nota mandava subir um servidor que estava de pe — e depois
+        mandava abrir o endereço certo, que era o unico conselho bom dos dois.
+        """
+        js = self.js()
+        self.assertIn("location.origin !== API", js)
+        # O ramo de origem errada manda abrir o 7755 — nao subir nada.
+        self.assertIn("http://127.0.0.1:7755/ e carregue", js)
+        self.assertIn("Endereço errado", js)
+        # So o ramo de origem CERTA manda subir servidor: ali quem serviu a
+        # pagina foi o servidor, entao se ele parou depois, ele parou mesmo.
+        # Fatia com o inicio ancorado: `} else {` existe em varios outros
+        # pontos do arquivo, e uma busca a partir do zero devolveria uma
+        # janela negativa (string vazia) em vez de reprovar.
+        ini = js.index("} else if (r.sem_conexao) {")
+        fim = js.index("} else {", ini)
+        ramo = js[ini:fim]
+        self.assertGreater(len(ramo), 80, "ramo truncado: confira o recorte")
+        self.assertIn('"python web/server.py"', ramo)
+        self.assertIn("r.sem_conexao", js)
+        # Se os tres avisos fossem a mesma frase, o encadeamento nao estaria.
+        self.assertIn("O servidor respondeu com erro (", js)
+
+    def test_a_http_error_is_not_blamed_on_a_missing_server(self):
+        """Um 500 nao quer dizer que falta servidor, e nao manda subir um.
+
+        `api()` marcava todo erro de `offline: true`, e `offline` ja virou
+        palavra reservada para "o fetch nem saiu". Sem `sem_conexao` a pagina
+        nao teria como escolher o ramo, e o conselho viraria chute.
+        """
+        js = self.js()
+        self.assertIn("const http = String(e.message).startsWith('HTTP ')", js)
+        self.assertIn("sem_conexao: !http", js)
+
+
+    def test_the_first_poll_does_not_wait_for_the_timer(self):
+        """A nota aparece no primeiro segundo, nao no quarto.
+
+        Quem abriu o arquivo pelo disco nao deve esperar um intervalo de 4s
+        para descobrir por que nada funciona — e a primeira tentativa e
+        tambem a que traz a fila e a galeria antes de haver um unico clicar.
+        """
+        js = self.js()
+        self.assertIn("startPolling();\n  poll();", js)
+        # O `poll` e quem chama a nota; se ele so rodasse via `setInterval`,
+        # a nota nasceria atras do primeiro tique.
+        self.assertIn("const r = await api('/status');\n    prontidao(r);", js)
+
+    def test_a_healthy_page_shows_nothing_and_keeps_its_running_state(self):
+        """No caminho bom a nota some, e o pill nao apaga o trabalho novo.
+
+        A restauracao e condicionada a `ateve_pill_offline` e a `!state.running`
+        justamente porque o mesmo pill carrega "Em execucao" e "Concluido":
+        zerar o estado a cada tique de 4s apagaria a resposta de um job que
+        acabou de terminar.
+        """
+        js = self.js()
+        bloco = js[js.index("function prontidao(r) {"):js.index("async function poll()")]
+        self.assertIn("el.hidden = true;", bloco)
+        self.assertIn("if (ateve_pill_offline && !state.running)", bloco)
+        self.assertIn("ateve_pill_offline = true;", bloco)
+
+    def test_the_note_is_not_registered_as_a_field_hint(self):
+        """A nota e estado, nao descricao de campo, e fica fora do registro.
+
+        `FieldDescriptionTests` apaga como orfa qualquer `.hint` que nenhum
+        campo referencia — correto, porque ali ha uma descricao esquecida
+        pendurada numa entrada. Esta linha descreve nenhuma entrada, entao
+        nao pode usar essa classe: sumiria no primeiro passe de limpeza.
+        """
+        html = self.html()
+        self.assertNotIn('class="hint" id="backend-state"', html)
+        # E tem estilo proprio: sem ele a nota herdaria o corpo do card e
+        # ficaria indistinguivel de paragrafo normal.
+        self.assertIn(".backend-note {", self.css())
+
+    def test_run_uses_the_same_note_instead_of_a_second_verdict(self):
+        """O botao de gerar nao pode dar outro diagnostico que o poll.
+
+        Eram duas falas: `run()` escrevia "Servidor local não encontrado" e
+        o poll dizia outra coisa, e nas duas o arquivo aberto direto acabava
+        mandando reiniciar um servidor que nunca parou. Uma fonte so.
+        """
+        js = self.js()
+        # Ancora na frase so do `run()`: pegar o primeiro `if (r.offline)` da
+        # pagina arrastaria 178 linhas — de 665 ate 843 — e o teste passaria
+        # porque a janela acabasse passando por cima de `prontidao`, sem
+        # provar nada sobre o botao de gerar.
+        ini = js.index("Servidor local não encontrado")
+        fim = js.index("} else if (r.error)", ini)
+        branch = js[ini:fim]
+        self.assertLess(fim - ini, 600, "a janela cresceu: confira o recorte")
+        self.assertIn("prontidao(r);", branch)
+        self.assertNotIn("setStatus('error', 'Offline')", branch)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

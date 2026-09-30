@@ -505,6 +505,16 @@
           <span style="font-size:0.8rem; color:var(--text-muted);" id="elapsed">—</span>
         </div>
 
+        <!-- Prontidão do backend. Aparece só quando não há serviço, e diz qual
+             dos dois casos é: arquivo aberto direto (origin file:, que o
+             navegador bloqueia mesmo com o servidor no ar, porque não há
+             cabeçalhos CORS) ou servidor fora do ar. São conselhos
+             diferentes, e a pagina consegue ver qual é pelo `location.protocol`.
+             Sem isto, "Backend offline" parecia dizer ao usuário que o
+             servidor estava caído quando ele estava sim rodando — e a pessoa
+             reiniciava um processo que nunca tinha parado. -->
+        <p class="backend-note" id="backend-state" hidden></p>
+
         <div class="progress" role="progressbar" aria-label="Progresso" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-track">
           <div class="progress-bar" id="progress-bar"></div>
         </div>

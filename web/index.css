@@ -479,6 +479,20 @@ body { padding-left: var(--rail-w); }
 .status-pill.error .dot { background: var(--danger); }
 .status-pill.running { color: var(--accent-soft); border-color: var(--accent-primary); }
 
+/* Nota de prontidao do backend: so existe quando nao ha servico. Nao e
+   dica de campo — nao descreve entrada nenhuma — por isso nao leva a classe
+   `.hint`: essa classe e o registro das descricoes ligadas por
+   `aria-describedby`, e dali uma nota de estado seria apagada como orfa. */
+.backend-note {
+  font-size: 0.78rem; line-height: 1.5;
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.04);
+  border-left: 2px solid var(--danger);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin: 0 0 14px;
+}
+
 .progress {
   height: 6px; background: rgba(255,255,255,0.06); border-radius: 999px;
   overflow: hidden; margin: 14px 0 6px;

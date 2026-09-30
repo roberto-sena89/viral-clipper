@@ -19,7 +19,11 @@
  *      frontend não acompanhar, o card de confirmação some sem aviso — falha
  *      silenciosa, a pior categoria;
  *   2. o servidor RECUSA commit de plano não aprovado (o gate é do servidor,
- *      não do modelo).
+ *      não do modelo);
+ *   3. a orientação devolvida ao agente distingue as duas recusas: payload
+ *      errado (reenvie o resumo) e execução já em andamento (não gere outro
+ *      plano, este continua aprovado). A regra é `orientacaoDoCommit`, a mesma
+ *      que o handler usa — não uma cópia dela.
  *
  * A parte que depende do modelo (o agente entrega um plano sozinho?) virou
  * `gateLlm.test.ts`, com script próprio (`npm run test:llm`).
@@ -35,6 +39,8 @@ import http from 'node:http';
 import { parsePlanResult } from '../src/utils/planParser.ts';
 import { buildPlanPayload } from './planPayload.ts';
 import { cancelAll, createPlan } from './clipRunner.ts';
+import { orientacaoDoCommit } from './chatRoute.ts';
+import { ParamError } from './clipOptions.ts';
 
 const PORT = 3299;
 const URL_VIDEO = 'https://www.youtube.com/watch?v=7OWUenfg2-U';
@@ -71,6 +77,26 @@ test('o payload de erro NAO vira cartao de confirmacao', () => {
   // "Executar" para um plano que não existe.
   const erro = JSON.stringify({ erro: 'Parâmetro inválido: count deve ser >= 1' }, null, 2);
   assert.equal(parsePlanResult(erro, URL_VIDEO), null, 'erro não pode virar plano');
+});
+
+test('a orientacao ao agente distingue payload errado de execucao em andamento', () => {
+  // A trava de execucao unica nao e erro de payload. Mandar o agente reenviar
+  // o resumo para o usuario confirmar de novo seria pedir uma confirmacao que
+  // ele ja deu — e o plano continua aprovado, entao ele nao se perdeu.
+  const emAndamento = orientacaoDoCommit(new ParamError('Já existe uma execução', 'em-andamento'));
+  assert.match(emAndamento, /NÃO gere outro plano/i, 'nao pode mandar gerar plano novo');
+  assert.match(emAndamento, /aprovado/i, 'precisa dizer que o plano nao se perdeu');
+  assert.ok(
+    !/Apresente o resumo/i.test(emAndamento),
+    'nao pode pedir confirmacao de novo — o usuario ja confirmou',
+  );
+
+  // O caso comum continua igual: payload errado, o agente se corrige sozinho.
+  const comum = orientacaoDoCommit(new ParamError('Parâmetro não permitido: turbo'));
+  assert.match(comum, /Apresente o resumo/i);
+
+  // Um erro que nao e ParamError cai no caminho comum em vez de estourar.
+  assert.match(orientacaoDoCommit(new Error('qualquer coisa')), /Apresente o resumo/i);
 });
 
 // ── 2. O gate. Servidor real, HTTP real, sem LLM. ───────────────────────────

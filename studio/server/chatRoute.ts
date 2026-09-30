@@ -140,6 +140,28 @@ export function fallbackTextIfSilent(text: string, ferramentasChamadas: number):
  * continua em `validateRequest` (clipOptions.ts), nao no schema: schema bonito
  * nao substitui allowlist.
  */
+/**
+ * Orientação devolvida ao agente quando o `clip_commit` é recusado.
+ *
+ * Duas recusas diferentes, duas reações diferentes. A trava de execução única
+ * não é erro do payload: mandar reenviar o resumo para o usuário confirmar de
+ * novo seria pedir uma confirmação que ele já deu, e o plano continua aprovado.
+ *
+ * Exportada para ser testada diretamente. A decisão mora aqui, não no handler —
+ * um teste que reconstruísse a regra guardaria uma cópia, não a produção.
+ */
+export function orientacaoDoCommit(error: unknown): string {
+  if (error instanceof ParamError && error.code === 'em-andamento') {
+    return (
+      'NÃO insista e NÃO gere outro plano. Já existe um render rodando. ' +
+      'Diga ao usuário que este plano continua aprovado e que basta ' +
+      'executar de novo depois que o atual terminar — ou parar o atual ' +
+      'com o botão Parar.'
+    );
+  }
+  return 'Apresente o resumo de novo e peça a confirmação. NÃO insista.';
+}
+
 export const directorTools: ToolDefinition[] = [
   {
     name: 'clip_get_options',
@@ -229,18 +251,9 @@ export const directorTools: ToolDefinition[] = [
             'sobretudo porque o Whisper roda em CPU.',
         });
       } catch (error) {
-        // Duas recusas diferentes, duas reações diferentes. A trava de execução
-        // única não é erro do plano — reenviar o resumo para o usuário confirmar
-        // de novo seria pedir uma confirmação que ele já deu.
-        const emAndamento = error instanceof ParamError && error.code === 'em-andamento';
         return JSON.stringify({
           erro: error instanceof Error ? error.message : String(error),
-          orientacao: emAndamento
-            ? 'NÃO insista e NÃO gere outro plano. Já existe um render rodando. ' +
-              'Diga ao usuário que este plano continua aprovado e que basta ' +
-              'executar de novo depois que o atual terminar — ou parar o atual ' +
-              'com o botão Parar.'
-            : 'Apresente o resumo de novo e peça a confirmação. NÃO insista.',
+          orientacao: orientacaoDoCommit(error),
         });
       }
     },

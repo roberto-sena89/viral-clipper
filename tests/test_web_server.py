@@ -2933,6 +2933,114 @@ class BrowseTests(unittest.TestCase):
         self.assertTrue(info.lpfn, "sem callback o diálogo abre atrás do navegador")
 
 
+class RunProgressTests(unittest.TestCase):
+    """GET /run/progress: o record que o painel de Execucao pinta durante o job.
+
+    O mesmo formato que `_download_record` e `_archive_record` ja tinham:
+    chaves sempre presentes, porque a pagina le o JSON direto a cada segundo e
+    uma chave ausente seria erro de renderizacao, e nao um payload menor.
+
+    Nao roda o pipeline. O que esta em prova e o contrato — as quatro etapas,
+    a cauda de linhas publicada a cada `_emit`, e o `/status` continuando a
+    responder `{jobs, clips}` com o record novo morando em outro canto.
+    """
+
+    def setUp(self):
+        self._antes = dict(server._state.get(server._RUN_SLOT) or {})
+
+    def tearDown(self):
+        with server._lock:
+            if self._antes:
+                server._state[server._RUN_SLOT] = self._antes
+            else:
+                server._state.pop(server._RUN_SLOT, None)
+
+    def test_the_idle_record_has_every_key_and_no_lit_step(self):
+        """Ocioso: 13 chaves, 4 etapas pendentes, nenhum erro e nenhuma url."""
+        r = server._run_record()
+        self.assertEqual(len(r), 13)
+        self.assertEqual([s["state"] for s in r["stages"]], ["pendente"] * 4)
+        self.assertEqual(r["error"], "")
+        self.assertEqual(r["url"], "")
+
+    def test_stages_come_from_the_same_tuple_the_pipeline_calls(self):
+        """As etapas sao as `server._RUN_STAGES`: e de la que `_run_job` marca."""
+        self.assertEqual([s["key"] for s in server._run_record()["stages"]],
+                         [key for key, _ in server._RUN_STAGES])
+
+    def test_marking_a_stage_closes_the_earlier_ones(self):
+        server._mark_stage(1)
+        with server._lock:
+            estados = [s["state"] for s in
+                       server._state[server._RUN_SLOT]["stages"]]
+        self.assertEqual(estados, ["feito", "agora", "pendente", "pendente"])
+
+    def test_the_run_logger_publishes_the_tail_on_every_line(self):
+        """A linha aparece no record antes do fim — e so a cauda viaja."""
+        logger = server.RunLogger()
+        for i in range(server.RunLogger.TAIL + 50):
+            logger.step(f"linha {i}")
+        with server._lock:
+            linhas = server._state[server._RUN_SLOT]["lines"]
+        self.assertEqual(len(linhas), server.RunLogger.TAIL)
+        self.assertTrue(linhas[-1].endswith(f"linha {server.RunLogger.TAIL + 49}"),
+                        "a cauda tem que ser as ultimas linhas, nao as primeiras")
+        # E a lista completa continua intacta para a resposta final do /run.
+        self.assertEqual(len(logger.lines), server.RunLogger.TAIL + 50)
+
+    def test_a_failed_stage_keeps_where_it_got_to(self):
+        """Falha: a etapa quebrou recebe o X, e o resto conserva o que era."""
+        self.assertEqual(
+            [s["state"] for s in server._mark_failed(
+                [{"key": "a", "label": "A", "state": "feito"},
+                 {"key": "b", "label": "B", "state": "agora"},
+                 {"key": "c", "label": "C", "state": "pendente"}])],
+            ["feito", "erro", "pendente"])
+
+    def test_the_run_record_stays_out_of_status(self):
+        """/status continua respondendo {jobs, clips}: o slot novo mora a parte."""
+        with server._lock:
+            server._state[server._RUN_SLOT] = server._run_record(active=True)
+            snapshot = dict(server._state)
+        snapshot.pop(server._DOWNLOAD_SLOT, None)
+        snapshot.pop(server._ARCHIVE_SLOT, None)
+        snapshot.pop(server._RUN_SLOT, None)
+        self.assertNotIn("run", snapshot)
+
+    def test_the_page_ladder_matches_the_server_stages(self):
+        """As chaves do HTML são as do `server._RUN_STAGES`: a tela não inventa fases."""
+        html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="step-list"', html)
+        for key, label in server._RUN_STAGES:
+            with self.subTest(stage=key):
+                self.assertIn(key, html)
+                self.assertIn(label, html)
+
+    def test_the_front_follows_run_progress_once_per_second(self):
+        """O JS abre o acompanhamento com a mesma cadência do scrap.
+
+        O `setInterval(followRun, 1000)` é o ritmo: segue 1 Hz como o resto,
+        sem serrar o servidor nem dormir na espera — a prova amarra o número
+        no código para ninguém "suavizar" em silêncio.
+        """
+        js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        self.assertIn("api('/run/progress')", js)
+        self.assertIn("setInterval(followRun, 1000)", js)
+        self.assertIn("renderSteps(r.stages)", js)
+
+    def test_the_front_paints_states_not_percentages(self):
+        """A escada nunca desenha percentual: do `_RUN_STAGES` vem o vocabulário.
+
+        Ela usa a mesma palavra do servidor — "agora", "feito", "pulado" — e
+        zera na conclusão: o usuário lê fases, não distingue fração de etapa.
+        """
+        css = (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
+        for estado in ("agora", "feito", "pulado"):
+            with self.subTest(estado=estado):
+                self.assertIn(f'[data-state="{estado}"]', css)
+
+
+
 class DocsTests(unittest.TestCase):
     """GET /docs: o README do repo, renderizado localmente.
 

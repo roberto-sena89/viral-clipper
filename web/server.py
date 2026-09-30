@@ -8,6 +8,7 @@ Endpoints:
   GET  /            -> the SPA
   GET  /status      -> {jobs, clips} current state
   POST /run         -> {options: {...}, plan_only: bool} -> {clips, log_lines} | {error}
+  GET  /run/progress -> the live record the Cortes aside paints while /run works
   GET  /clips/<id>  -> static clip file from the output dir
   GET  /browse/native -> OS folder dialog on the server machine
 """
@@ -19,6 +20,7 @@ import html
 import json
 import os
 import threading
+import time
 import unicodedata
 import webbrowser
 from ctypes import wintypes
@@ -211,15 +213,82 @@ def _options_to_config(options: dict) -> config_mod.ClipConfig:
     return cfg
 
 
+def _mark_failed(anteriores: list) -> list:
+    """Marca como "erro" a etapa que estava em "agora", conservando o resto.
+
+    Quebrada para fora de :func:`_run_job` para poder ser testada: o valor de
+    um job falho nao e o pipeline, e a informacao de onde ele quebrou — e sem
+    este ponto de entrada, so rodando o ffmpeg ate falhar alguem a exerceria.
+    """
+    if not anteriores:
+        anteriores = [{"key": k, "label": lbl, "state": "pendente"}
+                      for k, lbl in _RUN_STAGES]
+    return [
+        {**stage, "state": "erro" if stage.get("state") == "agora"
+         else stage.get("state", "pendente")}
+        for stage in anteriores
+    ]
+
+
+def _mark_stage(index: int, *, skipped: bool = False) -> None:
+    """Publish ``index`` as the running stage, the earlier ones as done.
+
+    ``skipped`` exists for the render phase of a plan-only run: the step is
+    reached but does no work, and calling it "feito" would tell the user clips
+    were written when the whole point of plan-only is that none were.
+    """
+    stages = []
+    for position, (key, label) in enumerate(_RUN_STAGES):
+        if position < index:
+            state = "feito"
+        elif position == index:
+            state = "pulado" if skipped else "agora"
+        else:
+            state = "pendente"
+        stages.append({"key": key, "label": label, "state": state})
+    _publish_run(stages=stages, stage=_RUN_STAGES[index][0],
+                 stage_label=_RUN_STAGES[index][1], stage_index=index + 1)
+
+
 def _run_job(options: dict, plan_only: bool) -> dict:
     """Execute one URL end to end. Runs off the request thread."""
-    logger = CollectingLogger()
+    logger = RunLogger()
     url = str(options.get("url") or "")
     job = {"url": url, "status": "running",
            "meta": ("plan-only · " if plan_only else "") + str(options.get("whisper_model", "small"))}
+    started = time.time()
+    _publish_run(active=True, state="rodando", url=url, plan_only=bool(plan_only),
+                 started_at=started, elapsed=0.0, error="", lines=[],
+                 stages=[{"key": k, "label": lbl, "state": "pendente"}
+                         for k, lbl in _RUN_STAGES],
+                 stage="", stage_label="Preparando…", stage_index=0)
     with _lock:
         _state["jobs"].append(job)
         _state["clips"] = []
+
+    def finish(state: str, error: str = "") -> None:
+        """Close the ladder so a finished job does not look stuck on its last step.
+
+        On success every stage is "feito" — except the render phase of a
+        plan-only run, which is "pulado": calling it done would tell the user
+        clips were written when the whole point of plan-only is that none were.
+
+        On failure the ladder keeps where it got to and marks the stage that was
+        running as "erro". Rewriting everything as pending would throw away the
+        one useful piece of information a failed job has: which phase broke.
+        """
+        if state == "concluido":
+            stages = [
+                {"key": key, "label": label,
+                 "state": "pulado" if (plan_only and key == "render") else "feito"}
+                for key, label in _RUN_STAGES
+            ]
+        else:
+            with _lock:
+                anteriores = list((_state.get(_RUN_SLOT) or {}).get("stages") or [])
+            stages = _mark_failed(anteriores)
+        _publish_run(active=False, state=state, error=error, stages=stages,
+                     elapsed=round(time.time() - started, 1))
 
     try:
         config = _options_to_config(options)
@@ -227,13 +296,18 @@ def _run_job(options: dict, plan_only: bool) -> dict:
     except (ValueError, TypeError) as exc:
         job["status"] = "fail"
         job["meta"] = f"erro: {exc}"
+        finish("erro", str(exc))
         return {"error": str(exc), "log_lines": logger.lines}
 
     try:
         work = util.ensure_dir(config.work_path())
+        _mark_stage(0)
         metadata, analysis, transcript, units = pipeline.analyse(config, work, logger)
+        _mark_stage(1)
         windows = pipeline.select_windows(units, analysis, config, logger)
+        _mark_stage(2)
         viral = pipeline.build_viral_report(windows, units, metadata, config, logger)
+        _mark_stage(3, skipped=bool(plan_only))
         records = pipeline.render_windows(
             windows, metadata, analysis, transcript, config, work, logger
         )
@@ -263,6 +337,7 @@ def _run_job(options: dict, plan_only: bool) -> dict:
                 if plan_only
                 else f"{rendered} clips · {run_report.title[:40]}"
             )
+        finish("concluido")
         return {"clips": clips, "log_lines": logger.lines,
                 "title": run_report.title,
                 "plan_only": bool(plan_only),
@@ -271,10 +346,12 @@ def _run_job(options: dict, plan_only: bool) -> dict:
     except ClipperError as exc:
         job["status"] = "fail"
         job["meta"] = f"erro: {exc}"
+        finish("erro", str(exc))
         return {"error": str(exc), "log_lines": logger.lines}
     except Exception as exc:  # noqa: BLE001 - surface anything to the UI
         job["status"] = "fail"
         job["meta"] = f"erro: {exc!r}"
+        finish("erro", f"{exc!r}")
         return {"error": f"{exc!r}", "log_lines": logger.lines}
     finally:
         if not bool(plan_only):
@@ -918,6 +995,26 @@ _DOWNLOAD_SLOT = "download"
 #: for the selection download.
 _ARCHIVE_SLOT = "archive"
 
+#: Same single-slot rule for the "Cortes" run. The page posts /run, gets the job
+#: and now FOLLOWS it: /run/progress is the record the aside paints while the
+#: pipeline works. Before this slot existed the only reader of the run was the
+#: blocking response, so a four-minute job showed one log line ("$ python -m
+#: viralclipper ...") and a progress bar frozen at 0.
+_RUN_SLOT = "run"
+
+#: The pipeline's phases in order, with the label the panel shows.
+#:
+#: The keys are, one for one, the calls :func:`_run_job` makes. Naming them here
+#: rather than in the page is what keeps the painted progress from drifting away
+#: from the work that actually runs: a fifth phase would have to be added to
+#: this tuple to appear on screen, and that is the same edit that adds the call.
+_RUN_STAGES = (
+    ("analise", "Baixando e transcrevendo"),
+    ("selecao", "Escolhendo os melhores trechos"),
+    ("relatorio", "Montando o relatorio"),
+    ("render", "Renderizando os clips"),
+)
+
 
 def _archive_record(**fields) -> dict:
     """The state the arquivar-box paints while a profile archive runs.
@@ -1169,6 +1266,72 @@ def _publish_download(**fields) -> None:
         record = dict(_state.get(_DOWNLOAD_SLOT) or _download_record())
         record.update(fields)
         _state[_DOWNLOAD_SLOT] = record
+
+
+def _run_record(**fields) -> dict:
+    """The state the Cortes aside paints while the pipeline works.
+
+    Same shape rule as :func:`_download_record`: every field is always present,
+    because the page polls this once a second and reads it directly — a missing
+    key would be a rendering bug rather than a smaller payload.
+
+    ``stages`` comes pre-filled as "pendente" instead of empty so the page can
+    draw the whole ladder on the first poll, before the pipeline has announced
+    anything. A bar that starts as four grey steps and fills in is honest about
+    what remains; a bar that starts at 0% and jumps to 100% is not.
+    """
+    record = {
+        "active": False,
+        "state": "ocioso",  # ocioso | rodando | concluido | erro | offline
+        "stage": "",
+        "stage_label": "",
+        "stage_index": 0,
+        "stage_total": len(_RUN_STAGES),
+        "stages": [{"key": key, "label": label, "state": "pendente"}
+                   for key, label in _RUN_STAGES],
+        "lines": [],
+        "url": "",
+        "plan_only": False,
+        "started_at": 0.0,
+        "elapsed": 0.0,
+        "error": "",
+    }
+    record.update(fields)
+    return record
+
+
+def _publish_run(**fields) -> None:
+    """Merge fields into the run record, under the lock."""
+    with _lock:
+        record = dict(_state.get(_RUN_SLOT) or _run_record())
+        record.update(fields)
+        _state[_RUN_SLOT] = record
+
+
+class RunLogger(CollectingLogger):
+    """Collecting logger that publishes each line as it is emitted.
+
+    The lines were always collected; what was missing was a reader. ``/run``
+    only returned them in its response, so during the job the page had nothing
+    to show but the command it had just echoed. Publishing here is what turns
+    the log box from a receipt into progress: the pipeline's own ``[>]`` steps
+    ("Baixando o video", "Transcrevendo com whisper", "Renderizando 5/12")
+    appear as they happen.
+
+    Only the tail is published. A long job can log a few hundred lines, and the
+    page shows the last screenful: sending the whole list once a second would be
+    bytes nobody reads. The full list still comes back in the ``/run`` response.
+    """
+
+    #: How many trailing lines the poll carries. The box scrolls; older lines
+    #: are only ever seen by someone who scrolls up, and the final response
+    #: hands over the complete list anyway.
+    TAIL = 200
+
+    def _emit(self, prefix: str, message: str) -> None:
+        super()._emit(prefix, message)
+        _publish_run(lines=list(self.lines[-self.TAIL:]))
+
 
 
 def _thumb_dir() -> Path:
@@ -1721,7 +1884,18 @@ class Handler(http_server.BaseHTTPRequestHandler):
             # out of /status leaves that payload the {jobs, clips} contract.
             snapshot.pop(_DOWNLOAD_SLOT, None)
             snapshot.pop(_ARCHIVE_SLOT, None)
+            snapshot.pop(_RUN_SLOT, None)
             self._send_json(snapshot)
+            return
+        if path == "/run/progress":
+            with _lock:
+                record = dict(_state.get(_RUN_SLOT) or _run_record())
+            # `elapsed` is computed here rather than stored: a worker that died
+            # mid-job would leave a frozen number behind, and the page shows
+            # this one every second anyway.
+            if record.get("active") and record.get("started_at"):
+                record["elapsed"] = round(time.time() - record["started_at"], 1)
+            self._send_json(record)
             return
         if path == "/scrap/download/progress":
             with _lock:

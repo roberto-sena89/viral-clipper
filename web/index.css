@@ -607,4 +607,74 @@ footer {
   .nav-actions .btn, .menu-btn { padding: 9px 11px; font-size: 0.84rem; }
 }
 
+/* A caixa de cookies atras do disclosure: curto, escaneavel, e aberto. O
+   resumo tem cara de titulo de secao — maior que o corpo, com folga propria —
+   e o conteudo respira embaixo dele. */
+.cookies-box { margin-top: 2px; }
+.cookies-box > summary {
+  cursor: pointer; font-size: 0.8rem; font-weight: 600;
+  color: var(--text-primary); margin-bottom: 6px;
+}
+.cookies-box > summary:focus-visible {
+  outline: 2px solid var(--accent-soft); outline-offset: 2px;
+}
+.cookies-box > label {
+  display: block; font-size: 0.76rem; font-weight: 600;
+  color: var(--text-secondary); margin: 8px 0 4px;
+}
+.cookies-box > .hint { margin: 2px 0 4px; }
+
+/* ---------- ETAPAS DA EXECUCAO ----------
+   A escada do painel de Execucao. Cada linha e uma fase do pipeline, com o
+   estado no `data-state` — o mesmo vocabulario do `arq-steps` do Scrap, para
+   as duas paginas lerem progresso do mesmo jeito.
+
+   Nasce vazia (`:empty` esconde) porque um passo-a-passo de quatro itens todos
+   cinzentos, antes de qualquer job, e ruido: o painel em repouso mostra so o
+   botao e o "Pronto para iniciar". */
+.step-list {
+  list-style: none; margin: 0 0 10px; padding: 0;
+  display: flex; flex-direction: column; gap: 5px;
+  font-size: 0.78rem; color: var(--text-muted);
+}
+.step-list:empty { display: none; }
+.step-list li {
+  display: flex; align-items: center; gap: 8px; line-height: 1.35;
+}
+/* O ponto carrega o estado: vazio para pendente, anel para agora, cheio para
+   feito. Forma e nao so cor, para a escada continuar legivel em daltonismo. */
+.step-list li::before {
+  content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%;
+  border: 1.5px solid currentColor; opacity: 0.5;
+}
+.step-list li[data-state="agora"] { color: var(--accent-soft); font-weight: 600; }
+.step-list li[data-state="agora"]::before {
+  border-color: var(--accent-soft); background: var(--accent-soft);
+  opacity: 1; animation: stepPulse 1.4s ease-in-out infinite;
+}
+.step-list li[data-state="feito"] { color: var(--success); }
+.step-list li[data-state="feito"]::before {
+  border-color: var(--success); background: var(--success); opacity: 1;
+}
+.step-list li[data-state="pulado"] { color: var(--text-ink-subtle); }
+.step-list li[data-state="pulado"]::before {
+  border-style: dashed; opacity: 0.6;
+}
+/* Falha: a etapa que quebrou recebe o X, e o resto conserva o que era. Sem
+   esta marca, um job falho deixaria a escada parecendo incompleta em vez de
+   interrompida — e o usuario nao saberia em que fase olhar o log. */
+.step-list li[data-state="erro"] { color: var(--danger); font-weight: 600; }
+.step-list li[data-state="erro"]::before {
+  content: "×"; border: none; width: auto; height: auto; font-size: 0.85rem;
+  color: var(--danger); background: none; opacity: 1;
+}
+@keyframes stepPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.35); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .step-list li[data-state="agora"]::before { animation: none; }
+}
+
+
 

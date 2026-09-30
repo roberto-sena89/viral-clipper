@@ -337,6 +337,64 @@
     if (pct >= 100) bar.classList.add('done'); else bar.classList.remove('done');
   }
 
+  // ---------- etapas da execucao ----------
+  // A barra responde "quanto falta?", e num job de minutos ela nao tem o que
+  // responder: o pipeline reporta o fim de cada fase, nao um percentual. A
+  // escada responde "o que esta acontecendo agora?" — a pergunta que o usuario
+  // faz quando a barra esta parada. A ordem das etapas vem do servidor
+  // (`/run/progress.stages`), entao a tela nao inventa fases que o pipeline
+  // nao tem.
+  function renderSteps(stages) {
+    const list = $('#step-list');
+    if (!list) return;
+    list.textContent = '';
+    (stages || []).forEach((stage) => {
+      const li = document.createElement('li');
+      li.setAttribute('data-state', stage.state || 'pendente');
+      li.textContent = stage.label || stage.key || '';
+      list.appendChild(li);
+    });
+  }
+
+  // O log durante o job e SUBSTITUIDO pelo que o poll traz, e nao acrescentado:
+  // o endpoint devolve a cauda da lista a cada segundo, e um `append` mostraria
+  // a mesma linha uma vez por segundo. Substituir tambem conserta o caso de uma
+  // linha perdida — o proximo poll a traz de volta.
+  function renderLog(lines) {
+    const box = $('#log-box');
+    if (!box) return;
+    box.textContent = '';
+    (lines || []).forEach((line) => {
+      const span = document.createElement('span');
+      span.textContent = line + '\n';
+      box.appendChild(span);
+    });
+    box.scrollTop = box.scrollHeight;
+  }
+
+  const runProgress = { timer: null, header: '' };
+
+  function stopFollowingRun() {
+    if (runProgress.timer) { clearInterval(runProgress.timer); runProgress.timer = null; }
+  }
+
+  async function followRun() {
+    const r = await api('/run/progress');
+    if (r.offline || r.error) return;
+    renderSteps(r.stages);
+    // `stage_label` cobre a janela entre o POST e a primeira fase: o servidor
+    // publica "Preparando…" antes de anunciar qualquer etapa.
+    if (r.stage_label) setProgress(0, r.stage_label);
+    if (Array.isArray(r.lines)) renderLog([runProgress.header, ...r.lines]);
+  }
+
+  function startFollowingRun(header) {
+    runProgress.header = header;
+    stopFollowingRun();
+    followRun();
+    runProgress.timer = setInterval(followRun, 1000);
+  }
+
   // ---------- skeleton ----------
   // O render leva minutos. Durante a espera as duas regioes de resultado sao
   // trocadas por um esqueleto na forma do conteudo que vai chegar: o usuario
@@ -738,7 +796,12 @@
     $$('#btn-run, #btn-run-side, #btn-plan').forEach((b) => b.disabled = true);
     setStatus('running', planOnly ? 'Simulando…' : 'Renderizando…');
     startTimer();
-    log('$ ' + cliCommand(o));
+    const comando = '$ ' + cliCommand(o);
+    log(comando);
+    // A partir daqui quem escreve o log e o poll: o `log()` acima ja cumpriu o
+    // papel de mostrar o comando antes do primeiro request, e o `startFollowing`
+    // reescreve a caixa com a mesma linha na frente.
+    startFollowingRun(comando);
 
     const job = { url: o.url, status: 'running', meta: (planOnly ? 'plan-only · ' : '') + o.whisper_model + ' · ' + o.engine };
     state.jobs.push(job);
@@ -749,6 +812,11 @@
 
     const body = JSON.stringify({ options: o, plan_only: !!planOnly });
     const r = await api('/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    // O job acabou: para o poll e passa a caixa para a lista COMPLETA que a
+    // resposta traz. O poll so tinha a cauda, e a ultima leitura pode ter
+    // acontecido antes da ultima linha ser emitida.
+    stopFollowingRun();
+    renderLog([comando, ...((r.log_lines) || [])]);
     // O resultado chegou (ou falhou): os esqueletos saem antes de qualquer
     // ramo de erro, senao uma falha deixaria a galeria shimmerando para sempre.
     hideSkeletons();

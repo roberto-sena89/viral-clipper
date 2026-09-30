@@ -17,7 +17,7 @@ import wave
 from concurrent.futures import Future
 from contextlib import ExitStack
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from tests._fixtures import make_analysis, make_config, make_transcript, make_word
 from viralclipper import pipeline, report, transcribe, transcript_cache
@@ -226,6 +226,56 @@ class FullDownloadModeTests(PipelineTestCase):
         sources = {call.kwargs["source"] for call in render_clip.call_args_list}
         self.assertEqual(sources, {Path("full.mp4")})
 
+    def test_ffmpeg_section_failure_falls_back_to_one_full_download(self):
+        config = self.config(parallel=False)
+        section_error = ClipperError(
+            "ffmpeg exited with code 3436169992. "
+            "yt-dlp failed to cut a section with ffmpeg. Retry, or use "
+            "--download-mode full to download the whole video at once."
+        )
+        with patch.object(
+            pipeline.download,
+            "download_section",
+            side_effect=[Path("section-01.mp4"), section_error],
+        ) as download_section, patch.object(
+            pipeline.download, "download_full", return_value=Path("full.mp4")
+        ) as download_full, patch.object(
+            pipeline.render, "render_clip", return_value=_rendered()
+        ) as render_clip:
+            records = pipeline.render_windows(
+                self.windows, {"id": "abc"}, self.analysis, self.transcript,
+                config, WORK, Logger(quiet=True),
+            )
+
+        self.assertEqual(len(records), 3)
+        self.assertEqual(download_section.call_count, 2)
+        download_full.assert_called_once_with(
+            config.url, WORK / "source_video", config, ANY
+        )
+        self.assertEqual(render_clip.call_count, 3)
+        sources = {call.kwargs["source"] for call in render_clip.call_args_list}
+        self.assertEqual(sources, {Path("full.mp4")})
+
+    def test_other_section_download_errors_do_not_trigger_full_download(self):
+        config = self.config(parallel=False)
+        with patch.object(
+            pipeline.download,
+            "download_section",
+            side_effect=ClipperError("connection timed out"),
+        ), patch.object(
+            pipeline.download, "download_full", return_value=Path("full.mp4")
+        ) as download_full, patch.object(
+            pipeline.render, "render_clip", return_value=_rendered()
+        ) as render_clip:
+            with self.assertRaisesRegex(ClipperError, "connection timed out"):
+                pipeline.render_windows(
+                    self.windows, {"id": "abc"}, self.analysis, self.transcript,
+                    config, WORK, Logger(quiet=True),
+                )
+
+        download_full.assert_not_called()
+        render_clip.assert_not_called()
+
 
 class ParallelRenderTests(PipelineTestCase):
     def test_pool_renders_every_clip(self):
@@ -416,6 +466,48 @@ class EngineFallbackTests(PipelineTestCase):
     def test_audio_engine_does_not_pay_for_a_model(self):
         _, transcribe_mock = self.analyse("audio", transcript=self.transcript)
         transcribe_mock.assert_not_called()
+
+    # ── A retentativa, e o limite dela ──────────────────────────────────────
+    #
+    # A falta de memória é do estado da máquina naquele instante, não da
+    # entrada: medido aqui, o mesmo vídeo transcreveu bem sozinho (~16 min) e
+    # falhou com ~0,9 GB livres. Uma segunda tentativa custa um carregamento de
+    # modelo; não tentar custa a legenda de todos os cortes.
+
+    def test_hybrid_retries_once_after_an_allocation_failure(self):
+        (_, _, transcript, units), transcribe_mock = self.analyse(
+            "hybrid",
+            error=[transcribe.TranscriptionOutOfMemory("boom"), self.transcript],
+        )
+        self.assertIs(transcript, self.transcript, "a segunda tentativa deveria valer")
+        self.assertEqual(transcribe_mock.call_count, 2)
+        self.assertTrue(units)
+
+    def test_hybrid_gives_up_after_the_retry(self):
+        (_, _, transcript, units), transcribe_mock = self.analyse(
+            "hybrid",
+            error=[
+                transcribe.TranscriptionOutOfMemory("boom"),
+                transcribe.TranscriptionOutOfMemory("boom de novo"),
+            ],
+        )
+        self.assertIsNone(transcript)
+        self.assertTrue(units)
+        self.assertEqual(
+            transcribe_mock.call_count, 2, "uma retentativa, nao um laco"
+        )
+
+    def test_hybrid_does_not_retry_a_failure_that_is_not_memory(self):
+        """Um wav corrompido falha igual na segunda vez.
+
+        Pagar um carregamento de modelo para descobrir isso é desperdício — e é
+        a asserção que impede a retentativa de virar "repete qualquer erro".
+        """
+        (_, _, transcript, _), transcribe_mock = self.analyse(
+            "hybrid", error=ClipperError("Transcription failed: corrupt wav")
+        )
+        self.assertIsNone(transcript)
+        self.assertEqual(transcribe_mock.call_count, 1)
 
 
 def _write_wav(path: Path, seconds: float = 0.5) -> Path:

@@ -12,7 +12,7 @@ from pathlib import Path
 from . import batch
 from . import caption_presets
 from . import config as config_mod
-from . import config_file, pipeline, reframe, report, score, util
+from . import config_file, lock, pipeline, reframe, report, score, util
 from .util import ClipperError, Logger
 
 DESCRIPTION = (
@@ -494,11 +494,30 @@ def run_single(
     Returns ``(exit_code, run_report, error_message)``. ``KeyboardInterrupt`` is
     deliberately *not* caught here: the single-URL path turns it into exit code
     130, while the batch path lets it abort the whole run.
+
+    Segura a trava do ``output_dir`` durante todo o trabalho. A trava fica aqui,
+    e nao no ``main``, porque a colisao e sobre os **artefatos** — quem escreve
+    ``clips.json`` e os ``.mp4`` e esta funcao, inclusive quando o lote a chama
+    com um ``output_dir`` por URL.
     """
+    with lock.hold(config.output_dir) as ocupado:
+        if ocupado is not None:
+            logger.warn(ocupado)
+            return 5, None, ocupado
+        return _run_single_locked(config, logger)
+
+
+def _run_single_locked(
+    config: config_mod.ClipConfig, logger: Logger
+) -> tuple[int, report.RunReport | None, str]:
+    """Corpo de :func:`run_single`, ja com a trava de ``output_dir`` na mao."""
     work = util.ensure_dir(config.work_path())
     run_report: report.RunReport | None = None
     json_path: Path | None = None
     markdown_path: Path | None = None
+    # Declarado aqui para o teste de exit code 4 lá embaixo não depender de o
+    # `analyse` ter chegado ao fim. Todo caminho em que ele falha já deu return.
+    transcript = None
     try:
         metadata, analysis, transcript, units = pipeline.analyse(config, work, logger)
         windows = pipeline.select_windows(units, analysis, config, logger)
@@ -554,6 +573,31 @@ def run_single(
         if config.dry_run:
             logger.info("Plan-only: nenhum clip foi renderizado.")
 
+    # Exit 4 — o run terminou, mas degradado: no engine `hybrid` a transcrição
+    # falhou, então não há legenda para queimar e a seleção caiu para energia de
+    # áudio. Medido, mesmo vídeo e parâmetros: 39,3/39,3 sem transcrição contra
+    # 68,3/68,1 com ela — e antes isto terminava com **exit 0**, indistinguível
+    # de um sucesso. O custo prático era um lote não ter como retentar
+    # justamente a falha transitória (falta de memória).
+    #
+    # Vem ANTES do exit 3: os dois podem ser verdade ao mesmo tempo, e "degradado"
+    # é mais acionável que "um corte ficou curto" — a duração curta é
+    # consequência da seleção degradada, não um problema independente.
+    #
+    # Não dispara no plano (`--plan-only`): nada foi renderizado, então não há
+    # legenda para perder. O aviso continua no log, que é o que o plano precisa.
+    if (
+        run_report is not None
+        and not config.dry_run
+        and config.engine == "hybrid"
+        and transcript is None
+    ):
+        logger.warn(
+            "Transcricao indisponivel: os clipes saem SEM legenda queimada e a "
+            "selecao usou apenas a energia do audio."
+        )
+        return 4, run_report, "transcricao indisponivel: clipes sem legenda"
+
     # Two things this must not do. It must not fire for a plan-only run, where
     # nothing was rendered so ``meets_minimum`` is trivially false, and it must
     # not sit inside the ``not config.quiet`` block: an exit code that changes
@@ -576,7 +620,32 @@ def run_batch_mode(
     *,
     retry_failed: bool = False,
 ) -> int:
-    """Process a batch file with a resumable SQLite manifest."""
+    """Process a batch file with a resumable SQLite manifest.
+
+    Segura a trava do ``output_dir`` **pai**. Cada URL ja tem o proprio
+    ``output_dir`` e o proprio lock dentro de ``run_single``; o lock aqui e pelo
+    que e do lote como um todo — ``batch.sqlite3`` e ``batch.json`` — e de
+    quebra serializa dois lotes, que de outra forma escreveriam no mesmo
+    manifesto SQLite. Como o lote e sequencial, uma trava no pai basta.
+    """
+    with lock.hold(config.output_dir) as ocupado:
+        if ocupado is not None:
+            logger.warn(ocupado)
+            return 5
+        return _run_batch_mode_locked(
+            config, batch_file, manifest_file, logger, retry_failed=retry_failed
+        )
+
+
+def _run_batch_mode_locked(
+    config: config_mod.ClipConfig,
+    batch_file: str,
+    manifest_file: str | None,
+    logger: Logger,
+    *,
+    retry_failed: bool = False,
+) -> int:
+    """Corpo de :func:`run_batch_mode`, ja com a trava de ``output_dir`` na mao."""
     try:
         urls = batch.load_urls(batch_file)
     except ClipperError as exc:
@@ -643,7 +712,37 @@ def run_profile_mode(
     ``session`` e o valor colado de ``--ig-session``. Ele e gravado no jar antes
     de qualquer chamada porque o ``sessionid`` nao serve so para listar: o
     yt-dlp le o MESMO arquivo para baixar a midia.
+
+    Segura a trava do ``output_dir``: o catalogo nao e clipe, mas escreve no
+    mesmo diretorio, e duas leituras de perfil ao mesmo tempo nao tem por que
+    conviver.
     """
+    with lock.hold(config.output_dir) as ocupado:
+        if ocupado is not None:
+            logger.warn(ocupado)
+            return 5
+        return _run_profile_mode_locked(
+            config,
+            profile,
+            cookies_file,
+            logger,
+            session=session,
+            only=only,
+            max_items=max_items,
+        )
+
+
+def _run_profile_mode_locked(
+    config: config_mod.ClipConfig,
+    profile: str,
+    cookies_file: str,
+    logger: Logger,
+    *,
+    session: str | None = None,
+    only: str | None = None,
+    max_items: int | None = None,
+) -> int:
+    """Corpo de :func:`run_profile_mode`, ja com a trava de ``output_dir`` na mao."""
     from . import archive as archive_mod
     from . import ig_profile as ig_profile_mod
 

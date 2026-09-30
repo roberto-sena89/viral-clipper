@@ -145,6 +145,35 @@ class IsMemoryErrorTests(unittest.TestCase):
             transcribe.is_memory_error(RuntimeError("HTTP Error 404: Not Found"))
         )
 
+    def test_recognises_a_memory_error_that_has_no_helpful_wording(self):
+        """O tipo basta, e é isto que os marcadores de texto deixavam passar.
+
+        O erro de alocação do numpy herda de ``MemoryError``; qualquer
+        ``MemoryError`` sem redação conhecida devolvia False antes desta
+        correção. Medido: ``is_memory_error(MemoryError(''))`` era False.
+        """
+        self.assertTrue(transcribe.is_memory_error(MemoryError("")))
+        self.assertTrue(transcribe.is_memory_error(MemoryError("numpy failed")))
+
+    def test_recognises_the_message_this_machine_actually_produced(self):
+        """A falha real, copiada do log — não uma paráfrase dela.
+
+        "failed to allocate" estava na lista de marcadores; "unable to allocate"
+        não. A redação exata importa: era esta que rodava em produção.
+        """
+        real = MemoryError(
+            "Unable to allocate 241. MiB for an array with shape (1, 78957, 400) "
+            "and data type float64"
+        )
+        self.assertTrue(transcribe.is_memory_error(real))
+
+    def test_the_numpy_allocation_error_type_is_recognised(self):
+        """Sem depender de numpy aqui: uma subclasse qualquer de MemoryError serve."""
+        class ArrayMemoryError(MemoryError):
+            pass
+
+        self.assertTrue(transcribe.is_memory_error(ArrayMemoryError("boom")))
+
 
 class LoadModelTests(unittest.TestCase):
     def test_returns_the_configured_checkpoint_when_it_loads(self):

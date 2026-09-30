@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import os
 import shutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -68,11 +69,7 @@ def analyse(
         # Hybrid means "speech when available, audio energy otherwise". A
         # checkpoint that will not fit in RAM must degrade the run, not abort
         # it: audio-only scoring still produces usable clips.
-        try:
-            transcript = _transcribe_cached(wav_path, source_id, config, work, logger)
-        except ClipperError as exc:
-            logger.warn(f"Transcription unavailable ({exc}); scoring on audio alone")
-            transcript = None
+        transcript = _transcribe_hybrid(wav_path, source_id, config, work, logger)
     else:
         logger.info("Engine 'audio': skipping transcription")
 
@@ -82,6 +79,57 @@ def analyse(
         raise ClipperError("No speech units were found in the source audio.")
     logger.ok(f"{len(units)} speech units built")
     return metadata, analysis, transcript, units
+
+
+def _transcribe_hybrid(
+    wav_path: Path,
+    source_id: str,
+    config: ClipConfig,
+    work: Path,
+    logger: Logger,
+) -> transcribe.Transcript | None:
+    """Transcribe for the hybrid engine, degrading instead of aborting.
+
+    Retries ONCE, and only on an allocation failure. Medido nesta máquina: o
+    mesmo vídeo, com os mesmos parâmetros, transcreveu bem sozinho (~16 min) e
+    falhou com ~0,9 GB livres — a falha é do estado da máquina naquele
+    instante, não da entrada. Uma segunda tentativa custa um carregamento de
+    modelo; não tentar custa a legenda de todos os cortes.
+
+    Só a falha de memória é repetida. Um wav corrompido ou um checkpoint
+    ausente falham igual na segunda vez, e pagar um carregamento para descobrir
+    isso é desperdício.
+    """
+    try:
+        return _transcribe_cached(wav_path, source_id, config, work, logger)
+    except transcribe.TranscriptionOutOfMemory as exc:
+        logger.warn(f"Transcription ran out of memory; retrying once ({exc})")
+        gc.collect()
+    except ClipperError as exc:
+        _warn_degraded_transcript(exc, logger)
+        return None
+
+    try:
+        return _transcribe_cached(wav_path, source_id, config, work, logger)
+    except ClipperError as exc:
+        _warn_degraded_transcript(exc, logger)
+        return None
+
+
+def _warn_degraded_transcript(exc: BaseException, logger: Logger) -> None:
+    """Dizer o que a degradação CUSTA, não só que aconteceu.
+
+    A linha antiga — "scoring on audio alone" — descrevia o mecanismo e
+    escondia a consequência. Medido, mesmo vídeo e parâmetros: com transcrição
+    os cortes marcam 68,3/68,1 e saem com legenda queimada; sem ela, 39,3/39,3
+    e sem legenda nenhuma. O run terminava com exit 0, indistinguível de um
+    sucesso, e é por isso que o `cli.py` agora devolve 4.
+    """
+    logger.warn(
+        f"Transcription unavailable ({exc}). The clips will have NO burned "
+        "captions, and the selection falls back to audio energy alone — which "
+        "scores far lower and picks different moments."
+    )
 
 
 def _supplied_transcript(config: ClipConfig, logger: Logger) -> transcribe.Transcript:
@@ -389,14 +437,29 @@ def render_windows(
         for task in tasks:
             key = task.position
             if key not in downloaded:
-                media = download.download_section(
-                    config.url,
-                    task.window.start,
-                    task.finish,
-                    task.clip_dir / f"section_{task.position:02d}",
-                    config,
-                    logger,
-                )
+                try:
+                    media = download.download_section(
+                        config.url,
+                        task.window.start,
+                        task.finish,
+                        task.clip_dir / f"section_{task.position:02d}",
+                        config,
+                        logger,
+                    )
+                except ClipperError as exc:
+                    if "yt-dlp failed to cut a section with ffmpeg" not in str(exc).lower():
+                        raise
+                    logger.warn(
+                        "O FFmpeg falhou ao baixar um trecho; baixando o vídeo "
+                        "completo uma vez e cortando os clips localmente."
+                    )
+                    full_source = download.download_full(
+                        config.url, work / "source_video", config, logger
+                    )
+                    for fallback_task in tasks:
+                        fallback_task.media = full_source
+                        fallback_task.media_origin = 0.0
+                    break
                 origin = download.resolve_origin(
                     config.ffprobe,
                     media,

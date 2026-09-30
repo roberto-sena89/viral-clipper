@@ -14,6 +14,21 @@ from .config import ClipConfig
 from .util import ClipperError, Logger
 
 
+class TranscriptionOutOfMemory(ClipperError):
+    """Transcription failed because the machine could not allocate memory.
+
+    A type of its own, and not just a message, because this is the one
+    transcription failure worth RETRYING: it is a property of the machine's
+    state at that instant (a concurrent build, a browser with fifty tabs), not
+    of the input. A corrupt wav or a missing checkpoint fails identically the
+    second time, so those must not pay for a retry.
+
+    Classificado por :func:`is_memory_error` — o mesmo predicado que decide o
+    degrau de modelo — para não existirem duas noções divergentes de "acabou a
+    memória".
+    """
+
+
 @dataclass
 class Word:
     start: float
@@ -71,6 +86,7 @@ _MEMORY_MARKERS: tuple[str, ...] = (
     "mkl_malloc",
     "out of memory",
     "failed to allocate",
+    "unable to allocate",
     "cannot allocate memory",
     "not enough memory",
     "bad_alloc",
@@ -92,7 +108,27 @@ class LoadedModel:
 
 
 def is_memory_error(exc: BaseException) -> bool:
-    """True when ``exc`` looks like an allocation failure rather than a bad install."""
+    """True when ``exc`` looks like an allocation failure rather than a bad install.
+
+    Dois critérios, e o estrutural vem primeiro. Antes só havia os marcadores de
+    texto, e eles **não reconheciam a falha que realmente aconteceu aqui**:
+
+        Unable to allocate 241. MiB for an array with shape (1, 78957, 400)
+        and data type float64
+
+    "failed to allocate" estava na lista, "unable to allocate" não — e o
+    ``is_memory_error`` devolvia False para a exceção inteira. Qualquer
+    ``MemoryError`` sem a redação da lista também passava batido. Medido antes de
+    corrigir: ``is_memory_error(MemoryError(''))`` era False.
+
+    O tipo resolve isso sem depender de redação: o erro de alocação do numpy
+    (``numpy._core._exceptions._ArrayMemoryError``) herda de ``MemoryError``, e
+    ``MemoryError`` sem mensagem nenhuma também é, por definição, falta de
+    memória. Os marcadores continuam porque o CTranslate2/MKL embrulha a falha
+    num ``RuntimeError`` comum, onde não há tipo para consultar.
+    """
+    if isinstance(exc, MemoryError):
+        return True
     text = str(exc).lower()
     return any(marker in text for marker in _MEMORY_MARKERS)
 
@@ -217,6 +253,12 @@ def transcribe(
                     )
                 )
     except Exception as exc:  # noqa: BLE001 - transcription failures vary
+        # A falta de memória sobe como tipo próprio: é a única falha daqui que
+        # vale uma segunda tentativa (ver `TranscriptionOutOfMemory`). Usa o
+        # `is_memory_error` que já existia — o mesmo que decide o degrau de
+        # modelo — em vez de um `isinstance` paralelo, que seria mais estreito.
+        if is_memory_error(exc):
+            raise TranscriptionOutOfMemory(f"Transcription failed: {exc}") from exc
         raise ClipperError(f"Transcription failed: {exc}") from exc
 
     words.sort(key=lambda word: word.start)

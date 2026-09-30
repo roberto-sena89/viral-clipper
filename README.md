@@ -455,6 +455,41 @@ get clips, scored on loudness, speech density and boundaries, just without text
 or captions. `--engine transcript` is the opposite contract — there,
 transcription is the point, so a failure is fatal and reported as such.
 
+A degraded run is not a silent one. Two things happen:
+
+1. **An allocation failure is retried once.** It is the one transcription
+   failure worth retrying, because the cause is the machine's state at that
+   instant (a concurrent build, a browser with fifty tabs), not the input. A
+   corrupt wav or a missing checkpoint fails identically the second time, so
+   those do not pay for a retry. The failure is classified by type
+   (`TranscriptionOutOfMemory`, matched with `isinstance(exc, MemoryError)`),
+   because the string markers alone did **not** match the real message —
+   measured: `"Unable to allocate 241. MiB for an array with shape ..."` did not
+   contain `"failed to allocate"`.
+2. **The run exits 4**, not 0. Exit 0 made a caption-less run indistinguishable
+   from a good one, and the practical cost was that a batch had no way to retry
+   precisely the transient failure. Batch mode already treats `code != 0` as a
+   failed, retryable job, so the 4 gets a retry for free.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | Success. |
+| 1 | Runtime error (`ClipperError`); the message is in the log. |
+| 2 | Usage/argument error. |
+| 3 | A clip came out below the configured minimum duration. |
+| **4** | **Degraded run: clips rendered with no burned captions, selection on audio energy alone.** |
+| **5** | **Output directory busy: another run holds it. Nothing broke — wait, then run again.** |
+| 130 | Interrupted by the user (`Ctrl-C`). |
+
+Exit 4 is checked **before** exit 3: both can be true at once, and "degraded" is
+the more actionable of the two — the short duration is a consequence of the
+degraded selection, not an independent problem. It does **not** fire for
+`--plan-only`, where nothing was rendered and so no caption was lost.
+
+The scores are not subtly worse. Measured on the same video with the same
+parameters: **68.3 / 68.1** with the transcript against **39.3 / 39.3** without
+it, with `language` reading `nao transcrito` and every clip's `text` empty.
+
 On an 8 GB machine under load, `small` needs more contiguous memory than is
 available. `base` loads in about a second and needs a fraction of the RAM; the
 selection quality difference is real but smaller than losing the run.
@@ -533,6 +568,58 @@ transport or parsing failure leaves the heuristic scores untouched and logs a
 warning. Verdicts are cached under `<cache-dir>/rank`, keyed by the window
 text, the model and the prompt version, so re-running the same video while
 tuning options costs nothing.
+
+## One run per output directory
+
+Two processes writing to the same `output/` **cannot** coexist, and the failure
+is silent rather than loud, for two reasons that compound:
+
+- **The published clip name is deterministic** — `render_task.py` builds
+  `{video_id}_{position:02d}_{stem}{variant}_{start:06d}.mp4`, with no run id in
+  it. Two runs of the same video with the same options write the **same**
+  `clips.json`, `clips.md`, `viral_report.md` and every `.mp4`.
+- **`work_path()` is `output_dir/_work` for every run**, with no id either, so
+  both processes also write the same `source_audio.webm` and `analysis.wav`.
+
+Measured, launching two runs in parallel: one analysed **1127 s of a 793.5 s
+video**, because it reused the audio the other process had just written. It
+passed every guard downstream. And because publishing is an atomic rename, not
+even a truncated file is left behind to denounce the collision — only the wrong
+result.
+
+So each `output_dir` is guarded by an exclusive OS lock, held from before the
+first byte is written until the run ends. A second run **refuses** (exit 5)
+instead of waiting: whoever called knows what to do with the message, while a
+`sleep` until release is a hang with no explanation.
+
+```
+$ python -m viralclipper https://youtu.be/...
+! Outra execucao ja esta usando output (provavelmente pid 1234). Duas execucoes
+  no mesmo diretorio de saida escrevem os MESMOS arquivos ...
+```
+
+Why an OS lock and **not** a pid file: the normal way to stop a run here is to
+kill it (`taskkill /T /F`, so no orphan `ffmpeg` is left). A pid-file lock goes
+stale after **every** cancel, and the next run then dies on a ghost lock — worse
+than having no lock at all. An OS lock is released by the kernel when the
+process dies, kill included. The lock file is never deleted, deliberately:
+removing it opens a classic inode race where two later runs each lock a
+different file and both think they own the directory.
+
+Two details that are load-bearing, both measured rather than assumed:
+
+- **Every process locks the same byte offset.** `msvcrt.locking` locks from the
+  file's *current position*; without pinning it, two processes lock different
+  bytes and **both succeed** — a lock that does not lock. Measured: offsets 5
+  and 10 held simultaneously, both granted.
+- **That offset is high (4096), not 0.** A Windows byte-range lock also blocks
+  *reads* of that range by other processes, so locking byte 0 would stop the
+  loser from reading the holder's pid — the one thing that makes the message
+  useful.
+
+Batch mode locks the **parent** directory (that is where `batch.sqlite3` and
+`batch.json` live) and each URL still gets its own `output_dir` and its own
+lock. Because the batch is sequential, one lock on the parent is enough.
 
 ## Batch mode
 

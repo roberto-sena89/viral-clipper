@@ -25,6 +25,14 @@ class ClipRecord:
     components: dict[str, float] = field(default_factory=dict)
     width: int = 0
     height: int = 0
+    # The on-screen hook burned into this clip, when one was. Empty for a run
+    # with no headline and for one where the model wrote none, so the markdown
+    # and the JSON stay readable for installs that never enable the feature.
+    headline: str = ""
+    # Ready-to-paste tags for the platform. Not burned into the video: TikTok
+    # and Reels take them as post metadata, and a hashtag drawn on the frame is
+    # a hashtag the platform ignores.
+    hashtags: str = ""
 
     @property
     def start_label(self) -> str:
@@ -103,6 +111,10 @@ def write_markdown(report: RunReport, destination: str | Path) -> Path:
         lines.append(f"- Trecho: {clip.start_label} ate {clip.end_label} ({clip.duration:.1f}s)")
         if clip.file:
             lines.append(f"- Arquivo: {clip.file}")
+        if clip.headline:
+            lines.append(f"- Titulo no video: {clip.headline}")
+        if clip.hashtags:
+            lines.append(f"- Hashtags: {clip.hashtags}")
         if clip.hook_terms:
             lines.append(f"- Ganchos: {', '.join(clip.hook_terms)}")
         if clip.text:

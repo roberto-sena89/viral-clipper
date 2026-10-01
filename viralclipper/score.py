@@ -130,6 +130,22 @@ class Window:
     score: float = 0.0
     components: dict[str, float] = field(default_factory=dict)
     hook_terms: list[str] = field(default_factory=list)
+    # Written by the optional LLM ranker (``ranker.apply``) when its prompt
+    # asks for them. They live here rather than inside ``components`` because
+    # ``components`` is a numeric bag that gets summed and averaged; a headline
+    # stuffed in there would be a string in a field every consumer treats as a
+    # number. Empty means "no model wrote one", and every consumer falls back to
+    # its own derived text.
+    headline: str = ""
+    #: A second headline by a different angle, so a bad hook is a swap and not a
+    #: rewrite.
+    headline_alternate: str = ""
+    hashtags: str = ""
+    #: The curator's four editorial metrics on 0..100, keyed by the Portuguese
+    #: names the prompt asks for (``retencao``, ``comentarios``,
+    #: ``compartilhamentos``, ``polemica``). The report prefers these over its
+    #: own heuristic numbers when they are present.
+    llm_metrics: dict[str, float] = field(default_factory=dict)
 
     @property
     def duration(self) -> float:

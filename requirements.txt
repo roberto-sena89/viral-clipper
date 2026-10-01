@@ -24,10 +24,10 @@ yt-dlp>=2024.1.0
 # They are not Python packages; install them separately.
 
 # --- optional: face-guided reframing (--layout focus) -----------------------
-# Without one of these, --layout focus silently falls back to a plain center
-# crop. The 4.x line matters: OpenCV 5 removed CascadeClassifier and stopped
-# shipping the Haar XMLs, leaving only FaceDetectorYN, which needs an ONNX
-# model downloaded at runtime.
+# Without one of these, --layout focus falls back to a plain center crop
+# and reports the missing detector in the render log. The 4.x line matters:
+# OpenCV 5 removed CascadeClassifier and stopped shipping the Haar XMLs,
+# leaving only FaceDetectorYN, which needs an ONNX model downloaded at runtime.
 #
 #   pip install "opencv-python-headless<5"
 #

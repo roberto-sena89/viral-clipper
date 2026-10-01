@@ -16,7 +16,7 @@ detail the parent can repair.
 from __future__ import annotations
 
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import download, render, report, util
@@ -52,6 +52,29 @@ class _RenderTask:
     error: str | None = None
 
 
+def _config_with_headline(config: ClipConfig, window) -> ClipConfig:
+    """Return ``config`` carrying this window's own headline, when it has one.
+
+    ``headline_text`` is a single string on the run-wide config, but one run
+    produces several clips and each needs its own hook. The LLM ranker writes a
+    headline per window, so it is copied in here, per task, immediately before
+    the render.
+
+    A copy rather than an assignment: this config object is shared by every
+    worker in the pool, and mutating it would hand clip 3 the headline of clip
+    7 depending on which worker got there first. The jump-cut retry below swaps
+    a field of a copy for the same reason.
+
+    Nothing is burned unless ``headline_seconds > 0``; that toggle stays the
+    gate. A headline the model wrote with the feature switched off is still
+    reported, so the work is never lost - it just does not alter the video.
+    """
+    headline = (getattr(window, "headline", "") or "").strip()
+    if not headline:
+        return config
+    return replace(config, headline_text=headline)
+
+
 def _render_task(task: _RenderTask) -> _RenderTask:
     """Render one clip in a worker process, writing the result into ``task``."""
     logger = Logger(quiet=task.config.quiet, verbose=task.config.verbose)
@@ -84,7 +107,7 @@ def _render_task(task: _RenderTask) -> _RenderTask:
             finish=task.finish,
             silences=task.silences,
             words=task.words,
-            config=task.config,
+            config=_config_with_headline(task.config, task.window),
             work=clip_dir,
             logger=logger,
             source_origin=task.media_origin,
@@ -190,4 +213,8 @@ def _record(
         components=window.components,
         width=rendered.width if rendered else 0,
         height=rendered.height if rendered else 0,
+        # What was actually burned: the model's headline for this window when
+        # there is one, otherwise the run-wide one typed by hand.
+        headline=(getattr(window, "headline", "") or "") or (config.headline_text or ""),
+        hashtags=getattr(window, "hashtags", "") or "",
     )

@@ -29,6 +29,13 @@ MAX_LINE_SECONDS = 2.6
 # chopping it mid-thought; when a sentence is longer than that it is cut and
 # marked with an ellipsis.
 HEADLINE_MAX_WORDS = 12
+# Hard ceiling for an explicit headline (the LLM's or the user's). 12 words
+# only ever bounded the *derived* one; an explicit headline was written through
+# verbatim, and at 1080x1920 anything past roughly this many characters needs a
+# third wrapped line - which eats the footage the banner exists to sell. Kept
+# in step with ``ranker.MAX_HEADLINE_CHARS`` so the model and the renderer
+# agree on what "short enough" means.
+HEADLINE_MAX_CHARS = 90
 HEADLINE_FAD_IN_MS = 120
 HEADLINE_FAD_OUT_MS = 300
 
@@ -203,17 +210,35 @@ def _group_words(words: list[Word], words_per_line: int) -> list[list[Word]]:
     return lines
 
 
+def _cap_headline(text: str) -> str:
+    """Trim an explicit headline to what the banner can actually hold.
+
+    Cut at a word boundary and marked with an ellipsis, so a trimmed hook never
+    reads as a complete one. The half-width guard keeps a headline whose first
+    word alone exceeds the limit from being cut back to nothing.
+    """
+    cleaned = " ".join(str(text).split())
+    if len(cleaned) <= HEADLINE_MAX_CHARS:
+        return cleaned
+    cut = cleaned[:HEADLINE_MAX_CHARS].rstrip()
+    space = cut.rfind(" ")
+    if space > HEADLINE_MAX_CHARS // 2:
+        cut = cut[:space]
+    return cut.rstrip(" ,;:-") + "…"
+
+
 def _headline_text(words: list[Word], config: ClipConfig, style) -> str:
     """Resolve the burned opening headline; '' when the feature is off.
 
     With no explicit ``headline_text`` the headline is the clip's own opening:
     the first words up to the first sentence ending, capped at
-    ``HEADLINE_MAX_WORDS`` so it always fits on two wrapped lines.
+    ``HEADLINE_MAX_WORDS`` so it always fits on two wrapped lines. An explicit
+    one (the LLM's, or typed by hand) is capped by :func:`_cap_headline`.
     """
     if config.headline_seconds <= 0:
         return ""
     if config.headline_text is not None:
-        text = config.headline_text
+        text = _cap_headline(config.headline_text)
     else:
         picked: list[str] = []
         truncated = False

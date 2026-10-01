@@ -30,15 +30,27 @@ whisper:
 cache_dir: "cache/transcripts"
 transcript_cache: true
 
-# semantic ranker (optional; off by default, never needs network when "none")
+# semantic ranker / curator (optional; off by default, never needs network
+# when "none"). When on, the model scores the best candidates, writes the
+# on-screen headline for each clip and writes its hashtags.
 ranker: "none"          # none | llm
+# A named provider from viralclipper/providers.py (nemotron-super, gemma-4-31b,
+# kimi-k3, deepseek-flash, openai, local). It fills in base_url, model,
+# api_key_env and requires_key in one go. Empty keeps the manual keys below.
+ranker_provider: ""
 ranker_model: "gpt-4o-mini"
 ranker_base_url: "https://api.openai.com/v1"  # any OpenAI-compatible endpoint
 ranker_api_key_env: "OPENAI_API_KEY"
 ranker_requires_key: true   # set false for a local Ollama/LM Studio
 ranker_top_n: 24        # cost dial: one model call per candidate per video
 ranker_weight: 0.6      # 0 = pure heuristic, 1 = pure model
+# Reasoning models pass 60 s routinely; the named providers raise this to 180.
 ranker_timeout: 60.0
+# Free-form prompt telling the model what a viral clip is. Prose only: the
+# JSON response format is appended by the code, so the file can be edited
+# without also having to get a schema right. Its content is hashed into the
+# verdict cache key, so editing it invalidates the cache by itself.
+curator_prompt_file: "prompts/curador.txt"
 
 # audio analysis
 silence_db: null      # null = adaptive

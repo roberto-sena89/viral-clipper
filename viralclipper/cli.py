@@ -407,6 +407,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Peso do modelo no score final (0 = so heuristica, 1 = so modelo)",
     )
     semantic.add_argument("--ranker-timeout", dest="ranker_timeout", type=float, default=60.0)
+    semantic.add_argument(
+        "--ranker-provider",
+        dest="ranker_provider",
+        default="",
+        help=(
+            "Provedor nomeado (nemotron-super, gemma-4-31b, openai, local...). "
+            "Preenche endpoint, modelo e variavel da chave de uma vez. "
+            "Vazio mantem --ranker-model/--ranker-base-url valendo."
+        ),
+    )
+    semantic.add_argument(
+        "--curator-prompt",
+        dest="curator_prompt_file",
+        type=Path,
+        default=None,
+        help=(
+            "Arquivo com as regras de curadoria, em prosa livre. O formato de "
+            "resposta JSON e anexado pelo motor. Sem ele, vale o prompt embutido."
+        ),
+    )
 
     misc = parser.add_argument_group("diversos")
     misc.add_argument("--plan-only", dest="dry_run", action="store_true")

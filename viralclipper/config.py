@@ -59,6 +59,12 @@ class ClipConfig:
     # re-judges the best few with a language model. Off by default so the
     # pipeline never needs network access or an API key unless asked.
     ranker: str = "none"  # none | llm
+    # A named provider from ``viralclipper.providers``. When set, it fills in
+    # base_url, model, api_key_env and requires_key, so the panel offers a
+    # dropdown instead of two text fields a person has to remember. Empty keeps
+    # the manual fields below authoritative, which is what a TOML file written
+    # by hand already relies on.
+    ranker_provider: str = ""
     ranker_model: str = "gpt-4o-mini"
     # Any OpenAI-compatible /chat/completions endpoint: OpenAI, DeepSeek,
     # Groq, Together, OpenRouter, or a local Ollama/LM Studio.
@@ -66,6 +72,13 @@ class ClipConfig:
     ranker_api_key_env: str = "OPENAI_API_KEY"
     # Local endpoints usually need no key; set this to False for them.
     ranker_requires_key: bool = True
+    # --- curator prompt -----------------------------------------------------
+    # Path to the free-form prompt that tells the model what a viral clip is.
+    # The file holds prose only; the JSON contract the parser needs is appended
+    # by the code, so any prompt can be dropped in verbatim without the author
+    # having to also get a response schema right. Empty falls back to the
+    # built-in prompt in ``ranker.py``.
+    curator_prompt_file: Path | None = None
     # How many of the heuristic's best candidates get a model call. This is the
     # cost dial: one call per candidate per video.
     ranker_top_n: int = 24
@@ -251,6 +264,19 @@ class ClipConfig:
             raise ValueError("ranker_top_n must not be negative")
         if self.ranker_timeout <= 0:
             raise ValueError("ranker_timeout must be greater than zero")
+        if self.ranker_provider:
+            # Validated here so a typo fails before the download, not after it.
+            # Imported lazily: ``providers`` imports this module, and a
+            # module-level import would be circular.
+            from . import providers
+
+            providers.get_provider(self.ranker_provider)
+        if self.curator_prompt_file is not None:
+            prompt_path = Path(self.curator_prompt_file)
+            if not prompt_path.is_file():
+                raise ValueError(
+                    f"curator_prompt_file does not exist: {prompt_path}"
+                )
         if self.workers < 0:
             raise ValueError("workers must not be negative")
         # The template is validated eagerly so a typo in a zone fraction fails

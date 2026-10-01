@@ -32,6 +32,20 @@ from urllib.request import Request, urlopen
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = Path(__file__).resolve().parent
 
+#: The curator prompt lives in a file, not in a database. A file is diffable,
+#: revertible and travels with the repo to a server; a blob in a table is none
+#: of those, and the project already says as much in ``archive.py``
+#: ("resumability comes from the filesystem, not a database").
+#:
+#: The panel edits THIS path and no other. The path never comes from the
+#: request, so a crafted payload cannot turn the endpoint into an arbitrary
+#: file writer - which is the failure mode of every "save settings" route that
+#: takes the destination from the client.
+CURATOR_PROMPT_PATH = REPO_ROOT / "prompts" / "curador.txt"
+#: Generous for a prompt, small enough that a runaway client cannot fill the
+#: disk through this route.
+MAX_CURATOR_PROMPT_BYTES = 64 * 1024
+
 # Import the package itself; the server must run from the repo root so
 # `viralclipper` resolves, but __file__ lets us be explicit.
 import re
@@ -41,7 +55,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from viralclipper import config as config_mod  # noqa: E402
 from viralclipper import download as download_mod  # noqa: E402
 from viralclipper import ig_profile as ig_profile_mod  # noqa: E402
-from viralclipper import pipeline, report, transcript_import, util, viral_report  # noqa: E402
+from viralclipper import pipeline, quality, report, transcript_import, util, viral_report  # noqa: E402
 from viralclipper.util import ClipperError  # noqa: E402
 
 HOST = "127.0.0.1"
@@ -143,6 +157,42 @@ def _download_worker(
     )
 
 
+def _curator_prompt_payload() -> dict:
+    """The curator prompt as it is on disk, plus where it lives.
+
+    Returns the path even when the file is missing, because the panel shows it:
+    "salve para criar" is a different instruction from "edite", and the user
+    cannot tell which applies without knowing the path.
+    """
+    path = CURATOR_PROMPT_PATH
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    return {"path": str(path), "text": text, "exists": path.is_file()}
+
+
+def _providers_payload() -> dict:
+    """The named LLM providers the panel offers in its dropdown."""
+    from viralclipper import providers
+
+    return {
+        "default": providers.DEFAULT_PROVIDER,
+        "providers": [
+            {
+                "name": provider.name,
+                "label": provider.label,
+                "base_url": provider.base_url,
+                "model": provider.model,
+                "api_key_env": provider.api_key_env,
+                "requires_key": provider.requires_key,
+                "note": provider.note,
+            }
+            for provider in providers.list_providers()
+        ],
+    }
+
+
 def _options_to_config(options: dict) -> config_mod.ClipConfig:
     """Map the JSON payload onto ClipConfig, coercing types like the CLI does."""
     payload = dict(options or {})
@@ -182,6 +232,16 @@ def _options_to_config(options: dict) -> config_mod.ClipConfig:
         payload["transcript_file"] = Path(transcript_file.strip())
     else:
         payload.pop("transcript_file", None)
+
+    # The panel sends the curator prompt path as a string; ClipConfig declares
+    # a Path. Empty must become None and not Path("") - Path("") is Path("."),
+    # which EXISTS, so validate() would accept it and the ranker would then try
+    # to read a directory as its prompt. Same trap as render.py's ``image`` zone.
+    curator_file = payload.get("curator_prompt_file")
+    if isinstance(curator_file, str) and curator_file.strip():
+        payload["curator_prompt_file"] = Path(curator_file.strip())
+    else:
+        payload.pop("curator_prompt_file", None)
 
     # A cookies file is not a ClipConfig field: it is sugar for
     # ``--ytdlp-arg --cookies <path>``. Folding it in here, before the unknown
@@ -328,9 +388,34 @@ def _run_job(options: dict, plan_only: bool) -> dict:
         report.write_json(run_report, output_dir / "clips.json")
         report.write_markdown(run_report, output_dir / "clips.md")
         clips = [_clip_to_payload(c, output_dir) for c in records]
+        for clip in clips:
+            clip["source_url"] = config.url
+        if not plan_only:
+            for record, clip in zip(records, clips):
+                if clip["rendered"] and record.file:
+                    try:
+                        clip["quality"] = quality.inspect_clip(
+                            record.file, config, caption_text=record.text or ""
+                        )
+                    except Exception as exc:  # quality checks must never fail a finished render
+                        clip["quality"] = {
+                            "status": "attention", "score": 0,
+                            "checks": [{
+                                "key": "quality", "label": "Revisão automática",
+                                "status": "warning",
+                                "message": f"Não foi possível concluir a análise: {exc}",
+                            }],
+                        }
+            warnings = sum(
+                1 for clip in clips
+                if (clip.get("quality") or {}).get("status") in {"attention", "critical"}
+            )
+            logger.info(f"Revisão de qualidade concluída: {warnings} corte(s) para revisar.")
         rendered = sum(1 for clip in clips if clip["rendered"])
         with _lock:
             _state["clips"] = clips
+            job["title"] = run_report.title
+            job["clips"] = clips[:3]
             job["status"] = "done"
             job["meta"] = (
                 f"{len(clips)} cortes analisados (sem render)"
@@ -1877,6 +1962,12 @@ class Handler(http_server.BaseHTTPRequestHandler):
             else:
                 self._send_json({"error": "not found"}, 404)
             return
+        if path == "/providers":
+            self._send_json(_providers_payload())
+            return
+        if path == "/prompts/curador":
+            self._send_json(_curator_prompt_payload())
+            return
         if path == "/status":
             with _lock:
                 snapshot = dict(_state)
@@ -1979,6 +2070,9 @@ class Handler(http_server.BaseHTTPRequestHandler):
             return
         if path == "/transcript/normalize":
             self._handle_normalize(payload)
+            return
+        if path == "/prompts/curador":
+            self._handle_save_curator_prompt(payload)
             return
         if path != "/run":
             self._send_json({"error": "not found"}, 404)
@@ -2225,6 +2319,41 @@ class Handler(http_server.BaseHTTPRequestHandler):
                 "root": _relative_to_repo(root),
             }
         )
+
+    def _handle_save_curator_prompt(self, payload: dict) -> None:
+        """Write the curator prompt to the server's own path.
+
+        The destination is ``CURATOR_PROMPT_PATH`` and never anything the
+        request names: a "save my settings" route that takes the path from the
+        body is an arbitrary file writer with extra steps. The body carries the
+        text and nothing else.
+
+        An empty body is refused rather than written. ``load_curator_prompt``
+        treats an empty file as fatal, so accepting it here would let one
+        accidental click turn every later run into a hard failure with an error
+        pointing at a file the user believes they filled in.
+        """
+        text = payload.get("text")
+        if not isinstance(text, str):
+            self._send_json({"error": "text is required"}, 400)
+            return
+        if not text.strip():
+            self._send_json({"error": "o prompt nao pode ficar vazio"}, 400)
+            return
+        encoded = text.encode("utf-8")
+        if len(encoded) > MAX_CURATOR_PROMPT_BYTES:
+            self._send_json(
+                {"error": f"prompt maior que {MAX_CURATOR_PROMPT_BYTES} bytes"}, 400
+            )
+            return
+        path = CURATOR_PROMPT_PATH
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        except OSError as exc:
+            self._send_json({"error": f"nao consegui gravar {path}: {exc}"}, 500)
+            return
+        self._send_json({"ok": True, "path": str(path), "bytes": len(encoded)})
 
     def _handle_normalize(self, payload: dict) -> None:
         """Clean a pasted transcript and return it minute-aligned."""

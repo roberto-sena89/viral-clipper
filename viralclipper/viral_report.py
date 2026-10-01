@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from .ranker import METRIC_TO_REPORT
 from .score import Unit, Window
 from .util import fmt_clock
 
@@ -137,6 +138,15 @@ class ViralAnalysis:
     viral_potential: int
     hook_terms: list[str] = field(default_factory=list)
     score: float = 0.0
+    # Ready-to-paste tags, when the LLM ranker produced them. Appended at the
+    # end so every existing positional construction keeps working.
+    hashtags: str = ""
+    #: Second hook option, same origin as ``hashtags``.
+    headline_alternate: str = ""
+    #: "curator" when the four metrics came from the model, "" when they are the
+    #: heuristic's. Without this the same clip reports different numbers on two
+    #: runs and nothing on the page says why.
+    metrics_source: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -159,26 +169,32 @@ class ViralAnalysis:
             "viral_potential": self.viral_potential,
             "hook_terms": list(self.hook_terms),
             "score": self.score,
+            "hashtags": self.hashtags,
+            "headline_alternate": self.headline_alternate,
+            "metrics_source": self.metrics_source,
         }
 
     def to_markdown(self) -> str:
-        return "\n".join(
-            [
-                f"#{self.index} - {self.headline}",
-                f"  Minutagem: {fmt_clock(self.start)}-{fmt_clock(self.end)}",
-                f"  Duracao: {self.duration:.0f}s",
-                f"  Assunto: {self.subject}",
-                f"  Por que pode viralizar: {self.why}",
-                f'  Gancho: "{self.hook}"',
-                f"  Momento mais forte: {self.peak}",
-                f"  Conclusao: {self.conclusion}",
-                f"  Retencao: {self.retention}/100",
-                f"  Comentarios: {self.comments}/100",
-                f"  Compartilhamentos: {self.shares}/100",
-                f"  Polemica: {self.controversy}/100",
-                f"  Potencial de viralizacao: {self.viral_potential}%",
-            ]
-        )
+        lines = [
+            f"#{self.index} - {self.headline}",
+            f"  Minutagem: {fmt_clock(self.start)}-{fmt_clock(self.end)}",
+            f"  Duracao: {self.duration:.0f}s",
+            f"  Assunto: {self.subject}",
+            f"  Por que pode viralizar: {self.why}",
+            f'  Gancho: "{self.hook}"',
+            f"  Momento mais forte: {self.peak}",
+            f"  Conclusao: {self.conclusion}",
+            f"  Retencao: {self.retention}/100",
+            f"  Comentarios: {self.comments}/100",
+            f"  Compartilhamentos: {self.shares}/100",
+            f"  Polemica: {self.controversy}/100",
+            f"  Potencial de viralizacao: {self.viral_potential}%",
+        ]
+        # Only when there is something to paste: an empty "Hashtags:" line on
+        # every clip of a run that never enabled the model is noise.
+        if self.hashtags:
+            lines.append(f"  Hashtags: {self.hashtags}")
+        return "\n".join(lines)
 
 
 def _excerpt(text: str, max_words: int = 22) -> str:
@@ -242,17 +258,35 @@ def analyse_window(window: Window, units: list[Unit], *, index: int) -> ViralAna
         "comments": comments,
         "controversy": controversy,
     }
+    # The curator's numbers win when there are any. They are the same four
+    # metrics by construction, measured by a model that read the transcript
+    # rather than by a term lexicon - so blending the two would produce a third
+    # number that is neither one, and nobody could say which run it came from.
+    # Applied per metric: a model that answered only for retention still
+    # improves retention and leaves the rest to the heuristic.
+    used_curator = False
+    for source_key, report_key in METRIC_TO_REPORT.items():
+        value = (window.llm_metrics or {}).get(source_key)
+        if value is None:
+            continue
+        metrics[report_key] = round(float(value), 1)
+        used_curator = True
     potential = sum(_POTENTIAL_WEIGHTS[key] * value for key, value in metrics.items())
 
     return ViralAnalysis(
         index=index,
-        headline=opening_label(first, components),
+        # The model's hook when there is one, otherwise the derived opening.
+        # The report is what gets read while posting, so it has to show the same
+        # headline the viewer sees burned on the clip.
+        headline=(getattr(window, "headline", "") or "").strip()
+        or opening_label(first, components),
         start=window.start,
         end=window.end,
         duration=round(window.end - window.start, 2),
         subject=_excerpt(text),
         why=_why(components, slice_units),
         hook=_excerpt(first, max_words=32),
+        hashtags=(getattr(window, "hashtags", "") or "").strip(),
         peak=_excerpt(peak_unit.text, max_words=26) if peak_unit else _excerpt(first),
         conclusion=_excerpt(last, max_words=26),
         retention=int(round(retention)),

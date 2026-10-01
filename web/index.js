@@ -4,7 +4,14 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-  const state = { running: false, jobs: [], clips: [], viral: [] };
+  const state = {
+    running: false, jobs: [], clips: [], viral: [], jobSignature: null,
+    // Caminho do arquivo de prompt do curador e se ele ja existe em disco. Os
+    // dois vem do servidor: o painel nunca inventa o caminho, porque quem
+    // decide onde o arquivo mora e o servidor (CURATOR_PROMPT_PATH).
+    curatorPromptPath: '',
+    curatorPromptExists: false,
+  };
 
   // ---------- rail lateral (menu principal) ----------
   // A lista de destinos vive no HTML: uma vez no rail fixo, e uma copia no
@@ -302,7 +309,10 @@
     wrapper.appendChild(select);
     sync();
   }
-  $$('select[id]').forEach(enhanceSelect);
+  // data-defer-enhance fica de fora: o select de provedor e preenchido depois,
+  // com a lista que vem do servidor. Aprimora-lo agora montaria o dropdown rico
+  // a partir de uma lista vazia, e o painel ficaria sem opcao nenhuma.
+  $$('select[id]:not([data-defer-enhance])').forEach(enhanceSelect);
 
   // ---------- helpers ----------
   function toast(msg, kind) {
@@ -378,6 +388,13 @@
     if (runProgress.timer) { clearInterval(runProgress.timer); runProgress.timer = null; }
   }
 
+  function queueClock(seconds) {
+    const total = Math.max(0, Math.floor(Number(seconds) || 0));
+    const minutes = String(Math.floor(total / 60)).padStart(2, '0');
+    const remainder = String(total % 60).padStart(2, '0');
+    return minutes + ':' + remainder;
+  }
+
   async function followRun() {
     const r = await api('/run/progress');
     if (r.offline || r.error) return;
@@ -386,6 +403,56 @@
     // publica "Preparando…" antes de anunciar qualquer etapa.
     if (r.stage_label) setProgress(0, r.stage_label);
     if (Array.isArray(r.lines)) renderLog([runProgress.header, ...r.lines]);
+
+    let jobIndex = -1;
+    for (let index = state.jobs.length - 1; index >= 0; index--) {
+      if (state.jobs[index].status === 'running') {
+        jobIndex = index;
+        break;
+      }
+    }
+    if (jobIndex < 0) return;
+
+    const job = state.jobs[jobIndex];
+    if (r.active && (!r.url || r.url === job.url)) {
+      const activeStage = (r.stages || []).find((stage) => stage.state === 'agora');
+      job.progress = r.stage_label || (activeStage && activeStage.label) || job.progress;
+      job.elapsed = Number(r.elapsed) || 0;
+      const card = $('#queue-list .job-card[data-job-index="' + jobIndex + '"]');
+      if (card) {
+        const phase = card.querySelector('.job-phase');
+        const elapsed = card.querySelector('.job-elapsed');
+        if (phase && job.progress) phase.textContent = job.progress;
+        if (elapsed) elapsed.textContent = queueClock(job.elapsed);
+      }
+    }
+
+    if (!(job.baselineFiles instanceof Map)) return;
+    const library = await api('/library');
+    if (library.offline || library.error || !Array.isArray(library.files)) return;
+
+    const observed = job.observedFiles || (job.observedFiles = new Map());
+    const ready = [];
+    library.files.forEach((file) => {
+      if (!isRenderedClipFile(file, job)) return;
+      const fingerprint = String(file.size || 0) + ':' + String(file.modified || 0);
+      if (job.baselineFiles.get(file.rel) === fingerprint) return;
+      const previous = observed.get(file.rel);
+      observed.set(file.rel, fingerprint);
+      if (previous === fingerprint) {
+        ready.push({ rel: file.rel, name: file.name, size: file.size });
+      }
+    });
+
+    ready.sort((a, b) => renderedClipSequence(a) - renderedClipSequence(b));
+
+    const nextPreviews = ready;
+    const previousKeys = JSON.stringify((job.previewFiles || []).map((file) => file.rel));
+    const nextKeys = JSON.stringify(nextPreviews.map((file) => file.rel));
+    if (nextKeys !== previousKeys) {
+      job.previewFiles = nextPreviews;
+      renderQueue();
+    }
   }
 
   function startFollowingRun(header) {
@@ -476,10 +543,21 @@
       jump_cut: toggleOn('#jump-cut'),
       loudnorm: toggleOn('#loudnorm'),
       ranker: toggleOn('#ranker-llm') ? 'llm' : 'none',
+      // Vazio = "personalizado": o motor entao usa o modelo e o endpoint
+      // digitados abaixo. Preenchido, o provedor manda nesses dois campos.
+      ranker_provider: $('#ranker-provider').value,
       ranker_model: $('#ranker-model').value,
       ranker_base_url: $('#ranker-base-url').value,
+      ranker_api_key_env: $('#ranker-api-key-env').value.trim() || 'OPENAI_API_KEY',
       ranker_top_n: parseInt($('#ranker-top-n').value, 10) || 24,
       ranker_weight: parseFloat($('#ranker-weight').value) || 0.6,
+      // So vai quando o ranker esta ligado E o arquivo existe. Um caminho
+      // apontando para arquivo inexistente e erro de configuracao no motor
+      // (validate() recusa), entao mandar assim seria derrubar o run inteiro
+      // por causa de um campo que a pessoa nem tocou.
+      curator_prompt_file: (toggleOn('#ranker-llm') && state.curatorPromptExists)
+        ? state.curatorPromptPath
+        : null,
       cache_dir: $('#cache-dir').value.trim() || null,
       transcript_text: $('#transcript').value.trim() || null,
       // Headline only when the toggle is on; otherwise captions are the whole
@@ -512,6 +590,118 @@
     }
   }
 
+  // ---------- curador: provedores e prompt ----------
+  // Os dois vivem no servidor: a lista de provedores sai de
+  // `viralclipper/providers.py` e o prompt de um arquivo versionado no git. O
+  // painel so mostra e edita - ele nao decide nem o caminho do arquivo nem o
+  // catalogo de modelos, porque quem decide isso e o motor.
+  function setPromptStatus(message) {
+    const el = $('#curator-prompt-status');
+    if (el) el.textContent = message || '';
+  }
+
+  function applyProvider(provider) {
+    if (!provider) return;
+    if (provider.base_url) $('#ranker-base-url').value = provider.base_url;
+    if (provider.model) $('#ranker-model').value = provider.model;
+    if (provider.api_key_env) $('#ranker-api-key-env').value = provider.api_key_env;
+  }
+
+  function populateProviders(data) {
+    const select = $('#ranker-provider');
+    if (!select) return;
+    const providers = (data && data.providers) || [];
+    select.innerHTML = '';
+
+    const custom = document.createElement('option');
+    custom.value = '';
+    custom.textContent = 'Personalizado';
+    custom.setAttribute('data-title', 'Personalizado');
+    custom.setAttribute('data-desc', 'Usa o endpoint e o modelo digitados abaixo');
+    select.appendChild(custom);
+
+    providers.forEach((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = p.label;
+      opt.setAttribute('data-title', p.label);
+      opt.setAttribute('data-desc', p.note || p.model);
+      select.appendChild(opt);
+    });
+
+    select.value = (data && data.default) || '';
+    applyProvider(providers.find((p) => p.name === select.value));
+
+    // Agora sim da para montar o dropdown rico, com a lista de verdade. No
+    // init este select estava vazio - foi por isso que ele nasceu com
+    // data-defer-enhance e ficou fora da varredura.
+    select.removeAttribute('data-defer-enhance');
+    enhanceSelect(select);
+
+    select.addEventListener('change', () => {
+      const chosen = providers.find((p) => p.name === select.value);
+      if (chosen) applyProvider(chosen);
+    });
+  }
+
+  async function loadCuratorPrompt() {
+    const data = await api('/prompts/curador');
+    if (!data || data.error) {
+      setPromptStatus('Servidor fora do ar: o prompt não pôde ser carregado.');
+      return;
+    }
+    state.curatorPromptPath = data.path || '';
+    state.curatorPromptExists = Boolean(data.exists);
+    const pathEl = $('#curator-prompt-path');
+    if (pathEl) pathEl.value = data.path || '';
+    const area = $('#curator-prompt');
+    // Nao sobrescreve o que a pessoa ja digitou se o arquivo estiver vazio: o
+    // "Carregar" e uma acao dela, e apagar texto alheio sem pedir e pior do
+    // que nao fazer nada.
+    if (area && data.text) area.value = data.text;
+    setPromptStatus(
+      data.exists ? '' : 'O arquivo ainda não existe — salve para criá-lo.'
+    );
+  }
+
+  async function saveCuratorPrompt() {
+    const area = $('#curator-prompt');
+    if (!area) return;
+    const text = area.value;
+    if (!text.trim()) {
+      setPromptStatus('O prompt está vazio: nada foi salvo.');
+      return;
+    }
+    setPromptStatus('Salvando...');
+    const data = await api('/prompts/curador', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (data && data.ok) {
+      state.curatorPromptExists = true;
+      if (data.path) {
+        state.curatorPromptPath = data.path;
+        const pathEl = $('#curator-prompt-path');
+        if (pathEl) pathEl.value = data.path;
+      }
+      setPromptStatus('Salvo em ' + (data.path || 'arquivo') + '.');
+    } else {
+      setPromptStatus((data && data.error) || 'Não consegui salvar.');
+    }
+  }
+
+  const btnPromptLoad = $('#btn-prompt-load');
+  if (btnPromptLoad) btnPromptLoad.addEventListener('click', loadCuratorPrompt);
+  const btnPromptSave = $('#btn-prompt-save');
+  if (btnPromptSave) btnPromptSave.addEventListener('click', saveCuratorPrompt);
+
+  (async function initCurator() {
+    const providers = await api('/providers');
+    if (providers && !providers.error) populateProviders(providers);
+    await loadCuratorPrompt();
+  })();
+
   function cliCommand(o) {
     const parts = ['python', '-m', 'viralclipper', JSON.stringify(o.url)];
     parts.push('-o', o.output);
@@ -540,8 +730,16 @@
     if (!o.loudnorm) parts.push('--no-loudnorm');
     if (o.ranker === 'llm') {
       parts.push('--ranker', 'llm');
-      parts.push('--ranker-model', o.ranker_model);
-      parts.push('--ranker-base-url', o.ranker_base_url);
+      // Um provedor nomeado ja carrega endpoint e modelo: imprimir os dois
+      // junto com --ranker-provider sugeriria que eles tambem valem, e o
+      // provedor sobrescreve os dois no motor.
+      if (o.ranker_provider) {
+        parts.push('--ranker-provider', o.ranker_provider);
+      } else {
+        parts.push('--ranker-model', o.ranker_model);
+        parts.push('--ranker-base-url', o.ranker_base_url);
+      }
+      if (o.curator_prompt_file) parts.push('--curator-prompt', o.curator_prompt_file);
       parts.push('--ranker-top-n', String(o.ranker_top_n));
       parts.push('--ranker-weight', String(o.ranker_weight));
     }
@@ -549,22 +747,214 @@
   }
 
   // ---------- fila ----------
+  function videoAddress(rel) {
+    return API + '/clips/' + String(rel || '').split('/').map(encodeURIComponent).join('/');
+  }
+
+  function youtubeVideoId(value) {
+    try {
+      const url = new URL(value);
+      const host = url.hostname.toLowerCase();
+      if (host === 'youtu.be') return url.pathname.split('/').filter(Boolean)[0] || '';
+      if (host !== 'youtube.com' && !host.endsWith('.youtube.com')) return '';
+      const pathId = (url.pathname.match(/^\/(?:shorts|embed|live)\/([^/?]+)/) || [])[1];
+      return url.searchParams.get('v') || pathId || '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function renderedClipSequence(file) {
+    const name = String(file.name || file.rel || '').split(/[\\/]/).pop();
+    return Number((name.match(/^[^_]+_(\d{2})_/) || [])[1]) || Number.MAX_SAFE_INTEGER;
+  }
+
+  function isRenderedClipFile(file, job) {
+    const rel = String(file.rel || '').replace(/\\/g, '/');
+    const name = String(file.name || rel).split(/[\\/]/).pop();
+    if (!rel || /(^|\/)_(?:work|tmp)(\/|$)/i.test(rel) || !/\.mp4$/i.test(name)) return false;
+
+    const videoId = youtubeVideoId(job.url);
+    if (videoId) {
+      const prefix = videoId + '_';
+      return name.startsWith(prefix) && /^\d{2}_/.test(name.slice(prefix.length));
+    }
+    return /^[^_]+_\d{2}_/.test(name);
+  }
+
+  async function hydrateQueuePreviews() {
+    const now = Date.now();
+    const pending = state.jobs.filter((job) => {
+      if (job.status !== 'done' || job.previewLookupDone) return false;
+      if (/(sem render|plan[- ]only)/i.test(String(job.meta || ''))) return false;
+      if (!youtubeVideoId(job.url) || now - Number(job.previewLookupAt || 0) < 15000) return false;
+      job.previewLookupAt = now;
+      return true;
+    });
+    if (!pending.length) return;
+
+    const library = await api('/library');
+    if (library.offline || library.error || !Array.isArray(library.files)) return;
+    let changed = false;
+    pending.forEach((job) => {
+      const files = library.files.filter((file) => isRenderedClipFile(file, job));
+      files.sort((a, b) => renderedClipSequence(a) - renderedClipSequence(b));
+      if (files.length) {
+        const currentKeys = JSON.stringify((job.previewFiles || []).map((file) => file.rel));
+        const libraryKeys = JSON.stringify(files.map((file) => file.rel));
+        if (currentKeys !== libraryKeys) {
+          job.previewFiles = files;
+          changed = true;
+        }
+        job.previewLookupDone = true;
+      }
+    });
+    if (changed) renderQueue();
+  }
+
   function renderQueue() {
     const list = $('#queue-list');
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const runningPreviewSpeed = reduceMotion ? 1 : 2;
     list.innerHTML = '';
     if (!state.jobs.length) {
-      list.innerHTML = '<div class="empty-state">Nenhum job na fila ainda.<br>Gere clips para vê-lo aqui.</div>';
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.innerHTML = 'Nenhum job na fila ainda.<br>Cole a URL acima e clique em <strong>Gerar clips</strong>.';
+      list.appendChild(empty);
       return;
     }
-    state.jobs.forEach((j) => {
-      const el = document.createElement('div');
-      el.className = 'job';
-      el.innerHTML =
-        '<span class="job-dot ' + j.status + '"></span>' +
-        '<div class="job-info"><div class="job-url"></div><div class="job-meta"></div></div>';
-      el.querySelector('.job-url').textContent = j.url || '(sem url)';
-      el.querySelector('.job-meta').textContent = j.meta || '';
-      list.appendChild(el);
+
+    state.jobs.forEach((job, index) => {
+      const card = document.createElement('article');
+      card.className = 'job-card ' + (job.status || 'queued');
+      card.dataset.jobIndex = String(index);
+
+      const poster = document.createElement('div');
+      poster.className = 'job-poster';
+      poster.setAttribute('aria-hidden', 'true');
+      const posterMark = document.createElement('span');
+      posterMark.className = 'job-poster-mark';
+      posterMark.textContent = 'VC';
+      const posterCaption = document.createElement('span');
+      posterCaption.className = 'job-poster-caption';
+      posterCaption.textContent = job.status === 'running'
+        ? 'Corte em produção · prévia ' + runningPreviewSpeed + '×'
+        : job.previewFiles && job.previewFiles.length
+          ? (job.previewFiles.length + ' prévia' + (job.previewFiles.length > 1 ? 's' : '') + ' pronta' + (job.previewFiles.length > 1 ? 's' : ''))
+          : 'Video clipper';
+      poster.append(posterMark, posterCaption);
+
+      const content = document.createElement('div');
+      content.className = 'job-content';
+      const head = document.createElement('div');
+      head.className = 'job-head';
+      const info = document.createElement('div');
+      info.className = 'job-info';
+      const title = document.createElement('div');
+      title.className = 'job-title';
+      title.textContent = job.title || job.url || '(sem URL)';
+      const url = document.createElement('div');
+      url.className = 'job-url';
+      url.textContent = job.url || '';
+      const badge = document.createElement('span');
+      badge.className = 'job-badge ' + (job.status || 'queued');
+      badge.textContent = job.status === 'running' ? 'Renderizando'
+        : job.status === 'done' ? 'Concluído'
+          : job.status === 'fail' ? 'Falhou' : 'Na fila';
+      info.append(title, url);
+      head.append(info, badge);
+
+      const details = document.createElement('div');
+      details.className = 'job-details';
+      const phase = document.createElement('span');
+      phase.className = 'job-phase';
+      phase.textContent = job.progress || job.meta || (job.status === 'running' ? 'Preparando processamento…' : '');
+      const elapsed = document.createElement('span');
+      elapsed.className = 'job-elapsed';
+      elapsed.textContent = job.elapsed ? queueClock(job.elapsed) : '';
+      details.append(phase, elapsed);
+
+      const track = document.createElement('div');
+      track.className = 'job-progress ' + (job.status === 'done' ? 'complete' : job.status === 'fail' ? 'failed' : '');
+      track.setAttribute('role', 'progressbar');
+      track.setAttribute('aria-label', 'Progresso do processamento');
+      track.setAttribute('aria-valuemin', '0');
+      track.setAttribute('aria-valuemax', '100');
+      if (job.status === 'done') track.setAttribute('aria-valuenow', '100');
+      else track.setAttribute('aria-valuetext', job.progress || 'Em processamento');
+      const fill = document.createElement('span');
+      fill.className = 'job-progress-fill';
+      track.appendChild(fill);
+
+      content.append(head, details, track);
+      const previews = document.createElement('div');
+      previews.className = 'job-previews';
+      previews.setAttribute('aria-label', 'Pré-visualização dos cortes');
+      (job.previewFiles || []).forEach((file, clipIndex) => {
+        const figure = document.createElement('figure');
+        const livePreview = job.status === 'running' && clipIndex === 0;
+        figure.className = 'job-preview' + (livePreview ? ' is-live-preview' : '');
+        figure.tabIndex = 0;
+        figure.setAttribute('role', 'button');
+        figure.setAttribute('aria-label', (livePreview ? 'Prévia acelerada em produção' : 'Reproduzir ou pausar corte ' + (clipIndex + 1)));
+        const video = document.createElement('video');
+        video.muted = true;
+        video.loop = true;
+        video.autoplay = true;
+        video.playsInline = true;
+        video.preload = 'auto';
+        video.setAttribute('aria-hidden', 'true');
+        video.defaultPlaybackRate = livePreview ? runningPreviewSpeed : 1;
+        video.playbackRate = livePreview ? runningPreviewSpeed : 1;
+        video.src = videoAddress(file.rel);
+        const startPreview = () => {
+          video.playbackRate = livePreview ? runningPreviewSpeed : 1;
+          if (video.paused) video.play().catch(() => {});
+        };
+        video.addEventListener('loadedmetadata', startPreview, { once: true });
+        video.addEventListener('loadeddata', startPreview, { once: true });
+        video.addEventListener('canplay', startPreview, { once: true });
+        const caption = document.createElement('figcaption');
+        caption.textContent = livePreview
+          ? 'AO VIVO · ' + runningPreviewSpeed + '×'
+          : 'Corte ' + String(clipIndex + 1).padStart(2, '0');
+        figure.append(video, caption);
+        figure.addEventListener('click', () => {
+          if (video.paused) video.play().catch(() => {});
+          else video.pause();
+        });
+        figure.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            figure.click();
+          }
+        });
+        previews.appendChild(figure);
+      });
+      if (!(job.previewFiles || []).length && job.status === 'running') {
+        const stage = document.createElement('div');
+        stage.className = 'job-render-stage';
+        stage.setAttribute('role', 'status');
+        stage.setAttribute('aria-label', 'Preparando a prévia do corte');
+        stage.innerHTML = '<div class="job-render-visual" aria-hidden="true">' +
+          '<span class="job-render-glow"></span><span class="job-render-frame"></span>' +
+          '<span class="job-render-scan"></span><span class="job-render-core">VC</span>' +
+          '<span class="job-render-corner">RENDER</span></div>' +
+          '<div class="job-render-copy"><span class="job-render-live"><i></i> EM PRODUÇÃO</span>' +
+          '<strong>Preparando sua prévia</strong><span>O primeiro corte aparece aqui em ' + runningPreviewSpeed + '× assim que ficar pronto.</span></div>' +
+          '<span class="job-render-meter" aria-hidden="true"><i></i></span>';
+        previews.appendChild(stage);
+      }
+      if (job.meta && job.status !== 'running' && job.status !== 'done') {
+        const error = document.createElement('p');
+        error.className = 'job-error';
+        error.textContent = job.meta;
+        content.appendChild(error);
+      }
+
+      card.append(poster, content, previews);
+      list.appendChild(card);
     });
   }
 
@@ -686,6 +1076,8 @@
       return;
     }
     state.clips.forEach((c) => {
+      const card = document.createElement('div');
+      card.className = 'clip-card';
       const el = document.createElement('div');
       const playable = !!(c.video && c.rendered !== false);
       el.className = 'clip-item' + (playable ? '' : ' analysis-only');
@@ -717,7 +1109,41 @@
         }
       });
       el.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); el.click(); } });
-      g.appendChild(el);
+      card.appendChild(el);
+      if (playable && c.quality) {
+        const panel = document.createElement('div');
+        panel.className = 'clip-quality ' + (c.quality.status || 'ok');
+        const heading = document.createElement('strong');
+        const issues = (c.quality.checks || []).filter((check) => check.status === 'warning' || check.status === 'error');
+        const skipped = (c.quality.checks || []).filter((check) => check.status === 'skipped');
+        heading.textContent = issues.length ? `${issues.length} ponto(s) para revisar` : (skipped.length ? 'Revisão parcial' : 'Revisão automática concluída');
+        panel.appendChild(heading);
+        const visibleChecks = issues.length
+          ? [...issues, ...skipped]
+          : (skipped.length ? [...skipped, ...(c.quality.checks || []).filter((check) => check.status === 'ok').slice(0, 1)] : (c.quality.checks || []).filter((check) => check.status === 'ok').slice(0, 2));
+        visibleChecks.forEach((check) => {
+          const row = document.createElement('p');
+          row.textContent = `${check.status === 'skipped' ? 'Não verificado · ' : ''}${check.label}: ${check.message}`;
+          panel.appendChild(row);
+        });
+        if ((c.quality.checks || []).some((check) => check.key === 'face' && (check.status === 'warning' || check.status === 'skipped'))) {
+          const fix = document.createElement('button');
+          fix.type = 'button';
+          fix.className = 'quality-fix';
+          fix.textContent = 'Refazer todos com quadro completo';
+          fix.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            run(false, {
+              ...(state.lastRunOptions || collectOptions()),
+              url: c.source_url || (state.lastRunOptions || {}).url || $('#url').value.trim(),
+              layout: 'blur',
+            });
+          });
+          panel.appendChild(fix);
+        }
+        card.appendChild(panel);
+      }
+      g.appendChild(card);
     });
   }
 
@@ -788,8 +1214,8 @@
   }
   function stopTimer() { clearInterval(timer); }
 
-  async function run(planOnly) {
-    const o = collectOptions();
+  async function run(planOnly, overrides) {
+    const o = Object.assign(collectOptions(), overrides || {});
     if (!o.url) {
       toast('Cole a URL do vídeo primeiro.', 'err');
       $('#url').focus();
@@ -797,23 +1223,38 @@
     }
     if (state.running) { toast('Já existe uma execução em andamento.', 'err'); return; }
 
+    state.lastRunOptions = { ...o };
+
     state.running = true;
     $$('#btn-run, #btn-run-side, #btn-plan').forEach((b) => b.disabled = true);
     setStatus('running', planOnly ? 'Simulando…' : 'Renderizando…');
     startTimer();
     const comando = '$ ' + cliCommand(o);
     log(comando);
-    // A partir daqui quem escreve o log e o poll: o `log()` acima ja cumpriu o
-    // papel de mostrar o comando antes do primeiro request, e o `startFollowing`
-    // reescreve a caixa com a mesma linha na frente.
-    startFollowingRun(comando);
-
-    const job = { url: o.url, status: 'running', meta: (planOnly ? 'plan-only · ' : '') + o.whisper_model + ' · ' + o.engine };
+    // Registra o estado atual da pasta para separar os cortes deste job dos
+    // vídeos que já existiam antes da renderização.
+    const baseline = await api('/library');
+    const baselineFiles = new Map(
+      (Array.isArray(baseline.files) ? baseline.files : [])
+        .filter((file) => file.rel)
+        .map((file) => [file.rel, String(file.size || 0) + ':' + String(file.modified || 0)])
+    );
+    const job = {
+      url: o.url,
+      status: 'running',
+      meta: (planOnly ? 'plan-only · ' : '') + o.whisper_model + ' · ' + o.engine,
+      progress: planOnly ? 'Analisando vídeo…' : 'Preparando processamento…',
+      elapsed: 0,
+      baselineFiles,
+      observedFiles: new Map(),
+      previewFiles: [],
+    };
     state.jobs.push(job);
-    renderQueue();
-    // A espera transforma a galeria no esqueleto do que vai chegar: e a
-    // diferenca entre "travado" e "trabalhando" durante a transcricao.
+    // A galeria vira esqueleto, mas a fila continua mostrando o card real.
     showSkeletons();
+    renderQueue();
+    // O job já existe na fila antes do primeiro poll de progresso.
+    startFollowingRun(comando);
 
     const body = JSON.stringify({ options: o, plan_only: !!planOnly });
     const r = await api('/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
@@ -827,7 +1268,18 @@
     hideSkeletons();
 
     job.status = r.error ? 'fail' : 'done';
-    job.meta = r.error ? ('erro: ' + r.error) : ((r.clips || []).length + ' clips');
+    job.title = r.title || '';
+    job.clips = Array.isArray(r.clips) ? r.clips : [];
+    job.meta = r.error ? ('erro: ' + r.error) : (job.clips.length + ' clips');
+    if (!r.error && job.clips.length) {
+      const completedPreviews = job.clips
+        .filter((clip) => clip.video && clip.rendered !== false)
+        .slice(0, 3)
+        .map((clip) => ({ rel: clip.video, name: clip.title || 'Corte', size: 0 }));
+      if (completedPreviews.length) job.previewFiles = completedPreviews;
+    }
+    job.progress = r.error ? 'Renderização interrompida' : (job.meta || 'Renderização concluída');
+    job.elapsed = Number(r.elapsed) || job.elapsed || 0;
     renderQueue();
 
     if (r.offline) {
@@ -1148,9 +1600,47 @@
       state.clips = r.clips;
       renderClips();
     }
-    if (Array.isArray(r.jobs) && r.jobs.length !== state.jobs.length) {
-      state.jobs = r.jobs;
-      renderQueue();
+    if (Array.isArray(r.jobs)) {
+      const signature = JSON.stringify(r.jobs.map((job) => [
+        job.url, job.status, job.meta, job.title,
+        (job.clips || []).map((clip) => clip.video || clip.title || ''),
+      ]));
+      if (signature !== state.jobSignature) {
+        const used = new Set();
+        const merged = r.jobs.map((remoteJob, index) => {
+          let localIndex = index;
+          if (!state.jobs[localIndex] || state.jobs[localIndex].url !== remoteJob.url || used.has(localIndex)) {
+            localIndex = state.jobs.findIndex((job, candidate) =>
+              !used.has(candidate) && job.url === remoteJob.url
+            );
+          }
+          if (localIndex < 0) return remoteJob;
+          used.add(localIndex);
+          const localJob = state.jobs[localIndex];
+          const baselineFiles = localJob.baselineFiles;
+          const observedFiles = localJob.observedFiles;
+          const previewFiles = localJob.previewFiles;
+          Object.assign(localJob, remoteJob);
+          if (baselineFiles) localJob.baselineFiles = baselineFiles;
+          if (observedFiles) localJob.observedFiles = observedFiles;
+          if (previewFiles && previewFiles.length) localJob.previewFiles = previewFiles;
+          else if (Array.isArray(remoteJob.clips)) {
+            localJob.previewFiles = remoteJob.clips
+              .filter((clip) => clip.video && clip.rendered !== false)
+              .map((clip) => ({ rel: clip.video, name: clip.title || 'Corte', size: 0 }));
+          }
+          return localJob;
+        });
+        if (state.running) {
+          state.jobs.forEach((job, index) => {
+            if (job.status === 'running' && !used.has(index)) merged.push(job);
+          });
+        }
+        state.jobs = merged;
+        state.jobSignature = signature;
+        renderQueue();
+      }
+      await hydrateQueuePreviews();
     }
   }
   document.addEventListener('visibilitychange', () => {

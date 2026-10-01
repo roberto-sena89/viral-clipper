@@ -33,16 +33,15 @@ from typing import Protocol
 from . import util
 from .util import Logger
 
-# Frames sampled per clip. Nine is enough for a median to be meaningful while
-# staying trivial next to the encode itself.
-SAMPLE_FRAMES = 9
-# Width the sampled frames are downscaled to before detection.
-SAMPLE_WIDTH = 360
-# A face box is only trusted when the detector reports at least this much
-# confidence, and the clip only gets a guided crop when at least this many of
-# the sampled frames agreed. Haar cascades fire on textures, so a single hit is
-# treated as noise.
-MIN_HITS = 3
+# Sample enough points to handle brief camera moves and shot changes while
+# keeping face analysis small beside the video encode.
+SAMPLE_FRAMES = 13
+# Wider samples retain enough detail for faces that are small in a landscape
+# source; the original 360 px pass missed some distant speakers.
+SAMPLE_WIDTH = 640
+# The clip only gets a guided crop when at least this many sampled frames
+# agree. Haar cascades can fire on textures, so a single hit is treated as noise.
+MIN_HITS = 4
 MIN_CONFIDENCE = 0.5
 # How far the crop may be pushed from the geometric center, as a fraction of
 # the total horizontal slack. Keeps one bad detection from throwing the subject
@@ -102,12 +101,11 @@ def opencv_cascade_path() -> Path | None:
 
 
 class OpenCvDetector:
-    """OpenCV Haar cascade detector.
+    """Multi-view OpenCV Haar detector for frontal and profile faces.
 
-    Chosen over a deep model because ``opencv-python`` 4.x ships the cascade
-    file inside the wheel: no model download, no extra runtime, and a bounding
-    box is all this module needs. The face *center* is a far easier target than
-    a precise box, so the cascade's lower accuracy is not a real cost here.
+    OpenCV 4.x bundles these cascades, so focus reframing needs no model
+    download or network access. Profile detection runs on both the original and
+    mirrored image so people looking either direction can guide the crop.
     """
 
     name = "opencv"
@@ -115,6 +113,7 @@ class OpenCvDetector:
     def __init__(self, min_confidence: float = MIN_CONFIDENCE) -> None:
         self._min_confidence = min_confidence
         self._cascade = None
+        self._extra_cascades: list[tuple[str, object]] = []
 
     def _load(self):
         if self._cascade is None:
@@ -131,12 +130,27 @@ class OpenCvDetector:
             if cascade.empty():
                 raise util.ClipperError(f"Could not load the Haar cascade at {path}")
             self._cascade = cascade
+
+            cascade_dir = path.parent
+            for filename in (
+                "haarcascade_frontalface_alt2.xml",
+                "haarcascade_profileface.xml",
+            ):
+                candidate = cascade_dir / filename
+                if not candidate.is_file():
+                    continue
+                try:
+                    alternate = cv2.CascadeClassifier(str(candidate))
+                    if not alternate.empty():
+                        self._extra_cascades.append((filename, alternate))
+                except Exception:  # noqa: BLE001 - optional cascades must not disable focus
+                    continue
         return self._cascade
 
     def detect(self, image_path: Path) -> list[FaceBox]:
         import cv2  # noqa: PLC0415
 
-        cascade = self._load()
+        self._load()
         image = cv2.imread(str(image_path))
         if image is None:
             return []
@@ -144,16 +158,32 @@ class OpenCvDetector:
         if not height or not width:
             return []
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        found = cascade.detectMultiScale(
-            gray,
-            scaleFactor=1.1,
-            minNeighbors=int(3 + 3 * self._min_confidence),
-            minSize=(int(width * 0.06), int(height * 0.06)),
-        )
-        return [
-            FaceBox(x=x / width, y=y / height, width=w / width, height=h / height)
-            for x, y, w, h in found
-        ]
+        min_size = (max(18, int(width * 0.04)), max(18, int(height * 0.04)))
+        neighbors = max(3, int(round(3 + 3 * self._min_confidence)))
+        cascades = [("frontal", self._cascade), *self._extra_cascades]
+        faces: list[FaceBox] = []
+
+        for kind, cascade in cascades:
+            views = [(gray, False)]
+            if "profileface" in kind:
+                views.append((cv2.flip(gray, 1), True))
+            for view, mirrored in views:
+                found = cascade.detectMultiScale(
+                    view,
+                    scaleFactor=1.05,
+                    minNeighbors=neighbors,
+                    minSize=min_size,
+                )
+                for x, y, box_width, box_height in found:
+                    if mirrored:
+                        x = width - x - box_width
+                    faces.append(FaceBox(
+                        x=x / width,
+                        y=y / height,
+                        width=box_width / width,
+                        height=box_height / height,
+                    ))
+        return faces
 
 
 # Each backend declares how to probe for it *and* how to build it, because
@@ -328,11 +358,18 @@ def focus_center_x(
     if detector is None:
         detector = build_detector()
     if detector is None:
+        if logger:
+            logger.warn(
+                "No face detector is available; using a center crop. "
+                "Install opencv-python-headless<5 to enable face-guided focus."
+            )
         return None
 
     try:
         frames = sample_frames(ffmpeg, source, start, end, work_dir, logger=logger)
         if not frames:
+            if logger:
+                logger.warn("Could not extract frames for face detection; using a center crop")
             return None
         detections = [detector.detect(frame) for frame in frames]
         center = median_center_x(detections)
@@ -344,12 +381,12 @@ def focus_center_x(
         _cleanup_samples(work_dir, logger)
 
     if logger:
-        # Reporting the hit count matters: "centered at 50%" from 9 confident
-        # hits and from 3 shaky ones look identical in the output, but only the
-        # first one is actually tracking a subject.
+        # Reporting the hit count makes the confidence of the chosen crop
+        # visible in the render log instead of hiding a weak detection behind a
+        # plausible-looking center coordinate.
         hits = sum(1 for faces in detections if faces)
         if center is None:
-            logger.info(
+            logger.warn(
                 f"No consistent face found in {hits}/{len(frames)} sampled frames; "
                 "using the center crop"
             )

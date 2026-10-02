@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/shared.css?v=rail-brand-20261001">
 <link rel="stylesheet" href="/index.css?v=execution-panel-20261001">
 </head>
-<body>
+<body data-page="ajustes">
 
 <!-- ==================== RAIL LATERAL ====================
      A lista de destinos NAO mora aqui. Ela vive em /comum.js (RAIL_PAGES) e o
@@ -359,23 +359,43 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card prompt-card">
           <h2><span class="ico" aria-hidden="true">✎</span> Prompt do curador</h2>
 
           <div class="form-section">
             <div class="field">
-              <label for="curator-prompt">Regras do curador</label>
-              <textarea id="curator-prompt" name="curator-prompt" rows="16" spellcheck="false" aria-describedby="curator-prompt-hint"></textarea>
-              <p class="hint" id="curator-prompt-hint">As regras que o modelo segue para escolher o momento e escrever headline e hashtags. Editar este texto invalida o cache de veredictos sozinho.</p>
+              <label for="curator-prompt">Regras de curadoria</label>
+              <textarea id="curator-prompt" name="curator-prompt" rows="16" spellcheck="false"
+                        placeholder="Carregue o prompt do arquivo, ou escreva aqui e salve."
+                        aria-describedby="curator-prompt-hint"></textarea>
+              <p class="hint" id="curator-prompt-hint">
+                Escreva em prosa livre, do jeito que você escreveria para uma pessoa.
+                O <strong>formato de resposta</strong> (o JSON com as notas, a headline e as
+                hashtags) é anexado pelo próprio motor — não precisa escrevê-lo, e ele não
+                se perde quando você edita o texto.
+              </p>
             </div>
             <div class="field">
-              <label for="curator-prompt-path">Arquivo</label>
-              <input type="text" id="curator-prompt-path" name="curator-prompt-path" readonly>
+              <label for="curator-prompt-path">Arquivo (a fonte da verdade)</label>
+              <input type="text" id="curator-prompt-path" name="curator-prompt-path" readonly
+                     placeholder="prompts/curador.txt" aria-describedby="curator-prompt-path-hint">
+              <p class="hint" id="curator-prompt-path-hint">
+                Versionado no git: dá para ver o que mudou entre versões e voltar atrás
+                se os cortes piorarem. Editar o arquivo invalida o cache do curador
+                automaticamente.
+              </p>
             </div>
-            <div class="row-actions">
-              <button type="button" class="btn" id="btn-prompt-load">Recarregar do arquivo</button>
-              <button type="button" class="btn btn-primary" id="btn-prompt-save">Salvar prompt</button>
-              <span role="status" id="curator-prompt-status"></span>
+            <div class="row-actions prompt-actions">
+              <button class="btn pressable" type="button" id="btn-prompt-load">Carregar do arquivo</button>
+              <button class="btn btn-primary pressable" type="button" id="btn-prompt-save">Salvar no arquivo</button>
+              <!-- Sem a classe `hint`: isto e um estado vivo, nao a descricao
+                   de um campo. O contrato que `test_no_description_orphan`
+                   cobra e o de dica ligada a um controle por aria-describedby,
+                   e um leitor de tela anunciar "Salvo em..." como descricao de
+                   um campo seria errado. O role=status e o que faz o leitor
+                   anunciar a mudanca sozinho. -->
+              <span role="status" id="curator-prompt-status"
+                    style="font-size: var(--text-caption); color: var(--text-muted);"></span>
             </div>
           </div>
         </div>

@@ -1219,6 +1219,18 @@ main > section > .card { padding: 17px; }
 .prompt-card .prompt-actions .btn { flex: 1 1 auto; }
 .prompt-card .prompt-actions #curator-prompt-status { flex: 1 0 100%; }
 
+/* O card do prompt vive nas DUAS paginas, com o mesmo contrato: mesmos ids,
+   mesmos botoes, mesma rota /prompts/curador, mesmas frases de estado. Na
+   Cortes ele mora no aside estreito (292-340px) e por isso a ALTURA vem daqui,
+   nao do `rows="12"`. Em Ajustes ele fica na coluna principal, que e larga -
+   a mesma altura minima continua certa, mas precisa ser maior para o card nao
+   ficar desproporcional ao lado do textarea de transcricao.
+   As duas carregam este arquivo, entao o escopo e por pagina:
+   `[data-page="ajustes"]` no <body> e o gancho. Nao da para escopar pelo
+   wrapper - as duas usam `<main class="wrap">`, recebido do shared.css. */
+[data-page="ajustes"] .prompt-card textarea { min-height: 220px; }
+[data-page="ajustes"] .prompt-card .prompt-actions { margin-top: 4px; }
+
 #queue-list { gap: 11px; }
 .job-card { border-radius: 11px; background: #141a24; }
 .gallery { gap: 13px; }

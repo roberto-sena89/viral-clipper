@@ -349,8 +349,11 @@
   }
 
   // ---------- prompt do curador ----------
-
-  // ---------- prompt do curador ----------
+  // O texto, os rotulos e os estados desta secao sao os MESMOS da pagina
+  // Cortes: o card existe nas duas e um usuario que alterna entre elas nao
+  // pode ver dois textos diferentes para o mesmo botao. A Ajustes e a via
+  // canonica (e onde se salva em disco pelo botao); a Cortes le o mesmo
+  // arquivo e mostra as mesmas frases.
   function setPromptStatus(message, kind) {
     const el = $('#curator-prompt-status');
     el.textContent = message || '';
@@ -370,7 +373,7 @@
     $('#curator-prompt-path').value = r.path || '';
     state.curatorPromptPath = r.path || '';
     setPromptStatus(
-      r.exists ? 'Prompt carregado do arquivo.' : 'O arquivo ainda não existe; ele será criado ao salvar.',
+      r.exists ? 'Prompt carregado do arquivo.' : 'O arquivo ainda não existe — salve para criá-lo.',
       'ok',
     );
   }
@@ -393,7 +396,7 @@
     }
     state.curatorPromptPath = r.path || state.curatorPromptPath;
     $('#curator-prompt-path').value = state.curatorPromptPath;
-    setPromptStatus('Prompt salvo. O cache de veredictos foi invalidado.', 'ok');
+    setPromptStatus('Salvo em ' + (r.path || 'arquivo') + '.', 'ok');
     toast('Prompt do curador salvo.', 'ok');
   }
 

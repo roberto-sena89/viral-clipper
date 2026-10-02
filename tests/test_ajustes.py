@@ -410,6 +410,121 @@ class AjustesPageTests(unittest.TestCase):
         self.assertIn("Curador com IA", cortes)
 
 
+class PromptCardParityTests(unittest.TestCase):
+    """O card "Prompt do curador" existe nas DUAS paginas -- e tem de ser o mesmo.
+
+    Duas copias do mesmo card e a definicao de duas fontes de verdade: a que
+    ninguem olha envelhece sozinha. Foi assim que os rotulos divergiram (a
+    Cortes dizia "Regras de curadoria", a Ajustes "Regras do curador"; os botoes
+    diziam "Carregar/Salvar no arquivo" de um lado e "Recarregar/Salvar prompt"
+    do outro), e o status da Ajustes nasceu com um texto fixo
+    ("Prompt carregado do arquivo.") que o JS sobrescreve antes de qualquer
+    fetch -- ou seja, mentia no HTML e nunca aparecia na tela.
+
+    Nao da para apagar uma das copias: o servidor trata
+    `prompts/curador.txt` como fonte de verdade do repo
+    (``CURATOR_PROMPT_PATH``, fixo, nunca vindo da requisicao), e a Cortes so
+    grava o caminho no payload depois que ``loadCuratorPrompt()`` confirmou que
+    o arquivo existe. Manter o editor so na pagina de execucao deixaria o run
+    dependente de um save que talvez nao tenha acontecido.
+
+    Entao o que se trava aqui e a IGUALDADE, nao a existencia.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ajustes = page_source("ajustes.html")
+        cls.cortes = page_source("index.html")
+
+    def _card(self, markup: str) -> str:
+        """O bloco do card, recortado entre o <div> que o abre e o fechamento.
+
+        O `h2` marca o inicio e vale para as duas paginas; o fim e o
+        `</div>` que fecha o card, tres niveis abaixo do `<div
+        class="form-section">`. Recortar por `</div>` balanceado em vez de por
+        um numero fixo de linhas e o que faz este recorte sobreviver a uma
+        edicao no conteudo do card.
+        """
+        i = markup.index("Prompt do curador")
+        i = markup.rindex("<div", 0, i)
+        profundidade = 0
+        for m in re.finditer(r"<div\b|</div>", markup[i:]):
+            profundidade += 1 if m.group(0).startswith("<div") else -1
+            if profundidade == 0:
+                return markup[i:i + m.end()]
+        raise AssertionError("card do prompt sem </div> de fechamento")
+
+    def test_both_pages_have_the_card(self):
+        self.assertIn("Prompt do curador", self.ajustes)
+        self.assertIn("Prompt do curador", self.cortes)
+
+    def test_the_same_controls_are_on_both(self):
+        # Os ids sao o contrato funcional: o JS das duas paginas le exatamente
+        # estes. Um id renomeado num lado quebra o outro em silencio.
+        for cid in ("curator-prompt", "curator-prompt-path",
+                    "btn-prompt-load", "btn-prompt-save", "curator-prompt-status"):
+            with self.subTest(id=cid):
+                self.assertIn(cid, self.ajustes)
+                self.assertIn(cid, self.cortes)
+
+    def test_the_labels_are_the_same_on_both(self):
+        # O rotulo e o que o usuario le. Divergir aqui e o defeito que esta
+        # classe existe para pegar.
+        def rotulos(markup: str) -> set[str]:
+            card = self._card(markup)
+            return set(re.findall(r"<label[^>]*>(.*?)</label>", card, re.S))
+
+        a, c = rotulos(self.ajustes), rotulos(self.cortes)
+        self.assertEqual(a, c, f"rotulos divergem: Ajustes={a} Cortes={c}")
+
+    def test_the_button_texts_are_the_same_on_both(self):
+        def botoes(markup: str) -> list[str]:
+            card = self._card(markup)
+            return [b.strip() for b in re.findall(r"<button[^>]*>(.*?)</button>", card, re.S)]
+
+        a, c = botoes(self.ajustes), botoes(self.cortes)
+        self.assertEqual(a, c, f"botoes divergem: Ajustes={a} Cortes={c}")
+
+    def test_the_status_starts_empty_on_both(self):
+        # A Ajustes trazia `>Prompt carregado do arquivo.<` dentro do span, com
+        # cor verde fixa no style. `loadCuratorPrompt()` chama `setPromptStatus`
+        # antes de qualquer fetch, entao aquele texto nunca chegava a tela -- mas
+        # ficava no HTML afirmando algo que nao foi verificado. Um estado vivo
+        # tem de nascer vazio; quem o preenche e a resposta do servidor.
+        for nome, markup in (("ajustes", self.ajustes), ("cortes", self.cortes)):
+            with self.subTest(pagina=nome):
+                m = re.search(
+                    r"<span[^>]*id=\"curator-prompt-status\"[^>]*>(.*?)</span>",
+                    markup, re.S,
+                )
+                self.assertIsNotNone(m, "span de status ausente")
+                self.assertEqual(m.group(1).strip(), "",
+                                 "o status nasce com texto: mentira no HTML")
+
+    def test_the_path_field_is_readonly_on_both(self):
+        # O caminho vem de `CURATOR_PROMPT_PATH` no servidor e nunca da
+        # requisicao -- e o que impede o painel de virar gravador de arquivo
+        # arbitrario. Um campo editavel aqui abriria essa porta.
+        for nome, markup in (("ajustes", self.ajustes), ("cortes", self.cortes)):
+            with self.subTest(pagina=nome):
+                self.assertRegex(
+                    markup,
+                    r"<input[^>]*id=\"curator-prompt-path\"[^>]*readonly",
+                )
+
+    def test_the_hint_ids_used_by_each_card_resolve(self):
+        # A Ajustes ganhou um segundo hint (`curator-prompt-path-hint`) que so a
+        # Cortes tinha. Referencia aria quebrada nao quebra a tela -- so some
+        # com a descricao para quem usa leitor de tela.
+        for nome, markup in (("ajustes", self.ajustes), ("cortes", self.cortes)):
+            ids = set(re.findall(r"\sid=\"([^\"]+)\"", markup))
+            card = self._card(markup)
+            for m in re.finditer(r"aria-describedby=\"([^\"]+)\"", card):
+                for ref in m.group(1).split():
+                    with self.subTest(pagina=nome, ref=ref):
+                        self.assertIn(ref, ids)
+
+
 class AjustesScriptTests(unittest.TestCase):
     """O ajustes.js roda sem os controles que sairam da pagina.
 

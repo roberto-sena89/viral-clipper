@@ -932,12 +932,58 @@ header {
    grid e cairia ao lado do workflow, numa coluna de ~1fr. `grid-column: 1/-1`
    faz a linha inteira ser dele: o card atravessa a largura toda, abaixo dos
    dois blocos, que e onde a barra de status precisa estar para ser lida
-   enquanto o job roda. */
+   enquanto o job roda.
+
+   `align-self: start` e a primeira das duas pecas do sticky: com o
+   `align-items: center` da section o card era centrado na sua linha do grid,
+   e um item centrado nao tem espaco para deslizar. A segunda peca (a pista
+   de altura) esta na nota seguinte. */
 .studio-welcome .execution-card {
   grid-column: 1 / -1;
+  align-self: start;
   width: 100%;
   min-width: 0;
 }
+
+/* A PISTA DO STICKY. Medido: `position: sticky` so gruda enquanto o pai
+   ainda tem area na tela abaixo do ponto de grude.
+
+   O hero e dimensionado pelo conteudo (`padding: 28px 0 26px` + as duas
+   linhas do grid), entao ele encolhe junto com o card: medi 922px de hero
+   com 539px de card, e 797px de hero com 414px de card — a viagem ficou em
+   41px nas duas. **Encolher o card NAO resolve: o pai encolhe junto.**
+
+   Varredura do scroll inteiro: a menor distancia ao top:84 era 48px, ou
+   seja ele nunca chegava a grudar. Com o hero forcado a 1500px, o mesmo
+   card grudou em 84px e ficou la. Era isto, e so isto.
+
+   `align-content: start` e obrigatorio junto — e foi o segundo erro que a
+   medicao pegou. Sem ele, o `align-items: center` da section centra as
+   LINHAS do grid na caixa que o `min-height` acabou de criar, e o card
+   desceu de 436 para 567 no documento: a pista existia, mas o card tinha
+   ido embora com ela.
+
+   O numero 1060 sai da soma, nao do gosto: topo do card no documento (436,
+   onde ele encosta no workflow acima) + altura do card (~414) + a pista que
+   ele precisa (~210). **Se um dos tres mudar, este numero muda junto** —
+   por isso esta escrito assim, e nao como um "min-height generoso".
+
+   Medicao final: hero 1060, card 353 (o `:has()` da nota seguinte tira 61px
+   de log vazio), viagem **365px**, `card_top_doc` **436 inalterado**, e a
+   varredura acha top=84. */
+@media (min-width: 961px) {
+  .studio-welcome { min-height: 1060px; align-content: start; }
+}
+
+/* Card mais enxuto no hero. Isto NAO da viagem ao sticky (o pai encolhe
+   junto — ver a nota acima); e so para o card nao parecer folgado demais
+   agora que ele ocupa a largura inteira, onde cada margem conta em dobro. */
+.studio-welcome .execution-card { padding: 15px 16px; }
+.studio-welcome .execution-card .execution-card-heading { margin-bottom: 12px; }
+.studio-welcome .execution-progress-label { margin-top: 13px; }
+.studio-welcome .execution-card #progress-label { min-height: 0; margin-bottom: 9px; }
+.studio-welcome .execution-card .execution-selection { margin-bottom: 8px; }
+.studio-welcome .execution-actions { gap: 6px; }
 
 .studio-workflow {
   padding: 17px 18px 15px;
@@ -1153,19 +1199,20 @@ header {
 .btn-primary:hover { background: #ff78bf; filter: none; }
 .pressable:active { transform: translateY(1px); }
 
-/* Só o PRIMEIRO card do aside e sticky: o topo do pipeline fica a vista
-   enquanto a pessoa rola o formulario. Com um segundo card (o Prompt do
-   curador), `sticky` nos dois os empilhava em `top: 82px` e um cobria o
-   outro — os dois travavam na mesma linha. */
+/* O aside do ESTUDIO deixou de existir: o card de Execucao foi para dentro do
+   hero. Mas estas regras ficam, porque `ajustes.html` carrega este mesmo
+   index.css e usa `<aside>` para o card "Resumo" — apagar daqui mudaria a
+   pagina Ajustes sem nenhum aviso. Se um dia o aside sair de Ajustes tambem,
+   este e o bloco que morre junto. */
 aside > .card {
   padding: 17px;
   border-color: rgba(112, 201, 238, 0.18);
   background: linear-gradient(160deg, rgba(112, 201, 238, 0.045), transparent 42%), #11161f;
 }
-aside > .card:first-child {
-  position: sticky !important;
-  top: 82px !important;
-}
+/* O sticky mora em `.execution-card` (ver a nota la), nao aqui. Quando havia
+   dois cards no aside, `sticky` nos dois os empilhava em `top: 82px` e um
+   cobria o outro; por isso a regra era so no `:first-child`. Sem o aside do
+   Estudio, isto nao casa com mais nada na Cortes. */
 aside .card h2 .ico {
   border-color: rgba(112, 201, 238, 0.2);
   background: rgba(112, 201, 238, 0.08);
@@ -1258,7 +1305,6 @@ footer { margin-top: 38px; border-top-color: var(--border-subtle); }
   .header-inner > .brand { display: flex; }
   .studio-welcome { padding-top: 24px; }
   .main-grid { grid-template-columns: minmax(0, 1fr); }
-  aside > .card { position: static !important; }
 }
 @media (max-width: 640px) {
   .header-inner { height: 60px; }
@@ -1352,10 +1398,20 @@ header .nav-actions .btn { min-height: 42px; }
   .header-run-short { display: inline; }
 }
 
-/* Painel de execução: status primeiro, etapa atual em seguida, diagnóstico por último. */
+/* Painel de execução: status primeiro, etapa atual em seguida, diagnóstico por último.
+
+   `top: 84px` e o mesmo offset que o repo ja documenta para ancoras sob o
+   header sticky (`[id] { scroll-margin-top: 84px }` em shared.css: 68px de
+   barra + respiro). O valor antigo era 82 e divergia disso em 2px: a barra
+   parava raspando no header em vez de respirar. Um numero so, num lugar so.
+
+   O sticky depende de duas coisas, e as duas foram medidas: o
+   `align-self: start` (ver a nota no `.studio-welcome .execution-card`) e a
+   pista que o hero ganha com `min-height` (ver a nota da pista). Faltando
+   qualquer uma, ele nao gruda — nao ha atalho aqui. */
 .execution-card {
   position: sticky !important;
-  top: 82px !important;
+  top: 84px !important;
   padding: 18px;
   border-color: rgba(112,201,238,.16);
   background: linear-gradient(160deg, rgba(112,201,238,.045), transparent 38%), #11161f;
@@ -1433,11 +1489,40 @@ header .nav-actions .btn { min-height: 42px; }
 .execution-log-heading span:last-child { color: #737f91; font-size: .52rem; letter-spacing: .11em; }
 .execution-card .log-box { min-height: 47px; max-height: 155px; margin-top: 7px; padding: 9px 10px; border-color: rgba(218,226,243,.075); border-radius: 8px; background: #0a0e14; color: #b9c4d2; font-size: .66rem; line-height: 1.55; }
 .execution-log-empty { color: var(--text-muted); font-family: 'Inter', system-ui, sans-serif; font-size: .68rem; font-style: normal; }
-@media (max-height: 760px) and (min-width: 961px) {
-  .execution-card { position: static !important; }
-}
+
+/* ---------- O CARD NAO CARREGA PESO MORTO EM REPOUSO ----------
+   O `#log-box` e o cabecalho dele somam 63px de caixa vazia antes do
+   primeiro log. Nao dao viagem ao sticky (isso e o `min-height` do hero,
+   ver a nota da pista) — dao espaco de volta para quem abre a pagina e ve
+   um bloco preto com uma frase cinza dentro.
+
+   `:has(.execution-log-empty)` e o sinal de "nada foi logado ainda": o JS
+   remove esse span no primeiro `log()` (index.js:86) e nunca o devolve.
+   Quando o job comeca, o log reaparece sozinho — e ai a pessoa esta
+   olhando o log, nao navegando a pagina. */
+.execution-card:has(.execution-log-empty) .execution-log-heading,
+.execution-card:has(.execution-log-empty) .log-box { display: none; }
+
+/* O `hidden` do #backend-state e respeitado sozinho (nao ha `display` na
+   regra .backend-note acima), mas a `.execution-card .backend-note` da
+   linha 1422 sobrescreve `margin`. Repetir o par aqui e o que garante que a
+   nota some de fato quando o servidor esta no ar — ela media 51px mesmo
+   escondida enquanto o JS nao rodasse. */
+.execution-card [hidden] { display: none !important; }
+
+/* O card de Execucao so gruda quando ha altura sobrando para ele deslizar.
+   Isso era verdade quando o pai dele tinha 41px de pista e a `@media
+   (max-height: 760px)` abaixo existia para desligar o recurso antes que ele
+   "pulasse". Depois que o hero ganhou `min-height` (ver a nota da pista), a
+   pista passou a vir do DOCUMENTO, nao da viewport: medido a 1100x700,
+   961x600 e 1440x760, o card gruda em 84px e nao pula em nenhuma das tres.
+   A regra virou o oposto do que queria — tirava o sticky justamente onde
+   ele voltou a funcionar. Removida.
+
+   O que fica e o que sempre esteve certo: em uma coluna (<= 960px) o card
+   nao tem ao lado o que acompanhar, e o sticky so atrapalha. */
 @media (max-width: 960px) {
-  .execution-card { position: static !important; }
+  .execution-card, aside > .card { position: static !important; }
 }
 @media (max-width: 640px) {
   .execution-card { padding: 16px 14px; }

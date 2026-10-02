@@ -181,43 +181,6 @@
           </div>
         </div>
 
-        <div class="card">
-          <h2><span class="ico" aria-hidden="true">≡</span> Transcrição (só se já tiver uma)</h2>
-
-          <div class="form-section">
-            <p class="hint" style="margin-bottom:10px;">Em branco = o próprio site transcreve
-              com Whisper. Só cole aqui se você já tem o texto pronto — ela substitui a
-              transcrição automática.</p>
-            <div class="field-row single">
-              <div class="field">
-                <label for="transcript">Cole aqui a transcrição do vídeo</label>
-                <textarea id="transcript" name="transcript" rows="7" aria-describedby="transcript-hint"
-                  placeholder="0:03&#10;Abertura chocante questionando o vazamento...&#10;0:21&#10;O cara nao e o pica das magias de tecnologia..."></textarea>
-                <span class="hint" id="transcript-hint">
-                  Aceita SRT, WebVTT, o painel de legendas do YouTube (<code>0:05</code>) ou texto puro.
-                </span>
-              </div>
-            </div>
-            <div class="row-actions">
-              <button class="btn pressable btn-primary" type="button" id="btn-analyze" aria-describedby="organize-hint">Analisar transcrição</button>
-              <button class="btn pressable" type="button" id="btn-organize">Organizar transcrição</button>
-              <button class="btn pressable" type="button" id="btn-clear-transcript">Limpar</button>
-              <span class="hint" id="organize-hint">Ao colar, o texto é organizado sozinho: minutos em ordem, falas alinhadas à esquerda.</span>
-            </div>
-            <div class="cue-preview" id="cue-preview" hidden>
-              <div class="cue-stats" id="cue-stats"></div>
-              <div class="cue-table-wrap">
-                <table class="cue-table">
-                  <thead>
-                    <tr><th>Minuto</th><th>Dur.</th><th>Fala</th></tr>
-                  </thead>
-                  <tbody id="cue-body"></tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-
 
 
 

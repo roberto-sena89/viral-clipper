@@ -3225,11 +3225,22 @@ class FirstVisitTests(unittest.TestCase):
         self.assertIn('id="cookies-summary"', html)
         self.assertIn('aria-describedby="cookies-summary-hint"', html)
 
-    def test_the_transcript_card_says_it_can_be_skipped(self):
-        """O card da transcricao diz o que acontece se ficar em branco."""
+    def test_the_transcript_card_moved_to_ajustes(self):
+        """O card da transcricao vive em Ajustes, e nao mais em Cortes.
+
+        A garantia continua a mesma -- o card diz o que acontece se ficar em
+        branco -- mas ela agora e verificada na pagina que tem o card. Deixar a
+        assercao aqui passaria a travar uma ausencia: o texto nao esta mais em
+        index.html, e um teste que exige o contrario so pode falhar.
+        """
         html = self.html()
-        self.assertIn("só se já tiver uma", html)
-        self.assertIn("o próprio site transcreve", html)
+        self.assertNotIn("Transcrição (só se já tiver uma)", html)
+
+        ajustes = (server.WEB_DIR / "ajustes.html").read_text(encoding="utf-8")
+        # As duas metades da mesma promessa: da para pular, e o que acontece
+        # quando se pula.
+        self.assertIn("o próprio site transcreve", ajustes)
+        self.assertIn("Só cole aqui se você já tem o texto pronto", ajustes)
 
     def test_the_empty_states_tell_the_next_step(self):
         """Estado vazio aponta o proximo passo, e nao um log que nao existe."""

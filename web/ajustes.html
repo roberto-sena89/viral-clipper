@@ -151,8 +151,7 @@
           <div class="form-section">
             <div class="field-row triple">
               <div class="field">
-                <label for="whisper-model">Modelo Whisper</label>
-                <select id="whisper-model" name="whisper-model">
+                <label for="whisper-model">Modelo Whisper</label>                <select id="whisper-model" name="whisper-model">
                   <option value="tiny" data-title="Tiny" data-desc="Mais rápido e leve — menor precisão">tiny</option>
                   <option value="base" data-title="Base" data-desc="Equilíbrio para máquinas de 8 GB">base</option>
                   <option value="small" selected data-title="Small" data-desc="Recomendado — boa precisão com custo razoável">small</option>
@@ -189,6 +188,54 @@
             <div class="toggle-wrap">
               <span class="tw-label">Cache de transcrição</span>
               <button class="toggle active" type="button" id="transcript-cache" role="switch" aria-checked="true" aria-label="Cache de transcrição"></button>
+            </div>
+
+            <!-- Transcricao pronta: o segundo caminho do mesmo card. Os campos
+                 acima configuram o Whisper, que roda sozinho; este bloco e para
+                 quando a pessoa JA tem o texto. Vem depois dos parametros
+                 porque e o caso raro -- e porque substitui os de cima, entao
+                 ler os dois em ordem explica a relacao sozinho. -->
+            <h3 class="sub-heading">Ou cole uma transcrição pronta</h3>
+            <p class="hint" style="margin-bottom:10px;">Em branco = o próprio site transcreve
+              com Whisper, com os ajustes acima. Só cole aqui se você já tem o texto pronto —
+              ele substitui a transcrição automática.</p>
+            <div class="field-row single">
+              <div class="field">
+                <label for="transcript-url">URL do vídeo a que esta transcrição pertence</label>
+                <input type="text" id="transcript-url" name="transcript-url"
+                  placeholder="https://www.youtube.com/watch?v=..." aria-describedby="transcript-url-hint">
+                <span class="hint" id="transcript-url-hint">
+                  Amarramos texto e vídeo para o texto não vazar para outro vídeo. Trocar a URL
+                  na aba Cortes faz este texto ser ignorado até você o colar de novo.
+                </span>
+              </div>
+            </div>
+            <div class="field-row single">
+              <div class="field">
+                <label for="transcript">Cole aqui a transcrição do vídeo</label>
+                <textarea id="transcript" name="transcript" rows="7" aria-describedby="transcript-hint"
+                  placeholder="0:03&#10;Abertura chocante questionando o vazamento...&#10;0:21&#10;O cara nao e o pica das magias de tecnologia..."></textarea>
+                <span class="hint" id="transcript-hint">
+                  Aceita SRT, WebVTT, o painel de legendas do YouTube (<code>0:05</code>) ou texto puro.
+                </span>
+              </div>
+            </div>
+            <div class="row-actions">
+              <button class="btn pressable" type="button" id="btn-analyze" aria-describedby="organize-hint">Analisar transcrição</button>
+              <button class="btn pressable" type="button" id="btn-organize">Organizar transcrição</button>
+              <button class="btn pressable" type="button" id="btn-clear-transcript">Limpar</button>
+              <span class="hint" id="organize-hint">Ao colar, o texto é organizado sozinho: minutos em ordem, falas alinhadas à esquerda.</span>
+            </div>
+            <div class="cue-preview" id="cue-preview" hidden>
+              <div class="cue-stats" id="cue-stats"></div>
+              <div class="cue-table-wrap">
+                <table class="cue-table">
+                  <thead>
+                    <tr><th>Minuto</th><th>Dur.</th><th>Fala</th></tr>
+                  </thead>
+                  <tbody id="cue-body"></tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

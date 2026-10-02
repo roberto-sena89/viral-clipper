@@ -48,6 +48,16 @@ MAX_CURATOR_PROMPT_BYTES = 64 * 1024
 
 AJUSTES_PATH = REPO_ROOT / "ajustes.toml"
 
+#: Which video the saved transcript belongs to. Lives beside ``ajustes.toml``
+#: rather than inside it, and deliberately so: every key in ``AJUSTES_KEYS``
+#: must be both an argparse dest and a ``ClipConfig`` field, because the file
+#: has to stay a valid ``--config``. This is neither -- it is bookkeeping the
+#: panel keeps for itself, the same reasoning that keeps ``curator_prompt_file``
+#: out of the tuple. Persisting a transcript without this tie is the hazard the
+#: old ``test_the_page_does_not_own_the_transcript`` was guarding against: paste
+#: the next video's URL and the run silently reuses the previous video's text.
+TRANSCRIPT_SOURCE_PATH = REPO_ROOT / ".ajustes-transcript-source"
+
 #: Every key the Ajustes page owns. This tuple is the whole contract: the page
 #: may only write these, GET /ajustes.json only returns these, and index.js
 #: merges exactly these into the POST /run payload. Spelled out rather than
@@ -68,6 +78,11 @@ AJUSTES_KEYS = (
     "auto_margin", "auto_ceiling", "max_duration_grace",
     "whisper_model", "language", "beam_size", "cache_dir",
     "vad_filter", "transcript_cache",
+    # The pasted transcript. It lives here because it is typed once and reused
+    # across runs of the same video; the run payload still carries it (see
+    # ``_options_to_config``), and the Cortes page reads it back from
+    # ``state.ajustes`` instead of owning a second copy of the textarea.
+    "transcript_text",
     "layout", "caption_preset", "caption_style", "font_size",
     "crf", "target_lufs", "workers",
     "headline_seconds", "progress_bar", "jump_cut", "loudnorm",
@@ -397,7 +412,24 @@ def _toml_scalar(value) -> "str | None":
     if isinstance(value, float):
         return repr(value)
     if isinstance(value, str):
-        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        # Escape the control characters TOML forbids inside a basic string.
+        # ``\n`` is the one that matters in practice: the pasted transcript is
+        # multi-line, and a raw newline inside a basic string makes the whole
+        # file unparseable -- ``_read_ajustes`` swallows the error and returns
+        # ``{}``, so the user would silently lose every saved setting, not just
+        # the transcript.
+        #
+        # A multi-line basic string (``"""``) would read better in the file, but
+        # it has its own traps: a backslash at the end of a line is a line
+        # continuation, and a leading newline right after the opening quotes is
+        # trimmed. Escaping keeps one code path for every string.
+        escaped = (
+            value.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\r", "\\r")
+            .replace("\n", "\\n")
+            .replace("\t", "\\t")
+        )
         return f'"{escaped}"'
     return None
 
@@ -427,6 +459,35 @@ def _dump_ajustes(settings: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _read_transcript_source() -> str:
+    """The URL the saved transcript belongs to, or "" when untracked.
+
+    A missing or unreadable sidecar is not an error: it means the transcript
+    was saved by a version that did not track it, which is exactly the case the
+    panel has to treat as "stale, ask before reusing".
+    """
+    try:
+        return TRANSCRIPT_SOURCE_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _write_transcript_source(url: str) -> None:
+    """Record which video the saved transcript belongs to.
+
+    Best-effort on purpose: failing to write the sidecar must not fail the save
+    that carries the transcript itself. The cost of a miss is one extra clear of
+    a stale transcript, not a lost setting.
+    """
+    try:
+        if url:
+            TRANSCRIPT_SOURCE_PATH.write_text(url.strip(), encoding="utf-8")
+        else:
+            TRANSCRIPT_SOURCE_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _ajustes_payload() -> dict:
     """What ``GET /ajustes.json`` returns.
 
@@ -436,10 +497,15 @@ def _ajustes_payload() -> dict:
     and sending it here saves a second request. It is added *after* the merge in
     ``_handle_save_ajustes`` for the same reason -- the panel must not be able
     to point the curator at an arbitrary file.
+
+    ``transcript_source_url`` rides along for the same reason: the Cortes page
+    needs it to decide whether the persisted transcript still matches the URL
+    about to be run, and it is not a setting either.
     """
     settings = _read_ajustes()
     if CURATOR_PROMPT_PATH.is_file():
         settings["curator_prompt_file"] = str(CURATOR_PROMPT_PATH)
+    settings["transcript_source_url"] = _read_transcript_source()
     return settings
 
 
@@ -2354,6 +2420,16 @@ class Handler(http_server.BaseHTTPRequestHandler):
         except OSError as exc:
             self._send_json({"error": f"cannot write {AJUSTES_PATH}: {exc}"}, 500)
             return
+
+        # The transcript's own "which video is this" stamp. Sent by the page
+        # next to the transcript rather than derived here, because only the page
+        # knows which URL the text on screen was pasted for. A cleared
+        # transcript drops the stamp with it, so the pair never survives half.
+        if "transcript_text" in incoming:
+            texto = merged.get("transcript_text")
+            _write_transcript_source(
+                str(payload.get("transcript_source_url") or "") if texto else ""
+            )
 
         # Answer with what was actually stored, not with what was sent: the page
         # reapplies this response, so a value dropped or normalised on the way

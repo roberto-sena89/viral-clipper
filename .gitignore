@@ -38,6 +38,13 @@ cookies.txt
 .openclaw-probe-out/
 .workbuddy-ai/
 
+# The transcript's "which video is this" stamp, kept by the Ajustes page
+# (TRANSCRIPT_SOURCE_PATH in web/server.py). It is per-machine bookkeeping
+# about a local run, not project state: the same reason ajustes.toml itself
+# carries no API keys but does carry local paths. Committing it would ship one
+# person's video URL to everyone who clones.
+.ajustes-transcript-source
+
 # Local visual-test images (not part of the web UI)
 web/1.jfif
 web/2.jpg

@@ -10,8 +10,6 @@
   const API = 'http://127.0.0.1:7755';
 
   const state = {
-    // Catalogo de provedores nomeados, como /providers devolve.
-    providers: [],
     // true depois que o servidor confirmou que a rota /ajustes.json existe.
     // Enquanto for false, o autosave fica desligado: cada tecla digitada
     // viraria um POST 404.
@@ -116,14 +114,11 @@
       progress_bar: toggleOn('#progress-bar-on'),
       jump_cut: toggleOn('#jump-cut'),
       loudnorm: toggleOn('#loudnorm'),
-
-      ranker: toggleOn('#ranker-llm') ? 'llm' : 'none',
-      ranker_provider: $('#ranker-provider').value,
-      ranker_api_key_env: $('#ranker-api-key-env').value.trim() || 'OPENAI_API_KEY',
-      ranker_model: $('#ranker-model').value,
-      ranker_base_url: $('#ranker-base-url').value,
-      ranker_top_n: num('#ranker-top-n', 24),
-      ranker_weight: num('#ranker-weight', 0.6),
+      // O Curador com IA saiu desta pagina: o card inteiro mora so em Cortes
+      // (que ja o tinha). As chaves ranker_* deixaram AJUSTES_KEYS junto --
+      // elas continuam no ClipConfig e na CLI, so nao sao mais um ajuste
+      // persistido pelo painel. A Cortes carrega os seus proprios valores e os
+      // manda no POST /run.
     };
   }
 
@@ -147,8 +142,6 @@
       ['crf', '#crf'],
       ['target_lufs', '#target-lufs'],
       ['workers', '#workers'],
-      ['ranker_top_n', '#ranker-top-n'],
-      ['ranker_weight', '#ranker-weight'],
     ];
     numbers.forEach(([key, sel]) => {
       if (s[key] !== undefined && s[key] !== null) setNum(sel, s[key]);
@@ -162,10 +155,6 @@
       ['layout', '#layout'],
       ['caption_preset', '#caption-preset'],
       ['caption_style', '#caption-style'],
-      ['ranker_provider', '#ranker-provider'],
-      ['ranker_api_key_env', '#ranker-api-key-env'],
-      ['ranker_model', '#ranker-model'],
-      ['ranker_base_url', '#ranker-base-url'],
     ];
     texts.forEach(([key, sel]) => {
       if (s[key] === undefined || s[key] === null) return;
@@ -194,8 +183,6 @@
       setToggle('#headline-on', on);
       if (on) setNum('#headline-seconds', s.headline_seconds);
     }
-
-    if (s.ranker !== undefined) setToggle('#ranker-llm', s.ranker === 'llm');
 
     // O texto colado e o unico campo em que `null` LIMPA em vez de "nao mexe".
     // A regra geral (`null` nunca sobrescreve) existe para um ajustes.toml
@@ -248,9 +235,11 @@
         ? 'nenhuma'
         : `${labelOf('#caption-preset')} · ${labelOf('#caption-style')}`],
       ['Reframe', labelOf('#layout')],
-      ['Curador', s.ranker === 'llm'
-        ? (s.ranker_provider || s.ranker_model || 'endpoint manual')
-        : 'desligado'],
+      // Sem linha de "Curador": o card saiu desta pagina, entao `readSettings()`
+      // nao devolve mais ranker/ranker_provider. A ressalva vai no proprio
+      // resumo em vez de sumir, senao quem le o painel acha que o curador
+      // simplesmente nao existe -- ele existe, so e configurado em Cortes.
+      ['Curador', 'configurado na página Cortes'],
     ];
     rows.forEach(([label, value]) => box.appendChild(summaryRow(label, value)));
   }
@@ -359,41 +348,7 @@
       r.path ? 'Gravado em ' + r.path : 'Ajustes vindos do servidor.');
   }
 
-  // ---------- provedores do curador ----------
-  function applyProvider() {
-    const select = $('#ranker-provider');
-    const note = $('#ranker-provider-hint');
-    const provider = (state.providers || []).find((p) => p.name === select.value);
-    if (!provider) {
-      note.textContent = 'Escolher um provedor preenche endpoint, modelo, chave e timeout de uma vez.';
-      return;
-    }
-    // Preencher os campos nao e so conveniencia: o que viaja no run e o NOME do
-    // provedor, e o servidor reescreve os quatro campos de qualquer forma.
-    $('#ranker-base-url').value = provider.base_url;
-    $('#ranker-model').value = provider.model;
-    if (provider.api_key_env) $('#ranker-api-key-env').value = provider.api_key_env;
-    note.textContent = provider.note || provider.label;
-  }
-
-  async function initProviders() {
-    const catalogue = await api('/providers');
-    if (catalogue.offline || catalogue.error) return;
-    state.providers = catalogue.providers || [];
-    const select = $('#ranker-provider');
-    state.providers.forEach((provider) => {
-      const option = document.createElement('option');
-      option.value = provider.name;
-      option.textContent = provider.label;
-      option.title = provider.note || '';
-      select.appendChild(option);
-    });
-    // So agora o select tem opcoes: enfeitar depois de popular e o que faz o
-    // painel nascer com o catalogo inteiro dentro.
-    enhanceSelect(select);
-    applyProvider();
-    select.addEventListener('change', () => { applyProvider(); renderSummary(); scheduleSave(); });
-  }
+  // ---------- prompt do curador ----------
 
   // ---------- prompt do curador ----------
   function setPromptStatus(message, kind) {
@@ -519,10 +474,11 @@
     t.addEventListener('click', () => { renderSummary(); scheduleSave(); });
   });
 
-  // Os selects nativos viram o componente rico do comum.js. O de provedor fica
-  // de fora (data-defer-enhance): ele nasce com uma opcao so e e preenchido por
-  // /providers, que e assincrono - enfeitar antes de popular daria um painel
-  // vazio, porque o componente copia as <option> no momento em que roda.
+  // Os selects nativos viram o componente rico do comum.js. A ressalva
+  // `data-defer-enhance` continua aqui mesmo sem o select de provedor nesta
+  // pagina: e o marcador que diz "as <option> chegam depois", e um select novo
+  // que nasca com so uma opcao precisa do mesmo tratamento. Sem ele o
+  // componente copiaria uma lista vazia e o painel nasceria sem opcao nenhuma.
   $$('select[id]:not([data-defer-enhance])').forEach(enhanceSelect);
 
   $('#btn-save').addEventListener('click', () => saveSettings(false));
@@ -559,7 +515,6 @@
 
   // ---------- partida ----------
   renderSummary();
-  initProviders();
   loadSettings();
   loadCuratorPrompt();
 })();

@@ -86,8 +86,10 @@ AJUSTES_KEYS = (
     "layout", "caption_preset", "caption_style", "font_size",
     "crf", "target_lufs", "workers",
     "headline_seconds", "progress_bar", "jump_cut", "loudnorm",
-    "ranker", "ranker_provider", "ranker_api_key_env", "ranker_model",
-    "ranker_base_url", "ranker_top_n", "ranker_weight",
+    # The seven ranker_* keys are deliberately absent: the AI curator is
+    # configured on the Cortes page, which owns the card and sends its values
+    # in the run payload. They are still real ClipConfig fields and real CLI
+    # dests -- they are just not settings this page persists any more.
 )
 
 # Import the package itself; the server must run from the repo root so

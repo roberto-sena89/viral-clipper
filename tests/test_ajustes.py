@@ -57,10 +57,11 @@ def control_ids(markup: str) -> set[str]:
 #:
 #: ``None`` means the control carries no value of its own: either it is a
 #: toggle that *derives* another field (``headline-on`` decides whether
-#: ``headline_seconds`` is 0 or its own number, ``ranker-llm`` turns ``ranker``
-#: into "llm" or "none"), or it belongs to something the server owns
-#: (``curator-prompt`` is saved through ``/prompts/curador``, not through this
-#: file, and ``curator-prompt-path`` is read-only output).
+#: ``headline_seconds`` is 0 or its own number), or it belongs to something the
+#: server owns (``curator-prompt`` is saved through ``/prompts/curador``, not
+#: through this file, and ``curator-prompt-path`` is read-only output), or it is
+#: bookkeeping that does not live in ``ajustes.toml`` at all
+#: (``transcript-url``).
 CONTROLES = {
     "min-duration": "min_duration",
     "max-duration": "max_duration",
@@ -90,13 +91,9 @@ CONTROLES = {
     "progress-bar-on": "progress_bar",
     "jump-cut": "jump_cut",
     "loudnorm": "loudnorm",
-    "ranker-llm": "ranker",
-    "ranker-provider": "ranker_provider",
-    "ranker-api-key-env": "ranker_api_key_env",
-    "ranker-model": "ranker_model",
-    "ranker-base-url": "ranker_base_url",
-    "ranker-top-n": "ranker_top_n",
-    "ranker-weight": "ranker_weight",
+    # Sem os sete controles `ranker-*`: o card do Curador saiu desta pagina e
+    # mora so em Cortes. As chaves correspondentes sairam de AJUSTES_KEYS junto,
+    # entao `test_the_controls_cover_every_key_exactly_once` fecha nos dois lados.
     "curator-prompt": None,
     "curator-prompt-path": None,
     # O carimbo do video: o texto colado so vale para a URL que o gravou, e o
@@ -137,13 +134,9 @@ def sample_settings() -> dict:
         "progress_bar": False,
         "jump_cut": False,
         "loudnorm": True,
-        "ranker": "none",
-        "ranker_provider": "",
-        "ranker_api_key_env": "OPENAI_API_KEY",
-        "ranker_model": "gpt-4o-mini",
-        "ranker_base_url": "https://api.openai.com/v1",
-        "ranker_top_n": 24,
-        "ranker_weight": 0.6,
+        # As sete chaves ranker_* NAO entram: o Curador com IA saiu de Ajustes e
+        # vive so na pagina Cortes. Continuam sendo campos do ClipConfig e dests
+        # da CLI -- so nao sao mais ajuste que este painel persiste.
     }
 
 
@@ -182,6 +175,26 @@ class AjustesKeysAreRealTests(unittest.TestCase):
         # /prompts/curador. If it were writable here, the panel could point the
         # curator at any file on disk.
         self.assertNotIn("curator_prompt_file", server.AJUSTES_KEYS)
+
+    def test_the_ranker_keys_left_the_contract(self):
+        # The AI curator is configured on the Cortes page only. Keeping the
+        # keys here while the card is gone would be worse than dead weight:
+        # POST /ajustes would keep writing ranker values that no page can see,
+        # and the file would look like it still owns a setting it does not.
+        ranker_keys = [k for k in server.AJUSTES_KEYS if k.startswith("ranker")]
+        self.assertEqual(ranker_keys, [])
+
+    def test_the_ranker_keys_are_still_real_cli_options(self):
+        # Leaving the contract must not mean leaving the engine. They are still
+        # ClipConfig fields and argparse dests, so `--ranker llm` and a
+        # hand-written --config keep working; only the panel stopped managing
+        # them. This is the assertion that would catch someone "cleaning up" the
+        # fields from config.py because they are no longer in AJUSTES_KEYS.
+        for key in ("ranker", "ranker_provider", "ranker_api_key_env",
+                    "ranker_model", "ranker_base_url", "ranker_top_n",
+                    "ranker_weight"):
+            self.assertIn(key, self.dests, f"{key} sumiu da CLI")
+            self.assertIn(key, self.fields, f"{key} sumiu do ClipConfig")
 
 
 class AjustesTomlTests(unittest.TestCase):
@@ -376,14 +389,135 @@ class AjustesPageTests(unittest.TestCase):
         for m in re.finditer(r"<label[^>]*\sfor=\"([^\"]+)\"", self.markup):
             self.assertIn(m.group(1), ids, f"label for={m.group(1)} sem controle")
 
-    def test_the_provider_select_defers_its_enhancement(self):
-        # enhanceSelect copies the <option> elements at the moment it runs, and
-        # this select is filled by /providers afterwards. Without the marker the
-        # rich panel would be born empty.
+    def test_the_provider_select_is_not_on_this_page_anymore(self):
+        # The card moved to Cortes whole, provider select included. The
+        # `data-defer-enhance` guarantee did not disappear with it -- it moved
+        # too, and is asserted against index.html below. Keeping the assertion
+        # here would pin an absence on this page and a guarantee on the wrong
+        # one.
+        self.assertNotIn("ranker-provider", self.markup)
+        self.assertNotIn("Curador com IA", self.markup)
+
+    def test_the_cortes_page_keeps_the_provider_select_contract(self):
+        # Where the select actually lives now: it is filled by /providers after
+        # the first paint, and enhanceSelect copies the <option> elements at the
+        # moment it runs. Without the marker the rich panel would be born empty.
+        cortes = page_source("index.html")
         self.assertRegex(
-            self.markup,
+            cortes,
             r"<select[^>]*id=\"ranker-provider\"[^>]*data-defer-enhance",
         )
+        self.assertIn("Curador com IA", cortes)
+
+
+class AjustesScriptTests(unittest.TestCase):
+    """O ajustes.js roda sem os controles que sairam da pagina.
+
+    Estes testes extraem as funcoes do arquivo real e as executam com um DOM
+    falso, via node. Nao ha copia da logica aqui: se houvesse, o teste passaria
+    com a copia certa e o produto quebrado -- e foi exatamente um produto
+    quebrado que motivou esta classe.
+
+    O defeito que ela existe para pegar: o card do Curador saiu de ajustes.html,
+    mas o JS continuou lendo `$('#ranker-model').value` e `s.ranker`. Com o
+    campo ausente, `$()` devolve null e a primeira gravacao estoura com
+    "Cannot read properties of null". Um teste que so le o HTML nao ve isso,
+    porque o HTML esta certo e o JS e que ficou desalinhado.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fonte = (server.WEB_DIR / "ajustes.js").read_text(encoding="utf-8")
+
+    def _executa(self, expressao):
+        """Roda `expressao` dentro do escopo do ajustes.js, com DOM falso."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node nao esta no PATH")
+
+        ancoras = [
+            r"function num\(sel, fallback\) \{[\s\S]*?\n  \}",
+            r"function toggleOn\(sel\) \{[\s\S]*?\n  \}",
+            r"function labelOf\([\s\S]*?\n  \}",
+            r"function summaryRow\(label, value\) \{[\s\S]*?\n  \}",
+            r"function readSettings\(\) \{[\s\S]*?\n  \}",
+            r"function renderSummary\(\) \{[\s\S]*?\n  \}",
+        ]
+        corpo = []
+        for padrao in ancoras:
+            m = re.search(padrao, self.fonte)
+            if m is None:
+                raise AssertionError(f"ancora ausente em ajustes.js: {padrao}")
+            corpo.append(m.group(0))
+
+        script = (
+            "const valores = " + json.dumps({
+                "#min-duration": "30", "#max-duration": "60", "#target-duration": "42",
+                "#min-score": "0", "#min-gap": "6", "#auto-margin": "15",
+                "#auto-ceiling": "200", "#max-grace": "30", "#beam-size": "1",
+                "#font-size": "", "#crf": "20", "#target-lufs": "-14",
+                "#workers": "2", "#headline-seconds": "3", "#engine": "hybrid",
+                "#whisper-model": "small", "#language": "",
+                "#cache-dir": "x", "#layout": "focus",
+                "#caption-preset": "karaoke", "#caption-style": "karaoke",
+                "#transcript": "", "#transcript-url": "",
+            }) + ";\n"
+            "const toggles = " + json.dumps({
+                "#vad-filter": True, "#transcript-cache": True, "#headline-on": False,
+                "#progress-bar-on": False, "#jump-cut": False, "#loudnorm": True,
+            }) + ";\n"
+            # Um seletor fora destas listas devolve null: e assim que um acesso
+            # remanescente a '#ranker-*' vira erro em vez de passar batido.
+            "const document = {\n"
+            "  querySelector: (s) => {\n"
+            "    if (s === '#summary-list') return { set innerHTML(_){}, appendChild(){} };\n"
+            "    if (s in valores) return { value: valores[s], classList:{ contains: () => false } };\n"
+            "    if (s in toggles) return { value:'', classList:{ contains: () => toggles[s] } };\n"
+            "    return null;\n"
+            "  },\n"
+            "  createElement: () => ({ style:{}, textContent:'', append(){}, setAttribute(){} }),\n"
+            "};\n"
+            "const $ = (s) => document.querySelector(s);\n"
+            "const $$ = () => [];\n"
+            + "\n".join(corpo) + "\n"
+            "console.log(JSON.stringify(" + expressao + "));\n"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=30)
+        if proc.returncode != 0:
+            # O stderr do node sai assim:
+            #   [eval]:21
+            #   <codigo da linha>
+            #                      ^
+            #   TypeError: Cannot read properties of null ...
+            #   <stack>
+            #   Node.js v22.22.2        <- rodape, sempre a ultima
+            # A linha util e a que comeca com o nome do erro.
+            linhas = [l.strip() for l in proc.stderr.splitlines() if l.strip()]
+            erro = next(
+                (l for l in linhas if re.match(r"^[A-Za-z]*Error\b", l)),
+                linhas[0] if linhas else "sem stderr",
+            )
+            raise AssertionError("ajustes.js estourou: " + erro)
+        return json.loads(proc.stdout.strip())
+
+    def test_the_script_reads_no_control_that_left_the_page(self):
+        # O caso que reproduz o bug. Se qualquer `$('#ranker-*')` sobreviver no
+        # JS, o DOM falso devolve null e isto estoura.
+        chaves = self._executa("Object.keys(readSettings())")
+        self.assertEqual(len(chaves), len(server.AJUSTES_KEYS))
+        self.assertEqual([k for k in chaves if k.startswith("ranker")], [])
+
+    def test_the_script_still_collects_every_remaining_key(self):
+        # Nao basta nao estourar: as chaves que sobraram tem de continuar sendo
+        # coletadas, senao a remocao teria levado campo junto.
+        chaves = self._executa("Object.keys(readSettings())")
+        self.assertEqual(sorted(chaves), sorted(server.AJUSTES_KEYS))
+
+    def test_the_summary_renders_without_the_ranker_fields(self):
+        # renderSummary() lia `s.ranker` e `s.ranker_provider`, que deixaram de
+        # existir. Chave ausente em JS nao estoura sozinha, mas o teste tambem
+        # cobre o caminho de render inteiro.
+        self.assertEqual(self._executa("(renderSummary(), 'ok')"), "ok")
 
 
 class AjustesLufsTests(unittest.TestCase):

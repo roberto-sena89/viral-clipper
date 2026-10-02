@@ -360,55 +360,6 @@
         </div>
 
         <div class="card">
-          <h2><span class="ico" aria-hidden="true">✦</span> Curador com IA (opcional)</h2>
-
-          <div class="form-section">
-            <div class="toggle-wrap">
-              <span class="tw-label">Reavaliar os melhores cortes e escrever headline + hashtags</span>
-              <button class="toggle" type="button" id="ranker-llm" role="switch" aria-checked="false" aria-label="Curador com IA"></button>
-            </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="ranker-provider">Provedor</label>
-                <select id="ranker-provider" name="ranker-provider" data-defer-enhance
-                        aria-describedby="ranker-provider-hint">
-                  <option value="">Endpoint manual (campos abaixo)</option>
-                </select>
-                <p class="hint" id="ranker-provider-hint">Escolher um provedor preenche endpoint, modelo, chave e timeout de uma vez.</p>
-              </div>
-              <div class="field">
-                <label for="ranker-api-key-env">Variável da chave</label>
-                <input type="text" id="ranker-api-key-env" name="ranker-api-key-env" value="OPENAI_API_KEY" aria-describedby="ranker-key-hint">
-                <p class="hint" id="ranker-key-hint">A chave nunca vai para o arquivo: exporte a variável antes de rodar.</p>
-              </div>
-            </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="ranker-model">Modelo</label>
-                <input type="text" id="ranker-model" name="ranker-model" value="gpt-4o-mini">
-              </div>
-              <div class="field">
-                <label for="ranker-base-url">Endpoint (compatível com OpenAI)</label>
-                <input type="url" id="ranker-base-url" name="ranker-base-url" value="https://api.openai.com/v1">
-              </div>
-            </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="ranker-top-n">Top-N candidatos</label>
-                <input type="number" id="ranker-top-n" name="ranker-top-n" min="1" max="500" value="24"
-                       aria-describedby="ranker-top-n-hint">
-                <span class="hint" id="ranker-top-n-hint">No modo automático este número é o teto real: o curador só
-                  julga estas janelas, e o que ele não julgou é descartado.</span>
-              </div>
-              <div class="field">
-                <label for="ranker-weight">Peso do modelo (0-1)</label>
-                <input type="number" id="ranker-weight" name="ranker-weight" min="0" max="1" step="0.05" value="0.6">
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
           <h2><span class="ico" aria-hidden="true">✎</span> Prompt do curador</h2>
 
           <div class="form-section">

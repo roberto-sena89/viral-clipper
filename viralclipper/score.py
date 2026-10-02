@@ -308,7 +308,7 @@ def build_candidates(units: list[Unit], config: ClipConfig) -> list[Window]:
             duration = end - start
             if duration < config.min_duration:
                 continue
-            if duration > config.max_duration:
+            if duration > config.hard_max_duration:
                 break
             slice_units = units[first : last + 1]
             terms: list[str] = []
@@ -340,7 +340,13 @@ def score_windows(
         return
     count = len(candidates)
     raw: dict[str, np.ndarray] = {key: np.zeros(count, dtype=np.float64) for key in WEIGHTS}
-    length_span = max(1.0, (config.max_duration - config.min_duration) / 2.0)
+    # A escala do sinal ``length`` vai do alvo ate o teto rigido. Antes ela
+    # era metade da faixa nominal -- (max - min) / 2 = 15 s -- o que saturava
+    # em 57 s: com a tolerancia de contexto ligada, um corte de 60 s e um de
+    # 90 s recebiam a mesma penalidade zero, e o motor nao tinha motivo
+    # nenhum para preferir o mais curto. Medindo a distancia ao alvo contra o
+    # teto real, mais longo passa a ser sempre pior, monotonamente.
+    length_span = max(1.0, config.hard_max_duration - config.target_duration)
 
     for index, window in enumerate(candidates):
         slice_units = units[window.unit_start : window.unit_end + 1]
@@ -394,6 +400,17 @@ def pick_windows(candidates: list[Window], config: ClipConfig) -> list[Window]:
     Split from :func:`rank_windows` so an optional precision stage (the
     semantic ranker) can rewrite ``window.score`` between scoring and picking
     without having to reimplement the selection rules.
+
+    Ha dois jeitos de decidir quantos cortes saem, e eles respondem a
+    perguntas diferentes:
+
+    * ``count > 0`` -- teto fixo. A execucao rende no maximo ``count``.
+    * ``count == 0`` -- automatico. ``count`` deixa de ser a resposta e vira
+      so um teto de seguranca (``auto_ceiling``); o limite real e
+      ``auto_margin``, um piso definido *em relacao ao melhor corte deste
+      video*. Um video cheio de bons momentos passa do piso muitas vezes e
+      rende muitos cortes; um video fraco passa poucas vezes. Nada precisa
+      ser calibrado, porque a barra se move junto com o video.
     """
     eligible = (
         candidates
@@ -401,9 +418,23 @@ def pick_windows(candidates: list[Window], config: ClipConfig) -> list[Window]:
         else [window for window in candidates if window.score >= config.min_score]
     )
     ordered = sorted(eligible, key=lambda window: window.score, reverse=True)
+    if not ordered:
+        return []
+
+    if config.count > 0:
+        ceiling = config.count
+        floor = None
+    else:
+        ceiling = max(1, config.auto_ceiling)
+        floor = ordered[0].score - max(0.0, config.auto_margin)
+
     chosen: list[Window] = []
     for window in ordered:
-        if len(chosen) >= config.count:
+        if len(chosen) >= ceiling:
+            break
+        # ``ordered`` e decrescente, entao a primeira janela abaixo do piso
+        # encerra a caminhada: tudo depois dela e menor ainda.
+        if floor is not None and window.score < floor:
             break
         if any(_too_close(window, taken, config.min_gap) for taken in chosen):
             continue

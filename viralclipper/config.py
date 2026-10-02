@@ -22,7 +22,9 @@ class ClipConfig:
     min_duration: float = 30.0
     max_duration: float = 60.0
     target_duration: float = 42.0
-    count: int = 5
+    # 0 = automatico: o proprio video decide quantos cortes rende, pelo
+    # portao relativo ``auto_margin``. Qualquer valor > 0 e um teto fixo.
+    count: int = 0
     engine: str = "hybrid"  # hybrid | audio | transcript
     min_gap: float = 6.0  # minimum silence kept between two accepted clips
     pad_start: float = 0.25
@@ -32,6 +34,22 @@ class ClipConfig:
     # set it to e.g. 45 to refuse clips that are only "the best of a bad
     # video". 0 disables the gate and always yields the top ``count`` windows.
     min_score: float = 0.0
+
+    # --- modo automatico -------------------------------------------------
+    # Quantos pontos abaixo do melhor corte do video ainda contam como "vale
+    # cortar". O piso e relativo ao proprio video, entao nao precisa de
+    # calibracao: um podcast excelente rende dezenas de cortes, um video
+    # fraco rende poucos. So vale quando ``count`` e 0.
+    auto_margin: float = 15.0
+    # Teto de seguranca do modo automatico, para um video patologico nao
+    # gerar milhares de cortes. 200 e o maximo fisico de um video de 2 h em
+    # trechos de 30 s com 6 s de intervalo.
+    auto_ceiling: int = 200
+    # Tolerancia acima de ``max_duration`` para o corte fechar o raciocinio.
+    # O candidato passa a existir ate ``max_duration + max_duration_grace``,
+    # mas o sinal ``length`` continua penalizando quem se afasta do alvo:
+    # o corte longo tem de merecer.
+    max_duration_grace: float = 30.0
 
     # --- transcription ---------------------------------------------------
     whisper_model: str = "small"
@@ -196,6 +214,16 @@ class ClipConfig:
     parallel: bool = True
     workers: int = 2
 
+    @property
+    def hard_max_duration(self) -> float:
+        """Teto rigido de duracao de um candidato.
+
+        ``max_duration`` e o alvo editorial; a tolerancia existe para o
+        corte conseguir fechar o raciocinio. Nada alem disto chega a virar
+        candidato, entao este e o numero que limita o custo do scoring.
+        """
+        return self.max_duration + max(0.0, self.max_duration_grace)
+
     def work_path(self) -> Path:
         return Path(self.work_dir) if self.work_dir else Path(self.output_dir) / "_work"
 
@@ -204,8 +232,14 @@ class ClipConfig:
             raise ValueError("min_duration must be greater than zero")
         if self.max_duration < self.min_duration:
             raise ValueError("max_duration must be greater than or equal to min_duration")
-        if self.count < 1:
-            raise ValueError("count must be at least 1")
+        if self.count < 0:
+            raise ValueError("count must not be negative (0 means automatic)")
+        if self.auto_margin < 0:
+            raise ValueError("auto_margin must not be negative")
+        if self.auto_ceiling < 1:
+            raise ValueError("auto_ceiling must be at least 1")
+        if self.max_duration_grace < 0:
+            raise ValueError("max_duration_grace must not be negative")
         # Clamp instead of failing: a target outside the allowed range is a
         # harmless mistake that should not stop the run.
         self.target_duration = max(self.min_duration, min(self.max_duration, self.target_duration))

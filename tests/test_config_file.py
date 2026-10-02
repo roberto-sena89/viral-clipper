@@ -170,9 +170,25 @@ class ShippedExampleTests(ConfigFileTestCase):
     def test_yaml_example_sets_every_declared_option(self):
         flat = self.load("config.example.yaml")
         args = self.applied_defaults(flat)
-        for key in ("count", "target_duration", "min_score", "layout", "workers", "threads"):
+        for key in (
+            "count",
+            "auto_margin",
+            "auto_ceiling",
+            "max_duration_grace",
+            "target_duration",
+            "min_score",
+            "layout",
+            "workers",
+            "threads",
+        ):
             self.assertIn(key, flat, f"{key} missing from config.example.yaml")
-        self.assertEqual(args["count"], 8)
+        # O exemplo mostra o modo automatico, que e o padrao. A prova de que o
+        # arquivo foi lido -- e nao so os defaults -- vem de target_duration,
+        # que o exemplo muda para 45 s.
+        self.assertEqual(args["count"], 0)
+        self.assertEqual(args["auto_margin"], 15.0)
+        self.assertEqual(args["auto_ceiling"], 200)
+        self.assertEqual(args["max_duration_grace"], 30.0)
         self.assertEqual(args["target_duration"], 45.0)
         self.assertEqual(args["workers"], 2)
         self.assertEqual(args["threads"], 2)
@@ -180,7 +196,14 @@ class ShippedExampleTests(ConfigFileTestCase):
     def test_toml_example_sets_every_declared_option(self):
         flat = self.load("config.example.toml")
         args = self.applied_defaults(flat)
-        self.assertEqual(args["count"], 8)
+        for key in ("count", "auto_margin", "auto_ceiling", "max_duration_grace"):
+            self.assertIn(key, flat, f"{key} missing from config.example.toml")
+        # Mesma prova do yaml: target_duration sai do default, o resto confirma
+        # que as chaves do modo automatico chegaram ate o parser.
+        self.assertEqual(args["count"], 0)
+        self.assertEqual(args["auto_margin"], 15.0)
+        self.assertEqual(args["auto_ceiling"], 200)
+        self.assertEqual(args["max_duration_grace"], 30.0)
         self.assertEqual(args["target_duration"], 45.0)
         self.assertEqual(args["workers"], 2)
         self.assertEqual(args["threads"], 2)

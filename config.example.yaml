@@ -6,9 +6,21 @@
 min_duration: 30.0
 max_duration: 60.0
 target_duration: 45.0
-count: 8
+# 0 = automatic: the video decides how many clips it yields, by accepting
+# every window within `auto_margin` points of the best window of *this*
+# video. Set a number to go back to a fixed ceiling.
+count: 0
 engine: "hybrid"  # hybrid | audio | transcript
 min_gap: 6.0
+# Automatic mode: how many points below the best clip still counts as worth
+# cutting. Relative to the video, so it needs no calibration.
+auto_margin: 15.0
+# Automatic mode: safety cap, not a target. 200 is the physical maximum for
+# a 2-hour video in 30 s clips with a 6 s gap.
+auto_ceiling: 200
+# Seconds a clip may exceed `max_duration` to close its reasoning. The
+# `length` signal still penalises the extra length, so it has to be earned.
+max_duration_grace: 30.0
 # Absolute quality gate on the 0..100 window score. The score is computed from
 # video-independent bounds, so this means the same thing in every video: a clip
 # below the floor is dropped instead of being force-fed to the output.

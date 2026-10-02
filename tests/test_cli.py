@@ -328,5 +328,58 @@ class PlanOnlyManifestTests(_TempOutputTestCase):
         self.assertTrue(write_markdown.called)
 
 
+class CountArgumentTests(unittest.TestCase):
+    """``-n`` aceita um numero ou ``auto``, e ``auto`` e o padrao.
+
+    O modo automatico so existe se a CLI souber pedi-lo, e ``auto`` e a forma
+    legivel: ``-n 0`` funciona, mas nao diz nada a quem le o comando.
+    """
+
+    def parse(self, *argv):
+        return cli.build_parser().parse_args(list(argv) + ["https://youtu.be/x"])
+
+    def test_auto_is_zero(self):
+        self.assertEqual(self.parse("-n", "auto").count, 0)
+
+    def test_auto_is_case_insensitive(self):
+        for spelling in ("AUTO", "Auto", " auto "):
+            with self.subTest(spelling=spelling):
+                self.assertEqual(self.parse("-n", spelling).count, 0)
+
+    def test_a_number_is_kept(self):
+        self.assertEqual(self.parse("-n", "7").count, 7)
+        self.assertEqual(self.parse("--count", "3").count, 3)
+
+    def test_explicit_zero_is_the_same_as_auto(self):
+        self.assertEqual(self.parse("-n", "0").count, 0)
+
+    def test_the_default_is_automatic(self):
+        """Sem ``-n``, o video decide — e o default do modo automatico."""
+        self.assertEqual(self.parse().count, 0)
+
+    def test_a_negative_count_is_refused(self):
+        with self.assertRaises(SystemExit):
+            self.parse("-n", "-3")
+
+    def test_a_word_that_is_not_auto_is_refused(self):
+        """``-n muitos`` tem de falhar, nao virar 0 em silencio."""
+        with self.assertRaises(SystemExit):
+            self.parse("-n", "muitos")
+
+    def test_the_automatic_knobs_are_reachable_from_the_cli(self):
+        args = self.parse("--auto-margin", "8", "--auto-ceiling", "50", "--max-grace", "15")
+        self.assertEqual(args.auto_margin, 8.0)
+        self.assertEqual(args.auto_ceiling, 50)
+        self.assertEqual(args.max_duration_grace, 15.0)
+
+    def test_the_automatic_knobs_reach_the_config(self):
+        args = self.parse("-n", "auto", "--auto-margin", "8", "--max-grace", "15")
+        config = cli.config_from_args(args)
+        self.assertEqual(config.count, 0)
+        self.assertEqual(config.auto_margin, 8.0)
+        self.assertEqual(config.max_duration_grace, 15.0)
+        self.assertEqual(config.hard_max_duration, config.max_duration + 15.0)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

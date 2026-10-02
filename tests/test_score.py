@@ -120,12 +120,24 @@ class BuildCandidatesTests(unittest.TestCase):
         ]
 
     def test_respects_duration_limits(self):
-        config = make_config(min_duration=15.0, max_duration=25.0)
+        config = make_config(min_duration=15.0, max_duration=25.0, max_duration_grace=0.0)
         candidates = score.build_candidates(self._units(), config)
         self.assertEqual([round(c.duration, 3) for c in candidates], [20.0, 20.0, 20.0])
         for candidate in candidates:
             self.assertGreaterEqual(candidate.duration, config.min_duration)
-            self.assertLessEqual(candidate.duration, config.max_duration)
+            self.assertLessEqual(candidate.duration, config.hard_max_duration)
+
+    def test_the_grace_widens_the_ceiling_past_max_duration(self):
+        # O corte pode passar de ``max_duration`` para fechar o raciocinio,
+        # mas nunca de ``hard_max_duration``.
+        config = make_config(min_duration=15.0, max_duration=25.0, max_duration_grace=15.0)
+        candidates = score.build_candidates(self._units(), config)
+        self.assertEqual(
+            [round(c.duration, 3) for c in candidates],
+            [20.0, 30.0, 40.0, 20.0, 30.0, 20.0],
+        )
+        for candidate in candidates:
+            self.assertLessEqual(candidate.duration, config.hard_max_duration)
 
     def test_empty_when_units_too_short(self):
         units = [make_unit(0.0, 5.0), make_unit(5.0, 10.0)]
@@ -369,7 +381,11 @@ class MinScoreGateTests(unittest.TestCase):
         return candidates
 
     def test_zero_min_score_keeps_every_candidate_eligible(self):
-        config = make_config(min_duration=10.0, max_duration=10.0, target_duration=10.0)
+        # ``count`` fixo isola o portao absoluto: com o padrao automatico o
+        # piso relativo tambem age e este teste mediria outra coisa.
+        config = make_config(
+            min_duration=10.0, max_duration=10.0, target_duration=10.0, count=5
+        )
         candidates = self._candidates(config)
         self.assertEqual(len(score.pick_windows(candidates, config)), 2)
 
@@ -428,6 +444,175 @@ class AudioOnlyCeilingTests(unittest.TestCase):
             score._TEXT_SIGNALS,
             frozenset({"hook_start", "hook_peak", "hook_density", "question"}),
         )
+
+
+class AutoCountTests(unittest.TestCase):
+    """``count=0``: o video decide quantos cortes rende.
+
+    O piso do modo automatico e relativo ao melhor corte do proprio video, e
+    nao um numero calibrado a mao. Estes testes fixam essa propriedade: apertar
+    a margem reduz a quantidade, afrouxar aumenta, e o limite fisico do video
+    (trechos que nao se sobrepoem) continua mandando no fim.
+    """
+
+    TOTAL = 900.0
+
+    def _config(self, **overrides):
+        payload = {
+            "min_duration": 30.0,
+            "max_duration": 60.0,
+            "target_duration": 42.0,
+            "min_gap": 6.0,
+            "count": 0,
+            "auto_margin": 15.0,
+            "auto_ceiling": 200,
+            "max_duration_grace": 30.0,
+            "min_score": 0.0,
+            "ranker": "none",
+        }
+        payload.update(overrides)
+        config = make_config(**payload)
+        config.validate()
+        return config
+
+    def _units(self, total=None):
+        """Unidades em quatro faixas de forca, para o piso ter o que separar."""
+        total = self.TOTAL if total is None else total
+        step = 5.0
+        units = []
+        for index in range(int(total / step)):
+            start = index * step
+            phase = index % 10
+            if phase < 2:
+                text, hook = "por que ninguem te contou isso antes", 0.98
+            elif phase < 4:
+                text, hook = "o erro que quase acabou com tudo", 0.70
+            elif phase < 7:
+                text, hook = "entao a gente foi la e fez o teste", 0.35
+            else:
+                text, hook = "e assim seguiu o resto da conversa", 0.08
+            units.append(make_unit(start, start + step, text=text, hook_score=hook))
+        return units
+
+    def _picked(self, config, total=None):
+        total = self.TOTAL if total is None else total
+        units = self._units(total)
+        candidates = score.build_candidates(units, config)
+        score.score_windows(candidates, units, make_analysis(duration=total), config)
+        return score.pick_windows(candidates, config)
+
+    def test_a_tighter_margin_yields_fewer_clips(self):
+        tight = self._picked(self._config(auto_margin=0.0))
+        loose = self._picked(self._config(auto_margin=15.0))
+        self.assertGreater(len(tight), 0)
+        self.assertLess(len(tight), len(loose))
+
+    def test_widening_the_margin_never_removes_a_clip(self):
+        counts = [
+            len(self._picked(self._config(auto_margin=margin)))
+            for margin in (0.0, 5.0, 15.0, 40.0, 100.0)
+        ]
+        self.assertEqual(counts, sorted(counts))
+
+    def test_a_loose_margin_stops_at_what_the_video_can_hold(self):
+        # 900 s em trechos de 42 s com 6 s de intervalo nao comportam mais que
+        # ~18 cortes sem sobreposicao, por mais generoso que seja o piso.
+        windows = self._picked(self._config(auto_margin=100.0))
+        self.assertLessEqual(len(windows), int(self.TOTAL / 48) + 1)
+
+    def test_the_automatic_mode_yields_more_than_a_small_fixed_ceiling(self):
+        auto = self._picked(self._config(count=0))
+        fixed = self._picked(self._config(count=3))
+        self.assertEqual(len(fixed), 3)
+        self.assertGreater(len(auto), 3)
+
+    def test_a_fixed_count_ignores_the_margin(self):
+        tight = self._picked(self._config(count=5, auto_margin=0.0))
+        loose = self._picked(self._config(count=5, auto_margin=100.0))
+        self.assertEqual(len(tight), 5)
+        self.assertEqual(len(loose), 5)
+
+    def test_the_ceiling_caps_the_automatic_mode(self):
+        windows = self._picked(self._config(auto_ceiling=4, auto_margin=100.0))
+        self.assertEqual(len(windows), 4)
+
+    def test_the_ceiling_is_a_cap_and_not_a_target(self):
+        # Um teto alto nao inventa cortes: o video so rende o que o piso aceita.
+        generous = self._picked(self._config(auto_ceiling=200, auto_margin=0.0))
+        self.assertLess(len(generous), 200)
+
+    def test_the_absolute_gate_still_applies_in_automatic_mode(self):
+        # O modo automatico nao desliga ``min_score``: o piso relativo escolhe
+        # entre os cortes que o portao absoluto ja deixou passar.
+        self.assertEqual(self._picked(self._config(auto_margin=100.0, min_score=99.9)), [])
+
+
+class DurationGraceTests(unittest.TestCase):
+    """``max_duration`` e alvo editorial, nao parede.
+
+    O corte pode passar do teto para fechar o raciocinio, mas paga por isso: o
+    sinal ``length`` tem de cair monotonamente com a duracao, senao o motor nao
+    tem motivo nenhum para preferir o corte curto e estica tudo o que pode.
+    """
+
+    def _config(self, **overrides):
+        payload = {
+            "min_duration": 30.0,
+            "max_duration": 60.0,
+            "target_duration": 42.0,
+            "count": 0,
+            "ranker": "none",
+        }
+        payload.update(overrides)
+        config = make_config(**payload)
+        config.validate()
+        return config
+
+    def _units(self, total=600.0, step=5.0):
+        return [
+            make_unit(index * step, (index + 1) * step, text="trecho com fala corrida e util")
+            for index in range(int(total / step))
+        ]
+
+    def test_the_grace_extends_the_hard_ceiling(self):
+        self.assertEqual(self._config(max_duration_grace=0.0).hard_max_duration, 60.0)
+        self.assertEqual(self._config(max_duration_grace=30.0).hard_max_duration, 90.0)
+
+    def test_candidates_reach_into_the_grace_zone(self):
+        units = self._units()
+        plain = score.build_candidates(units, self._config(max_duration_grace=0.0))
+        graced = score.build_candidates(units, self._config(max_duration_grace=30.0))
+        self.assertAlmostEqual(max(window.duration for window in plain), 60.0, places=3)
+        self.assertAlmostEqual(max(window.duration for window in graced), 90.0, places=3)
+        self.assertGreater(len(graced), len(plain))
+
+    def test_a_longer_window_always_scores_worse_on_length(self):
+        config = self._config(max_duration_grace=30.0)
+        units = self._units()
+        candidates = score.build_candidates(units, config)
+        score.score_windows(candidates, units, make_analysis(duration=600.0), config)
+        by_duration = {}
+        for window in candidates:
+            by_duration.setdefault(int(window.duration), window.components["length"])
+        # Duracoes sao multiplos de 5 s (as unidades tem 5 s cada).
+        self.assertGreater(by_duration[40], by_duration[60])
+        self.assertGreater(by_duration[60], by_duration[75])
+        self.assertGreater(by_duration[75], by_duration[90])
+
+    def test_the_target_keeps_the_best_length_score(self):
+        config = self._config(max_duration_grace=30.0)
+        units = self._units()
+        candidates = score.build_candidates(units, config)
+        score.score_windows(candidates, units, make_analysis(duration=600.0), config)
+        by_duration = {}
+        for window in candidates:
+            by_duration.setdefault(int(window.duration), window.components["length"])
+        best = max(by_duration.values())
+        self.assertAlmostEqual(by_duration[40], best, places=4)
+
+    def test_no_grace_keeps_the_ceiling_at_max_duration(self):
+        config = self._config(max_duration_grace=0.0)
+        self.assertEqual(config.hard_max_duration, config.max_duration)
 
 
 if __name__ == "__main__":  # pragma: no cover

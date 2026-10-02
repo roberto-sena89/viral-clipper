@@ -242,11 +242,30 @@ def select_windows(
             "Try lowering --min or raising --max."
         )
     logger.info(f"{len(candidates)} candidate windows evaluated")
+    if config.count == 0 and config.ranker not in {"none", "", None}:
+        # No modo automatico o teto real e ``ranker_top_n``, nao
+        # ``auto_ceiling``: as janelas que o curador nao julgou sao
+        # empurradas para score -1 e o piso relativo as descarta. Sem este
+        # aviso, o usuario pediria um video inteiro de cortes e receberia
+        # silenciosamente 24.
+        if config.ranker_top_n < config.auto_ceiling:
+            logger.warn(
+                f"Modo automatico com curador: o curador julga no maximo "
+                f"--ranker-top-n {config.ranker_top_n} janelas, entao a saida "
+                f"nao passa disso mesmo que o video renda mais. Suba "
+                f"--ranker-top-n para {config.auto_ceiling} para usar o teto inteiro."
+            )
     score.score_windows(candidates, units, analysis, config)
     # Optional precision pass. A no-op unless --ranker llm is set, and it never
     # raises: a dead ranker leaves the heuristic scores in place.
     ranker.apply(candidates, config, logger)
     chosen = score.pick_windows(candidates, config)
+    if 0 < len(chosen) < config.count:
+        logger.info(
+            f"{len(chosen)} of the {config.count} requested clips: the others "
+            f"overlap each other or fall inside --min-gap {config.min_gap:g}s. "
+            f"Lower --min-gap or --min to fit more."
+        )
     if not chosen:
         best = max(window.score for window in candidates)
         if config.min_score > 0.0 and best < config.min_score:

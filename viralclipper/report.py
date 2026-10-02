@@ -57,6 +57,10 @@ class RunReport:
     engine: str
     min_duration: float
     max_duration: float
+    # Tolerancia acima de ``max_duration`` que a execucao permitiu. Zero
+    # quando o run nao deixou passar do teto, e nesse caso a linha do
+    # relatorio nem cita o assunto.
+    max_duration_grace: float = 0.0
     clips: list[ClipRecord] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -83,6 +87,14 @@ def write_markdown(report: RunReport, destination: str | Path) -> Path:
     """Write a short summary with a table of clips and their scores."""
     path = Path(destination)
     path.parent.mkdir(parents=True, exist_ok=True)
+    window_line = (
+        f"- Janela permitida: {report.min_duration:.0f}s a {report.max_duration:.0f}s"
+    )
+    if report.max_duration_grace > 0:
+        window_line += (
+            f" (ate {report.max_duration + report.max_duration_grace:.0f}s"
+            f" para fechar o contexto)"
+        )
     lines: list[str] = [
         f"# Clips: {report.title}",
         "",
@@ -91,7 +103,7 @@ def write_markdown(report: RunReport, destination: str | Path) -> Path:
         f"- Duracao do video: {util.fmt_clock(report.source_duration)}",
         f"- Idioma detectado: {report.language} (modelo {report.model})",
         f"- Motor de analise: {report.engine}",
-        f"- Janela permitida: {report.min_duration:.0f}s a {report.max_duration:.0f}s",
+        window_line,
         f"- Clips gerados: {len(report.clips)}",
         "",
         "| # | Inicio | Fim | Duracao | Score | Ganchos | Arquivo |",

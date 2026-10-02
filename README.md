@@ -93,6 +93,20 @@ Refuse clips that are only "the best of a bad video":
 python -m viralclipper "URL" --min-score 45
 ```
 
+Let the video decide how many clips it yields (the default):
+
+```powershell
+python -m viralclipper "URL"                  # -n auto
+python -m viralclipper "URL" -n 5             # back to a fixed ceiling
+python -m viralclipper "URL" --auto-margin 8  # stricter: fewer, better clips
+```
+
+In automatic mode the limit is not a number you calibrate but a floor relative
+to the best clip of *that* video: every window within `--auto-margin` points of
+the top one is kept. A podcast full of good moments yields dozens of clips, a
+weak video yields a few, and nothing has to be re-tuned per channel.
+`--auto-ceiling` is only a safety cap for a pathological video, not a target.
+
 Add a semantic pass over the best candidates:
 
 ```powershell
@@ -118,7 +132,8 @@ python -m viralclipper "URL" --ranker llm `
    cached (see below), so re-running on the same audio with the same settings
    skips this stage entirely.
 4. `score.py` groups words into sentence-like units, builds every unit run that
-   fits `--min`..`--max` and scores it using `hooks.py` plus the audio signals.
+   fits `--min`..`--max` (plus `--max-grace` of tolerance) and scores it using
+   `hooks.py` plus the audio signals.
 5. `ranker.py` (optional) re-judges the best `--ranker-top-n` candidates with a
    language model and blends that verdict into the score.
 6. `render.py` cuts each winning window, reframes it to 9:16, burns karaoke
@@ -149,8 +164,11 @@ in: a window's score must not change when its neighbours do.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `-n`, `--count` | 5 | how many clips to produce |
+| `-n`, `--count` | auto | `auto` lets the video decide how many clips it yields; a number is a fixed ceiling |
 | `--min` / `--max` / `--target` | 30 / 60 / 42 | duration limits in seconds |
+| `--auto-margin` | 15 | auto mode: how many points below the video's best clip still counts as worth cutting |
+| `--auto-ceiling` | 200 | auto mode: safety cap, not a target |
+| `--max-grace` | 30 | seconds a clip may exceed `--max` to close its reasoning |
 | `--min-score` | 0 | absolute 0-100 gate; clips below it are dropped (0 = off) |
 | `--min-gap` | 6 | silence kept between two accepted clips |
 | `--engine` | hybrid | `hybrid`, `audio` or `transcript` |

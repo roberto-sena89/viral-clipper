@@ -22,6 +22,20 @@ DESCRIPTION = (
 )
 
 
+def _count_argument(raw: str) -> int:
+    """Le ``-n``, aceitando ``auto`` como sinonimo de 0 (automatico)."""
+    text = str(raw).strip().lower()
+    if text in {"auto", ""}:
+        return 0
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError("use um numero ou 'auto'") from None
+    if value < 0:
+        raise argparse.ArgumentTypeError("nao pode ser negativo ('auto' = 0)")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="viralclipper",
@@ -31,7 +45,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("url", nargs="?", default=None, help="URL do video do YouTube")
     parser.add_argument("-o", "--output", default="output", help="Pasta de saida")
     parser.add_argument("--work-dir", default=None, help="Pasta de trabalho temporaria")
-    parser.add_argument("-n", "--count", type=int, default=5, help="Quantidade de clips")
+    parser.add_argument(
+        "-n",
+        "--count",
+        type=_count_argument,
+        default=0,
+        help="Quantidade de clips, ou 'auto' (padrao) para o video decidir",
+    )
     parser.add_argument(
         "--batch",
         default=None,
@@ -98,6 +118,27 @@ def build_parser() -> argparse.ArgumentParser:
     selection.add_argument("--max", dest="max_duration", type=float, default=60.0)
     selection.add_argument("--target", dest="target_duration", type=float, default=42.0)
     selection.add_argument("--min-gap", dest="min_gap", type=float, default=6.0)
+    selection.add_argument(
+        "--auto-margin",
+        dest="auto_margin",
+        type=float,
+        default=15.0,
+        help="Modo auto: pontos abaixo do melhor corte do video que ainda valem corte",
+    )
+    selection.add_argument(
+        "--auto-ceiling",
+        dest="auto_ceiling",
+        type=int,
+        default=200,
+        help="Modo auto: teto de seguranca de clips; o video decide abaixo dele",
+    )
+    selection.add_argument(
+        "--max-grace",
+        dest="max_duration_grace",
+        type=float,
+        default=30.0,
+        help="Segundos que um corte pode passar de --max para fechar o contexto",
+    )
     selection.add_argument(
         "--min-score",
         dest="min_score",
@@ -558,6 +599,7 @@ def _run_single_locked(
             engine=config.engine,
             min_duration=config.min_duration,
             max_duration=config.max_duration,
+            max_duration_grace=config.max_duration_grace,
             clips=records,
         )
         # Um plano nao renderizou nada, entao todo `record` sai com ``file``

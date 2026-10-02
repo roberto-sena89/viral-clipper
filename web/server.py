@@ -239,13 +239,30 @@ def _options_to_config(options: dict) -> config_mod.ClipConfig:
         except (TypeError, ValueError):
             return default
 
+    # The panel used to send ``lufs``; ClipConfig names the field
+    # ``target_lufs``. The old name matched no dataclass field, so the
+    # unknown-key filter at the end of this function dropped it and the
+    # loudness target never reached the config at all. Accept both spellings so
+    # a cached page cannot silently keep the old behaviour.
+    if "lufs" in payload and "target_lufs" not in payload:
+        payload["target_lufs"] = payload.pop("lufs")
     for key in ("min_duration", "max_duration", "target_duration", "min_score",
-                "min_gap", "lufs"):
+                "min_gap", "target_lufs"):
         if key in payload:
             payload[key] = num(key)
     for key in ("count", "beam_size", "crf", "workers"):
         if key in payload:
             payload[key] = num(key, cast=int, default=1)
+    # The automatic-mode knobs arrive as JSON numbers, but a hand-edited
+    # ajustes.toml or a string from a future caller must not reach the dataclass
+    # uncoerced: auto_ceiling is compared with ``<`` against 1 during validation
+    # and with ``>=`` against a list length when picking, where a str raises
+    # TypeError instead of failing validation.
+    for key in ("auto_margin", "max_duration_grace"):
+        if key in payload:
+            payload[key] = num(key, default=0.0)
+    if "auto_ceiling" in payload:
+        payload["auto_ceiling"] = num("auto_ceiling", cast=int, default=200)
     # font_size may come as null from the UI: None means "inherit the preset".
     if "font_size" in payload and payload["font_size"] is not None:
         payload["font_size"] = num("font_size", cast=int, default=84)

@@ -927,63 +927,73 @@ header {
 .studio-actions .btn { min-height: 42px; }
 .studio-actions .btn:not(.btn-primary) { background: #121721; }
 
-/* O card de Execucao vive DENTRO da section do hero, que e um grid de duas
-   colunas (copy | workflow). Sem isto ele seria a proxima celula vazia do
-   grid e cairia ao lado do workflow, numa coluna de ~1fr. `grid-column: 1/-1`
-   faz a linha inteira ser dele: o card atravessa a largura toda, abaixo dos
-   dois blocos, que e onde a barra de status precisa estar para ser lida
-   enquanto o job roda.
+/* ---------- FONTE E EXECUCAO LADO A LADO ----------
+   O par e o eixo da tela: o que ENTRA (link, pasta, quantidade) a esquerda,
+   o que SAI (botao, progresso, log) a direita. Empilhados, a pessoa
+   preenchia os campos, rolava a pagina e so entao achava o botao.
 
-   `align-self: start` e a primeira das duas pecas do sticky: com o
-   `align-items: center` da section o card era centrado na sua linha do grid,
-   e um item centrado nao tem espaco para deslizar. A segunda peca (a pista
-   de altura) esta na nota seguinte. */
-.studio-welcome .execution-card {
-  grid-column: 1 / -1;
-  align-self: start;
-  width: 100%;
+   O grid mora DENTRO do `<form id="clip-form">` porque os campos do Fonte
+   precisam estar no form — o botao "Gerar cortes" depende disso. Por isso
+   quem se moveu foi o card de Execucao, nao o de Fonte.
+
+   A coluna da direita e um `.studio-col` (exec + curador empilhados), nao um
+   card solto: isso e o que da PISTA ao sticky do card de Execucao SEM
+   `min-height` artificial. Medido: com o Curador FORA do par, a coluna direita
+   so tinha a Execucao (449px em repouso) contra os 734px do Fonte, e sobravam
+   **267px de espaco vazio** dentro do par — buraco visivel na tela. Com o
+   Curador dentro, o par cresce para 1305px, o vazio cai para **14px** (o gap)
+   e a viagem do sticky vai a 522px. O conteudo real substitui o numero magico
+   que eu tinha posto aqui (`min-height: 1050px`), e a tela para de ter buraco.
+
+   `align-items: start` e a peca do sticky, de novo: sem ele os itens esticam
+   ate a altura do mais alto, e `position: sticky` num item esticado nao tem
+   para onde deslizar (medido na sessao anterior — 41px de pista, nao grudava). */
+.studio-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+}
+
+/* A coluna da direita empilha Execucao + Curador com o mesmo respiro do par.
+   `align-items: start` no par faz o proprio `.studio-col` ter a altura do seu
+   conteudo — os dois cards somados, que e a pista do sticky. */
+.studio-col {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
   min-width: 0;
 }
 
-/* A PISTA DO STICKY. Medido: `position: sticky` so gruda enquanto o pai
-   ainda tem area na tela abaixo do ponto de grude.
+/* Em coluna unica o par empilha. 1100px e onde as duas colunas passam a
+   ficar estreitas demais para o Fonte, que tem 3 campos numa linha (Pasta,
+   Quantidade, Download) e quebra feio abaixo disso.
 
-   O hero e dimensionado pelo conteudo (`padding: 28px 0 26px` + as duas
-   linhas do grid), entao ele encolhe junto com o card: medi 922px de hero
-   com 539px de card, e 797px de hero com 414px de card — a viagem ficou em
-   41px nas duas. **Encolher o card NAO resolve: o pai encolhe junto.**
-
-   Varredura do scroll inteiro: a menor distancia ao top:84 era 48px, ou
-   seja ele nunca chegava a grudar. Com o hero forcado a 1500px, o mesmo
-   card grudou em 84px e ficou la. Era isto, e so isto.
-
-   `align-content: start` e obrigatorio junto — e foi o segundo erro que a
-   medicao pegou. Sem ele, o `align-items: center` da section centra as
-   LINHAS do grid na caixa que o `min-height` acabou de criar, e o card
-   desceu de 436 para 567 no documento: a pista existia, mas o card tinha
-   ido embora com ela.
-
-   O numero 1060 sai da soma, nao do gosto: topo do card no documento (436,
-   onde ele encosta no workflow acima) + altura do card (~414) + a pista que
-   ele precisa (~210). **Se um dos tres mudar, este numero muda junto** —
-   por isso esta escrito assim, e nao como um "min-height generoso".
-
-   Medicao final: hero 1060, card 353 (o `:has()` da nota seguinte tira 61px
-   de log vazio), viagem **365px**, `card_top_doc` **436 inalterado**, e a
-   varredura acha top=84. */
-@media (min-width: 961px) {
-  .studio-welcome { min-height: 1060px; align-content: start; }
+   Com o par empilhado o Curador fica ABAIXO do card de Execucao dentro do
+   `.studio-col`, entao a pista do sticky continua existindo — mas o sticky
+   empilhado ainda atrapalha (o card escolta o scroll num layout de uma coluna
+   so, onde nao ha o que acompanhar). Por isso `position: static` aqui. */
+@media (max-width: 1100px) {
+  .studio-pair { grid-template-columns: minmax(0, 1fr); }
+  .studio-pair .execution-card { position: static !important; }
 }
 
-/* Card mais enxuto no hero. Isto NAO da viagem ao sticky (o pai encolhe
-   junto — ver a nota acima); e so para o card nao parecer folgado demais
-   agora que ele ocupa a largura inteira, onde cada margem conta em dobro. */
-.studio-welcome .execution-card { padding: 15px 16px; }
-.studio-welcome .execution-card .execution-card-heading { margin-bottom: 12px; }
-.studio-welcome .execution-progress-label { margin-top: 13px; }
-.studio-welcome .execution-card #progress-label { min-height: 0; margin-bottom: 9px; }
-.studio-welcome .execution-card .execution-selection { margin-bottom: 8px; }
-.studio-welcome .execution-actions { gap: 6px; }
+/* O card de Execucao agora vive no `.studio-pair`, nao mais no hero. A
+   regra `position: sticky` (ver a nota em `.execution-card`) continua valendo,
+   e a pista vem da `.studio-col` (Execucao + Curador empilhados). O
+   `min-height: 1060px` do hero e o `min-height: 1050px` que o par chegou a
+   carregar foram REMOVIDOS — nenhum dos dois e mais necessario. */
+.studio-pair > .card,
+.studio-pair > .studio-col { min-width: 0; }
+
+/* Card mais enxuto quando dividido com o irmao: cada margem conta em dobro
+   numa coluna de ~565px, metade da largura que ele tinha sozinho. */
+.studio-pair .execution-card { padding: 15px 16px; }
+.studio-pair .execution-card .execution-card-heading { margin-bottom: 12px; }
+.studio-pair .execution-progress-label { margin-top: 13px; }
+.studio-pair .execution-card #progress-label { min-height: 0; margin-bottom: 9px; }
+.studio-pair .execution-card .execution-selection { margin-bottom: 8px; }
+.studio-pair .execution-actions { gap: 6px; }
 
 .studio-workflow {
   padding: 17px 18px 15px;
@@ -1255,16 +1265,40 @@ main > section > .card { padding: 17px; }
 /* O botao encolhe ao conteudo; sem isto, num grid de 3 colunas ele divide o
    espaco com o input e sobra menos para o caminho, que e o que se le. */
 .path-picker > .btn { flex: 0 0 auto; white-space: nowrap; }
+
+/* O par input+botao NAO cabe lado a lado numa coluna de 3 no grid.
+   Medido: em 1440x900 a coluna "Pasta" tem 105px, o botao "Selecionar" ocupa
+   78px e o gap 8px — sobram 19px para o caminho, e o input media **26px**.
+   Nao adianta `flex: 1 1 auto` no input: nao ha espaco para distribuir.
+   Em 1160px (2 colunas) a celula fica com 104px e o problema e o mesmo.
+
+   Entao o botao desce SEMPRE que a linha for de 3 ou de 2 colunas — ou seja,
+   enquanto o card-fonte estiver estreito. So na coluna unica (abaixo de
+   960px, onde o card ocupa a largura toda) o par volta a caber lado a lado. */
+.card-fonte .path-picker { flex-wrap: wrap; }
+.card-fonte .path-picker > input { flex: 1 1 100%; }
+.card-fonte .path-picker > .btn { flex: 1 1 100%; justify-content: center; }
+@media (max-width: 960px) {
+  .card-fonte .path-picker { flex-wrap: nowrap; }
+  .card-fonte .path-picker > input { flex: 1 1 auto; }
+  .card-fonte .path-picker > .btn { flex: 0 0 auto; }
+}
 .field-note { display: block; margin: -6px 0 12px; }
 /* O select de download e o de cookies ficam na mesma coluna visual; o
    disclosure alinha pelo topo da linha seguinte. */
 .cookies-box { margin-top: 4px; }
 .cookies-box:not([open]) > summary { margin-bottom: 0; }
-/* Em coluna estreita os rotulos curtos evitam a quebra que desalinhava a
-   linha. A quebra para 2 colunas vale so para a Fonte: `.triple` tambem e
-   usado por outras duas linhas do form, e elas nao foram tocadas. */
+/* A linha de 3 campos do Fonte vira 2 colunas quando nao cabe de verdade.
+   Medido: os tres controles somam ~212px de minimo (rotulos curtos + selects)
+   mais os gaps; com rotulos longos ("Pasta de saida") o minimo subia a 84px
+   so de rotulo e a coluna de 79px (1280px) quebrava o rotulo em DUAS linhas,
+   empurrando o input para baixo dos vizinhos. Abaixo de 1160px a terceira
+   coluna cai sozinha na linha de baixo, que e pior que 2+1.
+
+   Vale so para a Fonte: `.triple` tambem e usado por outras duas linhas do
+   form, e elas nao foram tocadas. */
 @media (max-width: 1160px) {
-  .card-fonte .field-row.triple { grid-template-columns: repeat(2, 1fr); }
+  .card-fonte .field-row.triple { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* ---------- CARD DO PROMPT na coluna lateral ----------
@@ -1405,10 +1439,12 @@ header .nav-actions .btn { min-height: 42px; }
    barra + respiro). O valor antigo era 82 e divergia disso em 2px: a barra
    parava raspando no header em vez de respirar. Um numero so, num lugar so.
 
-   O sticky depende de duas coisas, e as duas foram medidas: o
-   `align-self: start` (ver a nota no `.studio-welcome .execution-card`) e a
-   pista que o hero ganha com `min-height` (ver a nota da pista). Faltando
-   qualquer uma, ele nao gruda — nao ha atalho aqui. */
+   O sticky depende de duas coisas, e as duas foram medidas na sessao em que
+   ele quebrou: `align-items: start` no pai (hoje `.studio-pair`) e pista de
+   altura no pai. Sem a primeira o item estica; sem a segunda nao ha para
+   onde deslizar. Aqui as duas vem de graca: o pai e a `.studio-col`, que
+   empilha Execucao + Curador — a pista e o Curador abaixo, nao um
+   `min-height` inventado. */
 .execution-card {
   position: sticky !important;
   top: 84px !important;

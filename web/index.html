@@ -95,69 +95,6 @@
       </div>
     </div>
 
-    <div class="card execution-card" aria-labelledby="execution-title">
-      <div class="execution-card-heading">
-        <span class="execution-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19.5h16M6.5 16V11m5.5 5V5m5.5 11v-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
-        <div class="execution-heading-copy">
-          <span class="execution-kicker">PIPELINE LOCAL</span>
-          <!-- <p>, nao <h2>: esta secao ja tem o <h1 id="studio-title">. Um h2
-               aqui dentro deixaria a section com dois titulos e o
-               aria-labelledby="studio-title" passaria a nomear so parte do que
-               ela contem. O elemento e uma legenda do card, e a legenda nao
-               precisa ser um heading para o aria-labelledby funcionar. -->
-          <p class="execution-title" id="execution-title">Execução</p>
-        </div>
-        <span class="execution-format">9:16</span>
-      </div>
-
-      <div class="execution-state-row">
-        <span class="status-pill" id="status-pill" role="status" aria-live="polite"><span class="dot"></span><span id="status-text">Parado</span></span>
-        <span class="execution-elapsed"><span>Tempo</span><span id="elapsed">—</span></span>
-      </div>
-
-      <!-- Prontidão do backend. Aparece só quando não há serviço, e diz qual
-           dos dois casos é: arquivo aberto direto (origin file:, que o
-           navegador bloqueia mesmo com o servidor no ar, porque não há
-           cabeçalhos CORS) ou servidor fora do ar. São conselhos
-           diferentes, e a pagina consegue ver qual é pelo `location.protocol`.
-           Sem isto, "Backend offline" parecia dizer ao usuário que o
-           servidor estava caído quando ele estava sim rodando — e a pessoa
-           reiniciava um processo que nunca tinha parado. -->
-      <p class="backend-note" id="backend-state" role="status" aria-live="polite" hidden></p>
-
-      <div class="execution-progress-label">Acompanhamento</div>
-      <div class="progress" role="progressbar" aria-label="Progresso da execução" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-track">
-        <div class="progress-bar" id="progress-bar"></div>
-      </div>
-      <div class="execution-progress-message" id="progress-label" role="status" aria-live="polite">Pronto para iniciar.</div>
-      <!-- Etapas nomeadas, alimentadas por /run/progress. A barra sozinha nao
-           responde "o que esta acontecendo?" num job de minutos: ela fica
-           parada em 0 enquanto o pipeline baixa, transcreve e renderiza. O
-           `step-list` nasce vazio e o JS o preenche com as etapas que o
-           servidor manda — fases não são inventadas pela tela.
-           data-steps é o contrato existente: quatro chaves, uma por fase. -->
-      <ol class="step-list" id="step-list" aria-label="Etapas da execução"
-          data-steps="analise|Baixando e transcrevendo||selecao|Escolhendo os melhores trechos||relatorio|Montando o relatorio||render|Renderizando os clips"></ol>
-
-      <!-- Resumo so-leitura da secao "Selecao", que vive em /ajustes. Sem
-           isto, a decisao de duracao/motor fica invisivel no momento de
-           clicar em Gerar cortes: a pessoa rodaria sem saber com que
-           parametros. Nao e um campo — quem edita e a pagina Ajustes. -->
-      <div class="execution-selection" id="selection-summary" aria-live="polite">
-        <span class="execution-selection-label">SELEÇÃO</span>
-        <span class="execution-selection-value" id="selection-summary-value">30–60 s · alvo 42 s · híbrido</span>
-        <a class="execution-selection-edit" href="/ajustes">Ajustar</a>
-      </div>
-
-      <div class="execution-actions">
-        <button class="btn pressable btn-primary" type="button" id="btn-run-side"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m10 2 1.6 5.2L17 9l-5.4 1.8L10 16l-1.7-5.2L3 9l5.3-1.8L10 2Z" fill="currentColor"/></svg>Gerar cortes</button>
-        <button class="btn pressable" type="button" id="btn-plan" title="Analisa os trechos sem renderizar vídeos">Simular sem renderizar</button>
-      </div>
-
-      <div class="execution-log-heading"><span>Saída técnica</span><span>DIAGNÓSTICO</span></div>
-      <div class="log-box" id="log-box" role="log" aria-label="Registro técnico da execução" aria-live="polite"><span class="execution-log-empty">O registro da execução aparecerá aqui.</span></div>
-    </div>
-
   </section>
 
   <!-- CORPO -->
@@ -176,6 +113,13 @@
 
       <form id="clip-form" novalidate>
 
+
+      <!-- Fonte e Execucao lado a lado: a entrada e a saida do mesmo
+           trabalho. Empilhados, a pessoa preenchia os campos e depois
+           rolava a pagina para achar o botao; lado a lado, o que entra
+           e o que sai se leem juntos. Em coluna unica (<= 1100px) o
+           grid volta a empilhar — ver `.studio-pair` no index.css. -->
+      <div class="studio-pair">
         <div class="card card-fonte">
           <h2><span class="ico" aria-hidden="true">▶</span> Fonte</h2>
 
@@ -190,12 +134,17 @@
               </div>
             </div>
 
-            <!-- Linha de 3 colunas enxutas. Os rotulos sao curtos de proposito:
-                 "Pasta de saida" e "Modo de download" quebravam em duas linhas
-                 nas colunas estreitas, e o card ficava com altura irregular. -->
+            <!-- Linha de 3 colunas enxutas. Os rotulos sao curtos de
+                 proposito, e ha medicao por tras: "Pasta de saida" precisa
+                 de 84px de rotulo e a coluna so tem 79px em 1280px, entao
+                 o rotulo quebrava em DUAS linhas e empurrava o input para
+                 baixo dos vizinhos (medido: ctrl y=788 contra y=769 nos
+                 outros dois). "Pasta" cabe em 57px e nao quebra em largura
+                 nenhuma. O significado completo fica no hint do output,
+                 que ja diz que aceita pasta local ou sincronizada. -->
             <div class="field-row triple">
               <div class="field">
-                <label for="output">Pasta de saída</label>
+                <label for="output">Pasta</label>
                 <div class="path-picker">
                   <input type="text" id="output" name="output" value="output"
                          aria-describedby="output-hint">
@@ -244,57 +193,120 @@
             </details>
           </div>
         </div>
-
-
-
-
-        <div class="card">
-          <h2><span class="ico" aria-hidden="true">✦</span> Curador com IA (opcional)</h2>
-
-          <div class="form-section">
-            <div class="toggle-wrap">
-              <span class="tw-label">Reavaliar top candidatos com LLM</span>
-              <button class="toggle" type="button" id="ranker-llm" role="switch" aria-checked="false" aria-label="Ranker LLM"></button>
+        <div class="studio-col">
+          <div class="card execution-card" aria-labelledby="execution-title">
+            <div class="execution-card-heading">
+              <span class="execution-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19.5h16M6.5 16V11m5.5 5V5m5.5 11v-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+              <div class="execution-heading-copy">
+                <span class="execution-kicker">PIPELINE LOCAL</span>
+                <!-- <p>, nao <h2>: o card vive ao lado do "Fonte" e ambos sao
+                     legenda de card, nao secao do documento. Um <h2> aqui
+                     criaria um nivel de outline para um rotulo de painel e
+                     ainda competiria com o <h2 class="section-title"> da
+                     secao "Configuracao do corte", que e o titulo de verdade.
+                     O aria-labelledby="execution-title" funciona igual num
+                     <p> com id — nao precisa ser heading. -->
+                <p class="execution-title" id="execution-title">Execução</p>
+              </div>
+              <span class="execution-format">9:16</span>
             </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="ranker-provider">Provedor</label>
-                <!-- data-defer-enhance: as opcoes vem do servidor (/providers),
-                     depois do init. Sem isto o dropdown rico seria montado a
-                     partir de uma lista ainda vazia e ficaria sem opcao nenhuma. -->
-                <select id="ranker-provider" name="ranker-provider" data-defer-enhance
-                        aria-describedby="ranker-provider-hint"></select>
-                <span class="hint" id="ranker-provider-hint">Preenche endpoint e modelo de uma vez.</span>
-              </div>
-              <div class="field">
-                <label for="ranker-model">Modelo</label>
-                <input type="text" id="ranker-model" name="ranker-model" value="gpt-4o-mini">
-              </div>
+
+            <div class="execution-state-row">
+              <span class="status-pill" id="status-pill" role="status" aria-live="polite"><span class="dot"></span><span id="status-text">Parado</span></span>
+              <span class="execution-elapsed"><span>Tempo</span><span id="elapsed">—</span></span>
             </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="ranker-base-url">Endpoint (compatível com OpenAI)</label>
-                <input type="url" id="ranker-base-url" name="ranker-base-url" value="https://api.openai.com/v1">
-              </div>
-              <div class="field">
-                <label for="ranker-api-key-env">Variável de ambiente da chave</label>
-                <input type="text" id="ranker-api-key-env" name="ranker-api-key-env" value="OPENAI_API_KEY"
-                       aria-describedby="ranker-api-key-env-hint">
-                <span class="hint" id="ranker-api-key-env-hint">O <strong>nome</strong> da variável, nunca a chave em si. Ela nunca é gravada em arquivo do projeto.</span>
-              </div>
+
+            <!-- Prontidão do backend. Aparece só quando não há serviço, e diz qual
+                 dos dois casos é: arquivo aberto direto (origin file:, que o
+                 navegador bloqueia mesmo com o servidor no ar, porque não há
+                 cabeçalhos CORS) ou servidor fora do ar. São conselhos
+                 diferentes, e a pagina consegue ver qual é pelo `location.protocol`.
+                 Sem isto, "Backend offline" parecia dizer ao usuário que o
+                 servidor estava caído quando ele estava sim rodando — e a pessoa
+                 reiniciava um processo que nunca tinha parado. -->
+            <p class="backend-note" id="backend-state" role="status" aria-live="polite" hidden></p>
+
+            <div class="execution-progress-label">Acompanhamento</div>
+            <div class="progress" role="progressbar" aria-label="Progresso da execução" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-track">
+              <div class="progress-bar" id="progress-bar"></div>
             </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="ranker-top-n">Top-N candidatos</label>
-                <input type="number" id="ranker-top-n" name="ranker-top-n" min="1" max="100" value="24">
+            <div class="execution-progress-message" id="progress-label" role="status" aria-live="polite">Pronto para iniciar.</div>
+            <!-- Etapas nomeadas, alimentadas por /run/progress. A barra sozinha nao
+                 responde "o que esta acontecendo?" num job de minutos: ela fica
+                 parada em 0 enquanto o pipeline baixa, transcreve e renderiza. O
+                 `step-list` nasce vazio e o JS o preenche com as etapas que o
+                 servidor manda — fases não são inventadas pela tela.
+                 data-steps é o contrato existente: quatro chaves, uma por fase. -->
+            <ol class="step-list" id="step-list" aria-label="Etapas da execução"
+                data-steps="analise|Baixando e transcrevendo||selecao|Escolhendo os melhores trechos||relatorio|Montando o relatorio||render|Renderizando os clips"></ol>
+
+            <!-- Resumo so-leitura da secao "Selecao", que vive em /ajustes. Sem
+                 isto, a decisao de duracao/motor fica invisivel no momento de
+                 clicar em Gerar cortes: a pessoa rodaria sem saber com que
+                 parametros. Nao e um campo — quem edita e a pagina Ajustes. -->
+            <div class="execution-selection" id="selection-summary" aria-live="polite">
+              <span class="execution-selection-label">SELEÇÃO</span>
+              <span class="execution-selection-value" id="selection-summary-value">30–60 s · alvo 42 s · híbrido</span>
+              <a class="execution-selection-edit" href="/ajustes">Ajustar</a>
+            </div>
+
+            <div class="execution-actions">
+              <button class="btn pressable btn-primary" type="button" id="btn-run-side"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m10 2 1.6 5.2L17 9l-5.4 1.8L10 16l-1.7-5.2L3 9l5.3-1.8L10 2Z" fill="currentColor"/></svg>Gerar cortes</button>
+              <button class="btn pressable" type="button" id="btn-plan" title="Analisa os trechos sem renderizar vídeos">Simular sem renderizar</button>
+            </div>
+
+            <div class="execution-log-heading"><span>Saída técnica</span><span>DIAGNÓSTICO</span></div>
+            <div class="log-box" id="log-box" role="log" aria-label="Registro técnico da execução" aria-live="polite"><span class="execution-log-empty">O registro da execução aparecerá aqui.</span></div>
+          </div>
+          <div class="card">
+            <h2><span class="ico" aria-hidden="true">✦</span> Curador com IA (opcional)</h2>
+
+            <div class="form-section">
+              <div class="toggle-wrap">
+                <span class="tw-label">Reavaliar top candidatos com LLM</span>
+                <button class="toggle" type="button" id="ranker-llm" role="switch" aria-checked="false" aria-label="Ranker LLM"></button>
               </div>
-              <div class="field">
-                <label for="ranker-weight">Peso do modelo (0-1)</label>
-                <input type="number" id="ranker-weight" name="ranker-weight" min="0" max="1" step="0.05" value="0.6">
+              <div class="field-row">
+                <div class="field">
+                  <label for="ranker-provider">Provedor</label>
+                  <!-- data-defer-enhance: as opcoes vem do servidor (/providers),
+                       depois do init. Sem isto o dropdown rico seria montado a
+                       partir de uma lista ainda vazia e ficaria sem opcao nenhuma. -->
+                  <select id="ranker-provider" name="ranker-provider" data-defer-enhance
+                          aria-describedby="ranker-provider-hint"></select>
+                  <span class="hint" id="ranker-provider-hint">Preenche endpoint e modelo de uma vez.</span>
+                </div>
+                <div class="field">
+                  <label for="ranker-model">Modelo</label>
+                  <input type="text" id="ranker-model" name="ranker-model" value="gpt-4o-mini">
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="ranker-base-url">Endpoint (compatível com OpenAI)</label>
+                  <input type="url" id="ranker-base-url" name="ranker-base-url" value="https://api.openai.com/v1">
+                </div>
+                <div class="field">
+                  <label for="ranker-api-key-env">Variável de ambiente da chave</label>
+                  <input type="text" id="ranker-api-key-env" name="ranker-api-key-env" value="OPENAI_API_KEY"
+                         aria-describedby="ranker-api-key-env-hint">
+                  <span class="hint" id="ranker-api-key-env-hint">O <strong>nome</strong> da variável, nunca a chave em si. Ela nunca é gravada em arquivo do projeto.</span>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="ranker-top-n">Top-N candidatos</label>
+                  <input type="number" id="ranker-top-n" name="ranker-top-n" min="1" max="100" value="24">
+                </div>
+                <div class="field">
+                  <label for="ranker-weight">Peso do modelo (0-1)</label>
+                  <input type="number" id="ranker-weight" name="ranker-weight" min="0" max="1" step="0.05" value="0.6">
+                </div>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
       </form>
     </div>

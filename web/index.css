@@ -1175,6 +1175,33 @@ main > section .section-head { align-items: center; }
 main > section .section-title { font-size: 1.25rem; }
 main > section .section-sub { max-width: 72ch; margin-top: 5px; }
 main > section > .card { padding: 17px; }
+
+/* ---------- CARD FONTE: layout compacto ----------
+   O card tinha tres linhas de altura irregular: a pasta dividia a linha com a
+   quantidade, e o hint comprido da pasta empurrava a coluna. Agora sao duas
+   linhas de campo (URL sozinha; pasta/quantidade/download em tres colunas) e o
+   hint da pasta desceu para fora da grade, como nota da linha. O bloco de
+   cookies virou disclosure: e ajuste de excecao (video com restricao de
+   idade), nao de rotina, entao fica claramente destacado do resto — mas
+   aberto, porque o conteudo e curto e escondido vira o detalhe que a pessoa
+   precisava ter visto. */
+.path-picker { display: flex; gap: 8px; }
+.path-picker > input { flex: 1 1 auto; min-width: 0; }
+/* O botao encolhe ao conteudo; sem isto, num grid de 3 colunas ele divide o
+   espaco com o input e sobra menos para o caminho, que e o que se le. */
+.path-picker > .btn { flex: 0 0 auto; white-space: nowrap; }
+.field-note { display: block; margin: -6px 0 12px; }
+/* O select de download e o de cookies ficam na mesma coluna visual; o
+   disclosure alinha pelo topo da linha seguinte. */
+.cookies-box { margin-top: 4px; }
+.cookies-box:not([open]) > summary { margin-bottom: 0; }
+/* Em coluna estreita os rotulos curtos evitam a quebra que desalinhava a
+   linha. A quebra para 2 colunas vale so para a Fonte: `.triple` tambem e
+   usado por outras duas linhas do form, e elas nao foram tocadas. */
+@media (max-width: 1160px) {
+  .card-fonte .field-row.triple { grid-template-columns: repeat(2, 1fr); }
+}
+
 #queue-list { gap: 11px; }
 .job-card { border-radius: 11px; background: #141a24; }
 .gallery { gap: 13px; }

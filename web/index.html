@@ -87,7 +87,7 @@
       <ol class="studio-steps">
         <li><span class="studio-step-number">01</span><span><strong>Fonte</strong><small>Link e pasta de saída</small></span></li>
         <li><span class="studio-step-number">02</span><span><strong>Seleção</strong><small>Durações e motor, definidos em Ajustes</small></span></li>
-        <li><span class="studio-step-number">03</span><span><strong>Renderização</strong><small>Reframe e legendas</small></span></li>
+        <li><span class="studio-step-number">03</span><span><strong>Renderização</strong><small>Reframe e legendas, definidos em Ajustes</small></span></li>
       </ol>
       <div class="studio-output-spec">
         <span>FORMATO DE SAÍDA</span>
@@ -220,121 +220,6 @@
 
 
 
-        <div class="card">
-          <h2><span class="ico" aria-hidden="true">▣</span> Renderização</h2>
-
-          <div class="form-section">
-            <div class="field-row triple">
-              <div class="field">
-                <label for="layout">Reframe</label>
-                <select id="layout" name="layout">
-                  <option value="focus" selected data-title="Focus" data-desc="Corte guiado por detector de rosto — cai para center sem OpenCV">focus</option>
-                  <option value="center" data-title="Center" data-desc="Corte central fixo, sem detecção">center</option>
-                  <option value="blur" data-title="Blur" data-desc="Vídeo inteiro sobre fundo desfocado">blur</option>
-                  <option value="fit" data-title="Fit" data-desc="Vídeo inteiro com barras (letterbox)">fit</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="caption-preset">Modelo de legenda</label>
-                <select id="caption-preset" name="caption-preset" aria-describedby="caption-preset-hint">
-                  <option value="karaoke" selected data-title="Karaokê" data-desc="Branco, destaque amarelo por palavra — o visual viral clássico">karaoke</option>
-                  <option value="bold-box" data-title="Bold Box" data-desc="Texto branco sobre caixa escura — legível em qualquer fundo">bold-box</option>
-                  <option value="minimal" data-title="Minimal" data-desc="Caixa de frase, contorno fino — discreto e elegante">minimal</option>
-                  <option value="neon" data-title="Neon" data-desc="Destaque verde neon, sombra funda — brilha em vídeo escuro">neon</option>
-                  <option value="block-dark" data-title="Block Dark" data-desc="Bloco escuro opaco — separação máxima do vídeo">block-dark</option>
-                  <option value="mono" data-title="Mono" data-desc="Monoespaçada — canais de tecnologia e código">mono</option>
-                  <option value="fire" data-title="Fire" data-desc="Destaque laranja-fogo — energia e urgência">fire</option>
-                  <option value="magenta-pop" data-title="Magenta Pop" data-desc="Destaque magenta vivo — pop e irreverente">magenta-pop</option>
-                  <option value="cyan-pop" data-title="Cyan Pop" data-desc="Destaque ciano elétrico — moderno e frio">cyan-pop</option>
-                  <option value="lime-hit" data-title="Lime Hit" data-desc="Destaque lima ácido — juvenil, alto contraste">lime-hit</option>
-                  <option value="blood" data-title="Blood" data-desc="Destaque vermelho, contorno grosso — drama e choque">blood</option>
-                  <option value="gold-box" data-title="Gold Box" data-desc="Destaque dourado sobre caixa escura — premium">gold-box</option>
-                  <option value="candy" data-title="Candy" data-desc="Caixa branca, texto escuro, destaque rosa — doce e claro">candy</option>
-                  <option value="violet-vibe" data-title="Violet Vibe" data-desc="Destaque violeta com sombra funda — criativo">violet-vibe</option>
-                  <option value="ice-blue" data-title="Ice Blue" data-desc="Destaque azul-gelo em caixa fina — limpo e técnico">ice-blue</option>
-                  <option value="sunset" data-title="Sunset" data-desc="Destaque laranja-pôr-do-sol — quente sem gritar">sunset</option>
-                  <option value="bubble" data-title="Bubble" data-desc="Caixa azul-noite, destaque amarelo — conversa e podcast">bubble</option>
-                  <option value="ultra-impact" data-title="Ultra Impact" data-desc="Impact gigante, contorno grosso — máximo impacto">ultra-impact</option>
-                  <option value="slim" data-title="Slim" data-desc="Narrow com destaque ciano — compacto e informativo">slim</option>
-                  <option value="cobalt" data-title="Cobalt" data-desc="Caixa escura com destaque ciano — corporativo afiado">cobalt</option>
-                  <option value="pop-box" data-title="Pop Box" data-desc="Caixa amarela, texto escuro, destaque vermelho — chamativo">pop-box</option>
-                  <option value="roboto-bold" data-title="Roboto" data-desc="Padrão dos shorts e do YouTube, destaque ciano">roboto-bold</option>
-                  <option value="inter-bold" data-title="Inter" data-desc="Legibilidade máxima em tela pequena, destaque lima">inter-bold</option>
-                  <option value="poppins-bold" data-title="Poppins" data-desc="Geométrica e redonda, destaque magenta">poppins-bold</option>
-                  <option value="montserrat-bold" data-title="Montserrat" data-desc="Estilo TikTok, destaque dourado">montserrat-bold</option>
-                  <option value="dm-sans" data-title="DM Sans" data-desc="Minimalismo suíço, destaque laranja">dm-sans</option>
-                  <option value="cabin-bold" data-title="Cabin" data-desc="Aberta e amigável, destaque ciano claro">cabin-bold</option>
-                  <option value="verdana-bold" data-title="Verdana" data-desc="x-height gigante, destaque amarelo">verdana-bold</option>
-                  <option value="trebuchet-bold" data-title="Trebuchet" data-desc="Humanista e limpa, destaque vermelho">trebuchet-bold</option>
-                  <option value="tahoma-bold" data-title="Tahoma" data-desc="Estreita e legível, destaque ciano">tahoma-bold</option>
-                  <option value="calibri-bold" data-title="Calibri" data-desc="Clara e moderna, destaque lima">calibri-bold</option>
-                  <option value="franklin-bold" data-title="Franklin Gothic" data-desc="Condensada clássica, destaque fogo">franklin-bold</option>
-                  <option value="segoe-black" data-title="Segoe UI" data-desc="Moderna nativa, destaque violeta">segoe-black</option>
-                  <option value="helvetica-classic" data-title="Helvetica" data-desc="O amarelo clássico do cinema">helvetica-classic</option>
-                  <option value="merriweather-black" data-title="Merriweather" data-desc="Serifada editorial para ritmo lento">merriweather-black</option>
-                  <option value="arvo-bold" data-title="Arvo" data-desc="Serifada de telão para entrevistas">arvo-bold</option>
-                </select>
-                <span class="hint" id="caption-preset-hint">Define fonte, cor, caixa e destaque de uma vez. Campos vazios abaixo herdam do preset.</span>
-              </div>
-              <div class="field">
-                <label for="caption-style">Legendas</label>
-                <select id="caption-style" name="caption-style">
-                  <option value="karaoke" selected data-title="Karaokê" data-desc="Palavra ativa destacada na cor do canal">karaoke</option>
-                  <option value="block" data-title="Block" data-desc="Linha inteira em bloco, sem destaque por palavra">block</option>
-                  <option value="none" data-title="Nenhuma" data-desc="Sem legendas queimadas no vídeo">none</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="font-size">Tamanho da fonte</label>
-                <input type="number" id="font-size" name="font-size" min="20" max="200" value="" placeholder="do preset"
-                       aria-describedby="font-size-hint">
-                <span class="hint" id="font-size-hint">Vazio = usa o tamanho do modelo de legenda.</span>
-              </div>
-            </div>
-            <div class="field-row triple">
-              <div class="field">
-                <label for="crf">CRF (qualidade)</label>
-                <input type="number" id="crf" name="crf" min="0" max="51" value="20"
-                       aria-describedby="crf-hint">
-                <span class="hint" id="crf-hint">Menor = melhor qualidade.</span>
-              </div>
-              <div class="field">
-                <label for="lufs">Loudness alvo (LUFS)</label>
-                <input type="number" id="lufs" name="lufs" min="-40" max="0" step="0.5" value="-14">
-              </div>
-              <div class="field">
-                <label for="workers">Workers paralelos</label>
-                <input type="number" id="workers" name="workers" min="1" max="16" value="2"
-                       aria-describedby="workers-hint">
-                <span class="hint" id="workers-hint">Reduza se faltar RAM.</span>
-              </div>
-            </div>
-            <div class="toggle-wrap">
-              <span class="tw-label">Título do gancho no topo (desligado = só legendas)</span>
-              <button class="toggle" type="button" id="headline-on" role="switch" aria-checked="false" aria-label="Título no topo"></button>
-            </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="headline-seconds">Duração do título no topo (s)</label>
-                <input type="number" id="headline-seconds" name="headline-seconds" min="0" max="10" step="0.5" value="3"
-                       aria-describedby="headline-seconds-hint">
-                <span class="hint" id="headline-seconds-hint">Só se aplica com o título ligado acima.</span>
-              </div>
-            </div>
-            <div class="toggle-wrap">
-              <span class="tw-label">Barra de progresso no topo (desligada = vídeo limpo)</span>
-              <button class="toggle" type="button" id="progress-bar-on" role="switch" aria-checked="false" aria-label="Barra de progresso"></button>
-            </div>
-            <div class="toggle-wrap">
-              <span class="tw-label">Jump cut (remover silêncios internos)</span>
-              <button class="toggle" type="button" id="jump-cut" role="switch" aria-checked="false" aria-label="Jump cut"></button>
-            </div>
-            <div class="toggle-wrap">
-              <span class="tw-label">Normalizar loudness</span>
-              <button class="toggle active" type="button" id="loudnorm" role="switch" aria-checked="true" aria-label="Normalizar loudness"></button>
-            </div>
-          </div>
-        </div>
 
         <div class="card">
           <h2><span class="ico" aria-hidden="true">✦</span> Curador com IA (opcional)</h2>

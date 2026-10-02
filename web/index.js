@@ -11,10 +11,10 @@
     // decide onde o arquivo mora e o servidor (CURATOR_PROMPT_PATH).
     curatorPromptPath: '',
     curatorPromptExists: false,
-    // As secoes "Selecao" e "Transcricao" nao vivem mais nesta pagina: as
-    // duas moram so em /ajustes. O que fica aqui e a copia do que esta em
-    // ajustes.toml, lida de /ajustes.json no load. Os valores abaixo sao os
-    // defaults do formulario de Ajustes e valem enquanto ninguem salvou nada.
+    // As secoes "Selecao", "Transcricao" e "Renderizacao" nao vivem mais nesta
+    // pagina: as tres moram so em /ajustes. O que fica aqui e a copia do que
+    // esta em ajustes.toml, lida de /ajustes.json no load. Os valores abaixo sao
+    // os defaults do formulario de Ajustes e valem enquanto ninguem salvou nada.
     ajustes: {
       // Selecao
       min_duration: 30,
@@ -32,6 +32,18 @@
       cache_dir: 'output/cache/transcripts',
       vad_filter: true,
       transcript_cache: true,
+      // Renderizacao. Mesmos defaults do formulario de Ajustes.
+      layout: 'focus',
+      caption_preset: 'karaoke',
+      caption_style: 'karaoke',
+      font_size: null,
+      crf: 20,
+      target_lufs: -14,
+      workers: 2,
+      headline_seconds: 0,
+      progress_bar: false,
+      jump_cut: false,
+      loudnorm: true,
     },
   };
 
@@ -262,9 +274,9 @@
       download_mode: $('#download-mode').value,
       cookies_from_browser: $('#cookies-from-browser').value || null,
       cookies_file: $('#cookies-file').value.trim() || null,
-      // Selecao e Transcricao vem dos Ajustes, nao desta pagina: as duas
-      // secoes existem so em /ajustes, que grava ajustes.toml. Aqui so lemos
-      // o que foi salvo (state.ajustes) e mandamos no payload do run. Os
+      // Selecao, Transcricao e Renderizacao vem dos Ajustes, nao desta pagina:
+      // as tres secoes existem so em /ajustes, que grava ajustes.toml. Aqui so
+      // lemos o que foi salvo (state.ajustes) e mandamos no payload do run. Os
       // literais sao os mesmos defaults do formulario de Ajustes, para uma
       // instalacao nova - sem ajustes.toml ainda - rodar como antes.
       min_duration: state.ajustes.min_duration,
@@ -278,15 +290,17 @@
       beam_size: state.ajustes.beam_size,
       vad_filter: state.ajustes.vad_filter,
       transcript_cache: state.ajustes.transcript_cache,
-      layout: $('#layout').value,
-      caption_style: $('#caption-style').value,
-      caption_preset: $('#caption-preset').value,
-      font_size: parseFloat($('#font-size').value) || null,
-      crf: parseInt($('#crf').value, 10) || 20,
-      lufs: parseFloat($('#lufs').value) || -14,
-      workers: parseInt($('#workers').value, 10) || 2,
-      jump_cut: toggleOn('#jump-cut'),
-      loudnorm: toggleOn('#loudnorm'),
+      layout: state.ajustes.layout,
+      caption_style: state.ajustes.caption_style,
+      caption_preset: state.ajustes.caption_preset,
+      font_size: state.ajustes.font_size,
+      crf: state.ajustes.crf,
+      // `target_lufs`, nao `lufs`: e o nome do campo em ClipConfig. O alias
+      // antigo sobrevive no servidor so para uma pagina em cache, nao para nos.
+      target_lufs: state.ajustes.target_lufs,
+      workers: state.ajustes.workers,
+      jump_cut: state.ajustes.jump_cut,
+      loudnorm: state.ajustes.loudnorm,
       ranker: toggleOn('#ranker-llm') ? 'llm' : 'none',
       // Vazio = "personalizado": o motor entao usa o modelo e o endpoint
       // digitados abaixo. Preenchido, o provedor manda nesses dois campos.
@@ -305,12 +319,11 @@
         : null,
       cache_dir: state.ajustes.cache_dir,
       transcript_text: $('#transcript').value.trim() || null,
-      // Headline only when the toggle is on; otherwise captions are the whole
-      // burned overlay.
-      headline_seconds: toggleOn('#headline-on')
-        ? (parseFloat($('#headline-seconds').value) || 3)
-        : 0,
-      progress_bar: toggleOn('#progress-bar-on'),
+      // O titulo so e queimado com duracao > 0; o formulario de Ajustes ja
+      // grava 0 quando o toggle esta desligado, entao o valor salvo e o que
+      // vale. Nao ha mais um toggle aqui para reinterpretar.
+      headline_seconds: state.ajustes.headline_seconds,
+      progress_bar: state.ajustes.progress_bar,
       };
     return o;
   }
@@ -344,18 +357,21 @@
   function applyAjustes(settings) {
     if (!settings || typeof settings !== 'object') return;
 
-    // Agrupado por tipo de valor, e nao chave a chave: sao 12 campos de 4
-    // tipos, e a regra de cada tipo e o que importa. `undefined`/`null` nunca
-    // sobrescrevem - um ajustes.toml parcial (ou uma versao futura que ainda
-    // nao conhece um campo) nao pode apagar o que ja esta aqui.
+    // Agrupado por tipo de valor, e nao chave a chave: sao duas duzias de campos
+    // de 4 tipos, e a regra de cada tipo e o que importa. `undefined`/`null`
+    // nunca sobrescrevem - um ajustes.toml parcial (ou uma versao futura que
+    // ainda nao conhece um campo) nao pode apagar o que ja esta aqui.
     const NUMERICOS = ['min_duration', 'max_duration', 'target_duration',
-                       'min_score', 'min_gap', 'beam_size'];
-    const TEXTOS = ['engine', 'whisper_model'];
+                       'min_score', 'min_gap', 'beam_size',
+                       'crf', 'target_lufs', 'workers', 'headline_seconds'];
+    const TEXTOS = ['engine', 'whisper_model', 'layout', 'caption_preset',
+                    'caption_style'];
     // Vazio e um valor legitimo aqui: `language: ""` no formulario e
     // "auto-detectar", entao nao se pode descartar string vazia. O motor
     // recebe `null` nesse caso.
     const TEXTO_OU_NULO = ['language', 'cache_dir'];
-    const BOOLEANOS = ['vad_filter', 'transcript_cache'];
+    const BOOLEANOS = ['vad_filter', 'transcript_cache', 'progress_bar',
+                       'jump_cut', 'loudnorm'];
 
     NUMERICOS.forEach((chave) => {
       const valor = settings[chave];
@@ -376,6 +392,15 @@
         state.ajustes[chave] = settings[chave];
       }
     });
+    // `font_size` tem tres estados: numero (o usuario fixou um tamanho), null
+    // (herda do preset) e ausente (arquivo antigo, nao mexe). Tratar junto com
+    // NUMERICOS faria o null ser descartado e o preset nunca voltar a valer.
+    if ('font_size' in settings && settings.font_size !== undefined) {
+      const tamanho = Number(settings.font_size);
+      state.ajustes.font_size = (settings.font_size === null || !isFinite(tamanho))
+        ? null
+        : tamanho;
+    }
   }
 
   // O motor de analise e um valor tecnico; na tela ele aparece com o mesmo

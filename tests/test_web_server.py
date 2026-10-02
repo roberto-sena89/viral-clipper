@@ -3600,5 +3600,119 @@ class AjustesHeadingTests(unittest.TestCase):
         self.assertRegex(html, rf'<h1[^>]*id="{m.group(1)}"')
 
 
+class RenderSectionOwnershipTests(unittest.TestCase):
+    """A secao Renderizacao vive so em /ajustes; a Cortes apenas a le.
+
+    Antes as duas paginas desenhavam os mesmos 11 controles, cada uma com a sua
+    copia do markup. Duas copias do mesmo formulario divergem: a do index.html
+    ficou com o layout antigo (font-size no primeiro triple) e com o id errado
+    do loudness (`lufs`, que o servidor so aceitava por um alias de
+    compatibilidade). O index.js lia os 11 campos do DOM e mandava no POST /run.
+
+    Agora a Cortes le state.ajustes, carregado de /ajustes.json no boot -- o
+    mesmo padrao que Selecao e Transcricao ja usavam. Estes testes travam as
+    duas metades do contrato: o markup saiu de la, e a coleta le do estado.
+    """
+
+    #: Os 11 controles que migraram. O valor e a chave em state.ajustes.
+    MIGRADOS = {
+        "layout": "layout",
+        "caption-preset": "caption_preset",
+        "caption-style": "caption_style",
+        "font-size": "font_size",
+        "crf": "crf",
+        "target-lufs": "target_lufs",
+        "workers": "workers",
+        "headline-seconds": "headline_seconds",
+        "progress-bar-on": "progress_bar",
+        "jump-cut": "jump_cut",
+        "loudnorm": "loudnorm",
+    }
+
+    def setUp(self):
+        self.index_html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        self.index_js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        self.ajustes_html = (server.WEB_DIR / "ajustes.html").read_text(encoding="utf-8")
+
+    def test_the_controls_left_the_cortes_page(self):
+        for control in self.MIGRADOS:
+            self.assertNotIn(
+                f'id="{control}"', self.index_html,
+                f"o controle {control} voltou para index.html",
+            )
+
+    def test_the_controls_still_live_in_ajustes(self):
+        # O outro lado: tirar da Cortes sem ter na Ajustes apagaria o controle
+        # das duas paginas, e o valor nao teria mais onde ser editado.
+        for control in self.MIGRADOS:
+            self.assertIn(
+                f'id="{control}"', self.ajustes_html,
+                f"o controle {control} sumiu de ajustes.html",
+            )
+
+    def test_no_leftover_reader_of_the_removed_controls(self):
+        """O par e obrigatorio: tirar o campo E quem o le.
+
+        `$('#layout').value` com o markup removido estoura `TypeError` em null,
+        e o POST /run morre antes de sair -- a pagina parece quebrada sem
+        mensagem. Este teste e a rede contra isso.
+        """
+        for control in self.MIGRADOS:
+            self.assertNotIn(f"'#{control}'", self.index_js,
+                             f"index.js ainda le '#{control}'")
+
+    def test_the_collection_reads_the_saved_settings(self):
+        corpo = fn_body(self.index_js, "collectOptions")
+        for chave in self.MIGRADOS.values():
+            self.assertIn(
+                f"state.ajustes.{chave}", corpo,
+                f"collectOptions nao le state.ajustes.{chave}",
+            )
+
+    def test_every_migrated_key_is_accepted_by_the_loader(self):
+        """Quem le de state.ajustes depende de applyAjustes ter escrito la.
+
+        As chaves sao agrupadas por tipo dentro de applyAjustes; uma chave nova
+        que ninguem classificou fica com o default para sempre, e o painel
+        pareceria ignorar o que foi salvo.
+        """
+        corpo = fn_body(self.index_js, "applyAjustes")
+        for chave in self.MIGRADOS.values():
+            # font_size tem tratamento proprio (tem um terceiro estado, null).
+            existe = (f"'{chave}'" in corpo) or (f"{chave}" in corpo)
+            self.assertTrue(existe, f"applyAjustes nao classifica {chave}")
+
+    def test_the_font_size_keeps_its_third_state(self):
+        """`font_size` tem tres estados, e o null nao pode ser descartado.
+
+        Vazio = "herda do preset". Se ele entrasse junto com os numericos, o
+        filtro `valor !== null` o descartaria e o preset nunca voltaria a valer
+        depois de alguem digitar um tamanho.
+        """
+        corpo = fn_body(self.index_js, "applyAjustes")
+        self.assertIn("font_size", corpo)
+        self.assertRegex(
+            corpo, r"font_size[\s\S]{0,400}null",
+            "o tratamento de font_size perdeu o estado null",
+        )
+
+    def test_the_legacy_name_is_not_sent_by_the_page(self):
+        """A Cortes manda `target_lufs`, nao o alias `lufs`.
+
+        O alias sobrevive no servidor para uma pagina em cache; uma pagina atual
+        mandando o nome velho manteria a divida viva sem motivo.
+        """
+        corpo = fn_body(self.index_js, "collectOptions")
+        self.assertIn("target_lufs:", corpo)
+        self.assertNotRegex(corpo, r"\blufs\s*:")
+
+    def test_the_step_list_still_names_the_three_steps(self):
+        # O resumo do topo cita os tres passos; o texto do terceiro tem de dizer
+        # que os ajustes de render moram em Ajustes, como o segundo ja diz.
+        self.assertIn("Renderização", self.index_html)
+        self.assertRegex(self.index_html, r"Renderização</strong><small>[^<]*Ajustes")
+
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

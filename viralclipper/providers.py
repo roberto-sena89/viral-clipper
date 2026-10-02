@@ -102,6 +102,60 @@ PROVIDERS: dict[str, Provider] = {
         requires_key=False,
         note="Sem custo por chamada e a transcricao nao sai da maquina. Exige o servidor ligado.",
     ),
+    # ------------------------------------------------------------------
+    # Free tiers measured against the vendor docs in 2026-10-02.
+    #
+    # These exist for the reason the module docstring gives: a free tier is
+    # the difference between "the curator is an option" and "the curator is
+    # a bill". Each ``note`` carries the number that decides, because a
+    # rate limit the user cannot see is a run that dies mid-pipeline.
+    # ------------------------------------------------------------------
+    "groq": Provider(
+        name="groq",
+        label="Groq (free tier)",
+        base_url="https://api.groq.com/openai/v1",
+        model="openai/gpt-oss-120b",
+        api_key_env="GROQ_API_KEY",
+        # Free tier, per the vendor's rate-limit page: 30 RPM / 1K RPD /
+        # 8K TPM for this model. The RPD is the binding limit -- a 40-window
+        # video is 40 calls, so roughly 25 videos a day.
+        note="Free: 1K req/dia e 8K tokens/min. 30 req/min. O limite diario e o que manda.",
+    ),
+    "gemini": Provider(
+        name="gemini",
+        label="Google Gemini (free tier)",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        model="gemini-3.8-flash",
+        api_key_env="GEMINI_API_KEY",
+        # Google stopped publishing the exact RPM/RPD on the rate-limits
+        # page -- it now points at the AI Studio dashboard per project, and
+        # the pricing page only marks the model "free of charge". The note
+        # says so rather than inventing a number.
+        note="Free tier do Google (modelo marcado como gratuito). Sem RPM/RPD publicado: confira no AI Studio.",
+    ),
+    "openrouter": Provider(
+        name="openrouter",
+        label="OpenRouter (modelos :free)",
+        base_url="https://openrouter.ai/api/v1",
+        model="openrouter/free",
+        api_key_env="OPENROUTER_API_KEY",
+        # The :free catalog variant and the openrouter/free router both cost
+        # nothing; 50 requests/day without credits, 1000 after buying 10.
+        note="50 req/dia sem creditos (1K apos comprar 10). O roteador /free escolhe um modelo gratuito.",
+    ),
+    "deepseek": Provider(
+        name="deepseek",
+        label="DeepSeek (API propria, paga)",
+        base_url="https://api.deepseek.com",
+        model="deepseek-flash",
+        api_key_env="DEEPSEEK_API_KEY",
+        # Not a free tier -- listed because it is the same model the NIM
+        # entry serves, at the vendor's own price and without the NIM
+        # detour. Note the model id differs between the two: NIM wants
+        # ``deepseek-ai/deepseek-v4.1-flash``, the direct API wants
+        # ``deepseek-flash``. Copying one onto the other is a 404.
+        note="Sem tier gratuito. Mesmo modelo do NIM, direto do fornecedor. Id do modelo e diferente do NIM.",
+    ),
 }
 
 

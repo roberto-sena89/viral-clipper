@@ -340,6 +340,64 @@ class ProviderTests(unittest.TestCase):
     def test_provider_for_config_is_none_when_unnamed(self):
         self.assertIsNone(providers.provider_for_config(ClipConfig(url="u")))
 
+    def test_a_free_tier_provider_costs_nothing(self):
+        # The point of the free entries is that a person can turn the curator
+        # on without a card on file. If one of them ever needs a key it does
+        # not have, the failure lands mid-pipeline, after the download.
+        for name in ("groq", "gemini", "openrouter"):
+            with self.subTest(provider=name):
+                provider = providers.get_provider(name)
+                self.assertTrue(provider.api_key_env, f"{name} sem env var")
+                self.assertTrue(provider.requires_key, f"{name} deveria exigir chave")
+
+    def test_every_base_url_is_the_openai_shape(self):
+        # All of them speak /chat/completions, which is what lets one client
+        # cover the whole table. Two shapes are valid: a versioned base
+        # (`.../v1`, `.../v1beta/openai`) and a bare host where the vendor
+        # expects the client to append the versioned path itself. DeepSeek
+        # documents `https://api.deepseek.com` with no `/v1`, so the bare
+        # host is allowed by name -- an unknown host without a version is
+        # still a mistake, and that is what this catches.
+        BARE_HOSTS = {"https://api.deepseek.com"}
+        for provider in providers.list_providers():
+            with self.subTest(provider=provider.name):
+                url = provider.base_url.rstrip("/")
+                self.assertTrue(
+                    url.startswith("http"),
+                    f"{provider.name}: base_url nao e http",
+                )
+                ok = (
+                    url.endswith("/v1")
+                    or "/v1beta/openai" in url
+                    or url in BARE_HOSTS
+                )
+                self.assertTrue(
+                    ok, f"{provider.name}: base_url inesperada: {provider.base_url}"
+                )
+
+    def test_the_two_deepseek_entries_stay_distinct(self):
+        # The vendor's own API calls the model `deepseek-flash`; the NIM
+        # catalog calls the same model `deepseek-ai/deepseek-v4.1-flash`.
+        # Copying one id onto the other is a 404 that reads like the model
+        # was retired, so both entries are pinned here.
+        via_nim = providers.get_provider("deepseek-flash")
+        via_api = providers.get_provider("deepseek")
+        self.assertNotEqual(via_nim.base_url, via_api.base_url)
+        self.assertNotEqual(via_nim.model, via_api.model)
+        self.assertEqual(via_api.model, "deepseek-flash")
+        self.assertEqual(via_nim.model, "deepseek-ai/deepseek-v4.1-flash")
+        self.assertNotEqual(via_nim.api_key_env, via_api.api_key_env)
+
+    def test_every_provider_note_says_what_it_costs(self):
+        # The note is the only place the panel can tell a free model from a
+        # billed one. An empty note is a silent cost.
+        for provider in providers.list_providers():
+            with self.subTest(provider=provider.name):
+                self.assertTrue(
+                    provider.note.strip(),
+                    f"{provider.name} sem nota: o painel nao tem como avisar o custo",
+                )
+
 
 class ConfigValidationTests(CuratorTestCase):
     def test_a_missing_prompt_file_fails_before_the_download(self):

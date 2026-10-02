@@ -58,11 +58,17 @@
 
 <main class="wrap">
 
-  <h2 class="section-title" id="ajustes">Ajustes</h2>
-  <p class="section-sub">
-    Valem para toda execução e ficam salvos no servidor, não no navegador. A URL do vídeo e a
-    quantidade de clips continuam na página <a href="/">Cortes</a>, porque só fazem sentido lá.
-  </p>
+  <!-- O titulo da pagina e um H1, como em Cortes e Biblioteca. Antes ele era um
+       H2, e a pagina ficava sem nenhum H1: o outline comecava no nivel 2, entao
+       leitor de tela e navegacao por landmarks nao tinham a que pagina pertenciam
+       os blocos abaixo. A classe .section-title e agnostica de nivel (nao ha
+       `.section-title h2` no CSS), logo o tamanho nao muda. -->
+  <section aria-labelledby="ajustes">
+    <h1 class="section-title" id="ajustes">Ajustes</h1>
+    <p class="section-sub">
+      Valem para toda execução e ficam salvos no servidor, não no navegador. A URL do vídeo e a
+      quantidade de clips continuam na página <a href="/">Cortes</a>, porque só fazem sentido lá.
+    </p>
 
   <div class="main-grid">
 
@@ -400,6 +406,7 @@
     </aside>
 
   </div>
+  </section>
 
 </main>
 

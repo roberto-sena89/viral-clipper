@@ -1894,6 +1894,63 @@ class UiServer(http_server.ThreadingHTTPServer):
         super().server_bind()
 
 
+#: Hostnames that mean "this machine". A request whose ``Host`` is one of these
+#: is same-origin by definition, because the listener is bound to ``HOST``
+#: (127.0.0.1) and only a local process could have addressed it.
+_LOCAL_HOSTNAMES = frozenset({"127.0.0.1", "localhost", "::1", "[::1]", "0.0.0.0"})
+
+
+def _host_is_local(value: str, port: int | None = None) -> bool:
+    """True when a ``Host``/``Origin`` header addresses this machine.
+
+    Why this exists: the server listens on 127.0.0.1, so it is unreachable from
+    the network — but *not* from a web page the user has open. DNS rebinding
+    makes a domain the attacker controls resolve to 127.0.0.1, and the browser
+    then treats requests to it as same-origin, which lets that page POST to
+    /run and read /status. ``frame-ancestors`` does not help (this is not a
+    frame) and CORS does not help (the request is not cross-origin *for the
+    browser*). The one thing the attacker cannot forge is the ``Host`` header:
+    the browser writes the name it actually connected to.
+
+    ``port`` is the port this server is listening on. When given, a request
+    whose explicit port differs is refused — that is what makes the check
+    survive ``--port``. When None, any port is accepted, because the caller
+    could not tell us and refusing would break the panel.
+
+    Parsing is deliberately manual instead of ``urlparse``: the value is
+    ``host[:port]`` and nothing else, and IPv6 arrives as ``[::1]:7755``.
+
+    Returns False for an empty value — a request with no ``Host`` at all is
+    HTTP/1.0 legacy, and refusing it costs nothing since the only client is a
+    browser that always sends one.
+    """
+    text = (value or "").strip()
+    if not text:
+        return False
+    # IPv6 literal: "[::1]" or "[::1]:7755".
+    if text.startswith("["):
+        name, _, tail = text.partition("]")
+        name = name + "]"
+        port_text = tail.lstrip(":")
+    else:
+        name, sep, port_text = text.rpartition(":")
+        if not sep:
+            # No colon: bare hostname, no port.
+            name, port_text = text, ""
+        elif ":" in name:
+            # More than one colon and no brackets: a bare IPv6 literal such as
+            # "::1", which has no port.
+            name, port_text = text, ""
+    if name.lower() not in _LOCAL_HOSTNAMES:
+        return False
+    # An explicit port must be the one we are actually listening on. No port at
+    # all is allowed: the browser omits it on port 80, and a same-origin fetch
+    # from the panel always carries the real one anyway.
+    if not port_text or port is None:
+        return True
+    return port_text.isdigit() and int(port_text) == port
+
+
 class Handler(http_server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "ViralClipper/1.0"
@@ -1925,6 +1982,35 @@ class Handler(http_server.BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         super().end_headers()
+
+    def _guard_origin(self) -> bool:
+        """Refuse a request whose ``Host`` (or ``Origin``) is not this machine.
+
+        Called at the top of ``do_GET`` and ``do_POST`` so the check cannot be
+        forgotten by a route added later. A rejected request gets 403 with a
+        one-line reason and never reaches a handler: the point is that
+        ``/run`` and ``/ajustes`` are unreachable from a page the user merely
+        has open. ``Origin`` is only inspected when present — a plain browser
+        navigation does not send it, and its absence is not suspicious.
+        """
+        host = self.headers.get("Host") or ""
+        # The port we are actually bound to, not a constant: the panel accepts
+        # --port N, so a Host carrying the wrong port is not this server.
+        real_port = self.server.server_address[1]
+        if not _host_is_local(host, real_port):
+            self._send_json({"error": "host not allowed"}, 403)
+            return False
+        origin = self.headers.get("Origin")
+        if origin:
+            parsed = urlparse(origin)
+            # Compare on the authority the browser actually used, which is what
+            # a rebinding page gets wrong. A same-origin fetch sends the real
+            # one; anything else (a null origin from a sandboxed frame, a
+            # foreign site) is not this panel.
+            if not _host_is_local(parsed.netloc, real_port):
+                self._send_json({"error": "origin not allowed"}, 403)
+                return False
+        return True
 
     def _send_json(self, payload: dict, code: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -2000,6 +2086,8 @@ class Handler(http_server.BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self) -> None:  # noqa: N802
+        if not self._guard_origin():
+            return
         path = urlparse(self.path).path
         if path == "/" or path == "/index.html":
             index = WEB_DIR / "index.html"
@@ -2183,6 +2271,8 @@ class Handler(http_server.BaseHTTPRequestHandler):
         self._send_json({"error": "not found"}, 404)
 
     def do_POST(self) -> None:  # noqa: N802
+        if not self._guard_origin():
+            return
         path = urlparse(self.path).path
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else b"{}"

@@ -3507,5 +3507,98 @@ class BackendReadinessTests(unittest.TestCase):
         self.assertNotIn("setStatus('error', 'Offline')", branch)
 
 
+class HostHeaderGuardTests(unittest.TestCase):
+    """O painel recusa requisicao cujo Host nao e esta maquina.
+
+    O servidor escuta em 127.0.0.1, entao nao e alcancavel pela rede — mas e
+    alcancavel por uma pagina que o usuario tenha aberta, via DNS rebinding:
+    um dominio do atacante resolve para 127.0.0.1 e o navegador passa a tratar
+    as requisicoes como mesma origem, o que deixa aquela pagina dar POST em
+    /run e ler /status. `frame-ancestors` nao ajuda (nao e frame) e CORS nao
+    ajuda (para o navegador nao e cross-origin). O Host e a unica coisa que o
+    atacante nao forja, porque o navegador escreve o nome em que conectou.
+    """
+
+    def test_only_a_local_host_is_accepted(self):
+        # Formas legitimas: a mesma origem em que o painel e servido.
+        for ok in ("127.0.0.1:7755", "localhost:7755", "127.0.0.1",
+                   "[::1]:7755", "::1", "LOCALHOST:7755"):
+            self.assertTrue(server._host_is_local(ok), ok)
+        # Formas que um rebinding produz, e os sufixos que uma allowlist
+        # ingenua (com `endswith`) deixaria passar.
+        for ruim in ("evil.com", "evil.com:7755", "127.0.0.1.evil.com",
+                     "localhost.evil.com", "", "   "):
+            self.assertFalse(server._host_is_local(ruim), ruim)
+
+    def test_the_port_has_to_be_the_one_we_listen_on(self):
+        """Um Host com outra porta nao e este servidor falando consigo.
+
+        Sem isto o guarda nao sobrevive ao `--port`: bastava acertar o nome.
+        """
+        self.assertTrue(server._host_is_local("127.0.0.1:8000", 8000))
+        self.assertFalse(server._host_is_local("127.0.0.1:7755", 8000))
+        # Sem porta no Host e aceito: o navegador omite na 80.
+        self.assertTrue(server._host_is_local("127.0.0.1", 8000))
+
+    def test_both_entrypoints_call_the_guard(self):
+        """A guarda fica no topo de do_GET e do_POST, nao dentro de uma rota.
+
+        Uma checagem por rota e uma que a proxima rota esquece; foi assim que
+        a pagina de Ajustes pôde nascer sem H1 e ninguem notou.
+        """
+        import inspect
+
+        for nome in ("do_GET", "do_POST"):
+            src = inspect.getsource(getattr(server.Handler, nome))
+            self.assertIn("_guard_origin()", src, nome)
+            # Tem de vir antes de qualquer despacho de rota.
+            self.assertLess(src.index("_guard_origin()"), src.index("urlparse"),
+                            f"{nome}: a guarda vem depois do parse do path")
+
+
+class AjustesHeadingTests(unittest.TestCase):
+    """A pagina de Ajustes tem um H1, como as outras duas.
+
+    Ela era a unica das tres sem heading de nivel 1 — o outline comecava no
+    H2, entao leitor de tela e navegacao por landmarks nao tinham a que pagina
+    pertenciam os blocos seguintes.
+    """
+
+    def html(self) -> str:
+        return page_source("ajustes.html")
+
+    def test_the_page_has_exactly_one_h1(self):
+        html = self.html()
+        self.assertEqual(len(re.findall(r"<h1[\s>]", html)), 1, "H1 unico")
+
+    def test_the_h1_names_the_page(self):
+        html = self.html()
+        m = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.S)
+        self.assertIsNotNone(m, "a pagina tem de ter um H1")
+        self.assertEqual(re.sub(r"<[^>]+>", "", m.group(1)).strip(), "Ajustes")
+
+    def test_no_heading_level_is_skipped(self):
+        """O outline nao salta de nivel: H1 -> H2, nunca H1 -> H3."""
+        html = self.html()
+        niveis = [int(t[1]) for t in re.findall(r"<(h[1-6])[\s>]", html)]
+        self.assertTrue(niveis, "a pagina tem headings")
+        self.assertEqual(niveis[0], 1, "o outline comeca no H1")
+        for anterior, seguinte in zip(niveis, niveis[1:]):
+            self.assertLessEqual(seguinte, anterior + 1,
+                                 f"salto de H{anterior} para H{seguinte}")
+
+    def test_the_h1_is_labelled_by_its_section(self):
+        """A secao que abriga o titulo tem nome acessivel.
+
+        Sem `aria-labelledby`, a navegacao por landmarks (rotor do VoiceOver)
+        ouve "regiao" sem nome — o heading e a regiao sao coisas separadas.
+        """
+        html = self.html()
+        m = re.search(r'<section[^>]*aria-labelledby="([^"]+)"', html)
+        self.assertIsNotNone(m, "a secao do titulo precisa de aria-labelledby")
+        self.assertIn(f'id="{m.group(1)}"', html, "o alvo do aria-labelledby existe")
+        self.assertRegex(html, rf'<h1[^>]*id="{m.group(1)}"')
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

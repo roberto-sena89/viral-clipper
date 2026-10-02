@@ -86,7 +86,7 @@
       </div>
       <ol class="studio-steps">
         <li><span class="studio-step-number">01</span><span><strong>Fonte</strong><small>Link e pasta de saída</small></span></li>
-        <li><span class="studio-step-number">02</span><span><strong>Seleção</strong><small>Momentos com potencial</small></span></li>
+        <li><span class="studio-step-number">02</span><span><strong>Seleção</strong><small>Durações e motor, definidos em Ajustes</small></span></li>
         <li><span class="studio-step-number">03</span><span><strong>Renderização</strong><small>Reframe e legendas</small></span></li>
       </ol>
       <div class="studio-output-spec">
@@ -215,46 +215,6 @@
           </div>
         </div>
 
-        <div class="card">
-          <h2><span class="ico" aria-hidden="true">◎</span> Seleção</h2>
-
-          <div class="form-section">
-            <div class="field-row triple">
-              <div class="field">
-                <label for="min-duration">Duração mínima (s)</label>
-                <input type="number" id="min-duration" name="min-duration" min="5" max="300" step="0.5" value="30">
-              </div>
-              <div class="field">
-                <label for="max-duration">Duração máxima (s)</label>
-                <input type="number" id="max-duration" name="max-duration" min="5" max="600" step="0.5" value="60">
-              </div>
-              <div class="field">
-                <label for="target-duration">Alvo (s)</label>
-                <input type="number" id="target-duration" name="target-duration" min="5" max="600" step="0.5" value="42">
-              </div>
-            </div>
-            <div class="field-row triple">
-              <div class="field">
-                <label for="min-score">Nota mínima (0-100)</label>
-                <input type="number" id="min-score" name="min-score" min="0" max="100" step="1" value="0"
-                       aria-describedby="min-score-hint">
-                <span class="hint" id="min-score-hint">0 desliga o portão.</span>
-              </div>
-              <div class="field">
-                <label for="min-gap">Silêncio entre clips (s)</label>
-                <input type="number" id="min-gap" name="min-gap" min="0" max="60" step="0.5" value="6">
-              </div>
-              <div class="field">
-                <label for="engine">Motor de análise</label>
-                <select id="engine" name="engine">
-                  <option value="hybrid" selected data-title="Hybrid" data-desc="Transcrição + energia — recomendado">hybrid</option>
-                  <option value="audio" data-title="Audio" data-desc="Só energia de áudio, sem transcrição (rápido, cego a hooks)">audio</option>
-                  <option value="transcript" data-title="Transcript" data-desc="Só texto — falha se o whisper não carregar">transcript</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
 
         <div class="card">
           <h2><span class="ico" aria-hidden="true">♪</span> Transcrição</h2>
@@ -554,6 +514,16 @@
              data-steps é o contrato existente: quatro chaves, uma por fase. -->
         <ol class="step-list" id="step-list" aria-label="Etapas da execução"
             data-steps="analise|Baixando e transcrevendo||selecao|Escolhendo os melhores trechos||relatorio|Montando o relatorio||render|Renderizando os clips"></ol>
+
+        <!-- Resumo so-leitura da secao "Selecao", que vive em /ajustes. Sem
+             isto, a decisao de duracao/motor fica invisivel no momento de
+             clicar em Gerar cortes: a pessoa rodaria sem saber com que
+             parametros. Nao e um campo — quem edita e a pagina Ajustes. -->
+        <div class="execution-selection" id="selection-summary" aria-live="polite">
+          <span class="execution-selection-label">SELEÇÃO</span>
+          <span class="execution-selection-value" id="selection-summary-value">30–60 s · alvo 42 s · híbrido</span>
+          <a class="execution-selection-edit" href="/ajustes">Ajustar</a>
+        </div>
 
         <div class="execution-actions">
           <button class="btn pressable btn-primary" type="button" id="btn-run-side"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m10 2 1.6 5.2L17 9l-5.4 1.8L10 16l-1.7-5.2L3 9l5.3-1.8L10 2Z" fill="currentColor"/></svg>Gerar cortes</button>

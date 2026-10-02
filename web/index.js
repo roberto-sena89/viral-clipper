@@ -11,6 +11,18 @@
     // decide onde o arquivo mora e o servidor (CURATOR_PROMPT_PATH).
     curatorPromptPath: '',
     curatorPromptExists: false,
+    // Os 6 campos de selecao nao vivem mais nesta pagina: a secao "Selecao"
+    // mora so em /ajustes. O que fica aqui e a copia do que esta em
+    // ajustes.toml, lida de /ajustes.json no load. Os valores abaixo sao os
+    // defaults do formulario de Ajustes e valem enquanto ninguem salvou nada.
+    ajustes: {
+      min_duration: 30,
+      max_duration: 60,
+      target_duration: 42,
+      min_score: 0,
+      min_gap: 6,
+      engine: 'hybrid',
+    },
   };
 
   // O rail (lista de destinos, marcacao da pagina atual e o menu do header)
@@ -240,12 +252,17 @@
       download_mode: $('#download-mode').value,
       cookies_from_browser: $('#cookies-from-browser').value || null,
       cookies_file: $('#cookies-file').value.trim() || null,
-      min_duration: parseFloat($('#min-duration').value) || 30,
-      max_duration: parseFloat($('#max-duration').value) || 60,
-      target_duration: parseFloat($('#target-duration').value) || 42,
-      min_score: parseFloat($('#min-score').value) || 0,
-      min_gap: parseFloat($('#min-gap').value) || 6,
-      engine: $('#engine').value,
+      // Selecao vem dos Ajustes, nao desta pagina: a secao "Selecao" vive
+      // so em /ajustes, que grava ajustes.toml. Aqui so lemos o que foi
+      // salvo (state.ajustes) e mandamos no payload do run. Os literais sao
+      // os mesmos defaults do formulario de Ajustes, para uma instalacao
+      // nova - sem ajustes.toml ainda - rodar exatamente como antes.
+      min_duration: state.ajustes.min_duration,
+      max_duration: state.ajustes.max_duration,
+      target_duration: state.ajustes.target_duration,
+      min_score: state.ajustes.min_score,
+      min_gap: state.ajustes.min_gap,
+      engine: state.ajustes.engine,
       whisper_model: $('#whisper-model').value,
       language: $('#language').value || null,
       beam_size: parseInt($('#beam-size').value, 10) || 1,
@@ -306,6 +323,61 @@
       const http = String(e.message).startsWith('HTTP ');
       return { error: e.message, offline: true, sem_conexao: !http };
     }
+  }
+
+  // ---------- ajustes de selecao (vindos da pagina Ajustes) ----------
+  // A secao "Selecao" foi removida desta pagina de propósito: ela e ajuste de
+  // uma vez, nao parametro de cada rodada, e ter os mesmos campos nos dois
+  // lugares criava duas fontes de verdade para o mesmo valor. Agora quem
+  // escreve e a pagina Ajustes (POST /ajustes -> ajustes.toml) e quem le e
+  // esta, no load. Sem chave no arquivo, o valor atual de state.ajustes fica.
+  function applyAjustes(settings) {
+    if (!settings || typeof settings !== 'object') return;
+    const numeros = ['min_duration', 'max_duration', 'target_duration',
+                     'min_score', 'min_gap'];
+    numeros.forEach((chave) => {
+      const valor = settings[chave];
+      if (valor !== undefined && valor !== null && isFinite(Number(valor))) {
+        state.ajustes[chave] = Number(valor);
+      }
+    });
+    if (typeof settings.engine === 'string' && settings.engine) {
+      state.ajustes.engine = settings.engine;
+    }
+  }
+
+  // O motor de analise e um valor tecnico; na tela ele aparece com o mesmo
+  // rotulo do formulario de Ajustes, senao a pessoa le "hybrid" aqui e
+  // "Hybrid" la e nao sabe que e a mesma coisa.
+  const ENGINE_LABELS = { hybrid: 'híbrido', audio: 'áudio', transcript: 'transcrição' };
+
+  // Numero sem casa decimal inutil: 30 sai "30", 42.5 sai "42,5". O resumo e
+  // para bater o olho, nao para justapor zeros.
+  function fmtSeconds(valor) {
+    return Number(valor).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  }
+
+  function renderSelectionSummary() {
+    const el = $('#selection-summary-value');
+    if (!el) return;
+    const a = state.ajustes;
+    const partes = [fmtSeconds(a.min_duration) + '–' + fmtSeconds(a.max_duration) + ' s'];
+    partes.push('alvo ' + fmtSeconds(a.target_duration) + ' s');
+    partes.push(ENGINE_LABELS[a.engine] || a.engine);
+    // O portao de nota so aparece quando esta ligado: um "nota ≥ 0" seria
+    // ruido, porque 0 significa "sem portao" e nao uma exigencia.
+    if (Number(a.min_score) > 0) partes.push('nota ≥ ' + fmtSeconds(a.min_score));
+    el.textContent = partes.join(' · ');
+  }
+
+  async function loadAjustes() {
+    const r = await api('/ajustes.json');
+    // Servidor fora do ar ou rota ausente: os defaults de state.ajustes ja
+    // cobrem isso, e a pagina nao tem onde mostrar um erro so por causa de
+    // um valor que ela nem edita mais. Segue calada com os defaults.
+    if (r.offline || r.error) return;
+    applyAjustes(r.settings || {});
+    renderSelectionSummary();
   }
 
   // ---------- curador: provedores e prompt ----------
@@ -1371,6 +1443,12 @@
   // e ela nao pode esperar quatro segundos para aparecer.
   startPolling();
   poll();
+
+  // Os 6 parametros de selecao vem de /ajustes.json; sem esperar por eles, um
+  // clique em Rodar logo apos o load mandaria os defaults do HTML em vez do
+  // que esta salvo. A leitura e rapida (arquivo local) e nao bloqueia a tela.
+  renderSelectionSummary();
+  loadAjustes();
 
   renderQueue();
   renderClips();

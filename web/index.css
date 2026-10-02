@@ -1338,6 +1338,24 @@ header .nav-actions .btn { min-height: 42px; }
 .execution-card .step-list li[data-state="feito"] { border-color: rgba(52,211,153,.11); }
 .execution-card .backend-note { margin: 10px 0 0; border-left-color: var(--danger); font-size: .73rem; }
 .execution-actions { display: grid; gap: 8px; }
+/* Resumo so-leitura da secao "Selecao" (que mora em /ajustes). Discreto de
+   proposito: e contexto para nao rodar no escuro, nao um campo a preencher. */
+.execution-selection {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255,255,255,.045);
+  border-radius: 8px;
+  background: rgba(255,255,255,.022);
+}
+.execution-selection-label { color: #737f91; font-size: .52rem; font-weight: 700; letter-spacing: .11em; }
+.execution-selection-value { color: #c5ceda; font-size: .7rem; font-variant-numeric: tabular-nums; }
+.execution-selection-edit { color: #ff4fae; font-size: .62rem; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.execution-selection-edit:hover, .execution-selection-edit:focus-visible { text-decoration: underline; }
 .execution-actions .btn { display: flex; width: 100%; min-height: 43px; align-items: center; justify-content: center; gap: 8px; margin: 0 !important; font-size: .78rem; }
 .execution-actions .btn-primary { min-height: 46px; }
 .execution-actions .btn svg { flex: 0 0 16px; width: 16px; height: 16px; }

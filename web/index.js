@@ -11,17 +11,27 @@
     // decide onde o arquivo mora e o servidor (CURATOR_PROMPT_PATH).
     curatorPromptPath: '',
     curatorPromptExists: false,
-    // Os 6 campos de selecao nao vivem mais nesta pagina: a secao "Selecao"
-    // mora so em /ajustes. O que fica aqui e a copia do que esta em
+    // As secoes "Selecao" e "Transcricao" nao vivem mais nesta pagina: as
+    // duas moram so em /ajustes. O que fica aqui e a copia do que esta em
     // ajustes.toml, lida de /ajustes.json no load. Os valores abaixo sao os
     // defaults do formulario de Ajustes e valem enquanto ninguem salvou nada.
     ajustes: {
+      // Selecao
       min_duration: 30,
       max_duration: 60,
       target_duration: 42,
       min_score: 0,
       min_gap: 6,
       engine: 'hybrid',
+      // Transcricao. `language: null` e o "auto-detectar" do formulario (o
+      // select usa value="" para isso) - e o que o motor entende como deixa
+      // o Whisper decidir.
+      whisper_model: 'small',
+      language: null,
+      beam_size: 1,
+      cache_dir: 'output/cache/transcripts',
+      vad_filter: true,
+      transcript_cache: true,
     },
   };
 
@@ -252,22 +262,22 @@
       download_mode: $('#download-mode').value,
       cookies_from_browser: $('#cookies-from-browser').value || null,
       cookies_file: $('#cookies-file').value.trim() || null,
-      // Selecao vem dos Ajustes, nao desta pagina: a secao "Selecao" vive
-      // so em /ajustes, que grava ajustes.toml. Aqui so lemos o que foi
-      // salvo (state.ajustes) e mandamos no payload do run. Os literais sao
-      // os mesmos defaults do formulario de Ajustes, para uma instalacao
-      // nova - sem ajustes.toml ainda - rodar exatamente como antes.
+      // Selecao e Transcricao vem dos Ajustes, nao desta pagina: as duas
+      // secoes existem so em /ajustes, que grava ajustes.toml. Aqui so lemos
+      // o que foi salvo (state.ajustes) e mandamos no payload do run. Os
+      // literais sao os mesmos defaults do formulario de Ajustes, para uma
+      // instalacao nova - sem ajustes.toml ainda - rodar como antes.
       min_duration: state.ajustes.min_duration,
       max_duration: state.ajustes.max_duration,
       target_duration: state.ajustes.target_duration,
       min_score: state.ajustes.min_score,
       min_gap: state.ajustes.min_gap,
       engine: state.ajustes.engine,
-      whisper_model: $('#whisper-model').value,
-      language: $('#language').value || null,
-      beam_size: parseInt($('#beam-size').value, 10) || 1,
-      vad_filter: toggleOn('#vad-filter'),
-      transcript_cache: toggleOn('#transcript-cache'),
+      whisper_model: state.ajustes.whisper_model,
+      language: state.ajustes.language,
+      beam_size: state.ajustes.beam_size,
+      vad_filter: state.ajustes.vad_filter,
+      transcript_cache: state.ajustes.transcript_cache,
       layout: $('#layout').value,
       caption_style: $('#caption-style').value,
       caption_preset: $('#caption-preset').value,
@@ -293,7 +303,7 @@
       curator_prompt_file: (toggleOn('#ranker-llm') && state.curatorPromptExists)
         ? state.curatorPromptPath
         : null,
-      cache_dir: $('#cache-dir').value.trim() || null,
+      cache_dir: state.ajustes.cache_dir,
       transcript_text: $('#transcript').value.trim() || null,
       // Headline only when the toggle is on; otherwise captions are the whole
       // burned overlay.
@@ -333,17 +343,39 @@
   // esta, no load. Sem chave no arquivo, o valor atual de state.ajustes fica.
   function applyAjustes(settings) {
     if (!settings || typeof settings !== 'object') return;
-    const numeros = ['min_duration', 'max_duration', 'target_duration',
-                     'min_score', 'min_gap'];
-    numeros.forEach((chave) => {
+
+    // Agrupado por tipo de valor, e nao chave a chave: sao 12 campos de 4
+    // tipos, e a regra de cada tipo e o que importa. `undefined`/`null` nunca
+    // sobrescrevem - um ajustes.toml parcial (ou uma versao futura que ainda
+    // nao conhece um campo) nao pode apagar o que ja esta aqui.
+    const NUMERICOS = ['min_duration', 'max_duration', 'target_duration',
+                       'min_score', 'min_gap', 'beam_size'];
+    const TEXTOS = ['engine', 'whisper_model'];
+    // Vazio e um valor legitimo aqui: `language: ""` no formulario e
+    // "auto-detectar", entao nao se pode descartar string vazia. O motor
+    // recebe `null` nesse caso.
+    const TEXTO_OU_NULO = ['language', 'cache_dir'];
+    const BOOLEANOS = ['vad_filter', 'transcript_cache'];
+
+    NUMERICOS.forEach((chave) => {
       const valor = settings[chave];
       if (valor !== undefined && valor !== null && isFinite(Number(valor))) {
         state.ajustes[chave] = Number(valor);
       }
     });
-    if (typeof settings.engine === 'string' && settings.engine) {
-      state.ajustes.engine = settings.engine;
-    }
+    TEXTOS.forEach((chave) => {
+      const valor = settings[chave];
+      if (typeof valor === 'string' && valor) state.ajustes[chave] = valor;
+    });
+    TEXTO_OU_NULO.forEach((chave) => {
+      const valor = settings[chave];
+      if (typeof valor === 'string') state.ajustes[chave] = valor || null;
+    });
+    BOOLEANOS.forEach((chave) => {
+      if (typeof settings[chave] === 'boolean') {
+        state.ajustes[chave] = settings[chave];
+      }
+    });
   }
 
   // O motor de analise e um valor tecnico; na tela ele aparece com o mesmo

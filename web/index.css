@@ -1141,12 +1141,18 @@ header {
 .btn-primary:hover { background: #ff78bf; filter: none; }
 .pressable:active { transform: translateY(1px); }
 
+/* Só o PRIMEIRO card do aside e sticky: o topo do pipeline fica a vista
+   enquanto a pessoa rola o formulario. Com um segundo card (o Prompt do
+   curador), `sticky` nos dois os empilhava em `top: 82px` e um cobria o
+   outro — os dois travavam na mesma linha. */
 aside > .card {
-  position: sticky !important;
-  top: 82px !important;
   padding: 17px;
   border-color: rgba(112, 201, 238, 0.18);
   background: linear-gradient(160deg, rgba(112, 201, 238, 0.045), transparent 42%), #11161f;
+}
+aside > .card:first-child {
+  position: sticky !important;
+  top: 82px !important;
 }
 aside .card h2 .ico {
   border-color: rgba(112, 201, 238, 0.2);
@@ -1201,6 +1207,17 @@ main > section > .card { padding: 17px; }
 @media (max-width: 1160px) {
   .card-fonte .field-row.triple { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ---------- CARD DO PROMPT na coluna lateral ----------
+   O card mora no aside (292-340px), nao na coluna principal. A largura
+   estreita muda dois ajustes: `rows="12"` num textarea de ~300px vira uma
+   tira alta demais, entao a ALTURA passa a ser do CSS (e o resize vertical
+   continua disponivel); e os dois botoes com o status ao lado nao cabem
+   numa linha, entao o status desce sozinho em vez de empurrar os botoes. */
+.prompt-card textarea { min-height: 150px; resize: vertical; }
+.prompt-card .prompt-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.prompt-card .prompt-actions .btn { flex: 1 1 auto; }
+.prompt-card .prompt-actions #curator-prompt-status { flex: 1 0 100%; }
 
 #queue-list { gap: 11px; }
 .job-card { border-radius: 11px; background: #141a24; }

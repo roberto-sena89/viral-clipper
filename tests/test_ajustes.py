@@ -846,5 +846,131 @@ class AjustesPayloadTests(unittest.TestCase):
         self.assertEqual(payload["auto_ceiling"], 40)
 
 
+class _FakeHandler:
+    """O minimo de um handler para chamar os metodos de rota sem socket.
+
+    ``_send_json`` e o unico ponto de saida dos handlers, entao capturar o
+    payload e o status aqui e equivalente a ler a resposta HTTP -- sem abrir
+    porta, sem thread, sem dormir. O ``Host``/``Origin`` nao entram: quem
+    valida isso e ``_guard_origin``, no topo do ``do_POST``, e ele tem teste
+    proprio.
+    """
+
+    def __init__(self, handler_cls):
+        self._handler_cls = handler_cls
+        self.sent = None
+
+    def _send_json(self, payload, code=200):
+        self.sent = (code, payload)
+
+    def __getattr__(self, name):
+        # Os metodos de rota sao lookups de classe; liga-los a esta instancia
+        # falsa e o que faz `self._send_json` cair no capturador acima.
+        attr = getattr(self._handler_cls, name)
+        return attr.__get__(self, self._handler_cls)
+
+
+class CuratorPromptSaveTests(unittest.TestCase):
+    """``POST /prompts/curador`` — a rota que reescreve o prompt do motor.
+
+    Esta rota ficou sem teste enquanto era justamente a que podia estragar o
+    arquivo que o motor le. O estrago que ela ja fez uma vez: gravou um arquivo
+    em CRLF (o versionado e LF, entao o diff virou uma linha por linha) e
+    aceitou um texto que nao mencionava o JSON de resposta -- o modelo passou a
+    receber um system prompt que nao descrevia a tarefa de ranquear.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.path = self.tmp / "curador.txt"
+        for alvo, valor in (
+            ("CURATOR_PROMPT_PATH", self.path),
+            ("MAX_CURATOR_PROMPT_BYTES", 64 * 1024),
+        ):
+            p = mock.patch.object(server, alvo, valor)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def _save(self, text):
+        h = _FakeHandler(server.Handler)
+        h._handle_save_curator_prompt({"text": text})
+        return h.sent
+
+    def test_it_writes_the_text_to_the_servers_own_path(self):
+        code, payload = self._save("regras do curador\n")
+        self.assertEqual(code, 200)
+        self.assertEqual(self.path.read_text(encoding="utf-8"), "regras do curador\n")
+        self.assertTrue(payload["ok"])
+        self.assertEqual(Path(payload["path"]), self.path)
+
+    def test_it_never_writes_crlf(self):
+        # O arquivo versionado e LF. `write_text` no Windows transformaria
+        # todo `\n` em `\r\n` e o `git diff` passaria a mostrar o arquivo
+        # inteiro como alterado -- foi exatamente o que aconteceu.
+        self._save("linha um\nlinha dois\nlinha tres\n")
+        cru = self.path.read_bytes()
+        self.assertEqual(cru.count(b"\r\n"), 0, "gravou CRLF num arquivo LF")
+        self.assertEqual(cru.count(b"\n"), 3)
+
+    def test_crlf_from_the_client_is_normalised_away(self):
+        # Um textarea de origem Windows pode mandar CRLF no corpo do POST.
+        # Normalizar aqui e o que impede a divergencia de nascer na rota.
+        self._save("linha um\r\nlinha dois\r\n")
+        cru = self.path.read_bytes()
+        self.assertEqual(cru.count(b"\r\n"), 0)
+        self.assertEqual(self.path.read_text(encoding="utf-8"), "linha um\nlinha dois\n")
+
+    def test_an_empty_body_is_refused_and_writes_nothing(self):
+        # `load_curator_prompt` trata arquivo vazio como fatal. Aceitar aqui
+        # transformaria um clique acidental em falha dura em toda execucao
+        # seguinte, apontando para um arquivo que o usuario acha que preencheu.
+        code, payload = self._save("   \n\n  ")
+        self.assertEqual(code, 400)
+        self.assertIn("error", payload)
+        self.assertFalse(self.path.exists(), "recusou mas gravou mesmo assim")
+
+    def test_a_non_string_body_is_refused(self):
+        h = _FakeHandler(server.Handler)
+        h._handle_save_curator_prompt({"text": 123})
+        code, _ = h.sent
+        self.assertEqual(code, 400)
+
+    def test_it_refuses_a_prompt_over_the_byte_ceiling(self):
+        with mock.patch.object(server, "MAX_CURATOR_PROMPT_BYTES", 10):
+            code, payload = self._save("x" * 64)
+        self.assertEqual(code, 400)
+        self.assertIn("error", payload)
+        self.assertFalse(self.path.exists())
+
+    def test_it_measures_the_ceiling_in_bytes_not_characters(self):
+        # Um acento custa 2 bytes em UTF-8. Contar caracteres deixaria passar
+        # um arquivo que estoura o limite real de disco.
+        with mock.patch.object(server, "MAX_CURATOR_PROMPT_BYTES", 10):
+            code, _ = self._save("á" * 6)  # 12 bytes, 6 caracteres
+        self.assertEqual(code, 400)
+
+    def test_it_creates_the_parent_directory(self):
+        self.path = self.tmp / "prompts" / "curador.txt"
+        with mock.patch.object(server, "CURATOR_PROMPT_PATH", self.path):
+            code, _ = self._save("conteudo\n")
+        self.assertEqual(code, 200)
+        self.assertTrue(self.path.is_file())
+
+    def test_the_read_route_reports_the_same_path_this_route_writes(self):
+        # Se o GET que a pagina usa para "Carregar do arquivo" e o POST usarem
+        # caminhos diferentes, o usuario edita um arquivo e o motor le outro.
+        self.assertEqual(
+            server._curator_prompt_payload()["path"], str(server.CURATOR_PROMPT_PATH)
+        )
+
+    def test_the_read_route_does_not_pretend_a_missing_file_exists(self):
+        payload = server._curator_prompt_payload()
+        self.assertFalse(payload["exists"])
+        self.assertEqual(payload["text"], "")
+        # O caminho vai junto mesmo assim: o painel mostra "salve para criar",
+        # que e uma instrucao diferente de "edite".
+        self.assertTrue(payload["path"])
+
+
 if __name__ == "__main__":
     unittest.main()

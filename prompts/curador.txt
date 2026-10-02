@@ -70,7 +70,7 @@ vice-versa. As duas precisam funcionar sozinhas.
 
 HASHTAGS
 
-De 5 a 8 hashtags para o post, numa unica linha, separadas por espaco, cada
+De 5 a 10 hashtags para o post, numa unica linha, separadas por espaco, cada
 uma comecando com #, sem acento e sem espaco dentro, tudo em minusculo.
 
 Misture tres camadas: uma ampla de alcance (#viral #fyp #paravoce), uma do tema

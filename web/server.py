@@ -2702,10 +2702,16 @@ class Handler(http_server.BaseHTTPRequestHandler):
                 {"error": f"prompt maior que {MAX_CURATOR_PROMPT_BYTES} bytes"}, 400
             )
             return
+        # Grava com bytes e com o separador normalizado. `write_text` no Windows
+        # converte todo `\n` em `\r\n`, e o arquivo versionado e LF: o resultado
+        # era um diff de uma linha por linha do arquivo e um prompt que nao
+        # batia com o que o git guarda. O painel e um editor de texto do repo;
+        # ele tem de gravar no dialeto do repo.
+        encoded = encoded.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
         path = CURATOR_PROMPT_PATH
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text, encoding="utf-8")
+            path.write_bytes(encoded)
         except OSError as exc:
             self._send_json({"error": f"nao consegui gravar {path}: {exc}"}, 500)
             return

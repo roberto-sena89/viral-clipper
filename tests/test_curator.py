@@ -17,6 +17,7 @@ The provider is injected throughout, so nothing here touches the network.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -151,6 +152,135 @@ class BuildMessagesTests(CuratorTestCase):
             self.config(curator_prompt_file=path), _window("texto")
         )
         self.assertNotIn("autocontido", user)
+
+
+class ShippedPromptTests(unittest.TestCase):
+    """O prompt versionado (`prompts/curador.txt`) contra o contrato do motor.
+
+    O arquivo e o contrato de resposta sao escritos em lugares diferentes: um e
+    texto que o usuario edita, o outro e codigo em `ranker.RESPONSE_CONTRACT`.
+    Os dois vao juntos na mesma mensagem de sistema, entao quando eles discordam
+    o modelo ve duas instrucoes e escolhe -- e nada avisa.
+
+    Foi o que aconteceu com as hashtags: o arquivo dizia "De 5 a 8" e o contrato
+    anexado dizia "de 5 a 10". Nao quebrava nada visivel, o que e exatamente o
+    motivo de valer um teste: a divergencia so apareceria como um numero
+    inesperado de hashtags num corte publicado.
+
+    O arquivo NAO e copiado aqui de proposito. Estes testes leem o arquivo real,
+    porque o defeito que eles guardam e justamente a distancia entre o arquivo
+    real e o contrato real.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.path = Path(__file__).resolve().parent.parent / "prompts" / "curador.txt"
+
+    def test_the_shipped_prompt_exists_and_is_not_empty(self):
+        self.assertTrue(self.path.is_file(), f"sumiu: {self.path}")
+        self.assertTrue(
+            ranker.load_curator_prompt(self.path).strip(),
+            "o prompt versionado esta vazio",
+        )
+
+    def test_the_shipped_prompt_is_still_the_same_file_the_engine_loads(self):
+        # O caminho que o painel serve (`CURATOR_PROMPT_PATH` em web/server.py)
+        # tem de ser este. Se um dos dois mudar sozinho, o editor do painel
+        # passa a salvar num arquivo que o motor nunca le.
+        from web import server
+
+        self.assertEqual(server.CURATOR_PROMPT_PATH.resolve(), self.path.resolve())
+
+    def _ranges_in(self, text: str, word: str) -> list[tuple[int, int]]:
+        """TODOS os intervalos "de N a M" que antecedem ``word``.
+
+        Devolve uma lista, e nao o primeiro, de proposito. A primeira versao
+        deste helper usava ``re.search`` e sofria do mesmo defeito que ela
+        existia para pegar: um texto com duas faixas conflitantes passava no
+        teste porque so a primeira era lida -- foi assim que a terceira faixa
+        de hashtags do arquivo do painel escapou. Quem valida um texto tem de
+        percorrer o texto inteiro.
+        """
+        return [
+            (int(m.group(1)), int(m.group(2)))
+            for m in re.finditer(rf"de (\d+) a (\d+) {word}\b", text, re.IGNORECASE)
+        ]
+
+    def test_the_hashtag_range_agrees_with_the_contract(self):
+        # Duas instrucoes numericas opostas na mesma mensagem e o defeito que
+        # este teste existe para pegar; a direcao (5-10) e a que o contrato
+        # manda, porque e o contrato que o motor anexa.
+        no_arquivo = self._ranges_in(
+            ranker.load_curator_prompt(self.path), "hashtags"
+        )
+        no_contrato = self._ranges_in(ranker.RESPONSE_CONTRACT, "hashtags")
+        self.assertTrue(no_arquivo, "o prompt nao declara a faixa de hashtags")
+        self.assertTrue(no_contrato, "o contrato nao declara a faixa")
+        # O contrato fala uma vez so; se passar a falar duas, e o mesmo defeito
+        # de duas fontes na mesma mensagem, so que dentro do codigo.
+        self.assertEqual(
+            len(set(no_contrato)), 1,
+            f"o proprio contrato declara faixas conflitantes: {no_contrato}",
+        )
+        # O arquivo pode repetir a faixa em prosa, mas nao pode CONTRADIZER.
+        self.assertEqual(
+            set(no_arquivo),
+            set(no_contrato),
+            "o prompt e o contrato discordam na faixa de hashtags: "
+            f"arquivo={no_arquivo} contrato={no_contrato} -- o modelo recebe "
+            "as duas instrucoes ao mesmo tempo",
+        )
+
+    def _limits_in(self, text: str, unit: str) -> set[str]:
+        """Todo limite "no maximo N <unit>" do texto, como conjunto.
+
+        Conjunto, e nao scalar, pelo mesmo motivo de ``_ranges_in``: um texto
+        que diz "no maximo 10 palavras" numa linha e "no maximo 8 palavras"
+        noutra tem de reprovar. Ler so a primeira ocorrencia e como nao ler.
+        """
+        return set(re.findall(rf"no maximo (\d+) {unit}", text, re.IGNORECASE))
+
+    def test_the_headline_limits_agree_with_the_contract(self):
+        # O mesmo defeito, no outro par: palavras e caracteres. O arquivo
+        # repete os limites do contrato quase palavra por palavra, e repeticao
+        # sem tranca e uma copia que envelhece.
+        texto = ranker.load_curator_prompt(self.path)
+        contrato = ranker.RESPONSE_CONTRACT
+
+        for unidade in ("palavras", "caracteres"):
+            with self.subTest(unidade=unidade):
+                no_arquivo = self._limits_in(texto, unidade)
+                no_contrato = self._limits_in(contrato, unidade)
+                self.assertTrue(
+                    no_arquivo, f"o prompt nao declara limite de {unidade}"
+                )
+                self.assertTrue(
+                    no_contrato, f"o contrato nao declara limite de {unidade}"
+                )
+                self.assertEqual(
+                    len(no_arquivo), 1,
+                    f"o prompt declara limites de {unidade} conflitantes: "
+                    f"{sorted(no_arquivo)}",
+                )
+                self.assertEqual(
+                    no_arquivo, no_contrato,
+                    f"limite de {unidade} da headline divergente: "
+                    f"prompt={sorted(no_arquivo)} "
+                    f"contrato={sorted(no_contrato)}",
+                )
+
+    def test_the_file_does_not_carry_the_response_contract_itself(self):
+        # O contrato e anexado pelo codigo (build_messages). Se alguem colar o
+        # JSON no arquivo, ele vai duas vezes para o modelo -- e a copia do
+        # arquivo passa a ser editavel, ou seja, uma segunda fonte de verdade
+        # para o formato de resposta.
+        texto = ranker.load_curator_prompt(self.path)
+        for chave in ("headline_alternativa", "final_completo", "autocontido"):
+            with self.subTest(chave=chave):
+                self.assertNotIn(
+                    chave, texto,
+                    f"o arquivo carrega '{chave}': o contrato seria enviado duas vezes",
+                )
 
 
 class CacheSaltTests(CuratorTestCase):

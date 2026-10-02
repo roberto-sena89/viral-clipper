@@ -14,8 +14,11 @@
    2. Filhos de grid/flex sem `min-width: 0`: input carrega largura mínima
       intrínseca e empurra `.field-row`/`main-grid` para além da tela.
    3. Qualquer resto: `overflow-x: clip` no root corta a sobra sem criar
-      container de rolagem (o `hidden` quebraria o `sticky` da lateral; o
-      `clip` não, e a linha de cima é o fallback para navegador antigo). */
+      container de rolagem. O `hidden` da linha de cima e o fallback para
+      navegador antigo; o `clip` e o valor que vale. (O comentario antigo
+      dizia que `hidden` quebraria um `sticky` da lateral — medido em
+      2026-10-02, nao quebra em nenhum dos dois valores. A observacao morreu
+      com o sticky.) */
 html, body { overflow-x: hidden; overflow-x: clip; }
 .main-grid > *, .hero > *, .field { min-width: 0; }
 .field input, .field select, .field textarea { min-width: 0; }
@@ -937,17 +940,16 @@ header {
    quem se moveu foi o card de Execucao, nao o de Fonte.
 
    A coluna da direita e um `.studio-col` (exec + curador empilhados), nao um
-   card solto: isso e o que da PISTA ao sticky do card de Execucao SEM
-   `min-height` artificial. Medido: com o Curador FORA do par, a coluna direita
-   so tinha a Execucao (449px em repouso) contra os 734px do Fonte, e sobravam
+   card solto. Motivo, medido: com o Curador FORA do par, a coluna direita so
+   tinha a Execucao (449px em repouso) contra os 734px do Fonte, e sobravam
    **267px de espaco vazio** dentro do par — buraco visivel na tela. Com o
-   Curador dentro, o par cresce para 1305px, o vazio cai para **14px** (o gap)
-   e a viagem do sticky vai a 522px. O conteudo real substitui o numero magico
-   que eu tinha posto aqui (`min-height: 1050px`), e a tela para de ter buraco.
+   Curador dentro, o par cresce para ~990-1263px e o vazio cai para **14px**
+   (o gap). A coluna existe para FECHAR o par, nao para dar pista a sticky
+   nenhum — o sticky do card saiu (ver a nota no `.execution-card`).
 
-   `align-items: start` e a peca do sticky, de novo: sem ele os itens esticam
-   ate a altura do mais alto, e `position: sticky` num item esticado nao tem
-   para onde deslizar (medido na sessao anterior — 41px de pista, nao grudava). */
+   `align-items: start` faz cada coluna ter a altura do proprio conteudo. Sem
+   ele as duas esticam ate a mais alta e o card do Fonte ganha um rodape vazio
+   do tamanho do Curador. */
 .studio-pair {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -955,9 +957,7 @@ header {
   gap: 18px;
 }
 
-/* A coluna da direita empilha Execucao + Curador com o mesmo respiro do par.
-   `align-items: start` no par faz o proprio `.studio-col` ter a altura do seu
-   conteudo — os dois cards somados, que e a pista do sticky. */
+/* A coluna da direita empilha Execucao + Curador com o mesmo respiro do par. */
 .studio-col {
   display: flex;
   flex-direction: column;
@@ -967,22 +967,15 @@ header {
 
 /* Em coluna unica o par empilha. 1100px e onde as duas colunas passam a
    ficar estreitas demais para o Fonte, que tem 3 campos numa linha (Pasta,
-   Quantidade, Download) e quebra feio abaixo disso.
-
-   Com o par empilhado o Curador fica ABAIXO do card de Execucao dentro do
-   `.studio-col`, entao a pista do sticky continua existindo — mas o sticky
-   empilhado ainda atrapalha (o card escolta o scroll num layout de uma coluna
-   so, onde nao ha o que acompanhar). Por isso `position: static` aqui. */
+   Quantidade, Download) e quebra feio abaixo disso. */
 @media (max-width: 1100px) {
   .studio-pair { grid-template-columns: minmax(0, 1fr); }
-  .studio-pair .execution-card { position: static !important; }
 }
 
-/* O card de Execucao agora vive no `.studio-pair`, nao mais no hero. A
-   regra `position: sticky` (ver a nota em `.execution-card`) continua valendo,
-   e a pista vem da `.studio-col` (Execucao + Curador empilhados). O
+/* O card de Execucao vive no `.studio-pair`, nao mais no hero. O
    `min-height: 1060px` do hero e o `min-height: 1050px` que o par chegou a
-   carregar foram REMOVIDOS — nenhum dos dois e mais necessario. */
+   carregar existiam para sustentar um sticky que nao existe mais; os dois
+   foram REMOVIDOS. */
 .studio-pair > .card,
 .studio-pair > .studio-col { min-width: 0; }
 
@@ -1219,10 +1212,9 @@ aside > .card {
   border-color: rgba(112, 201, 238, 0.18);
   background: linear-gradient(160deg, rgba(112, 201, 238, 0.045), transparent 42%), #11161f;
 }
-/* O sticky mora em `.execution-card` (ver a nota la), nao aqui. Quando havia
-   dois cards no aside, `sticky` nos dois os empilhava em `top: 82px` e um
-   cobria o outro; por isso a regra era so no `:first-child`. Sem o aside do
-   Estudio, isto nao casa com mais nada na Cortes. */
+/* Sem `sticky` aqui: na Cortes nao ha mais aside. O `position: sticky` do
+   `.execution-card` que esta nota citava tambem saiu (2026-10-02) — nao ha
+   mais nenhum sticky neste arquivo alem do `header` e do aside do scrap. */
 aside .card h2 .ico {
   border-color: rgba(112, 201, 238, 0.2);
   background: rgba(112, 201, 238, 0.08);
@@ -1434,20 +1426,16 @@ header .nav-actions .btn { min-height: 42px; }
 
 /* Painel de execução: status primeiro, etapa atual em seguida, diagnóstico por último.
 
-   `top: 84px` e o mesmo offset que o repo ja documenta para ancoras sob o
-   header sticky (`[id] { scroll-margin-top: 84px }` em shared.css: 68px de
-   barra + respiro). O valor antigo era 82 e divergia disso em 2px: a barra
-   parava raspando no header em vez de respirar. Um numero so, num lugar so.
+   O card NAO e `sticky`. Ele era, e a decisao foi revertida em 2026-10-02:
+   ao rolar, ele descolava das outras secoes e ficava parado em `top: 84px`
+   enquanto Fonte, Curador e Prompt subiam — um bloco solto na tela. Medido
+   em 1440x900: grudava em 84px de scrollY 600 a ~900 e depois era arrastado
+   embora (pista de 14px), ou seja, o pior dos dois mundos.
 
-   O sticky depende de duas coisas, e as duas foram medidas na sessao em que
-   ele quebrou: `align-items: start` no pai (hoje `.studio-pair`) e pista de
-   altura no pai. Sem a primeira o item estica; sem a segunda nao ha para
-   onde deslizar. Aqui as duas vem de graca: o pai e a `.studio-col`, que
-   empilha Execucao + Curador — a pista e o Curador abaixo, nao um
-   `min-height` inventado. */
+   O comportamento agora e o das demais secoes: `position: relative` (o valor
+   inicial), fluxo normal, sobe junto com a pagina. Nao ha mais `align-items`
+   especial no pai, nem pista a calcular, nem `min-height` de sustentacao. */
 .execution-card {
-  position: sticky !important;
-  top: 84px !important;
   padding: 18px;
   border-color: rgba(112,201,238,.16);
   background: linear-gradient(160deg, rgba(112,201,238,.045), transparent 38%), #11161f;
@@ -1528,8 +1516,7 @@ header .nav-actions .btn { min-height: 42px; }
 
 /* ---------- O CARD NAO CARREGA PESO MORTO EM REPOUSO ----------
    O `#log-box` e o cabecalho dele somam 63px de caixa vazia antes do
-   primeiro log. Nao dao viagem ao sticky (isso e o `min-height` do hero,
-   ver a nota da pista) — dao espaco de volta para quem abre a pagina e ve
+   primeiro log. Em repouso dao espaco de volta para quem abre a pagina e ve
    um bloco preto com uma frase cinza dentro.
 
    `:has(.execution-log-empty)` e o sinal de "nada foi logado ainda": o JS
@@ -1546,20 +1533,10 @@ header .nav-actions .btn { min-height: 42px; }
    escondida enquanto o JS nao rodasse. */
 .execution-card [hidden] { display: none !important; }
 
-/* O card de Execucao so gruda quando ha altura sobrando para ele deslizar.
-   Isso era verdade quando o pai dele tinha 41px de pista e a `@media
-   (max-height: 760px)` abaixo existia para desligar o recurso antes que ele
-   "pulasse". Depois que o hero ganhou `min-height` (ver a nota da pista), a
-   pista passou a vir do DOCUMENTO, nao da viewport: medido a 1100x700,
-   961x600 e 1440x760, o card gruda em 84px e nao pula em nenhuma das tres.
-   A regra virou o oposto do que queria — tirava o sticky justamente onde
-   ele voltou a funcionar. Removida.
-
-   O que fica e o que sempre esteve certo: em uma coluna (<= 960px) o card
-   nao tem ao lado o que acompanhar, e o sticky so atrapalha. */
-@media (max-width: 960px) {
-  .execution-card, aside > .card { position: static !important; }
-}
+/* Os dois `position: static !important` que existiam aqui (um para o card de
+   Execucao, outro para o aside) SAIRAM em 2026-10-02: nao ha mais sticky no
+   card para desligar em viewport estreita, e o aside que precisava do segundo
+   nao existe na Cortes. Ver a nota no `.execution-card`. */
 @media (max-width: 640px) {
   .execution-card { padding: 16px 14px; }
   .execution-card .execution-card-heading { margin-bottom: 13px; }

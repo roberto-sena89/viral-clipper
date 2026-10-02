@@ -242,3 +242,59 @@
 }:root {
   --rail-w: 244px;
 }
+
+/* Identidade do aplicativo na barra lateral */
+.rail-brand {
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 16px;
+}
+.rail-brand-link {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-primary);
+  text-decoration: none;
+  border-radius: 9px;
+}
+.rail-brand-link:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 4px; }
+.rail-brand-link .brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  box-shadow: 0 6px 16px -7px var(--accent-glow);
+}
+.rail-brand-copy { display: grid; min-width: 0; gap: 2px; }
+.rail-brand-copy strong {
+  overflow: hidden;
+  font-size: .84rem;
+  font-weight: 650;
+  letter-spacing: -.025em;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-brand .rail-brand-copy small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: .62rem;
+  font-weight: 450;
+  letter-spacing: .005em;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+.rail-brand-badge {
+  flex: 0 0 auto;
+  padding: 4px 6px;
+  border: 1px solid rgba(83,217,175,.22);
+  border-radius: 6px;
+  color: #83dfc0;
+  background: rgba(83,217,175,.07);
+  font-size: .52rem;
+  font-weight: 750;
+  letter-spacing: .09em;
+  line-height: 1;
+}

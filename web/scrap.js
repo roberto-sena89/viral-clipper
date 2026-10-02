@@ -1,71 +1,9 @@
 (function () {
   "use strict";
 
-  // ---------- rail lateral (menu principal) ----------
-  // A lista de destinos vive no HTML: uma vez no rail fixo, e uma copia no
-  // menu do header que aparece abaixo de 920px. Aqui so marcamos qual e a
-  // pagina atual — derivado de location.pathname, nunca escrito a mao, para
-  // que adicionar uma pagina nova nao exija mexer em estado.
-  const PAGES = {
-    "/":          "Cortes",
-    "/scrap":     "Scrap",
-  };
-
-  (function initRail() {
-    // Nao usa os helpers $ / $$ do resto do arquivo: eles sao declarados mais
-    // abaixo, e `var` sofre hoisting como undefined — a chamada estouraria
-    // aqui. O rail busca o que precisa direto.
-    const q = function (sel) { return document.querySelector(sel); };
-
-    const path = window.location.pathname.replace(/\/index\.html$/, "/");
-    const norm = path.endsWith("/") ? path : path + "/";
-    const key = PAGES[path] ? path : (PAGES[norm] ? norm : "/");
-    const title = PAGES[key];
-
-    document.title = `${title} · Viral Clipper`;
-
-    // Cada instancia da lista (rail + menu do header) marca o seu proprio item.
-    document.querySelectorAll("[data-rail-page]").forEach((item) => {
-      if (item.getAttribute("data-rail-page") === key) {
-        item.setAttribute("aria-current", "page");
-      }
-    });
-
-    // O menu do header e o unico componente com estado aqui: abre e fecha.
-    const menu = q("[data-rail-menu]");
-    const btn = q("[data-rail-picker] .menu-btn");
-    if (!menu || !btn) return;
-
-    const setOpen = (open) => {
-      menu.hidden = !open;
-      btn.setAttribute("aria-expanded", String(open));
-    };
-
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const willOpen = menu.hidden;
-      setOpen(willOpen);
-      if (willOpen) {
-        const first = menu.querySelector(".rail-item");
-        if (first) first.focus({ preventScroll: true });
-      }
-    });
-
-    // O painel fica sobre o conteudo; sem isto um clique nele fecharia o menu
-    // E dispararia a acao do elemento por baixo.
-    menu.addEventListener("click", (e) => {
-      if (e.target.closest(".rail-item")) setOpen(false);
-      e.stopPropagation();
-    });
-
-    document.addEventListener("click", () => setOpen(false));
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !menu.hidden) {
-        setOpen(false);
-        btn.focus({ preventScroll: true });
-      }
-    });
-  })();
+  // O rail (lista de destinos, marcacao da pagina atual e o menu do header)
+  // mora em /comum.js: RAIL_PAGES + renderRail. Ele se monta sozinho no
+  // load, entao nao ha nada para ligar aqui.
 
   // ---------- estado da pagina ----------
   var API = "";
@@ -163,6 +101,8 @@
     });
     const opts = $("#perfil-opts");
     if (opts) opts.hidden = mode !== "profile";
+    const viralHint = $("#viral-hint");
+    if (viralHint) viralHint.hidden = mode !== "profile";
     const hint = $("#scrap-hint");
     if (hint) {
       hint.innerHTML = mode === "profile"
@@ -702,9 +642,13 @@
     if (selectBox) selectBox.hidden = results.length === 0;
     renderSelection();
     if (!results.length) {
-      box.innerHTML =
-        '<p class="empty"><strong>Sem itens.</strong>' +
-        "A busca não devolveu nada. Confira o endereço ou passe os cookies do navegador.</p>";
+      box.innerHTML = title
+        ? '<div class="empty-state"><span class="empty-state-mark" aria-hidden="true">0</span>' +
+          '<strong>Nenhum resultado encontrado</strong>' +
+          '<span>Confira o endereço ou a sessão de cookies e tente buscar novamente.</span></div>'
+        : '<div class="empty-state"><span class="empty-state-mark" aria-hidden="true">＋</span>' +
+          '<strong>Sua biblioteca começa com uma busca</strong>' +
+          '<span>Cole um link acima ou explore um perfil para revisar os vídeos disponíveis.</span></div>';
       return;
     }
     box.innerHTML = results.map(resultCard).join("");
@@ -752,6 +696,11 @@
     }
     box.innerHTML = "";
 
+    const eyebrow = document.createElement("p");
+    eyebrow.className = "pick-eyebrow";
+    eyebrow.textContent = "VÍDEO SELECIONADO";
+    box.appendChild(eyebrow);
+
     const h = document.createElement("p");
     h.className = "pick-title";
     h.textContent = picked.title || "(sem título)";
@@ -762,21 +711,38 @@
     const rows = [
       ["Duração", fmtDuration(picked.duration)],
       ["Canal", picked.uploader || "—"],
-      ["Views", picked.view_count != null ? fmtCount(picked.view_count) : "—"],
-      ["Id", picked.id || "—"],
+      ["Visualizações", picked.view_count != null ? fmtCount(picked.view_count) : "—"],
+      ["ID", picked.id || "—"],
     ];
     rows.forEach(([k, v]) => {
+      const item = document.createElement("div");
+      item.className = "pick-meta-item";
       const dt = document.createElement("dt");
       dt.textContent = k;
       const dd = document.createElement("dd");
       dd.textContent = v;
-      dl.appendChild(dt);
-      dl.appendChild(dd);
+      item.appendChild(dt);
+      item.appendChild(dd);
+      dl.appendChild(item);
     });
     box.appendChild(dl);
 
     const actions = document.createElement("div");
     actions.className = "pick-actions";
+
+    const cortes = document.createElement("button");
+    cortes.type = "button";
+    cortes.className = "btn pressable btn-primary";
+    cortes.textContent = "Levar para Cortes";
+    // A pagina de cortes le ?url= do endereco: e o unico canal de hand-off
+    // que existe hoje (nenhuma das paginas guarda estado entre navegacoes).
+    cortes.addEventListener("click", () => {
+      window.location.href = "/?url=" + encodeURIComponent(picked.url);
+    });
+    actions.appendChild(cortes);
+
+    const secondary = document.createElement("div");
+    secondary.className = "pick-secondary-actions";
 
     const open = document.createElement("a");
     open.className = "btn pressable";
@@ -784,7 +750,7 @@
     open.target = "_blank";
     open.rel = "noopener noreferrer";
     open.textContent = "Abrir no site";
-    actions.appendChild(open);
+    secondary.appendChild(open);
 
     const copy = document.createElement("button");
     copy.type = "button";
@@ -798,19 +764,9 @@
         toast("Não foi possível copiar.", "bad");
       }
     });
-    actions.appendChild(copy);
+    secondary.appendChild(copy);
 
-    const cortes = document.createElement("button");
-    cortes.type = "button";
-    cortes.className = "btn pressable btn-primary";
-    cortes.textContent = "Levar para Cortes";
-    // A pagina de cortes le ?url= do endereco: e o unico canal de hand-off
-    // que existe hoje (nenhuma das paginas guarda estado entre navegacoes).
-    cortes.addEventListener("click", () => {
-      window.location.href = "/?url=" + encodeURIComponent(picked.url);
-    });
-    actions.appendChild(cortes);
-
+    actions.appendChild(secondary);
     box.appendChild(actions);
   }
 

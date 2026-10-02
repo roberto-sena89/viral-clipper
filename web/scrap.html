@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Viral Clipper — Scrap</title>
+<title>Biblioteca · Viral Clipper</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/shared.css">
-<link rel="stylesheet" href="/scrap.css">
+<link rel="stylesheet" href="/shared.css?v=rail-brand-20261001">
+<link rel="stylesheet" href="/scrap.css?v=library-three-panel-layout-20261001-r3">
 </head>
 <body>
 
@@ -16,32 +16,16 @@
      JS abaixo — nunca escrito a mao, senao a pagina errada se declara atual. -->
 <nav class="rail" aria-label="Navegação principal">
   <div class="rail-brand">
-    <div class="brand-mark" aria-hidden="true"><img src="/favicon.svg" alt="" width="36" height="36"></div>
-    <div>Viral Clipper<small>scrap</small></div>
+    <a class="rail-brand-link" href="/" aria-label="Viral Clipper — abrir o Estúdio">
+      <span class="brand-mark" aria-hidden="true"><img src="/favicon.svg" alt="" width="36" height="36"></span>
+      <span class="rail-brand-copy"><strong>Viral Clipper</strong><small>Editor de vídeos curtos</small></span>
+    </a>
+    <span class="rail-brand-badge" aria-label="Aplicativo local">LOCAL</span>
   </div>
 
   <div class="rail-label" id="rail-label-paginas">Páginas</div>
 
-  <ul class="rail-menu" aria-labelledby="rail-label-paginas">
-    <li>
-      <a class="rail-item pressable" href="/" data-rail-page="/">
-        <span class="ri-ico" aria-hidden="true">▶</span>
-        <span>
-          <span class="ri-title">Cortes</span>
-          <span class="ri-desc">Configurar e gerar os clips de um vídeo longo.</span>
-        </span>
-      </a>
-    </li>
-    <li>
-      <a class="rail-item pressable" href="/scrap" data-rail-page="/scrap">
-        <span class="ri-ico" aria-hidden="true">⤓</span>
-        <span>
-          <span class="ri-title">Scrap</span>
-          <span class="ri-desc">Baixar por link ou varrer um perfil inteiro.</span>
-        </span>
-      </a>
-    </li>
-  </ul>
+  <ul class="rail-menu" aria-labelledby="rail-label-paginas" data-rail-list></ul>
 
   <div class="rail-foot">
     <span>viral-clipper · 9:16 1080×1920</span>
@@ -50,104 +34,115 @@
 
 <header>
   <div class="wrap header-inner">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true"><img src="/favicon.svg" alt="" width="36" height="36"></div>
-      <span>Viral Clipper <small>scrap</small></span>
+    <div class="scrap-header-context" aria-label="Biblioteca de vídeos">
+      <span class="scrap-header-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3.5v10m0 0 3.7-3.7M12 13.5l-3.7-3.7M5 15.5v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="scrap-header-copy">
+        <span class="scrap-header-eyebrow">BIBLIOTECA DE MÍDIA</span>
+        <strong><span class="scrap-header-long">Importação de vídeos</span><span class="scrap-header-short">Biblioteca</span></strong>
+      </span>
+      <span class="scrap-header-tag"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.8 16.5 5v4.6c0 3.5-2.7 6.2-6.5 7.7-3.8-1.5-6.5-4.2-6.5-7.7V5L10 2.8Z" stroke="currentColor" stroke-width="1.35"/><path d="m7.3 9.8 1.8 1.8 3.7-3.8" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>Downloads neste PC</span>
     </div>
     <div class="nav-actions">
       <!-- Fallback do rail abaixo de 920px: mesmos destinos, em menu. -->
       <div class="rail-dropdown" data-rail-picker>
         <button class="menu-btn pressable" type="button" id="rail-menu-btn"
                 aria-haspopup="true" aria-expanded="false" aria-controls="rail-menu-sm">
-          <span class="mb-bars" aria-hidden="true">☰</span>
-          <span class="sr-only">Menu de páginas</span>
-          <span class="mb-caret" aria-hidden="true">▾</span>
+          <span class="mb-bars" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6.5h16M4 12h16M4 17.5h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+          <span class="sr-only">Abrir navegação</span>
+          <span class="mb-caret" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         </button>
-        <ul class="rail-menu" id="rail-menu-sm" data-rail-menu hidden>
-          <li>
-            <a class="rail-item pressable" href="/" data-rail-page="/">
-              <span class="ri-ico" aria-hidden="true">▶</span>
-              <span>
-                <span class="ri-title">Cortes</span>
-                <span class="ri-desc">Configurar e gerar os clips de um vídeo longo.</span>
-              </span>
-            </a>
-          </li>
-          <li>
-            <a class="rail-item pressable" href="/scrap" data-rail-page="/scrap">
-              <span class="ri-ico" aria-hidden="true">⤓</span>
-              <span>
-                <span class="ri-title">Scrap</span>
-                <span class="ri-desc">Baixar por link ou varrer um perfil inteiro.</span>
-              </span>
-            </a>
-          </li>
-        </ul>
+        <ul class="rail-menu" id="rail-menu-sm" data-rail-menu data-rail-list hidden></ul>
       </div>
-      <button class="btn pressable btn-primary" type="button" id="btn-open-cortes">Ir para Cortes</button>
+      <button class="btn pressable btn-primary scrap-header-cta" type="button" id="btn-open-cortes"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="scrap-cta-long">Abrir Estúdio</span><span class="scrap-cta-short">Estúdio</span></button>
     </div>
   </div>
 </header>
 
 <main class="wrap">
 
-  <section class="hero" aria-label="Apresentação">
-    <div>
-      <h1>Scrap</h1>
-      <p class="lead">
-        Baixe por um link ou varra um perfil inteiro. A busca lista o que o
-        endereço tem — você escolhe o item e ele vira um trabalho de cortes.
-      </p>
+  <section class="hero scrap-welcome" aria-labelledby="scrap-title">
+    <div class="scrap-welcome-copy">
+      <div class="studio-overline">
+        <span class="studio-online-dot" aria-hidden="true"></span>
+        <span>BIBLIOTECA LOCAL</span>
+        <span class="studio-overline-divider" aria-hidden="true">/</span>
+        <span>INSTAGRAM · TIKTOK · YOUTUBE</span>
+      </div>
+      <h1 id="scrap-title">Encontre a próxima fonte do seu corte.</h1>
+      <p class="lead">Busque um vídeo ou explore um perfil, revise os resultados e envie a mídia escolhida ao Estúdio.</p>
+      <nav class="scrap-jump-links" aria-label="Atalhos desta página">
+        <a href="#h-busca">Buscar mídia <span aria-hidden="true">↓</span></a>
+        <a href="#h-resultados">Ver resultados <span aria-hidden="true">↓</span></a>
+      </nav>
     </div>
-    <div class="chip-row">
-      <span class="chip">Instagram · TikTok · YouTube</span>
-      <span class="chip">sem cookie = só conteúdo público</span>
+    <div class="scrap-flow-card" aria-label="Etapas da biblioteca">
+      <span class="studio-card-label">FLUXO DE IMPORTAÇÃO</span>
+      <ol>
+        <li><span>01</span><strong>Buscar</strong></li>
+        <li><span>02</span><strong>Revisar</strong></li>
+        <li><span>03</span><strong>Enviar ao Estúdio</strong></li>
+      </ol>
+      <p><span aria-hidden="true"></span> Arquivos salvos neste computador</p>
     </div>
   </section>
 
   <div class="scrap-grid">
 
     <!-- ---------- COLUNA ESQUERDA: busca ---------- -->
-      <section class="card" aria-labelledby="h-busca">
-        <h2 id="h-busca"><span class="ico" aria-hidden="true">⌕</span> Buscar</h2>
-        <p class="card-sub">Um post, um reel, um vídeo — ou o perfil inteiro que os contém.</p>
+      <section class="card search-card" aria-labelledby="h-busca">
+        <div class="search-card-heading">
+          <div>
+            <p class="search-kicker">ENCONTRE SUA PRÓXIMA FONTE</p>
+            <h2 id="h-busca"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m15.5 15.5 4.2 4.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span> Buscar conteúdo</h2>
+          </div>
+          <span class="search-step" aria-label="Etapa 1 de 3">01</span>
+        </div>
+        <p class="card-sub">Cole o link de um vídeo ou explore as publicações de um perfil.</p>
 
         <!-- Plataforma: o arquivamento de perfil (reels/ + posts/) só existe
              no Instagram, então ele mora nesta aba. TikTok e YouTube usam a
              mesma busca e o mesmo "Baixar selecionados". -->
-        <div class="tabs" role="tablist" aria-label="Plataforma" style="margin-bottom:8px;">
-          <button class="tab" type="button" role="tab" id="tab-instagram"
-                  aria-selected="true"
-                  data-platform="instagram">
-            <span aria-hidden="true">📸</span> Instagram
-          </button>
-          <button class="tab" type="button" role="tab" id="tab-tiktok"
-                  aria-selected="false" tabindex="-1"
-                  data-platform="tiktok">
-            <span aria-hidden="true">🎵</span> TikTok
-          </button>
-          <button class="tab" type="button" role="tab" id="tab-youtube"
-                  aria-selected="false" tabindex="-1"
-                  data-platform="youtube">
-            <span aria-hidden="true">▶</span> YouTube
-          </button>
+        <div class="search-control-group">
+          <p class="search-control-label">Plataforma</p>
+          <div class="tabs" role="tablist" aria-label="Plataforma">
+            <button class="tab" type="button" role="tab" id="tab-instagram"
+                    aria-selected="true"
+                    data-platform="instagram">
+              <span class="platform-monogram" aria-hidden="true">IG</span> Instagram
+            </button>
+            <button class="tab" type="button" role="tab" id="tab-tiktok"
+                    aria-selected="false" tabindex="-1"
+                    data-platform="tiktok">
+              <span class="platform-monogram" aria-hidden="true">TT</span> TikTok
+            </button>
+            <button class="tab" type="button" role="tab" id="tab-youtube"
+                    aria-selected="false" tabindex="-1"
+                    data-platform="youtube">
+              <span class="platform-monogram" aria-hidden="true">YT</span> YouTube
+            </button>
+          </div>
         </div>
 
-        <div class="tabs" role="tablist" aria-label="Tipo de busca">
-          <button class="tab" type="button" role="tab" id="tab-link"
-                  aria-selected="true" aria-controls="scrap-url"
-                  data-mode="link">
-            <span aria-hidden="true">🔗</span> Link
-          </button>
-          <button class="tab" type="button" role="tab" id="tab-perfil"
-                  aria-selected="false" aria-controls="scrap-url" tabindex="-1"
-                  data-mode="profile">
-            <span aria-hidden="true">@</span> Perfil
-          </button>
+        <div class="search-control-group search-mode-group">
+          <p class="search-control-label">O que deseja buscar?</p>
+          <div class="tabs" role="tablist" aria-label="Tipo de busca">
+            <button class="tab" type="button" role="tab" id="tab-link"
+                    aria-selected="true" aria-controls="scrap-url"
+                    data-mode="link">
+              <span class="search-mode-symbol" aria-hidden="true">↗</span> Link de vídeo
+            </button>
+            <button class="tab" type="button" role="tab" id="tab-perfil"
+                    aria-selected="false" aria-controls="scrap-url" tabindex="-1"
+                    data-mode="profile">
+              <span class="search-mode-symbol" aria-hidden="true">@</span> Perfil
+            </button>
+          </div>
         </div>
 
+        <label class="field-label search-url-label" for="scrap-url">Link do vídeo ou perfil</label>
         <form class="scrap-form" id="scrap-form" novalidate>
-          <label class="sr-only" for="scrap-url">Endereço do vídeo ou do perfil</label>
           <input type="url" id="scrap-url" name="url" autocomplete="off"
                  aria-describedby="scrap-hint"
                  placeholder="https://www.instagram.com/reel/... ou https://www.tiktok.com/@.../video/..."
@@ -164,7 +159,7 @@
             <button class="btn pressable" type="button" id="btn-viral"
                     aria-pressed="false" aria-describedby="viral-hint"
                     title="Lista até 100 itens e mostra primeiro os de mais views">
-              🔥 Mais viralizados
+              Em alta primeiro
             </button>
           </div>
           <div class="form-field form-field--narrow">
@@ -183,8 +178,8 @@
         <div class="auth-card" id="auth-card">
           <div class="auth-head">
             <div>
-              <p class="auth-title"><span aria-hidden="true">🍪</span> Sessão / Cookies</p>
-              <p class="auth-sub">Instagram exige sessão até para um reel isolado.</p>
+              <p class="auth-title">Acesso e sessão</p>
+              <p class="auth-sub">Configure cookies quando uma plataforma exigir login. No Instagram, isso também pode ser necessário para reels públicos.</p>
             </div>
             <span class="auth-status" id="auth-status" data-state="none" role="status" aria-live="polite">Sem sessão</span>
           </div>
@@ -216,9 +211,8 @@
                 <input type="text" id="scrap-cookies-file" name="cookies-file"
                        value=""
                        placeholder="C:\caminho\cookies.txt"
-                       aria-describedby="scrap-cookies-file-hint"
-                       placeholder="C:\caminho\cookies.txt" autocomplete="off" spellcheck="false">
-                <button type="button" class="auth-icon-btn pressable" id="btn-cookies-browse" title="Escolher arquivo">📁</button>
+                       aria-describedby="scrap-cookies-file-hint" autocomplete="off" spellcheck="false">
+                <button type="button" class="auth-icon-btn pressable" id="btn-cookies-browse" title="Escolher arquivo" aria-label="Escolher arquivo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M3.5 9h17" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
                 <button type="button" class="auth-icon-btn auth-icon-btn--ghost pressable" id="btn-cookies-clear" title="Limpar caminho">✕</button>
               </div>
               <input type="file" id="cookies-file-picker" accept=".txt" hidden>
@@ -234,7 +228,7 @@
                        aria-describedby="scrap-ig-session-hint"
                        placeholder="12345678%3AAbCdEfGhIjKl%3A12%3AAY..." autocomplete="off" spellcheck="false">
                 <button type="button" class="auth-icon-btn pressable" id="btn-session-reveal"
-                        aria-label="Mostrar o valor" aria-pressed="false" title="Mostrar o valor">👁</button>
+                        aria-label="Mostrar o valor" aria-pressed="false" title="Mostrar o valor"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
                 <button type="button" class="auth-icon-btn auth-icon-btn--ghost pressable" id="btn-session-clear"
                         aria-label="Limpar o campo" title="Limpar o campo">✕</button>
               </div>
@@ -307,7 +301,7 @@
             <button class="btn pressable" type="button" id="btn-arq-viral"
                     aria-pressed="false"
                     title="Baixa primeiro os de mais plays/likes em cada tipo">
-              🔥 Mais viralizados
+              Em alta primeiro
             </button>
           </div>
           <button class="btn pressable btn-primary" type="button" id="btn-arquivar">
@@ -359,7 +353,7 @@
         <div id="resultados" aria-live="polite"></div>
       </section>
 
-    <!-- ---------- LINHA CHEIA: item escolhido ---------- -->
+    <!-- ---------- FONTE SELECIONADA: terceiro painel do fluxo ---------- -->
     <aside class="pick" aria-labelledby="h-escolha">
       <section class="card">
         <h2 id="h-escolha"><span class="ico" aria-hidden="true">✎</span> Escolha</h2>
@@ -377,14 +371,14 @@
 
 <footer>
   <div class="wrap">
-    Viral Clipper · scrap · o download é o yt-dlp que já roda no pipeline
+    Viral Clipper · biblioteca local · downloads processados pelo yt-dlp
   </div>
 </footer>
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-<script src="/comum.js"></script>
-<script src="/scrap.js"></script>
+<script src="/comum.js?v=workspace-20261001-r2"></script>
+<script src="/scrap.js?v=pick-card-20261001-r1"></script>
 
 </body>
 </html>

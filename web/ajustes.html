@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ajustes — Viral Clipper</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared.css?v=rail-brand-20261001">
+<link rel="stylesheet" href="/index.css?v=execution-panel-20261001">
+</head>
+<body>
+
+<!-- ==================== RAIL LATERAL ====================
+     A lista de destinos NAO mora aqui. Ela vive em /comum.js (RAIL_PAGES) e o
+     `renderRail` preenche os dois <ul data-rail-list> desta pagina: o rail fixo
+     e o menu do header abaixo de 920px. Antes a lista era escrita a mao nos
+     dois lugares, e as copias divergiram (o mapa de paginas do index.js nao
+     conhecia /ajustes). Para acrescentar uma pagina, edite RAIL_PAGES em
+     /comum.js — nao ha lista para duplicar aqui. -->
+<nav class="rail" aria-label="Navegação principal">
+  <div class="rail-brand">
+    <div class="brand-mark" aria-hidden="true">VC</div>
+    <div>Viral Clipper<small>ajustes</small></div>
+  </div>
+
+  <div class="rail-label" id="rail-label-paginas">Páginas</div>
+
+  <ul class="rail-menu" aria-labelledby="rail-label-paginas" data-rail-list></ul>
+
+  <div class="rail-foot">
+    <span>viral-clipper · 9:16 1080×1920</span>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap header-inner">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">VC</div>
+      <span>Viral Clipper <small>ajustes</small></span>
+    </div>
+    <div class="nav-actions">
+      <!-- Fallback do rail abaixo de 920px: mesmos destinos, em menu. -->
+      <div class="rail-dropdown" data-rail-picker>
+        <button class="menu-btn pressable" type="button" id="rail-menu-btn"
+                aria-haspopup="true" aria-expanded="false" aria-controls="rail-menu-sm">
+          <span class="mb-bars" aria-hidden="true">☰</span>
+          <span class="sr-only">Menu de páginas</span>
+          <span class="mb-caret" aria-hidden="true">▾</span>
+        </button>
+        <ul class="rail-menu" id="rail-menu-sm" data-rail-menu data-rail-list hidden></ul>
+      </div>
+      <button class="btn pressable btn-primary" type="button" id="btn-save">Salvar ajustes</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <h2 class="section-title" id="ajustes">Ajustes</h2>
+  <p class="section-sub">
+    Valem para toda execução e ficam salvos no servidor, não no navegador. A URL do vídeo e a
+    quantidade de clips continuam na página <a href="/">Cortes</a>, porque só fazem sentido lá.
+  </p>
+
+  <div class="main-grid">
+
+    <!-- COLUNA PRINCIPAL -->
+    <div>
+      <form id="ajustes-form" novalidate>
+
+        <div class="card">
+          <h2><span class="ico" aria-hidden="true">◎</span> Seleção</h2>
+
+          <div class="form-section">
+            <div class="field-row triple">
+              <div class="field">
+                <label for="min-duration">Duração mínima (s)</label>
+                <input type="number" id="min-duration" name="min-duration" min="5" max="300" step="0.5" value="30">
+              </div>
+              <div class="field">
+                <label for="max-duration">Duração máxima (s)</label>
+                <input type="number" id="max-duration" name="max-duration" min="5" max="600" step="0.5" value="60">
+              </div>
+              <div class="field">
+                <label for="target-duration">Alvo (s)</label>
+                <input type="number" id="target-duration" name="target-duration" min="5" max="600" step="0.5" value="42">
+              </div>
+            </div>
+
+            <div class="field-row triple">
+              <div class="field">
+                <label for="min-score">Nota mínima (0-100)</label>
+                <input type="number" id="min-score" name="min-score" min="0" max="100" step="1" value="0"
+                       aria-describedby="min-score-hint">
+                <span class="hint" id="min-score-hint">0 desliga o portão.</span>
+              </div>
+              <div class="field">
+                <label for="min-gap">Silêncio entre clips (s)</label>
+                <input type="number" id="min-gap" name="min-gap" min="0" max="60" step="0.5" value="6">
+              </div>
+              <div class="field">
+                <label for="engine">Motor de análise</label>
+                <select id="engine" name="engine">
+                  <option value="hybrid" selected data-title="Hybrid" data-desc="Transcrição + energia — recomendado">hybrid</option>
+                  <option value="audio" data-title="Audio" data-desc="Só energia de áudio, sem transcrição (rápido, cego a hooks)">audio</option>
+                  <option value="transcript" data-title="Transcript" data-desc="Só texto — falha se o whisper não carregar">transcript</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Modo automatico: os tres numeros que decidem quantos cortes o
+                 video rende. Ficam aqui, e nao na pagina Cortes, porque sao
+                 ajuste de uma vez so — o que muda a cada execucao e o campo
+                 "Quantidade de clips", que fica la. -->
+            <div class="field-row triple">
+              <div class="field">
+                <label for="auto-margin">Margem do automático (pontos)</label>
+                <input type="number" id="auto-margin" name="auto-margin" min="0" max="100" step="1" value="15"
+                       aria-describedby="auto-margin-hint">
+                <span class="hint" id="auto-margin-hint">Com a quantidade em branco, entra todo trecho a até esta
+                  distância do melhor do vídeo. Menor = mais exigente.</span>
+              </div>
+              <div class="field">
+                <label for="auto-ceiling">Teto de segurança</label>
+                <input type="number" id="auto-ceiling" name="auto-ceiling" min="1" max="500" step="1" value="200"
+                       aria-describedby="auto-ceiling-hint">
+                <span class="hint" id="auto-ceiling-hint">Trava dura: mesmo num vídeo muito bom, não passa disto.</span>
+              </div>
+              <div class="field">
+                <label for="max-grace">Passa até (s) para fechar o contexto</label>
+                <input type="number" id="max-grace" name="max-grace" min="0" max="120" step="5" value="30"
+                       aria-describedby="max-grace-hint">
+                <span class="hint" id="max-grace-hint">Um trecho que vale a pena pode estourar o máximo acima e
+                  terminar a frase. 0 proíbe qualquer estouro.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2><span class="ico" aria-hidden="true">♪</span> Transcrição</h2>
+
+          <div class="form-section">
+            <div class="field-row triple">
+              <div class="field">
+                <label for="whisper-model">Modelo Whisper</label>
+                <select id="whisper-model" name="whisper-model">
+                  <option value="tiny" data-title="Tiny" data-desc="Mais rápido e leve — menor precisão">tiny</option>
+                  <option value="base" data-title="Base" data-desc="Equilíbrio para máquinas de 8 GB">base</option>
+                  <option value="small" selected data-title="Small" data-desc="Recomendado — boa precisão com custo razoável">small</option>
+                  <option value="medium" data-title="Medium" data-desc="Mais lento, precisão maior">medium</option>
+                  <option value="large-v3" data-title="Large-v3" data-desc="Máxima precisão — exige muita RAM">large-v3</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="language">Idioma</label>
+                <select id="language" name="language">
+                  <option value="" selected data-title="Auto-detectar" data-desc="O Whisper identifica o idioma do áudio">auto</option>
+                  <option value="pt" data-title="Português (pt)" data-desc="Força a transcrição em português — recomendado para canais pt-BR">pt</option>
+                  <option value="en" data-title="Inglês (en)" data-desc="Força a transcrição em inglês">en</option>
+                  <option value="es" data-title="Espanhol (es)" data-desc="Força a transcrição em espanhol">es</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="beam-size">Beam size</label>
+                <input type="number" id="beam-size" name="beam-size" min="1" max="10" value="1">
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="cache-dir">Pasta do cache de transcrição</label>
+                <input type="text" id="cache-dir" name="cache-dir" value="output/cache/transcripts"
+                       aria-describedby="cache-dir-hint">
+                <span class="hint" id="cache-dir-hint">Persiste entre execuções. Deixa vazio para o padrão.</span>
+              </div>
+            </div>
+            <div class="toggle-wrap">
+              <span class="tw-label">Filtro VAD (remover não-fala)</span>
+              <button class="toggle active" type="button" id="vad-filter" role="switch" aria-checked="true" aria-label="Filtro VAD"></button>
+            </div>
+            <div class="toggle-wrap">
+              <span class="tw-label">Cache de transcrição</span>
+              <button class="toggle active" type="button" id="transcript-cache" role="switch" aria-checked="true" aria-label="Cache de transcrição"></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2><span class="ico" aria-hidden="true">▣</span> Renderização</h2>
+
+          <div class="form-section">
+            <div class="field-row triple">
+              <div class="field">
+                <label for="layout">Reframe</label>
+                <select id="layout" name="layout">
+                  <option value="focus" selected data-title="Focus" data-desc="Corte guiado por detector de rosto — cai para center sem OpenCV">focus</option>
+                  <option value="center" data-title="Center" data-desc="Corte central fixo, sem detecção">center</option>
+                  <option value="blur" data-title="Blur" data-desc="Vídeo inteiro sobre fundo desfocado">blur</option>
+                  <option value="fit" data-title="Fit" data-desc="Vídeo inteiro com barras (letterbox)">fit</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="caption-preset">Modelo de legenda</label>
+                <select id="caption-preset" name="caption-preset" aria-describedby="caption-preset-hint">
+                  <option value="karaoke" selected data-title="Karaokê" data-desc="Branco, destaque amarelo por palavra — o visual viral clássico">karaoke</option>
+                  <option value="bold-box" data-title="Bold Box" data-desc="Texto branco sobre caixa escura — legível em qualquer fundo">bold-box</option>
+                  <option value="minimal" data-title="Minimal" data-desc="Caixa de frase, contorno fino — discreto e elegante">minimal</option>
+                  <option value="neon" data-title="Neon" data-desc="Destaque verde neon, sombra funda — brilha em vídeo escuro">neon</option>
+                  <option value="block-dark" data-title="Block Dark" data-desc="Bloco escuro opaco — separação máxima do vídeo">block-dark</option>
+                  <option value="mono" data-title="Mono" data-desc="Monoespaçada — canais de tecnologia e código">mono</option>
+                  <option value="fire" data-title="Fire" data-desc="Destaque laranja-fogo — energia e urgência">fire</option>
+                  <option value="magenta-pop" data-title="Magenta Pop" data-desc="Destaque magenta vivo — pop e irreverente">magenta-pop</option>
+                  <option value="cyan-pop" data-title="Cyan Pop" data-desc="Destaque ciano elétrico — moderno e frio">cyan-pop</option>
+                  <option value="lime-hit" data-title="Lime Hit" data-desc="Destaque lima ácido — juvenil, alto contraste">lime-hit</option>
+                  <option value="blood" data-title="Blood" data-desc="Destaque vermelho, contorno grosso — drama e choque">blood</option>
+                  <option value="gold-box" data-title="Gold Box" data-desc="Destaque dourado sobre caixa escura — premium">gold-box</option>
+                  <option value="candy" data-title="Candy" data-desc="Caixa branca, texto escuro, destaque rosa — doce e claro">candy</option>
+                  <option value="violet-vibe" data-title="Violet Vibe" data-desc="Destaque violeta com sombra funda — criativo">violet-vibe</option>
+                  <option value="ice-blue" data-title="Ice Blue" data-desc="Destaque azul-gelo em caixa fina — limpo e técnico">ice-blue</option>
+                  <option value="sunset" data-title="Sunset" data-desc="Destaque laranja-pôr-do-sol — quente sem gritar">sunset</option>
+                  <option value="bubble" data-title="Bubble" data-desc="Caixa azul-noite, destaque amarelo — conversa e podcast">bubble</option>
+                  <option value="ultra-impact" data-title="Ultra Impact" data-desc="Impact gigante, contorno grosso — máximo impacto">ultra-impact</option>
+                  <option value="slim" data-title="Slim" data-desc="Narrow com destaque ciano — compacto e informativo">slim</option>
+                  <option value="cobalt" data-title="Cobalt" data-desc="Caixa escura com destaque ciano — corporativo afiado">cobalt</option>
+                  <option value="pop-box" data-title="Pop Box" data-desc="Caixa amarela, texto escuro, destaque vermelho — chamativo">pop-box</option>
+                  <option value="roboto-bold" data-title="Roboto" data-desc="Padrão dos shorts e do YouTube, destaque ciano">roboto-bold</option>
+                  <option value="inter-bold" data-title="Inter" data-desc="Legibilidade máxima em tela pequena, destaque lima">inter-bold</option>
+                  <option value="poppins-bold" data-title="Poppins" data-desc="Geométrica e redonda, destaque magenta">poppins-bold</option>
+                  <option value="montserrat-bold" data-title="Montserrat" data-desc="Estilo TikTok, destaque dourado">montserrat-bold</option>
+                  <option value="dm-sans" data-title="DM Sans" data-desc="Minimalismo suíço, destaque laranja">dm-sans</option>
+                  <option value="cabin-bold" data-title="Cabin" data-desc="Aberta e amigável, destaque ciano claro">cabin-bold</option>
+                  <option value="verdana-bold" data-title="Verdana" data-desc="x-height gigante, destaque amarelo">verdana-bold</option>
+                  <option value="trebuchet-bold" data-title="Trebuchet" data-desc="Humanista e limpa, destaque vermelho">trebuchet-bold</option>
+                  <option value="tahoma-bold" data-title="Tahoma" data-desc="Estreita e legível, destaque ciano">tahoma-bold</option>
+                  <option value="calibri-bold" data-title="Calibri" data-desc="Clara e moderna, destaque lima">calibri-bold</option>
+                  <option value="franklin-bold" data-title="Franklin Gothic" data-desc="Condensada clássica, destaque fogo">franklin-bold</option>
+                  <option value="segoe-black" data-title="Segoe UI" data-desc="Moderna nativa, destaque violeta">segoe-black</option>
+                  <option value="helvetica-classic" data-title="Helvetica" data-desc="O amarelo clássico do cinema">helvetica-classic</option>
+                  <option value="merriweather-black" data-title="Merriweather" data-desc="Serifada editorial para ritmo lento">merriweather-black</option>
+                  <option value="arvo-bold" data-title="Arvo" data-desc="Serifada de telão para entrevistas">arvo-bold</option>
+                </select>
+                <span class="hint" id="caption-preset-hint">Define fonte, cor, caixa e destaque de uma vez. Campos vazios abaixo herdam do preset.</span>
+              </div>
+              <div class="field">
+                <label for="caption-style">Legendas</label>
+                <select id="caption-style" name="caption-style">
+                  <option value="karaoke" selected data-title="Karaokê" data-desc="Palavra ativa destacada na cor do canal">karaoke</option>
+                  <option value="block" data-title="Block" data-desc="Linha inteira em bloco, sem destaque por palavra">block</option>
+                  <option value="none" data-title="Nenhuma" data-desc="Sem legendas queimadas no vídeo">none</option>
+                </select>
+              </div>
+            </div>
+            <div class="field-row triple">
+              <div class="field">
+                <label for="font-size">Tamanho da fonte</label>
+                <input type="number" id="font-size" name="font-size" min="20" max="200" value="" placeholder="do preset"
+                       aria-describedby="font-size-hint">
+                <span class="hint" id="font-size-hint">Vazio = usa o tamanho do modelo de legenda.</span>
+              </div>
+              <div class="field">
+                <label for="crf">CRF (qualidade)</label>
+                <input type="number" id="crf" name="crf" min="0" max="51" value="20"
+                       aria-describedby="crf-hint">
+                <span class="hint" id="crf-hint">Menor = melhor qualidade.</span>
+              </div>
+              <div class="field">
+                <label for="target-lufs">Loudness alvo (LUFS)</label>
+                <input type="number" id="target-lufs" name="target-lufs" min="-40" max="0" step="0.5" value="-14"
+                       aria-describedby="target-lufs-hint">
+                <span class="hint" id="target-lufs-hint">O painel mandava <code>lufs</code> e o motor espera
+                  <code>target_lufs</code>: até agora este campo não chegava ao vídeo.</span>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="workers">Workers paralelos</label>
+                <input type="number" id="workers" name="workers" min="1" max="16" value="2"
+                       aria-describedby="workers-hint">
+                <span class="hint" id="workers-hint">Reduza se faltar RAM.</span>
+              </div>
+              <div class="field">
+                <label for="headline-seconds">Duração do título no topo (s)</label>
+                <input type="number" id="headline-seconds" name="headline-seconds" min="0" max="10" step="0.5" value="3"
+                       aria-describedby="headline-seconds-hint">
+                <span class="hint" id="headline-seconds-hint">Só se aplica com o título ligado acima.</span>
+              </div>
+            </div>
+            <div class="toggle-wrap">
+              <span class="tw-label">Título do gancho no topo (desligado = só legendas)</span>
+              <button class="toggle" type="button" id="headline-on" role="switch" aria-checked="false" aria-label="Título no topo"></button>
+            </div>
+            <div class="toggle-wrap">
+              <span class="tw-label">Barra de progresso no topo (desligada = vídeo limpo)</span>
+              <button class="toggle" type="button" id="progress-bar-on" role="switch" aria-checked="false" aria-label="Barra de progresso"></button>
+            </div>
+            <div class="toggle-wrap">
+              <span class="tw-label">Jump cut (remover silêncios internos)</span>
+              <button class="toggle" type="button" id="jump-cut" role="switch" aria-checked="false" aria-label="Jump cut"></button>
+            </div>
+            <div class="toggle-wrap">
+              <span class="tw-label">Normalizar loudness</span>
+              <button class="toggle active" type="button" id="loudnorm" role="switch" aria-checked="true" aria-label="Normalizar loudness"></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2><span class="ico" aria-hidden="true">✦</span> Curador com IA (opcional)</h2>
+
+          <div class="form-section">
+            <div class="toggle-wrap">
+              <span class="tw-label">Reavaliar os melhores cortes e escrever headline + hashtags</span>
+              <button class="toggle" type="button" id="ranker-llm" role="switch" aria-checked="false" aria-label="Curador com IA"></button>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="ranker-provider">Provedor</label>
+                <select id="ranker-provider" name="ranker-provider" data-defer-enhance
+                        aria-describedby="ranker-provider-hint">
+                  <option value="">Endpoint manual (campos abaixo)</option>
+                </select>
+                <p class="hint" id="ranker-provider-hint">Escolher um provedor preenche endpoint, modelo, chave e timeout de uma vez.</p>
+              </div>
+              <div class="field">
+                <label for="ranker-api-key-env">Variável da chave</label>
+                <input type="text" id="ranker-api-key-env" name="ranker-api-key-env" value="OPENAI_API_KEY" aria-describedby="ranker-key-hint">
+                <p class="hint" id="ranker-key-hint">A chave nunca vai para o arquivo: exporte a variável antes de rodar.</p>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="ranker-model">Modelo</label>
+                <input type="text" id="ranker-model" name="ranker-model" value="gpt-4o-mini">
+              </div>
+              <div class="field">
+                <label for="ranker-base-url">Endpoint (compatível com OpenAI)</label>
+                <input type="url" id="ranker-base-url" name="ranker-base-url" value="https://api.openai.com/v1">
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="ranker-top-n">Top-N candidatos</label>
+                <input type="number" id="ranker-top-n" name="ranker-top-n" min="1" max="500" value="24"
+                       aria-describedby="ranker-top-n-hint">
+                <span class="hint" id="ranker-top-n-hint">No modo automático este número é o teto real: o curador só
+                  julga estas janelas, e o que ele não julgou é descartado.</span>
+              </div>
+              <div class="field">
+                <label for="ranker-weight">Peso do modelo (0-1)</label>
+                <input type="number" id="ranker-weight" name="ranker-weight" min="0" max="1" step="0.05" value="0.6">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2><span class="ico" aria-hidden="true">✎</span> Prompt do curador</h2>
+
+          <div class="form-section">
+            <div class="field">
+              <label for="curator-prompt">Regras do curador</label>
+              <textarea id="curator-prompt" name="curator-prompt" rows="16" spellcheck="false" aria-describedby="curator-prompt-hint"></textarea>
+              <p class="hint" id="curator-prompt-hint">As regras que o modelo segue para escolher o momento e escrever headline e hashtags. Editar este texto invalida o cache de veredictos sozinho.</p>
+            </div>
+            <div class="field">
+              <label for="curator-prompt-path">Arquivo</label>
+              <input type="text" id="curator-prompt-path" name="curator-prompt-path" readonly>
+            </div>
+            <div class="row-actions">
+              <button type="button" class="btn" id="btn-prompt-load">Recarregar do arquivo</button>
+              <button type="button" class="btn btn-primary" id="btn-prompt-save">Salvar prompt</button>
+              <span role="status" id="curator-prompt-status"></span>
+            </div>
+          </div>
+        </div>
+
+      </form>
+    </div>
+
+    <!-- COLUNA LATERAL -->
+    <aside>
+      <div class="card" style="position: sticky; top: 92px;">
+        <h2><span class="ico" aria-hidden="true">▦</span> Resumo</h2>
+
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 10px;">
+          <span class="status-pill" id="save-pill"><span class="dot"></span><span id="save-text">Carregando</span></span>
+          <span style="font-size:0.8rem; color:var(--text-muted);" id="save-when">—</span>
+        </div>
+
+        <p style="font-size:0.78rem; color:var(--text-muted); margin: 0 0 12px;" id="save-note">
+          Lendo os ajustes do servidor…
+        </p>
+
+        <div class="summary-list" id="summary-list"></div>
+
+        <button class="btn pressable btn-primary" type="button" id="btn-save-side" style="width:100%; justify-content:center; margin-top:14px;">Salvar ajustes</button>
+      </div>
+    </aside>
+
+  </div>
+
+</main>
+
+<footer>
+  <div class="wrap footer-inner">
+    <span>viral-clipper · interface web · CLI <code>python -m viralclipper</code></span>
+    <span>Whisper · yt-dlp · ffmpeg</span>
+  </div>
+</footer>
+
+<div class="toast-zone" id="toast-zone" aria-live="polite"></div>
+
+<script src="/comum.js?v=studio-20261001"></script>
+<script src="/ajustes.js"></script>
+
+</body>
+</html>

@@ -13,68 +13,9 @@
     curatorPromptExists: false,
   };
 
-  // ---------- rail lateral (menu principal) ----------
-  // A lista de destinos vive no HTML: uma vez no rail fixo, e uma copia no
-  // menu do header que aparece abaixo de 920px. Aqui so marcamos qual e a
-  // pagina atual — derivado de location.pathname, nunca escrito a mao, para
-  // que adicionar uma pagina nova nao exija mexer em estado.
-  const PAGES = {
-    '/':          'Cortes',
-    '/scrap':     'Scrap',
-  };
-
-  (function initRail() {
-    const path = window.location.pathname.replace(/\/index\.html$/, '/');
-    const norm = path.endsWith('/') ? path : path + '/';
-    const key = PAGES[path] ? path : (PAGES[norm] ? norm : '/');
-    const title = PAGES[key];
-
-    document.title = `${title} · Viral Clipper`;
-
-    // Cada instancia da lista (rail + menu do header) marca o seu proprio item.
-    $$('[data-rail-page]').forEach((item) => {
-      if (item.getAttribute('data-rail-page') === key) {
-        item.setAttribute('aria-current', 'page');
-      }
-    });
-
-    // O menu do header e o unico componente com estado aqui: abre e fecha.
-    const menu = $('[data-rail-menu]');
-    const btn = $('[data-rail-picker] .menu-btn');
-    if (!menu || !btn) return;
-
-    const setOpen = (open) => {
-      menu.hidden = !open;
-      btn.setAttribute('aria-expanded', String(open));
-    };
-
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const willOpen = menu.hidden;
-      setOpen(willOpen);
-      if (willOpen) {
-        const first = menu.querySelector('.rail-item');
-        if (first) first.focus({ preventScroll: true });
-      }
-    });
-
-    // O painel fica sobre o conteudo; sem isto um clique nele fecharia o menu
-    // E dispararia a acao do elemento por baixo.
-    menu.addEventListener('click', (e) => {
-      if (e.target.closest('.rail-item')) setOpen(false);
-    });
-
-    document.addEventListener('click', () => setOpen(false));
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        const wasOpen = !menu.hidden;
-        setOpen(false);
-        // Devolve o foco ao botao, senao ele some para o body e o usuario de
-        // teclado perde a posicao.
-        if (wasOpen) btn.focus({ preventScroll: true });
-      }
-    });
-  })();
+  // O rail (lista de destinos, marcacao da pagina atual e o menu do header)
+  // mora em /comum.js: RAIL_PAGES + renderRail. Ele se monta sozinho no
+  // load, entao nao ha nada para ligar aqui.
 
   // ---------- toggles ----------
   $$('.toggle').forEach((t) => {
@@ -84,235 +25,9 @@
     });
   });
 
-  // ---------- selects ricos (dropdown custom) ----------
-  // Progressive enhancement: o <select> nativo continua no form como fonte de
-  // verdade (collectOptions lê .value), mas a interação visual acontece no
-  // componente rico. Teclado: setas trocam a opção, Enter/Espaço abre/fecha,
-  // Esc fecha.
-
-  // Espelho visual dos presets do backend (viralclipper/caption_presets.py) em
-  // CSS: o contorno do ASS vira text-shadow em 4 direcoes e a caixa vira um
-  // background arredondado.
-  const CAPTION_LOOKS = {
-    'karaoke':    { font: "'Arial Black', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 3px rgba(0,0,0,0.55)', box: null, highlight: '#FFFF00', upper: true },
-    'bold-box':   { font: "'Arial Black', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: null, shadow: 'none', box: 'rgba(20, 20, 23, 0.7)', highlight: '#FFFF00', upper: true },
-    'minimal':    { font: "Arial, sans-serif", weight: 400, color: '#FFFFFF', outline: '#000000', shadow: '1px 1px 2px rgba(0,0,0,0.6)', box: null, highlight: '#FFFF00', upper: false },
-    'neon':       { font: "'Arial Black', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 4px rgba(0,0,0,0.7)', box: null, highlight: '#00FF88', upper: true },
-    'block-dark': { font: "'Arial Black', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: null, shadow: 'none', box: 'rgba(16, 16, 20, 0.9)', highlight: '#FFFF00', upper: true },
-    'mono':       { font: "Consolas, 'Courier New', monospace", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '1px 1px 3px rgba(0,0,0,0.6)', box: null, highlight: '#00FF88', upper: true },
-    // --- vibrantes de alto impacto (espelho dos presets novos do backend) ---
-    'fire':        { font: "'Arial Black', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 4px rgba(0,0,0,0.6)', box: null, highlight: '#FF5500', upper: true },
-    'magenta-pop': { font: "'Arial Black', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 4px rgba(0,0,0,0.7)', box: null, highlight: '#FF00CC', upper: true },
-    'cyan-pop':    { font: "'Arial Black', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 3px rgba(0,0,0,0.6)', box: null, highlight: '#00E5FF', upper: true },
-    'lime-hit':    { font: "'Arial Black', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 4px rgba(0,0,0,0.6)', box: null, highlight: '#CCFF00', upper: true },
-    'blood':       { font: "Impact, 'Arial Black', sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 4px rgba(0,0,0,0.7)', box: null, highlight: '#FF2D2D', upper: true },
-    'gold-box':    { font: "'Arial Black', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: null, shadow: 'none', box: 'rgba(20, 20, 23, 0.7)', highlight: '#FFD700', upper: true },
-    'candy':       { font: "'Arial Black', Arial, sans-serif", weight: 700, color: '#141414', outline: null, shadow: 'none', box: 'rgba(244, 244, 244, 0.8)', highlight: '#FF6FA5', upper: true },
-    'violet-vibe': { font: "'Arial Black', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 4px rgba(0,0,0,0.75)', box: null, highlight: '#B26BFF', upper: true },
-    'ice-blue':    { font: "Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: null, shadow: 'none', box: 'rgba(20, 24, 31, 0.8)', highlight: '#66CCFF', upper: true },
-    'sunset':      { font: "Impact, 'Arial Black', sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 4px rgba(0,0,0,0.6)', box: null, highlight: '#FF7A00', upper: true },
-    'bubble':      { font: "'Segoe UI', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: null, shadow: 'none', box: 'rgba(26, 30, 51, 0.84)', highlight: '#FFF200', upper: true },
-    'ultra-impact':{ font: "Impact, 'Arial Black', sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 5px rgba(0,0,0,0.8)', box: null, highlight: '#FFFF00', upper: true },
-    'slim':        { font: "'Arial Narrow', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '1px 1px 2px rgba(0,0,0,0.55)', box: null, highlight: '#00E5FF', upper: true },
-    'cobalt':      { font: "'Segoe UI', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: null, shadow: 'none', box: 'rgba(16, 18, 24, 0.9)', highlight: '#00E5FF', upper: true },
-    'pop-box':     { font: "'Arial Black', Arial, sans-serif", weight: 700, color: '#141414', outline: null, shadow: 'none', box: 'rgba(255, 242, 0, 0.8)', highlight: '#FF2D2D', upper: true },
-    // --- fontes do consenso editorial (espelho das novas do backend) ---
-    'roboto-bold':       { font: "Roboto, Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 3px rgba(0,0,0,0.6)', box: null, highlight: '#00E5FF', upper: true },
-    'inter-bold':        { font: "Inter, Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 3px rgba(0,0,0,0.6)', box: null, highlight: '#CCFF00', upper: true },
-    'poppins-bold':      { font: "Poppins, Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 4px rgba(0,0,0,0.6)', box: null, highlight: '#FF00CC', upper: true },
-    'montserrat-bold':   { font: "Montserrat, Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 3px rgba(0,0,0,0.6)', box: null, highlight: '#FFD700', upper: true },
-    'dm-sans':           { font: "'DM Sans', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 3px rgba(0,0,0,0.6)', box: null, highlight: '#FF5500', upper: true },
-    'cabin-bold':        { font: "Cabin, Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '1px 1px 2px rgba(0,0,0,0.55)', box: null, highlight: '#00E5FF', upper: true },
-    'verdana-bold':      { font: "Verdana, Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 3px rgba(0,0,0,0.6)', box: null, highlight: '#FFFF00', upper: true },
-    'trebuchet-bold':    { font: "'Trebuchet MS', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 3px rgba(0,0,0,0.6)', box: null, highlight: '#FF2D2D', upper: true },
-    'tahoma-bold':       { font: "Tahoma, Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '1px 1px 2px rgba(0,0,0,0.55)', box: null, highlight: '#00E5FF', upper: true },
-    'calibri-bold':      { font: "Calibri, Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 3px rgba(0,0,0,0.6)', box: null, highlight: '#CCFF00', upper: true },
-    'franklin-bold':     { font: "'Franklin Gothic Medium', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 4px rgba(0,0,0,0.6)', box: null, highlight: '#FF5500', upper: true },
-    'segoe-black':       { font: "'Segoe UI', Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '2px 2px 4px rgba(0,0,0,0.6)', box: null, highlight: '#B26BFF', upper: true },
-    'helvetica-classic': { font: "Helvetica, Arial, sans-serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '1px 1px 2px rgba(0,0,0,0.5)', box: null, highlight: '#FFFF00', upper: true },
-    'merriweather-black':{ font: "Merriweather, Georgia, serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '1px 1px 3px rgba(0,0,0,0.55)', box: null, highlight: '#FFD700', upper: true },
-    'arvo-bold':         { font: "Arvo, Georgia, serif", weight: 700, color: '#FFFFFF', outline: '#000000', shadow: '1px 1px 3px rgba(0,0,0,0.55)', box: null, highlight: '#FFFF00', upper: true },
-  };
-
-  function captionOutlineShadow(color) {
-    return '1px 0 0 ' + color + ', -1px 0 0 ' + color + ', 0 1px 0 ' + color + ', 0 -1px 0 ' + color +
-           ', 1px 1px 0 ' + color + ', -1px 1px 0 ' + color + ', 1px -1px 0 ' + color + ', -1px -1px 0 ' + color;
-  }
-
-  function captionTextStyle(el, look) {
-    el.style.fontFamily = look.font;
-    el.style.fontWeight = String(look.weight);
-    el.style.color = look.color;
-    const shadows = [];
-    if (look.outline) shadows.push(captionOutlineShadow(look.outline));
-    if (look.shadow && look.shadow !== 'none') shadows.push(look.shadow);
-    el.style.textShadow = shadows.join(', ');
-    el.style.background = look.box || 'transparent';
-    el.style.borderRadius = look.box ? '6px' : '0';
-    el.style.padding = look.box ? '4px 10px' : '0';
-  }
-
-  function captionDemoHtml(look) {
-    const text = look.upper ? 'EXEMPLO DE LEGENDA' : 'Exemplo de legenda';
-    const marker = look.upper ? 'LEGENDA' : 'legenda';
-    const at = text.lastIndexOf(marker);
-    return text.slice(0, at) + '<em style="color:' + look.highlight + '">' + text.slice(at) + '</em>';
-  }
-
-  function captionDemoElement(look) {
-    const stage = document.createElement('span');
-    stage.className = 'cap-stage';
-    const demo = document.createElement('span');
-    demo.className = 'cap-demo';
-    captionTextStyle(demo, look);
-    demo.innerHTML = captionDemoHtml(look);
-    stage.appendChild(demo);
-    return stage;
-  }
-
-  function enhanceSelect(select) {
-    const isCaptionPreset = select.id === 'caption-preset';
-    const wrapper = document.createElement('div');
-    wrapper.className = 'select-rich';
-
-    const trigger = document.createElement('button');
-    trigger.type = 'button';
-    trigger.className = 'select-trigger';
-    trigger.setAttribute('aria-haspopup', 'listbox');
-    trigger.setAttribute('aria-expanded', 'false');
-    trigger.innerHTML =
-      '<span class="sel-text"><span class="sel-title"></span><span class="sel-desc"></span></span>' +
-      '<span class="sel-arrow" aria-hidden="true">▾</span>';
-
-    const panel = document.createElement('div');
-    panel.className = 'select-panel';
-    panel.setAttribute('role', 'listbox');
-    panel.setAttribute('aria-label', select.name || select.id);
-
-    const optionEls = Array.from(select.options).map((opt) => {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.className = 'select-option pressable';
-      item.setAttribute('role', 'option');
-      const title = opt.getAttribute('data-title') || opt.textContent.trim();
-      const desc = opt.getAttribute('data-desc') || '';
-      const titleEl = document.createElement('span');
-      titleEl.className = 'opt-title';
-      titleEl.textContent = title;
-      item.appendChild(titleEl);
-      if (desc) {
-        const descEl = document.createElement('span');
-        descEl.className = 'opt-desc';
-        descEl.textContent = desc;
-        item.appendChild(descEl);
-      }
-      // O preset de legenda mostra a própria cara: a opção já renderiza a
-      // legenda como ela vai sair no video (fonte, cor, caixa e destaque).
-      if (isCaptionPreset && CAPTION_LOOKS[opt.value]) {
-        item.appendChild(captionDemoElement(CAPTION_LOOKS[opt.value]));
-      }
-      item.addEventListener('click', () => {
-        select.value = opt.value;
-        sync();
-        close();
-        trigger.focus();
-      });
-      panel.appendChild(item);
-      return item;
-    });
-
-    function sync() {
-      const active = select.options[select.selectedIndex];
-      if (!active) return;
-      const titleEl = trigger.querySelector('.sel-title');
-      titleEl.textContent =
-        active.getAttribute('data-title') || active.textContent.trim();
-      // O select de preset carrega o visual da legenda no proprio trigger.
-      if (isCaptionPreset && CAPTION_LOOKS[select.value]) {
-        captionTextStyle(titleEl, CAPTION_LOOKS[select.value]);
-        trigger.classList.add('cap-trigger');
-      }
-      const descEl = trigger.querySelector('.sel-desc');
-      const desc = active.getAttribute('data-desc') || '';
-      descEl.textContent = desc;
-      descEl.style.display = desc ? '' : 'none';
-      optionEls.forEach((el, i) => {
-        const on = select.options[i].selected;
-        el.classList.toggle('selected', on);
-        el.setAttribute('aria-selected', String(on));
-      });
-    }
-
-    function place() {
-      const r = trigger.getBoundingClientRect();
-      panel.style.top = (r.bottom + 6) + 'px';
-      panel.style.left = r.left + 'px';
-      panel.style.width = r.width + 'px';
-    }
-    function open() {
-      place();
-      wrapper.classList.add('open');
-      panel.classList.add('open');
-      trigger.setAttribute('aria-expanded', 'true');
-      wrapper.closest('.card')?.classList.add('dropdown-open');
-    }
-    function close() {
-      wrapper.classList.remove('open');
-      panel.classList.remove('open');
-      trigger.setAttribute('aria-expanded', 'false');
-      wrapper.closest('.card')?.classList.remove('dropdown-open');
-    }
-    function isOpen() { return wrapper.classList.contains('open'); }
-
-    // Reposiciona ao rolar/redimensionar: o painel é fixed no <body>, então a
-    // âncora visual se move, mas o painel não.
-    const reposition = () => { if (isOpen()) place(); };
-    window.addEventListener('scroll', reposition, true);
-    window.addEventListener('resize', reposition);
-
-    trigger.addEventListener('click', () => {
-      isOpen() ? close() : open();
-    });
-    document.addEventListener('click', (e) => {
-      const inside = wrapper.contains(e.target) || panel.contains(e.target);
-      if (!inside) close();
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && wrapper.classList.contains('open')) {
-        close();
-        trigger.focus();
-      }
-    });
-    trigger.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        const idx = select.selectedIndex;
-        const next = e.key === 'ArrowDown'
-          ? Math.min(select.options.length - 1, idx + 1)
-          : Math.max(0, idx - 1);
-        select.selectedIndex = next;
-        sync();
-      }
-    });
-
-    select.classList.add('select-native');
-    select.setAttribute('tabindex', '-1');
-    select.setAttribute('aria-hidden', 'true');
-    select.addEventListener('change', sync);
-
-    select.parentNode.insertBefore(wrapper, select);
-    wrapper.appendChild(trigger);
-    // O painel vai direto para o <body>: como ele não herda nenhum stacking
-    // context criado por backdrop-filter/transform dos cards, nenhum card
-    // consegue pintar por cima.
-    document.body.appendChild(panel);
-    wrapper.appendChild(select);
-    sync();
-  }
-  // data-defer-enhance fica de fora: o select de provedor e preenchido depois,
-  // com a lista que vem do servidor. Aprimora-lo agora montaria o dropdown rico
-  // a partir de uma lista vazia, e o painel ficaria sem opcao nenhuma.
-  $$('select[id]:not([data-defer-enhance])').forEach(enhanceSelect);
+  // Os selects ricos (dropdown custom) e o visual das legendas moram em
+  // /comum.js: CAPTION_LOOKS + enhanceSelect. O que resta aqui e a chamada
+  // que aprimora os selects da pagina no load.
 
   // ---------- helpers ----------
   function toast(msg, kind) {
@@ -326,6 +41,8 @@
 
   function log(line, cls) {
     const box = $('#log-box');
+    const empty = box.querySelector('.execution-log-empty');
+    if (empty) empty.remove();
     const span = document.createElement('span');
     if (cls) span.className = cls;
     span.textContent = line + '\n';
@@ -343,7 +60,8 @@
     const bar = $('#progress-bar');
     bar.style.width = pct + '%';
     $('#progress-track').setAttribute('aria-valuenow', String(Math.round(pct)));
-    if (label) $('#progress-label').textContent = label;
+    const progressLabel = $('#progress-label');
+    if (label && progressLabel.textContent !== label) progressLabel.textContent = label;
     if (pct >= 100) bar.classList.add('done'); else bar.classList.remove('done');
   }
 

@@ -46,6 +46,35 @@ CURATOR_PROMPT_PATH = REPO_ROOT / "prompts" / "curador.txt"
 #: disk through this route.
 MAX_CURATOR_PROMPT_BYTES = 64 * 1024
 
+AJUSTES_PATH = REPO_ROOT / "ajustes.toml"
+
+#: Every key the Ajustes page owns. This tuple is the whole contract: the page
+#: may only write these, GET /ajustes.json only returns these, and index.js
+#: merges exactly these into the POST /run payload. Spelled out rather than
+#: derived from the CLI parser because it is a product decision -- what belongs
+#: to the panel -- and a parser-derived list would grow silently every time a
+#: flag is added, putting fields on the page nobody designed.
+#:
+#: Every name here is an argparse dest *and* a ClipConfig field, so the file
+#: this produces is a valid ``--config`` and the merge needs no translation.
+#: ``curator_prompt_file`` is deliberately absent: the page does not edit that
+#: path, the server owns it (see ``_ajustes_payload``).
+AJUSTES_KEYS = (
+    "min_duration", "max_duration", "target_duration", "min_score", "min_gap",
+    "engine",
+    # The three numbers of the automatic mode. They live here rather than on the
+    # Cortes page because they are set once; what changes per run is the clip
+    # count, which stayed there.
+    "auto_margin", "auto_ceiling", "max_duration_grace",
+    "whisper_model", "language", "beam_size", "cache_dir",
+    "vad_filter", "transcript_cache",
+    "layout", "caption_preset", "caption_style", "font_size",
+    "crf", "target_lufs", "workers",
+    "headline_seconds", "progress_bar", "jump_cut", "loudnorm",
+    "ranker", "ranker_provider", "ranker_api_key_env", "ranker_model",
+    "ranker_base_url", "ranker_top_n", "ranker_weight",
+)
+
 # Import the package itself; the server must run from the repo root so
 # `viralclipper` resolves, but __file__ lets us be explicit.
 import re
@@ -53,6 +82,7 @@ import sys
 sys.path.insert(0, str(REPO_ROOT))
 
 from viralclipper import config as config_mod  # noqa: E402
+from viralclipper import config_file as config_file_mod  # noqa: E402
 from viralclipper import download as download_mod  # noqa: E402
 from viralclipper import ig_profile as ig_profile_mod  # noqa: E402
 from viralclipper import pipeline, quality, report, transcript_import, util, viral_report  # noqa: E402
@@ -308,6 +338,92 @@ def _mark_stage(index: int, *, skipped: bool = False) -> None:
         stages.append({"key": key, "label": label, "state": state})
     _publish_run(stages=stages, stage=_RUN_STAGES[index][0],
                  stage_label=_RUN_STAGES[index][1], stage_index=index + 1)
+
+
+# ---------- ajustes: o estado da pagina de Ajustes ----------
+# The panel's settings live in one TOML file at the repo root. Reading goes
+# through the same loader the CLI uses, so a file the panel wrote is a file
+# ``--config`` can read and vice versa -- there is no second dialect.
+
+
+def _read_ajustes() -> dict:
+    """The saved settings, filtered to the keys the page owns.
+
+    A missing file is not an error: it is the first run, and the caller falls
+    back to the ClipConfig defaults, which are the same numbers the form ships
+    with. A malformed file is not an error either -- the panel reports "nothing
+    saved yet" instead of the endpoint going down, because the user can always
+    fix it from the page.
+    """
+    if not AJUSTES_PATH.is_file():
+        return {}
+    try:
+        loaded = config_file_mod.load_config_file(AJUSTES_PATH, CollectingLogger())
+    except Exception:
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+    return {key: loaded[key] for key in AJUSTES_KEYS if key in loaded}
+
+
+def _toml_scalar(value) -> "str | None":
+    """Render one TOML value, or None for anything TOML cannot express.
+
+    ``bool`` is checked before ``int`` on purpose: in Python ``True`` is an
+    ``int``, so the reverse order would write ``true`` as ``1`` and the panel
+    would read the toggle back as a number.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, str):
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return None
+
+
+def _dump_ajustes(settings: dict) -> str:
+    """Serialise ``settings`` as TOML, in ``AJUSTES_KEYS`` order.
+
+    Written by hand because the stdlib ships a TOML reader but no writer. The
+    file is flat by construction -- every value is a scalar the form produced --
+    so a serialiser that only handles scalars is the whole job, and iterating
+    AJUSTES_KEYS instead of the dict keeps the file diff-friendly between saves.
+    """
+    lines = [
+        "# Escrito pela pagina de Ajustes (web/ajustes.html).",
+        "# E um --config valido: `python -m viralclipper --config ajustes.toml`",
+        "# roda com exatamente estes valores. Editar a mao funciona, mas a",
+        "# proxima vez que a pagina salvar o arquivo e reescrito por inteiro.",
+        "",
+    ]
+    for key in AJUSTES_KEYS:
+        if key not in settings:
+            continue
+        rendered = _toml_scalar(settings[key])
+        if rendered is None:
+            continue
+        lines.append(f"{key} = {rendered}")
+    return "\n".join(lines) + "\n"
+
+
+def _ajustes_payload() -> dict:
+    """What ``GET /ajustes.json`` returns.
+
+    ``curator_prompt_file`` rides along without being an AJUSTES_KEYS entry: the
+    page never edits that path (it saves the prompt through
+    ``/prompts/curador``), but index.js has to forward it into the run payload,
+    and sending it here saves a second request. It is added *after* the merge in
+    ``_handle_save_ajustes`` for the same reason -- the panel must not be able
+    to point the curator at an arbitrary file.
+    """
+    settings = _read_ajustes()
+    if CURATOR_PROMPT_PATH.is_file():
+        settings["curator_prompt_file"] = str(CURATOR_PROMPT_PATH)
+    return settings
 
 
 def _run_job(options: dict, plan_only: bool) -> dict:
@@ -1901,6 +2017,18 @@ class Handler(http_server.BaseHTTPRequestHandler):
             else:
                 self._send_json({"error": "scrap.html missing"}, 404)
             return
+        if path in {"/ajustes", "/ajustes.html"}:
+            # Both spellings on purpose: the page links to /ajustes, but a
+            # .html suffix is what people type. Without this route the request
+            # would fall through to the static handler, where .html is not a
+            # known suffix and the file would be *downloaded* instead of shown.
+            page = WEB_DIR / "ajustes.html"
+            if page.exists():
+                self._send_file(page.read_bytes(), "text/html; charset=utf-8",
+                                cache=self._CACHE_PAGE, etag=self._etag_for(page))
+            else:
+                self._send_json({"error": "ajustes.html missing"}, 404)
+            return
         if path == "/docs":
             # The README, rendered here instead of sent to GitHub: the old
             # button opened a repo URL that 404s (private/renamed), so the
@@ -1988,6 +2116,13 @@ class Handler(http_server.BaseHTTPRequestHandler):
                 record["elapsed"] = round(time.time() - record["started_at"], 1)
             self._send_json(record)
             return
+        if path == "/ajustes.json":
+            self._send_json({
+                "settings": _ajustes_payload(),
+                "path": _relative_to_repo(AJUSTES_PATH),
+                "exists": AJUSTES_PATH.is_file(),
+            })
+            return
         if path == "/scrap/download/progress":
             with _lock:
                 record = dict(_state.get(_DOWNLOAD_SLOT) or _download_record())
@@ -2074,6 +2209,9 @@ class Handler(http_server.BaseHTTPRequestHandler):
         if path == "/prompts/curador":
             self._handle_save_curator_prompt(payload)
             return
+        if path == "/ajustes":
+            self._handle_save_ajustes(payload)
+            return
         if path != "/run":
             self._send_json({"error": "not found"}, 404)
             return
@@ -2084,6 +2222,39 @@ class Handler(http_server.BaseHTTPRequestHandler):
             return
         result = _run_job(options, plan_only)
         self._send_json(result)
+
+    def _handle_save_ajustes(self, payload: dict) -> None:
+        """Persist the panel's settings to ``ajustes.toml``.
+
+        Merges instead of replacing: a page that does not render every key must
+        not delete the ones it does not know about, which is exactly what would
+        happen the first time an older tab saved over a newer file. Keys outside
+        AJUSTES_KEYS are ignored outright -- this endpoint must not become a way
+        to write ``url`` or ``output_dir`` into the config from the browser.
+        """
+        incoming = payload.get("settings")
+        if not isinstance(incoming, dict):
+            self._send_json({"error": "settings must be an object"}, 400)
+            return
+
+        merged = dict(_read_ajustes())
+        for key in AJUSTES_KEYS:
+            if key in incoming:
+                merged[key] = incoming[key]
+
+        try:
+            AJUSTES_PATH.write_text(_dump_ajustes(merged), encoding="utf-8")
+        except OSError as exc:
+            self._send_json({"error": f"cannot write {AJUSTES_PATH}: {exc}"}, 500)
+            return
+
+        # Answer with what was actually stored, not with what was sent: the page
+        # reapplies this response, so a value dropped or normalised on the way
+        # in shows up on screen instead of diverging silently from the file.
+        self._send_json({
+            "settings": _ajustes_payload(),
+            "path": _relative_to_repo(AJUSTES_PATH),
+        })
 
     def _handle_thumb(self, payload: dict) -> None:
         """Resolve one result's thumbnail after the list is already on screen.

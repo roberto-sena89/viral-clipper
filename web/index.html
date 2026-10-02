@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Viral Clipper — Interface Web</title>
+<title>Estúdio — Viral Clipper</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/shared.css">
-<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="/shared.css?v=rail-brand-20261001">
+<link rel="stylesheet" href="/index.css?v=execution-panel-20261001">
 </head>
 <body>
 
@@ -16,32 +16,16 @@
      JS abaixo — nunca escrito a mao, senao a pagina errada se declara atual. -->
 <nav class="rail" aria-label="Navegação principal">
   <div class="rail-brand">
-    <div class="brand-mark" aria-hidden="true"><img src="/favicon.svg" alt="" width="36" height="36"></div>
-    <div>Viral Clipper<small>interface web</small></div>
+    <a class="rail-brand-link" href="/" aria-label="Viral Clipper — abrir o Estúdio">
+      <span class="brand-mark" aria-hidden="true"><img src="/favicon.svg" alt="" width="36" height="36"></span>
+      <span class="rail-brand-copy"><strong>Viral Clipper</strong><small>Editor de vídeos curtos</small></span>
+    </a>
+    <span class="rail-brand-badge" aria-label="Aplicativo local">LOCAL</span>
   </div>
 
   <div class="rail-label" id="rail-label-paginas">Páginas</div>
 
-  <ul class="rail-menu" aria-labelledby="rail-label-paginas">
-    <li>
-      <a class="rail-item pressable" href="/" data-rail-page="/">
-        <span class="ri-ico" aria-hidden="true">▶</span>
-        <span>
-          <span class="ri-title">Cortes</span>
-          <span class="ri-desc">Configurar e gerar os clips de um vídeo longo.</span>
-        </span>
-      </a>
-    </li>
-    <li>
-      <a class="rail-item pressable" href="/scrap" data-rail-page="/scrap">
-        <span class="ri-ico" aria-hidden="true">⤓</span>
-        <span>
-          <span class="ri-title">Scrap</span>
-          <span class="ri-desc">Baixar por link ou varrer um perfil inteiro.</span>
-        </span>
-      </a>
-    </li>
-  </ul>
+  <ul class="rail-menu" aria-labelledby="rail-label-paginas" data-rail-list></ul>
 
   <div class="rail-foot">
     <span>viral-clipper · 9:16 1080×1920</span>
@@ -50,95 +34,64 @@
 
 <header>
   <div class="wrap header-inner">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true"><img src="/favicon.svg" alt="" width="36" height="36"></div>
-      <span>Viral Clipper <small>interface web</small></span>
+    <div class="header-context" aria-label="Estúdio de cortes verticais">
+      <span class="header-context-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="4.5" width="17" height="15" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="m10 8.5 5 3.5-5 3.5v-7Z" fill="currentColor"/><path d="M7 2.75v3M17 2.75v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </span>
+      <span class="header-context-copy">
+        <span class="header-context-eyebrow">ESPAÇO DE TRABALHO</span>
+        <strong>Estúdio <span class="header-context-long"><span aria-hidden="true">/</span> Cortes verticais</span><span class="header-context-short">Editor</span></strong>
+      </span>
+      <span class="header-context-status"><span aria-hidden="true"></span>Processamento local</span>
     </div>
     <div class="nav-actions">
       <!-- Fallback do rail abaixo de 920px: mesmos destinos, em menu. -->
       <div class="rail-dropdown" data-rail-picker>
         <button class="menu-btn pressable" type="button" id="rail-menu-btn"
                 aria-haspopup="true" aria-expanded="false" aria-controls="rail-menu-sm">
-          <span class="mb-bars" aria-hidden="true">☰</span>
-          <span class="sr-only">Menu de páginas</span>
-          <span class="mb-caret" aria-hidden="true">▾</span>
+          <span class="mb-bars" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6.5h16M4 12h16M4 17.5h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+          <span class="sr-only">Abrir navegação</span>
+          <span class="mb-caret" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         </button>
-        <ul class="rail-menu" id="rail-menu-sm" data-rail-menu hidden>
-          <li>
-            <a class="rail-item pressable" href="/" data-rail-page="/">
-              <span class="ri-ico" aria-hidden="true">▶</span>
-              <span>
-                <span class="ri-title">Cortes</span>
-                <span class="ri-desc">Configurar e gerar os clips de um vídeo longo.</span>
-              </span>
-            </a>
-          </li>
-          <li>
-            <a class="rail-item pressable" href="/scrap" data-rail-page="/scrap">
-              <span class="ri-ico" aria-hidden="true">⤓</span>
-              <span>
-                <span class="ri-title">Scrap</span>
-                <span class="ri-desc">Baixar por link ou varrer um perfil inteiro.</span>
-              </span>
-            </a>
-          </li>
-        </ul>
+        <ul class="rail-menu" id="rail-menu-sm" data-rail-menu data-rail-list hidden></ul>
       </div>
-      <button class="btn pressable" type="button" id="btn-batch">Lote</button>
-      <button class="btn pressable btn-primary" type="button" id="btn-run">Gerar clips</button>
+      <button class="btn pressable header-batch" type="button" id="btn-batch" title="Processa uma lista de URLs pela linha de comando"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M7 7h10v10H7" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><span>Lote via CLI</span></button>
+      <button class="btn pressable btn-primary header-run" type="button" id="btn-run"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m10 2 1.6 5.2L17 9l-5.4 1.8L10 16l-1.7-5.2L3 9l5.3-1.8L10 2Z" fill="currentColor"/><path d="m16 13 .8 2.2L19 16l-2.2.8L16 19l-.8-2.2L13 16l2.2-.8L16 13Z" fill="currentColor"/></svg><span class="header-run-full">Gerar cortes</span><span class="header-run-short">Gerar</span></button>
     </div>
   </div>
 </header>
 
 <main class="wrap">
 
-  <!-- HERO -->
-  <section class="hero" aria-label="Apresentação">
-    <div>
-      <div class="badge-row">
-        <span class="chip"><strong>CLI</strong> python -m viralclipper</span>
-        <span class="chip"><strong>Whisper</strong> small / base / tiny</span>
-        <span class="chip"><strong>9:16</strong> vertical pronto</span>
-        <span class="chip"><strong>Legendas</strong> karaoke</span>
+  <!-- ESPAÇO DE TRABALHO -->
+  <section class="hero studio-welcome" aria-labelledby="studio-title">
+    <div class="studio-welcome-copy">
+      <div class="studio-overline">
+        <span class="studio-online-dot" aria-hidden="true"></span>
+        <span>ESTÚDIO LOCAL</span>
+        <span class="studio-overline-divider" aria-hidden="true">/</span>
+        <span>EDIÇÃO VERTICAL</span>
       </div>
-      <h1>De um vídeo longo,<br>os melhores cortes verticais.</h1>
-      <p class="lead">
-        Cole o link e gere clips com legendas queimadas, pontuados por gancho,
-        densidade de fala e energia — prontos para Shorts, Reels e TikTok. Só
-        o campo de endereço é obrigatório: o resto tem padrão.
-      </p>
-      <div style="display:flex; gap:10px; flex-wrap:wrap;">
-        <button class="btn pressable btn-primary" type="button" id="hero-cta">Começar agora</button>
-        <button class="btn pressable" type="button" id="btn-docs">Ver documentação</button>
+      <h1 id="studio-title">Transforme vídeos longos em cortes prontos.</h1>
+      <p class="lead">Configure a seleção, o enquadramento e as legendas em um só lugar. Revise os resultados antes de publicar.</p>
+      <div class="studio-actions">
+        <button class="btn pressable btn-primary" type="button" id="hero-cta">Colar link do vídeo</button>
+        <button class="btn pressable" type="button" id="btn-docs">Documentação</button>
       </div>
     </div>
-    <div class="hero-visual" aria-hidden="true">
-      <div class="frame-label">
-        <span>Pré-visualização · 3 clips</span>
-        <span style="color:var(--success); font-weight:600;">9:16 · 1080×1920</span>
+    <div class="studio-workflow" aria-label="Fluxo do estúdio">
+      <div class="studio-workflow-head">
+        <span class="studio-card-label">FLUXO DE EDIÇÃO</span>
+        <span class="local-indicator"><span aria-hidden="true"></span> PROCESSAMENTO LOCAL</span>
       </div>
-      <div class="preview-stack">
-        <!-- Os cards com data-live tocam um clip de verdade: o mesmo 9:16 da
-             saida, em loop, para a previa mostrar o produto e nao um esqueleto.
-             O estado mora em data-live e so o JS o liga, quando o arquivo tem
-             um frame decodificado; um card sem arquivo (clone limpo) ou cujo
-             arquivo falhou fica exatamente como era, com o esquema. Os clipes
-             vivem em web/ e sao gitignored: a pagina nunca depende deles. -->
-        <div class="preview-card" data-live="0">
-          <video class="preview-video" src="/1.mp4" muted playsinline loop autoplay
-                 preload="auto" aria-hidden="true"></video>
-          <span class="tag">0:42 → 1:24</span>
-        </div>
-        <div class="preview-card" data-live="0">
-          <video class="preview-video" src="/2.mp4" muted playsinline loop autoplay
-                 preload="auto" aria-hidden="true"></video>
-          <span class="tag">3:10 → 3:58</span>
-        </div>
-        <div class="preview-card" data-live="0">
-          <video class="preview-video" src="/3.mp4" muted playsinline loop autoplay
-                 preload="auto" aria-hidden="true"></video>
-          <span class="tag">7:02 → 7:47</span>
-        </div>
+      <ol class="studio-steps">
+        <li><span class="studio-step-number">01</span><span><strong>Fonte</strong><small>Link e pasta de saída</small></span></li>
+        <li><span class="studio-step-number">02</span><span><strong>Seleção</strong><small>Momentos com potencial</small></span></li>
+        <li><span class="studio-step-number">03</span><span><strong>Renderização</strong><small>Reframe e legendas</small></span></li>
+      </ol>
+      <div class="studio-output-spec">
+        <span>FORMATO DE SAÍDA</span>
+        <strong>9:16 <small>1080 × 1920</small></strong>
       </div>
     </div>
   </section>
@@ -148,8 +101,14 @@
 
     <!-- COLUNA PRINCIPAL -->
     <div>
-      <h2 class="section-title" id="config">Configuração do corte</h2>
-      <p class="section-sub">Todos os parâmetros do <code>python -m viralclipper</code> mapeados. Flags da interface vencem o <code>--config</code>.</p>
+      <div class="config-heading">
+        <div>
+          <span class="studio-card-label">NOVO PROJETO</span>
+          <h2 class="section-title" id="config">Configuração do corte</h2>
+        </div>
+        <span class="defaults-badge"><span aria-hidden="true">✓</span> Pronto para começar com os padrões</span>
+      </div>
+      <p class="section-sub">Cole o link do vídeo. Os ajustes recomendados já estão preenchidos e podem ser personalizados abaixo.</p>
 
       <form id="clip-form" novalidate>
 
@@ -557,12 +516,19 @@
 
     <!-- COLUNA LATERAL -->
     <aside>
-      <div class="card" style="position: sticky; top: 92px;">
-        <h2><span class="ico" aria-hidden="true">●</span> Execução</h2>
+      <div class="card execution-card" aria-labelledby="execution-title">
+        <div class="execution-card-heading">
+          <span class="execution-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19.5h16M6.5 16V11m5.5 5V5m5.5 11v-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+          <div class="execution-heading-copy">
+            <span class="execution-kicker">PIPELINE LOCAL</span>
+            <h2 id="execution-title">Execução</h2>
+          </div>
+          <span class="execution-format">9:16</span>
+        </div>
 
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 4px;">
-          <span class="status-pill" id="status-pill"><span class="dot"></span><span id="status-text">Parado</span></span>
-          <span style="font-size:0.8rem; color:var(--text-muted);" id="elapsed">—</span>
+        <div class="execution-state-row">
+          <span class="status-pill" id="status-pill" role="status" aria-live="polite"><span class="dot"></span><span id="status-text">Parado</span></span>
+          <span class="execution-elapsed"><span>Tempo</span><span id="elapsed">—</span></span>
         </div>
 
         <!-- Prontidão do backend. Aparece só quando não há serviço, e diz qual
@@ -573,26 +539,29 @@
              Sem isto, "Backend offline" parecia dizer ao usuário que o
              servidor estava caído quando ele estava sim rodando — e a pessoa
              reiniciava um processo que nunca tinha parado. -->
-        <p class="backend-note" id="backend-state" hidden></p>
+        <p class="backend-note" id="backend-state" role="status" aria-live="polite" hidden></p>
 
-        <div class="progress" role="progressbar" aria-label="Progresso" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-track">
+        <div class="execution-progress-label">Acompanhamento</div>
+        <div class="progress" role="progressbar" aria-label="Progresso da execução" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-track">
           <div class="progress-bar" id="progress-bar"></div>
         </div>
+        <div class="execution-progress-message" id="progress-label" role="status" aria-live="polite">Pronto para iniciar.</div>
         <!-- Etapas nomeadas, alimentadas por /run/progress. A barra sozinha nao
              responde "o que esta acontecendo?" num job de minutos: ela fica
              parada em 0 enquanto o pipeline baixa, transcreve e renderiza. O
-             `step-list` nasce vazio e o JS o preenche com a escada que o
-             servidor manda — a mesma forma do `arq-steps` do Scrap.
-             data-steps é o contrato lido pelo teste: quatro chaves, uma por
-             fase do pipeline, nunca inventadas pela tela. -->
-        <ol class="step-list" id="step-list" aria-label="Etapas da execucao"
+             `step-list` nasce vazio e o JS o preenche com as etapas que o
+             servidor manda — fases não são inventadas pela tela.
+             data-steps é o contrato existente: quatro chaves, uma por fase. -->
+        <ol class="step-list" id="step-list" aria-label="Etapas da execução"
             data-steps="analise|Baixando e transcrevendo||selecao|Escolhendo os melhores trechos||relatorio|Montando o relatorio||render|Renderizando os clips"></ol>
-        <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom: 14px;" id="progress-label">Pronto para iniciar.</div>
 
-        <button class="btn pressable btn-primary" type="button" id="btn-run-side" style="width:100%; justify-content:center; margin-bottom:10px;">Gerar clips</button>
-        <button class="btn pressable" type="button" id="btn-plan" style="width:100%; justify-content:center;">Simular (plan-only)</button>
+        <div class="execution-actions">
+          <button class="btn pressable btn-primary" type="button" id="btn-run-side"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m10 2 1.6 5.2L17 9l-5.4 1.8L10 16l-1.7-5.2L3 9l5.3-1.8L10 2Z" fill="currentColor"/></svg>Gerar cortes</button>
+          <button class="btn pressable" type="button" id="btn-plan" title="Analisa os trechos sem renderizar vídeos">Simular sem renderizar</button>
+        </div>
 
-        <div class="log-box" id="log-box" aria-live="polite"><span style="color:var(--text-muted)">// log da execução aparece aqui</span></div>
+        <div class="execution-log-heading"><span>Saída técnica</span><span>DIAGNÓSTICO</span></div>
+        <div class="log-box" id="log-box" role="log" aria-label="Registro técnico da execução" aria-live="polite"><span class="execution-log-empty">O registro da execução aparecerá aqui.</span></div>
       </div>
     </aside>
 
@@ -649,15 +618,15 @@
       <span aria-hidden="true">·</span>
       <button class="footer-link" type="button" id="btn-rail-cortes">Cortes</button>
       <span aria-hidden="true">·</span>
-      <button class="footer-link" type="button" id="btn-rail-scrap">Scrap</button>
+      <button class="footer-link" type="button" id="btn-rail-scrap">Biblioteca</button>
     </nav>
   </div>
 </footer>
 
 <div class="toast-zone" id="toast-zone" aria-live="polite"></div>
 
-<script src="/comum.js"></script>
-<script src="/index.js"></script>
+<script src="/comum.js?v=studio-20261001"></script>
+<script src="/index.js?v=execution-panel-20261001-r2"></script>
 
 </body>
 </html>

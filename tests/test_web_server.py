@@ -1836,7 +1836,13 @@ class SharedEscaperTests(unittest.TestCase):
                                ("scrap.html", "scrap.js")):
             with self.subTest(pagina=pagina):
                 html = self.arquivo(pagina)
-                ordem = re.findall(r'<script[^>]+src="/([^"]+\.js)"', html)
+                # O `src` carrega cache-busting (`/comum.js?v=studio-20261001`):
+                # a query sai antes de comparar, senao nenhum `src` casa e o
+                # teste reprova paginas que carregam tudo na ordem certa.
+                ordem = [
+                    src.split("?", 1)[0]
+                    for src in re.findall(r'<script[^>]+src="/([^"]+\.js)[^"]*"', html)
+                ]
                 self.assertIn("comum.js", ordem,
                               f"{pagina} nao carrega o comum.js")
                 self.assertLess(ordem.index("comum.js"), ordem.index(script),
@@ -2034,7 +2040,10 @@ class SharedStyleSheetTests(unittest.TestCase):
                 for link in re.findall(r"<link[^>]*>", self.css(pagina)):
                     if 'rel="stylesheet"' not in link:
                         continue
-                    m = re.search(r'href="([^"]+\.css)"', link)
+                    # A query de cache-busting (`/shared.css?v=rail-brand-...`)
+                    # sai aqui: sem isso nenhum href `.css` casa e o teste
+                    # reprova um <link> que esta' na ordem certa.
+                    m = re.search(r'href="([^"]+\.css)(?:\?[^"]*)?"', link)
                     if m:
                         ordem.append(m.group(1).rsplit("/", 1)[-1])
                 # So as folhas LOCAIS: o `href` da fonte do Google tambem
@@ -2467,101 +2476,119 @@ class FieldDescriptionTests(unittest.TestCase):
 
 
 class RailNavigationTests(unittest.TestCase):
-    """The page picker on the lateral rail.
+    """O rail: uma lista, tres paginas, dois lugares por pagina.
 
-    Both pages are served as standalone HTML with no build step, so the rail
-    markup and its stylesheet are duplicated on purpose. That duplication is
-    exactly what drifts: a page gets the new item and the other one keeps the
-    old list, or one copy loses the responsive fallback and the narrow layout
-    ends up with no navigation at all. These tests pin the parts that must
-    match, without prescribing the whole file.
+    A lista de destinos era escrita a mao SEIS vezes (rail fixo + menu do header,
+    em cada uma das tres paginas) e a marcacao da pagina atual mais TRES vezes,
+    uma por arquivo. As copias divergiram de verdade: o mapa de paginas do
+    index.js e do scrap.js nao conhecia /ajustes, e a normalizacao do caminho
+    era oposta nos dois grupos (um acrescentava barra final, o outro tirava).
+    Antes da unificacao o proprio `index.js` chamava /scrap de "Scrap" enquanto o
+    `scrap.js` e as duas paginas ja o chamavam de "Biblioteca" -- tres nomes para
+    o mesmo destino, e o `document.title` divergia entre as paginas por isso.
+
+    Agora a fonte unica e ``RAIL_PAGES`` em ``web/comum.js``, e cada pagina traz
+    apenas dois ``<ul data-rail-list>`` vazios. O que estes testes travam:
+
+    * a lista declarada uma vez so, com os destinos que existem;
+    * nenhuma pagina carregando a lista ou o mapa de paginas de volta;
+    * todo destino apontando para uma rota que o servidor realmente serve.
     """
 
-    PAGES = ("index.html", "scrap.html")
-    #: Destinations the rail offers, keyed by the href the browser will see.
-    DESTINATIONS = {
-        "/": {"title": "Cortes", "ico": "▶"},
-        "/scrap": {"title": "Scrap", "ico": "⤓"},
-    }
-
-    def body(self, name: str) -> str:
-        return (server.WEB_DIR / name).read_text(encoding="utf-8")
+    PAGES = ("index.html", "ajustes.html", "scrap.html")
+    #: Os unicos destinos do rail. Tem de bater com RAIL_PAGES e com as rotas.
+    DESTINATIONS = ("/", "/ajustes", "/scrap")
+    #: Campos que cada entrada precisa para o item sair completo no render.
+    FIELDS = ("path", "ico", "title", "desc")
 
     def markup(self, name: str) -> str:
-        """The page with <script>/<style>/comments stripped.
-
-        Counting ``data-rail-picker`` in the raw file overcounts: the attribute
-        also appears in the CSS comment and in the JS selector. Only real
-        elements matter here.
-        """
-        import re
-
-        text = self.body(name)
+        """A pagina sem <script>/<style>/comentarios."""
+        text = (server.WEB_DIR / name).read_text(encoding="utf-8")
         text = re.sub(r"<script.*?</script>", "", text, flags=re.S)
         text = re.sub(r"<style.*?</style>", "", text, flags=re.S)
         return re.sub(r"<!--.*?-->", "", text, flags=re.S)
 
+    def rail_source(self) -> str:
+        return (server.WEB_DIR / "comum.js").read_text(encoding="utf-8")
+
+    def rail_pages(self) -> list[dict]:
+        """As entradas de RAIL_PAGES, lidas do proprio comum.js.
+
+        Lidas do arquivo, e nao copiadas aqui: se a lista mudar la, o teste muda
+        junto em vez de passar a verificar uma copia morta.
+        """
+        block = re.search(
+            r"const RAIL_PAGES\s*=\s*\[(.*?)\n\s*\];", self.rail_source(), re.S
+        )
+        self.assertIsNotNone(block, "comum.js nao declara RAIL_PAGES")
+        entries = []
+        for raw in re.findall(r"\{([^{}]*)\}", block.group(1)):
+            entries.append(dict(re.findall(r"(\w+)\s*:\s*'([^']*)'", raw)))
+        return entries
+
+    def stylesheets(self, name: str) -> list[str]:
+        """Os css linkados, sem a query de cache-busting.
+
+        As paginas referenciam ``/shared.css?v=rail-brand-20261001``; sem tirar a
+        query o teste tenta abrir um caminho que inclui ``?v=`` e leva OSError.
+        """
+        body = (server.WEB_DIR / name).read_text(encoding="utf-8")
+        sheets = re.findall(r'<link rel="stylesheet" href="/([^"?]+)', body)
+        return sheets
+
     def test_every_page_has_a_rail(self):
         for name in self.PAGES:
+            markup = self.markup(name)
             with self.subTest(page=name):
-                self.assertIn('class="rail"', self.markup(name))
+                self.assertIn('class="rail"', markup)
 
-    def test_every_page_offers_every_destination(self):
+    def test_every_page_has_the_two_list_containers(self):
+        """Um container no rail fixo, um no menu do header. Nada mais."""
         for name in self.PAGES:
             markup = self.markup(name)
-            for href, meta in self.DESTINATIONS.items():
-                with self.subTest(page=name, href=href):
-                    self.assertIn(f'data-rail-page="{href}"', markup)
-                    self.assertIn(meta["title"], markup)
+            with self.subTest(page=name):
+                self.assertEqual(
+                    markup.count("data-rail-list"),
+                    2,
+                    f"{name}: esperava 2 <ul data-rail-list> (rail + menu do header)",
+                )
 
-    def test_the_rail_lists_destinations_as_plain_links(self):
-        """The rail menu is a list of links, not a widget.
+    def test_no_page_carries_the_list_in_markup(self):
+        """A lista nao pode voltar para o HTML.
 
-        It used to be a button that opened a listbox. Now every destination is
-        always visible, so it needs no popup semantics — a screen reader should
-        announce "navigation, 2 items" and stop there. If someone reintroduces
-        role=listbox here it would contradict the "always visible" model.
+        E' a regressao exata que este passo corrigiu: duas copias escritas a mao
+        que ninguem lembra de atualizar juntas.
         """
         for name in self.PAGES:
             markup = self.markup(name)
             with self.subTest(page=name):
-                self.assertIn('class="rail-menu"', markup)
-                self.assertIn('aria-labelledby="rail-label-paginas"', markup)
-                # The rail itself must not claim to be a listbox popup.
-                rail = markup.split("</nav>", 1)[0]
-                self.assertNotIn('role="listbox"', rail)
-                self.assertNotIn('role="option"', rail)
-                self.assertNotIn("aria-haspopup", rail)
+                self.assertNotIn("data-rail-page", markup)
+                self.assertNotIn("rail-item", markup)
 
-    def test_both_instances_share_the_same_destinations(self):
-        """The rail and the header fallback must list the same pages.
+    def test_one_container_is_the_rail_and_the_other_is_the_header_menu(self):
+        for name in self.PAGES:
+            markup = self.markup(name)
+            rail = markup.split("</nav>", 1)[0]
+            fallback = markup.split("data-rail-picker", 1)[1].split("</header>", 1)[0]
+            with self.subTest(page=name):
+                self.assertEqual(rail.count("data-rail-list"), 1, "rail fixo")
+                self.assertEqual(fallback.count("data-rail-list"), 1, "menu do header")
 
-        They are separate copies of the same list (no build step to share it),
-        so a page added to one and forgotten in the other is the realistic bug.
-        Compare the hrefs each instance carries.
+    def test_the_rail_lists_destinations_as_plain_links(self):
+        """O rail e' lista sempre visivel; so o menu do header abre e fecha.
+
+        O rail ja foi um botao que abria um listbox. Se alguem reintroduzir
+        semantica de popup aqui, ela contradiz o modelo "sempre visivel".
         """
         for name in self.PAGES:
             markup = self.markup(name)
             rail = markup.split("</nav>", 1)[0]
-            fallback = markup.split('data-rail-picker', 1)[1].split("</header>", 1)[0]
-
-            def hrefs(chunk):
-                return sorted(re.findall(r'data-rail-page="([^"]+)"', chunk))
-
             with self.subTest(page=name):
-                self.assertEqual(
-                    hrefs(rail),
-                    hrefs(fallback),
-                    f"{name}: rail e menu do header listam destinos diferentes",
-                )
-                self.assertEqual(
-                    hrefs(rail),
-                    sorted(self.DESTINATIONS),
-                    f"{name}: destinos inesperados no rail",
-                )
+                self.assertNotIn('role="listbox"', rail)
+                self.assertNotIn('role="option"', rail)
+                self.assertNotIn("aria-haspopup", rail)
 
     def test_the_header_fallback_is_a_toggle_with_aria(self):
-        """The header menu DOES need popup semantics: it opens and closes."""
         for name in self.PAGES:
             markup = self.markup(name)
             with self.subTest(page=name):
@@ -2569,118 +2596,118 @@ class RailNavigationTests(unittest.TestCase):
                 self.assertIn('aria-haspopup="true"', markup)
                 self.assertIn('aria-expanded="false"', markup)
                 self.assertIn('aria-controls="rail-menu-sm"', markup)
-                # The panel it controls must actually carry that id.
                 self.assertIn('id="rail-menu-sm"', markup)
-
-    def test_the_rail_has_a_narrow_screen_fallback(self):
-        """Below the rail breakpoint the same menu must exist in the header.
-
-        Without this the rail is display:none on a phone and the page is
-        unreachable except by typing the URL.
-        """
-        for name in self.PAGES:
-            markup = self.markup(name)
-            with self.subTest(page=name):
-                self.assertIn("rail-dropdown", markup)
-        # Both pages must hide the rail and reveal the fallback at the same
-        # width, or one of them breaks silently.
-        for name in self.PAGES:
-            css = page_source(name)
-            with self.subTest(page=name):
-                self.assertIn("max-width: 920px", css)
-                self.assertIn("body { padding-left: 0; }", css)
+                self.assertIn("data-rail-menu", markup)
 
     def test_every_destination_is_declared_in_the_js(self):
-        """The rail list lives in the JS so ``aria-current`` can be derived.
+        """As entradas de RAIL_PAGES, e nao copias no HTML.
 
-        The two pages do not share a spelling: the panel is written with single
-        quotes and the wizard with double ones, and the declaration keyword
-        differs too. Match on the binding name and accept either quote style,
-        so a formatting change on one page cannot fail this test.
+        Substitui o antigo `test_every_page_offers_every_destination`, que exigia
+        `data-rail-page="..."` no markup -- justamente o que saiu de la.
         """
-        for name in self.PAGES:
-            body = page_source(name)
-            match = re.search(
-                r"""\b(?:const|var|let)\s+PAGES\s*=\s*\{(.*?)\n\s*\};""", body, re.S
-            )
-            self.assertIsNotNone(match, f"{name} nao declara PAGES")
-            keys = set(re.findall(r"""['"](/[a-z-]*)['"]\s*:""", match.group(1)))
-            self.assertEqual(
-                keys,
-                set(self.DESTINATIONS),
-                f"{name} declara destinos diferentes do rail: {sorted(keys)}",
-            )
+        pages = self.rail_pages()
+        self.assertEqual(
+            tuple(page.get("path") for page in pages),
+            self.DESTINATIONS,
+            "RAIL_PAGES nao lista exatamente os destinos esperados",
+        )
+        for page in pages:
+            with self.subTest(path=page.get("path")):
+                for field in self.FIELDS:
+                    self.assertTrue(page.get(field), f"entrada sem {field}: {page}")
 
     def test_the_current_page_is_marked_by_the_js(self):
-        """aria-current must be derived, never hardcoded to one page."""
-        for name in self.PAGES:
-            body = page_source(name)
-            with self.subTest(page=name):
-                code = body.replace("'", '"')
-                self.assertIn('setAttribute("aria-current", "page")', code)
-                # And the static markup must not pre-mark anything, or the
-                # page that is not current would still claim to be.
-                self.assertNotIn('aria-current="page"', self.markup(name))
+        """A marcacao mora no render, nao numa varredura do documento.
+
+        Gerar o item ja marcado evita o instante em que a lista existe sem nenhum
+        item marcado -- que e' o que a varredura pos-load produzia.
+        """
+        source = self.rail_source()
+        self.assertIn('aria-current="page"', source)
+        self.assertIn("function railItemHtml(", source)
+        self.assertIn("function railKey(", source)
 
     def test_the_rail_marks_one_item_per_instance(self):
-        """Each copy of the list marks exactly one current item.
+        """Um item marcado por instancia, e o mesmo HTML nas duas.
 
-        There are two copies (rail + header fallback), so the whole document
-        legitimately ends up with two marks. What must hold is that within each
-        copy there is exactly one — an unmarked or double-marked copy means the
-        derivation broke.
+        As duas listas recebem o MESMO html (com o item da pagina ja marcado),
+        entao nao ha como uma instancia render e a outra ficar sem marcacao --
+        que era o bug de ter duas varreduras independentes.
         """
-        for name, current in (("index.html", "/"), ("scrap.html", "/scrap")):
-            markup = self.markup(name)
-            rail = markup.split("</nav>", 1)[0]
-            fallback = markup.split('data-rail-picker', 1)[1].split("</header>", 1)[0]
-            for label, chunk in (("rail", rail), ("header", fallback)):
-                with self.subTest(page=name, instance=label):
-                    # Only the item matching this page is expected; in the
-                    # static markup nothing is marked, so assert the JS has the
-                    # key it needs rather than a pre-written attribute.
-                    self.assertIn(f'data-rail-page="{current}"', chunk)
+        source = self.rail_source()
+        with self.subTest(instance="both"):
+            self.assertIn("querySelectorAll('[data-rail-list]')", source)
+            # Uma unica construcao do html, aplicada a todas as listas.
+            self.assertIn("lists.forEach", source)
 
-    def test_the_old_static_template_link_is_gone(self):
-        """The header link was replaced by the rail menu.
+    def test_no_page_declares_its_own_destination_map(self):
+        """A copia por pagina e' o que divergiu; nao pode voltar."""
+        for name in self.PAGES:
+            body = (server.WEB_DIR / name.replace(".html", ".js")).read_text(
+                encoding="utf-8"
+            )
+            with self.subTest(page=name):
+                self.assertNotIn("PAGES = {", body)
+                self.assertNotIn("initRail", body)
+                self.assertNotIn("data-rail-page", body)
 
-        Keeping both would mean two competing entry points, and the leftover
-        anchor would drift out of sync with the rail list.
-        """
-        panel = self.markup("index.html")
-        self.assertNotIn('<a class="btn pressable" href="/templates">', panel)
+    def test_comum_js_is_loaded_before_the_page_script(self):
+        """O modulo compartilhado tem de vir primeiro.
 
-    def test_the_rail_does_not_use_a_late_declared_helper(self):
-        """The rail block must not call $ / $$ before they are defined.
-
-        ``var`` hoists as undefined, so a call written above the declaration
-        throws at load and kills the whole script — taking the wizard or the
-        panel with it. The rail sits near the top of the wizard file, above the
-        helpers, so it has to fetch what it needs with document.querySelector.
-
-        Checks the rail block itself rather than file order: it is fine for the
-        rail to sit above the helpers as long as it does not touch them.
+        Os srcs carregam cache-busting (``/comum.js?v=studio-20261001``), entao a
+        comparacao ignora a query: o que importa e' a ordem, nao o token.
         """
         for name in self.PAGES:
-            body = page_source(name)
-            start = body.index("// ---------- rail lateral")
-            end = body.index("// ----------", start + 10)
-            block = body[start:end]
-
-            helper = re.search(r"\b(?:var|const|let)\s+\$\$?\s*=", body)
-            if helper is None or helper.start() < start:
-                continue  # helpers come first: nothing to guard against
-
+            body = (server.WEB_DIR / name).read_text(encoding="utf-8")
+            own = "/" + name.replace(".html", ".js")
+            srcs = re.findall(r'<script src="([^"]+)"', body)
+            srcs = [src.split("?", 1)[0] for src in srcs]
             with self.subTest(page=name):
-                # A call looks like $( / $$( — the bare name in a comment or in
-                # a `var q =` declaration is fine.
-                calls = re.findall(r"(?<![\w$])\$\$?\s*\(", block)
-                self.assertEqual(
-                    calls,
-                    [],
-                    f"{name}: o rail chama {calls} antes de o helper existir; "
-                    "use document.querySelector dentro do bloco",
+                self.assertIn("/comum.js", srcs, f"{name} nao carrega /comum.js")
+                self.assertIn(own, srcs, f"{name} nao carrega {own}")
+                self.assertLess(
+                    srcs.index("/comum.js"),
+                    srcs.index(own),
+                    f"{name}: /comum.js tem de vir antes do script da pagina",
                 )
+
+    def test_every_destination_is_a_route_the_server_serves(self):
+        """Destino de rail que o servidor nao serve e' link morto.
+
+        As rotas sao `if` no corpo de do_GET, nao uma tabela, entao o teste le o
+        codigo do proprio handler. E' o que pega o caso real: acrescentar a
+        pagina em RAIL_PAGES e esquecer a rota.
+        """
+        import inspect
+
+        source = inspect.getsource(server.Handler.do_GET)
+        for path in self.DESTINATIONS:
+            with self.subTest(path=path):
+                self.assertIn(f'"{path}"', source, f"do_GET nao serve {path}")
+
+    def test_the_rail_has_a_narrow_screen_fallback(self):
+        """Abaixo do breakpoint o rail some, e o menu do header tem de assumir."""
+        for name in self.PAGES:
+            body = (server.WEB_DIR / name).read_text(encoding="utf-8")
+            sheets = self.stylesheets(name)
+            with self.subTest(page=name):
+                self.assertIn("rail-dropdown", body)
+                self.assertTrue(sheets, f"{name} nao linka nenhum css")
+                self.assertTrue(
+                    any(
+                        "max-width: 920px"
+                        in (server.WEB_DIR / sheet).read_text(encoding="utf-8")
+                        for sheet in sheets
+                    ),
+                    f"{name}: nenhum dos css ({sheets}) esconde o rail abaixo de 920px",
+                )
+
+    def test_the_old_static_template_link_is_gone(self):
+        """O link do header foi substituido pelo rail; manter os dois seria
+        duas entradas concorrentes, e a antiga sairia de sincronia."""
+        self.assertNotIn(
+            '<a class="btn pressable" href="/templates">', self.markup("index.html")
+        )
 
 
 class PortParsingTests(unittest.TestCase):

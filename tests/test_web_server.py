@@ -1998,23 +1998,35 @@ class SharedStyleSheetTests(unittest.TestCase):
         self.assertIn("<path", svg, "o play sumiu do favicon")
 
     def test_every_brand_mark_shows_the_icon_not_the_letters(self):
-        """Os 4 `.brand-mark` carregam o SVG, nao o texto `VC`.
+        """Todo `.brand-mark` carrega o SVG, e o texto `VC` sumiu das paginas.
 
-        Ha dois por pagina (cabecalho e rail). Se um terceiro aparecer ou o
-        texto voltar, e porque a marca foi recolocada a mao: este teste conta
-        certo os dois.
+        Sao DUAS marcas por pagina — a do rail e a do rail-brand ja e a mesma
+        agora, mas o cabecalho de `index.html`/`scrap.html` NAO usa
+        `.brand-mark`: ele tem o proprio icone (`.header-context-icon` /
+        `.scrap-header-icon`). Por isso o total aqui e' o numero de
+        `.brand-mark`, e o teste o CONTA em vez de fixar 2 — a contagem fixa
+        de 4 envelheceu em silencio: o cabecalho mudou de marca e a assercao
+        continuou exigindo a forma antiga. O que importa nao e' quantos sao,
+        e' que nenhum voltou a ser texto.
+
+        `ajustes.html` esteve FORA desta lista e da de favicon ate 2026-10-02,
+        e era exatamente por isso que ela ainda mostrava `VC`: as outras duas
+        foram migradas e a terceira ficou para tras sem nenhum teste notar.
+        A lista agora cobre as tres paginas.
         """
-        for pagina, total in (("index.html", 2), ("scrap.html", 2)):
+        for pagina in ("index.html", "ajustes.html", "scrap.html"):
             with self.subTest(pagina=pagina):
                 html = (server.WEB_DIR / pagina).read_text(encoding="utf-8")
                 self.assertNotIn(">VC<", html, f"{pagina} traz o VC em texto")
-                imgs = re.findall(r'class="brand-mark"[^>]*><img[^>]*>', html)
-                self.assertEqual(len(imgs), total,
-                                 f"{pagina}: esperava {total} marcas, achei {len(imgs)}")
-                for img in imgs:
-                    self.assertIn("/favicon.svg", img,
+                marks = re.findall(r'class="brand-mark"[^>]*>(.*?)</span>', html,
+                                   re.S)
+                self.assertTrue(marks, f"{pagina}: nenhuma marca encontrada")
+                for mark in marks:
+                    self.assertIn("<img", mark,
+                                  f"{pagina}: uma marca nao tem imagem")
+                    self.assertIn("/favicon.svg", mark,
                                   "a marca aponta para outro arquivo")
-                    self.assertIn('alt=""', img,
+                    self.assertIn('alt=""', mark,
                                   "a imagem decorativa ganhou nome: o produto "
                                   "ja esta escrito no elemento vizinho")
 
@@ -3352,9 +3364,15 @@ class FrontendPolishTests(unittest.TestCase):
         self.assertNotIn("fonts.googleapis.com", csp)
         self.assertNotIn("fonts.gstatic.com", csp)
 
-    def test_both_pages_have_a_favicon(self):
+    def test_all_pages_have_a_favicon(self):
+        """A aba mostra a marca; sem o link ela cai no padrao do navegador.
+
+        Eram so `index.html` e `scrap.html` — `ajustes.html` ficou de fora e
+        por isso nunca recebeu o `<link rel="icon">`. A mesma lista de paginas
+        que o teste de `.brand-mark` usa, para as duas nunca mais divergirem.
+        """
         self.assertTrue((server.WEB_DIR / "favicon.svg").is_file())
-        for name in ("index.html", "scrap.html"):
+        for name in ("index.html", "ajustes.html", "scrap.html"):
             html = (server.WEB_DIR / name).read_text(encoding="utf-8")
             self.assertIn('rel="icon" href="/favicon.svg"', html)
 

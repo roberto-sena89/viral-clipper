@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ajustes — Viral Clipper</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/shared.css?v=rail-brand-20261001">
@@ -20,9 +20,12 @@
      conhecia /ajustes). Para acrescentar uma pagina, edite RAIL_PAGES em
      /comum.js — nao ha lista para duplicar aqui. -->
 <nav class="rail" aria-label="Navegação principal">
-  <div class="rail-brand">
-    <div class="brand-mark" aria-hidden="true">VC</div>
-    <div>Viral Clipper<small>ajustes</small></div>
+  <div class="rail-brand" aria-current="page">
+    <span class="rail-brand-link">
+      <span class="brand-mark" aria-hidden="true"><img src="/favicon.svg" alt="" width="36" height="36"></span>
+      <span class="rail-brand-copy"><strong>Viral Clipper</strong><small>Preferências de edição</small></span>
+    </span>
+    <span class="rail-brand-badge" aria-label="Aplicativo local">LOCAL</span>
   </div>
 
   <div class="rail-label" id="rail-label-paginas">Páginas</div>
@@ -36,9 +39,14 @@
 
 <header>
   <div class="wrap header-inner">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true">VC</div>
-      <span>Viral Clipper <small>ajustes</small></span>
+    <div class="header-context" aria-label="Ajustes do aplicativo">
+      <span class="header-context-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a3.9 3.9 0 0 0-5.2 5.1L4 17v3h3l5.6-5.5a3.9 3.9 0 0 0 5.1-5.2l-2.3 2.3-2.1-2.1 2.4-2.2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="header-context-copy">
+        <span class="header-context-eyebrow">CONFIGURAÇÕES</span>
+        <strong>Ajustes <span class="header-context-long"><span aria-hidden="true">/</span> Preferências de edição</span><span class="header-context-short">Ajustes</span></strong>
+      </span>
     </div>
     <div class="nav-actions">
       <!-- Fallback do rail abaixo de 920px: mesmos destinos, em menu. -->

@@ -3637,10 +3637,19 @@ class AjustesHeadingTests(unittest.TestCase):
         self.assertEqual(len(re.findall(r"<h1[\s>]", html)), 1, "H1 unico")
 
     def test_the_h1_names_the_page(self):
+        """O H1 diz de que assunto a pagina trata, nao so o nome do rail.
+
+        O rotulo do rail e "Ajustes"; o heading diz *Ajustes do projeto* porque
+        e o que a pagina governa -- os valores valem para todo o projeto, no
+        painel e na linha de comando. Prender o H1 a palavra "Ajustes" e o que
+        importa; o resto do texto pode evoluir sem falso alarme.
+        """
         html = self.html()
         m = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.S)
         self.assertIsNotNone(m, "a pagina tem de ter um H1")
-        self.assertEqual(re.sub(r"<[^>]+>", "", m.group(1)).strip(), "Ajustes")
+        titulo = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+        self.assertTrue(titulo.startswith("Ajustes"),
+                        f"o H1 nomeia a pagina, veio: {titulo!r}")
 
     def test_no_heading_level_is_skipped(self):
         """O outline nao salta de nivel: H1 -> H2, nunca H1 -> H3."""

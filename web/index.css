@@ -1546,6 +1546,33 @@ header .nav-actions .btn { min-height: 42px; }
 @media (prefers-reduced-motion: reduce) {
   .execution-card .step-list li[data-state="agora"]::before { animation: none; }
 }
+/* ---------- ABERTURA DA PAGINA AJUSTES ----------
+   A pagina abre com overline + H1 + DOIS paragrafos, no mesmo desenho do
+   `.studio-overline` das outras duas paginas (ponto verde, rotulo em caixa
+   alta, divisor). O H1 e o subtitulo nao podem ser cortados por um container
+   comum: `.section-sub` ja e usado por cada secao interna, entao o par da
+   abertura leva uma classe propria. */
+.abertura-ajustes > .section-sub { max-width: 68ch; }
+.abertura-ajustes h1.section-title { margin-bottom: 8px; }
+/* O segundo paragrafo e o recado de rodape: mesma tipografia, um degrau abaixo
+   no tom. Sem a reducao de opacidade os dois competem pela atencao e o leitor
+   nao sabe qual e a regra e qual e a nota. */
+.section-sub-muted { color: #8d97a8; font-size: 0.8rem; margin-top: -12px; }
+.section-sub code {
+  padding: 1px 5px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 5px;
+  background: rgba(255,255,255,.04);
+  color: #d7deea;
+  font-size: 0.92em;
+}
+.section-sub a { color: var(--accent-soft); text-underline-offset: 3px; }
+@media (max-width: 640px) {
+  .abertura-ajustes > .section-sub { font-size: 0.82rem; }
+  /* Precisa da mesma especificidade da regra acima (`> .section-sub`), senao
+     ela vence e a nota deixa de ficar um degrau abaixo do texto principal. */
+  .abertura-ajustes > .section-sub-muted { font-size: 0.76rem; }
+}
 
 
 

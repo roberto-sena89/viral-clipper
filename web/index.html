@@ -266,43 +266,67 @@
                 <span class="tw-label">Reavaliar top candidatos com LLM</span>
                 <button class="toggle" type="button" id="ranker-llm" role="switch" aria-checked="false" aria-label="Ranker LLM"></button>
               </div>
-              <div class="field-row">
-                <div class="field">
-                  <label for="ranker-provider">Provedor</label>
-                  <!-- data-defer-enhance: as opcoes vem do servidor (/providers),
-                       depois do init. Sem isto o dropdown rico seria montado a
-                       partir de uma lista ainda vazia e ficaria sem opcao nenhuma. -->
-                  <select id="ranker-provider" name="ranker-provider" data-defer-enhance
-                          aria-describedby="ranker-provider-hint"></select>
-                  <span class="hint" id="ranker-provider-hint">Preenche endpoint e modelo de uma vez.</span>
+              <!-- O bloco inteiro desabilita junto com o toggle. Sem isto o
+                   formulario aceita edicao dos seis campos e o payload do run
+                   so os le quando `ranker=llm` (index.js:cliCommand) — um
+                   controle que parece ativo e nao tem efeito. O <fieldset> faz
+                   o `disabled` valer para todos os controles de uma vez, sem
+                   precisar marcar campo a campo (que e onde o proximo esquecido
+                   entra). O JS liga/desliga pelo id. -->
+              <fieldset class="curador-campos" id="ranker-fields" disabled>
+                <p class="curador-off" id="ranker-off-note">
+                  O curador está desligado: estes campos só passam a valer
+                  quando o interruptor acima estiver ligado.
+                </p>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="ranker-provider">Provedor</label>
+                    <!-- data-defer-enhance: as opcoes vem do servidor (/providers),
+                         depois do init. Sem isto o dropdown rico seria montado a
+                         partir de uma lista ainda vazia e ficaria sem opcao nenhuma. -->
+                    <select id="ranker-provider" name="ranker-provider" data-defer-enhance
+                            aria-describedby="ranker-provider-hint"></select>
+                    <span class="hint" id="ranker-provider-hint">Preenche endpoint e modelo de uma vez.</span>
+                  </div>
+                  <div class="field">
+                    <label for="ranker-model">Modelo</label>
+                    <input type="text" id="ranker-model" name="ranker-model" value="gpt-4o-mini">
+                  </div>
                 </div>
-                <div class="field">
-                  <label for="ranker-model">Modelo</label>
-                  <input type="text" id="ranker-model" name="ranker-model" value="gpt-4o-mini">
+                <div class="field-row">
+                  <div class="field">
+                    <label for="ranker-base-url">Endpoint (compatível com OpenAI)</label>
+                    <input type="url" id="ranker-base-url" name="ranker-base-url" value="https://api.openai.com/v1">
+                  </div>
+                  <div class="field">
+                    <label for="ranker-api-key-env">Variável de ambiente da chave</label>
+                    <input type="text" id="ranker-api-key-env" name="ranker-api-key-env" value="OPENAI_API_KEY"
+                           aria-describedby="ranker-api-key-env-hint">
+                    <span class="hint" id="ranker-api-key-env-hint">O <strong>nome</strong> da variável, nunca a chave em si. Ela nunca é gravada em arquivo do projeto.</span>
+                  </div>
                 </div>
-              </div>
-              <div class="field-row">
-                <div class="field">
-                  <label for="ranker-base-url">Endpoint (compatível com OpenAI)</label>
-                  <input type="url" id="ranker-base-url" name="ranker-base-url" value="https://api.openai.com/v1">
+                <div class="field-row">
+                  <div class="field">
+                    <label for="ranker-top-n">Top-N candidatos</label>
+                    <input type="number" id="ranker-top-n" name="ranker-top-n" min="1" max="100" value="24"
+                           aria-describedby="ranker-top-n-hint">
+                    <!-- Aviso que so aparece com quantidade automatica (count=0):
+                         ali o ranker_top_n vira o teto REAL da saida, nao um dial
+                         de custo entre outros. O motor avisa em log; a tela nao
+                         avisava, e a pessoa pedia "quantos o video render" para
+                         receber 24 sem entender por que. -->
+                    <span class="hint" id="ranker-top-n-hint" hidden>
+                      Com a quantidade em automático (0 na página Cortes), este é o
+                      teto da saída: o curador só consegue escolher entre as janelas
+                      que julgou.
+                    </span>
+                  </div>
+                  <div class="field">
+                    <label for="ranker-weight">Peso do modelo (0-1)</label>
+                    <input type="number" id="ranker-weight" name="ranker-weight" min="0" max="1" step="0.05" value="0.6">
+                  </div>
                 </div>
-                <div class="field">
-                  <label for="ranker-api-key-env">Variável de ambiente da chave</label>
-                  <input type="text" id="ranker-api-key-env" name="ranker-api-key-env" value="OPENAI_API_KEY"
-                         aria-describedby="ranker-api-key-env-hint">
-                  <span class="hint" id="ranker-api-key-env-hint">O <strong>nome</strong> da variável, nunca a chave em si. Ela nunca é gravada em arquivo do projeto.</span>
-                </div>
-              </div>
-              <div class="field-row">
-                <div class="field">
-                  <label for="ranker-top-n">Top-N candidatos</label>
-                  <input type="number" id="ranker-top-n" name="ranker-top-n" min="1" max="100" value="24">
-                </div>
-                <div class="field">
-                  <label for="ranker-weight">Peso do modelo (0-1)</label>
-                  <input type="number" id="ranker-weight" name="ranker-weight" min="0" max="1" step="0.05" value="0.6">
-                </div>
-              </div>
+              </fieldset>
             </div>
           </div>
         </div>

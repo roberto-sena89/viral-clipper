@@ -1574,5 +1574,39 @@ header .nav-actions .btn { min-height: 42px; }
   .abertura-ajustes > .section-sub-muted { font-size: 0.76rem; }
 }
 
+/* ---------- CAMPOS DO CURADOR SEGUEM O INTERRUPTOR ----------
+   O bloco inteiro nasce `disabled` (o toggle comeca desligado) e o JS liga
+   junto com ele. Sem esta regra, um <fieldset disabled> no Chromium ja fica
+   cinza, mas o cinza padrao do navegador sobre um tema escuro fica quase
+   ilegivel — aqui o estado e explicito: o texto cai de tom e o cursor muda,
+   para ler-se "isto nao esta valendo agora" e nao "isto esta quebrado". */
+.curador-campos {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
+  transition: opacity 0.15s ease;
+}
+.curador-campos:disabled { opacity: 0.5; }
+/* O cadeado do ponteiro so vale para os controles de fato (o <fieldset> em si
+   nao recebe hover em todos os motores) — sem isto, o cursor de texto dentro
+   de um input desabilitado promete uma edicao que o `disabled` recusa. */
+.curador-campos:disabled input,
+.curador-campos:disabled select,
+.curador-campos:disabled textarea { cursor: not-allowed; }
+
+/* A nota do estado desligado. Vale o espaco: e a unica frase que explica por
+   que os campos estao apagados, e sem ela o cinza vira adivinhacao. */
+.curador-off {
+  margin: 2px 0 12px;
+  color: #8d97a8;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+/* Falha ao carregar /providers: o hint vira o aviso. Tom de alerta, nao de
+   dica — a lista vazia nao e "sem novidade", e "nao carregou". */
+.hint-erro { color: var(--danger) !important; }
+
 
 

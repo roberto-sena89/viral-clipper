@@ -64,8 +64,24 @@
     t.addEventListener('click', () => {
       const on = t.classList.toggle('active');
       t.setAttribute('aria-checked', String(on));
+      // O campo do curador so vale quando o interruptor esta ligado: o payload
+      // do run le os seis so sob `ranker=llm`. Desabilitar aqui e o que impede
+      // a pessoa de preencher campos que seriam descartados em silencio.
+      if (t.id === 'ranker-llm') syncRankerFields();
     });
   });
+
+  // ---------- curador: os campos seguem o interruptor ----------
+  function syncRankerFields() {
+    const on = toggleOn('#ranker-llm');
+    const fields = $('#ranker-fields');
+    if (fields) fields.disabled = !on;
+    // O aviso "o curador esta desligado" e redundante quando o <fieldset> ja
+    // esta esmaecido: o proprio disabled comunica. Some junto.
+    const off = $('#ranker-off-note');
+    if (off) off.hidden = on;
+    refreshRankerTopNHint();
+  }
 
   // Os selects ricos (dropdown custom) e o visual das legendas moram em
   // /comum.js: CAPTION_LOOKS + enhanceSelect. O que resta aqui e a chamada
@@ -483,6 +499,20 @@
     // ruido, porque 0 significa "sem portao" e nao uma exigencia.
     if (Number(a.min_score) > 0) partes.push('nota ≥ ' + fmtSeconds(a.min_score));
     el.textContent = partes.join(' · ');
+    refreshRankerTopNHint();
+  }
+
+  // Com `count = 0` ("quantidade automatica"), o curador so consegue escolher
+  // entre as janelas que julgou: as demais vao para score -1 e o piso relativo
+  // as descarta. Ou seja, `ranker_top_n` deixa de ser um dial de custo e vira o
+  // TETO REAL da saida. O motor avisa em log; o aviso tem de estar tambem onde
+  // a pessoa digita o numero, senao ela pede "quantos o video render" e recebe
+  // um numero menor sem explicacao.
+  function refreshRankerTopNHint() {
+    const hint = $('#ranker-top-n-hint');
+    if (!hint) return;
+    const automatico = (parseInt($('#count').value, 10) || 0) === 0;
+    hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   }
 
   async function loadAjustes() {
@@ -549,6 +579,22 @@
     });
   }
 
+  // A lista de provedores vem do servidor. Quando a rota falha o select fica
+  // vazio e MUDO: parece que a pagina esqueceu de carregar, quando na verdade
+  // o catalogo nao chegou. O caminho manual (endpoint/modelo digitados) segue
+  // valido, entao nao e erro fatal -- mas a pessoa precisa saber por que nao ha
+  // nenhum provedor nomeado na lista.
+  function markProvidersUnavailable() {
+    const hint = $('#ranker-provider-hint');
+    if (hint) {
+      hint.textContent = 'Não consegui carregar a lista de provedores. '
+        + 'Escolha "Personalizado" e preencha endpoint, modelo e a variável da chave à mão.';
+      hint.classList.add('hint-erro');
+    }
+    const select = $('#ranker-provider');
+    if (select) select.removeAttribute('data-defer-enhance');
+  }
+
   async function loadCuratorPrompt() {
     const data = await api('/prompts/curador');
     if (!data || data.error) {
@@ -604,7 +650,12 @@
   (async function initCurator() {
     const providers = await api('/providers');
     if (providers && !providers.error) populateProviders(providers);
+    else markProvidersUnavailable();
     await loadCuratorPrompt();
+    // Estado inicial do bloco: nasce desabilitado no HTML (o toggle comeca
+    // desligado), mas se algo ligou o interruptor antes deste ponto - ou o
+    // HTML mudar de default - e aqui que a tela e o estado se alinham.
+    syncRankerFields();
   })();
 
   function cliCommand(o) {
@@ -1283,6 +1334,10 @@
   $('#btn-run-side').addEventListener('click', () => run(false));
   $('#btn-plan').addEventListener('click', () => run(true));
   $('#btn-render').addEventListener('click', () => run(false));
+  // O aviso do Top-N depende da quantidade: com 0 ("automatica") o curador vira
+  // o teto da saida. Sem este listener o aviso so apareceria quando a pagina
+  // recarregasse com o campo ja em 0.
+  $('#count').addEventListener('input', refreshRankerTopNHint);
   $('#btn-library').addEventListener('click', () => {
     const showingLibrary = $('#btn-library').textContent.indexOf('cortes deste job') >= 0;
     if (showingLibrary) { showJobClips(); } else { showLibrary(); }

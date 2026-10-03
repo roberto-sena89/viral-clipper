@@ -3787,6 +3787,91 @@ class RenderSectionOwnershipTests(unittest.TestCase):
         self.assertRegex(self.index_html, r"Renderização</strong><small>[^<]*Ajustes")
 
 
+class CuradorFieldsFollowTheSwitchTests(unittest.TestCase):
+    """O bloco do curador so vale quando o interruptor esta ligado.
+
+    O payload do run so le `ranker_provider`, `ranker_model`, `ranker_top_n`,
+    `ranker_weight` e os demais dentro do `if (o.ranker === 'llm')` do
+    `cliCommand`. Sem desabilitar o bloco com o toggle desligado, a pagina
+    aceitava edicao de seis campos que seriam descartados em silencio — o mesmo
+    defeito do rail-brand: um controle que PARECE ativo e nao tem efeito.
+    """
+
+    def setUp(self):
+        self.html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        self.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        self.css = (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
+
+    def test_the_fields_live_inside_a_fieldset_that_starts_disabled(self):
+        """`disabled` no <fieldset> e o que faz a regra valer para os seis.
+
+        Marcar campo a campo e onde o proximo campo esquecido entra; o
+        <fieldset> desabilita o grupo inteiro de uma vez.
+        """
+        m = re.search(r"<fieldset[^>]*id=\"ranker-fields\"[^>]*>", self.html)
+        self.assertIsNotNone(m, "os campos do curador precisam de um <fieldset>")
+        self.assertIn("disabled", m.group(0), "o <fieldset> nasce desabilitado")
+
+    def test_every_curador_control_is_inside_that_fieldset(self):
+        """O grupo tem de conter TODOS os seis, senao sobra campo ativo a toa."""
+        i = self.html.index('id="ranker-fields"')
+        fim = self.html.index("</fieldset>", i)
+        bloco = self.html[i:fim]
+        for cid in ("ranker-provider", "ranker-model", "ranker-base-url",
+                    "ranker-api-key-env", "ranker-top-n", "ranker-weight"):
+            with self.subTest(control=cid):
+                self.assertIn(f'id="{cid}"', bloco,
+                              f"{cid} ficou fora do <fieldset> e nunca desabilita")
+
+    def test_the_switch_drives_the_fieldset(self):
+        """O toggle chama a sincronizacao, e a funcao escreve `disabled`."""
+        self.assertIn("if (t.id === 'ranker-llm') syncRankerFields();", self.js)
+        corpo = fn_body(self.js, "syncRankerFields")
+        self.assertIn("$('#ranker-fields')", corpo)
+        self.assertRegex(corpo, r"\.disabled\s*=",
+                         "syncRankerFields nao escreve o disabled")
+
+    def test_the_off_note_is_shown_only_when_off(self):
+        corpo = fn_body(self.js, "syncRankerFields")
+        # A nota diz "esta desligado"; com o interruptor ligado ela some.
+        self.assertRegex(corpo, r"ranker-off-note[\s\S]{0,120}\.hidden\s*=\s*on",
+                         "a nota do estado desligado nao acompanha o toggle")
+
+    def test_the_disabled_block_is_styled_dimmed(self):
+        self.assertIn(".curador-campos:disabled", self.css)
+
+    def test_the_automatic_count_warns_that_top_n_is_a_ceiling(self):
+        """Com count=0 o curador limita a saida, e a tela tem de dizer isso.
+
+        O motor avisa em log (pipeline.py); sem o aviso na tela, a pessoa pede
+        "quantos o video render" e recebe `ranker_top_n` sem entender por que.
+        """
+        self.assertIn('id="ranker-top-n-hint"', self.html)
+        corpo = fn_body(self.js, "refreshRankerTopNHint")
+        self.assertIn("$('#count')", corpo, "o aviso ignora a quantidade")
+        self.assertIn("=== 0", corpo, "o aviso nao testa o modo automatico")
+        self.assertRegex(corpo, r"toggleOn\('#ranker-llm'\)",
+                         "o aviso nao considera se o curador esta ligado")
+
+    def test_the_count_field_refreshes_the_warning(self):
+        self.assertRegex(
+            self.js, r"\$\('#count'\)\.addEventListener\('input',\s*refreshRankerTopNHint\)",
+            "editar a quantidade nao reavalia o aviso do Top-N",
+        )
+
+    def test_a_failed_providers_route_is_announced_not_silent(self):
+        """`/providers` fora do ar deixava o dropdown vazio e MUDO.
+
+        O caminho manual (endpoint/modelo digitados) segue valido, entao nao e
+        erro fatal — mas a pessoa precisa saber por que nao ha provedor nomeado.
+        """
+        corpo = fn_body(self.js, "markProvidersUnavailable")
+        self.assertIn("ranker-provider-hint", corpo)
+        self.assertIn("hint-erro", corpo)
+        self.assertIn("else markProvidersUnavailable();", self.js,
+                      "a falha de /providers nao e tratada no initCurator")
+
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

@@ -1608,5 +1608,108 @@ header .nav-actions .btn { min-height: 42px; }
    dica — a lista vazia nao e "sem novidade", e "nao carregou". */
 .hint-erro { color: var(--danger) !important; }
 
+/* ---------- MEUS PROVEDORES: a lista e o resultado do teste ---------- */
+
+.prov-list { list-style: none; margin: 0 0 14px; padding: 0; }
+
+.prov-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 10px;
+  margin-bottom: 7px;
+  border: 1px solid rgba(218, 226, 243, 0.09);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.prov-item-body { flex: 1 1 auto; min-width: 0; }
+.prov-item-name {
+  display: block;
+  color: #edf0f6;
+  font-size: 0.8rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.prov-item-meta {
+  display: block;
+  margin-top: 2px;
+  color: #8d97a8;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.prov-item-meta code {
+  color: #b9c3d3;
+  font-size: 0.7rem;
+}
+
+/* Os botoes da linha nao encolhem: num nome longo quem cede e o texto, que
+   quebra (overflow-wrap acima), e nao o botao de editar/excluir. */
+.prov-item-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.prov-item-actions .btn {
+  min-height: 30px;
+  padding: 4px 9px;
+  font-size: 0.72rem;
+}
+
+.prov-empty {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px dashed rgba(218, 226, 243, 0.12);
+  border-radius: 8px;
+  color: #8d97a8;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.prov-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+/* O painel do resultado. Cor por veredito, porque "respondeu" e "respondeu o
+   que eu pedi" sao resultados diferentes — foi exatamente essa diferenca que
+   pegou os cinco modelos que o doc do projeto registra como inuteis. */
+.prov-result {
+  margin-top: 12px;
+  padding: 11px 13px;
+  border: 1px solid rgba(218, 226, 243, 0.12);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.018);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: #cdd5e1;
+}
+.prov-result .prov-verdict {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 700;
+}
+.prov-result .prov-answer {
+  display: block;
+  margin-top: 7px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.24);
+  color: #dfe5ee;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.73rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.prov-result.ok { border-color: rgba(76, 209, 138, 0.42); }
+.prov-result.ok .prov-verdict { color: #4cd18a; }
+.prov-result.aviso { border-color: rgba(232, 178, 76, 0.42); }
+.prov-result.aviso .prov-verdict { color: #e8b24c; }
+.prov-result.erro { border-color: rgba(255, 92, 92, 0.42); }
+.prov-result.erro .prov-verdict { color: #ff7a7a; }
+
+/* Enquanto o teste corre: o botao nao pode ser clicado duas vezes, porque a
+   segunda chamada paga de novo e a primeira resposta chega depois. */
+.btn[aria-busy="true"] { opacity: 0.6; pointer-events: none; }
+
 
 

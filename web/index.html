@@ -329,6 +329,103 @@
               </fieldset>
             </div>
           </div>
+
+          <!-- ------------------------------------------------------------
+               MEUS PROVEDORES
+
+               Fica nesta coluna, logo abaixo do Curador, porque e a mesma
+               pergunta vista de dois angulos: o Curador escolhe o provedor, e
+               este card e onde um provedor que ainda nao existe na tabela do
+               projeto passa a existir.
+
+               Duas coisas que este card faz e que uma lista estatica nao pode:
+               (1) TESTAR antes de salvar — o unico jeito de saber se um modelo
+               gratuito serve e chamar o endpoint, e o doc do projeto registra
+               cinco modelos que respondem 200 e nao servem; (2) guardar fora do
+               providers.py, que e versionado, para o proximo `git pull` nao
+               virar conflito no arquivo de quem so queria usar o proprio
+               endpoint.
+               ------------------------------------------------------------ -->
+          <div class="card" id="card-meus-provedores">
+            <h2><span class="ico" aria-hidden="true">✚</span> Meus provedores</h2>
+
+            <div class="form-section">
+              <p class="section-sub-muted">
+                Endpoints seus, que não estão na lista do projeto. Salve aqui e eles
+                aparecem no seletor <strong>Provedor</strong> do Curador como qualquer
+                outro. O arquivo fica na raiz do projeto (<code>provedores-usuario.toml</code>)
+                e não mexe em código versionado.
+              </p>
+
+              <ul class="prov-list" id="prov-list" aria-live="polite"></ul>
+              <p class="prov-empty" id="prov-empty" hidden>
+                Nenhum provedor seu ainda. Preencha o formulário abaixo — se preferir,
+                clique em <strong>Testar modelo</strong> antes de salvar.
+              </p>
+
+              <div class="field-row">
+                <div class="field">
+                  <label for="prov-name">Nome curto</label>
+                  <input type="text" id="prov-name" name="prov-name" placeholder="meu-provedor"
+                         aria-describedby="prov-name-hint">
+                  <span class="hint" id="prov-name-hint">Só letras, números, hífen e sublinhado. É o nome que você vai digitar na CLI.</span>
+                </div>
+                <div class="field">
+                  <label for="prov-label">Rótulo (opcional)</label>
+                  <input type="text" id="prov-label" name="prov-label" placeholder="Meu Provedor Grátis">
+                </div>
+              </div>
+
+              <div class="field-row">
+                <div class="field">
+                  <label for="prov-base-url">Endpoint (compatível com OpenAI)</label>
+                  <input type="url" id="prov-base-url" name="prov-base-url"
+                         placeholder="https://api.exemplo.com/v1"
+                         aria-describedby="prov-base-url-hint">
+                  <span class="hint" id="prov-base-url-hint">Precisa terminar antes de <code>/chat/completions</code> — o motor acrescenta.</span>
+                </div>
+                <div class="field">
+                  <label for="prov-model">Modelo</label>
+                  <input type="text" id="prov-model" name="prov-model" placeholder="nome-do-modelo"
+                         aria-describedby="prov-model-hint">
+                  <span class="hint" id="prov-model-hint">O id exato que o fornecedor usa, não o nome de exibição.</span>
+                </div>
+              </div>
+
+              <div class="field-row">
+                <div class="field">
+                  <label for="prov-api-key-env">Variável de ambiente da chave</label>
+                  <input type="text" id="prov-api-key-env" name="prov-api-key-env"
+                         placeholder="MEU_PROVEDOR_API_KEY"
+                         aria-describedby="prov-api-key-env-hint">
+                  <span class="hint" id="prov-api-key-env-hint">O <strong>nome</strong> da variável, nunca a chave. Deixe vazio se o endpoint local aceita qualquer chave.</span>
+                </div>
+                <div class="field">
+                  <label for="prov-note">Nota</label>
+                  <input type="text" id="prov-note" name="prov-note"
+                         placeholder="Grátis: 30 req/min. Testado em 03/10."
+                         aria-describedby="prov-note-hint">
+                  <span class="hint" id="prov-note-hint">O que decide se vale escolher. Aparece no seletor do Curador.</span>
+                </div>
+              </div>
+
+              <div class="toggle-wrap">
+                <span class="tw-label">Exige chave de API</span>
+                <button class="toggle active" type="button" id="prov-requires-key" role="switch"
+                        aria-checked="true" aria-label="Exige chave de API"></button>
+              </div>
+
+              <div class="prov-actions">
+                <button class="btn pressable" type="button" id="btn-prov-test">Testar modelo</button>
+                <button class="btn pressable btn-primary" type="button" id="btn-prov-save">Salvar provedor</button>
+                <button class="btn pressable" type="button" id="btn-prov-clear" hidden>Cancelar edição</button>
+                <span id="prov-status" role="status"
+                      style="font-size: var(--text-caption); color: var(--text-muted);"></span>
+              </div>
+
+              <div class="prov-result" id="prov-result" hidden role="status" aria-live="polite"></div>
+            </div>
+          </div>
         </div>
       </div>
 

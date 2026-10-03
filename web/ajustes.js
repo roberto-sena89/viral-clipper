@@ -262,7 +262,18 @@
   async function api(path, opts) {
     try {
       const res = await fetch(API + path, opts);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) {
+        // O corpo do erro carrega a razao ("nao consegui gravar ..."), e ela e
+        // a frase que diz o que fazer. Descartar o corpo mostrava so
+        // "HTTP 500" e jogava fora a unica parte util da resposta.
+        let detalhe = null;
+        try { detalhe = await res.json(); } catch (e) { detalhe = null; }
+        return {
+          error: (detalhe && detalhe.error) || ('HTTP ' + res.status),
+          status: res.status,
+          offline: true,
+        };
+      }
       return await res.json();
     } catch (e) {
       return { error: e.message, offline: true };

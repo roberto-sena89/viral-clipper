@@ -45,6 +45,13 @@ cookies.txt
 # person's video URL to everyone who clones.
 .ajustes-transcript-source
 
+# Os provedores que o usuario adiciona pelo card "Meus provedores" (web/index.html
+# -> POST /providers/save). Fica fora do git pelo mesmo motivo de ajustes.toml:
+# e config local de quem rodou o painel, e um merge num arquivo que a pagina
+# reescreve por inteiro seria conflito garantido a cada `git pull`. A tabela
+# revisada e versionada continua sendo viralclipper/providers.py.
+provedores-usuario.toml
+
 # Local visual-test images (not part of the web UI)
 web/1.jfif
 web/2.jpg

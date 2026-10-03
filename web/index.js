@@ -290,6 +290,18 @@
   // ---------- coleta do form ----------
   function toggleOn(id) { return $(id).classList.contains('active'); }
 
+  // Liga/desliga um interruptor pela API, e nao por um clique sintetico: um
+  // click dispararia tambem o handler de `#ranker-llm`, e o formulario de
+  // provedor nao pode mexer no estado do curador. O aria-checked anda junto
+  // porque e ele que o leitor de tela anuncia - um toggle sem o par visual e
+  // textual fica mentindo para quem usa leitor.
+  function setToggle(id, on) {
+    const el = $(id);
+    if (!el) return;
+    el.classList.toggle('active', Boolean(on));
+    el.setAttribute('aria-checked', String(Boolean(on)));
+  }
+
   // A transcricao salva so vale para o video para o qual foi colada.
   //
   // Tres casos, e o terceiro e o que justifica a funcao existir:
@@ -391,15 +403,29 @@
   async function api(path, opts) {
     try {
       const res = await fetch(API + path, opts);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) {
+        // O corpo do erro carrega a razao, e ela e a frase que diz o que
+        // corrigir: "o nome so pode ter letras...", "escreva uma nota", "a
+        // chave foi recusada". Descartar o corpo -- como `throw new
+        // Error('HTTP ' + status)` fazia -- mostrava so "HTTP 400" e jogava
+        // fora a unica parte util da resposta. Os campos `offline` e
+        // `sem_conexao` seguem iguais, entao quem ja tratava a falha nao muda.
+        let detalhe = null;
+        try { detalhe = await res.json(); } catch (e) { detalhe = null; }
+        return {
+          error: (detalhe && detalhe.error) || ('HTTP ' + res.status),
+          status: res.status,
+          offline: true,
+          sem_conexao: false,
+        };
+      }
       return await res.json();
     } catch (e) {
       // `sem_conexao` separa "o fetch nem saiu" de "o servidor respondeu com
       // erro". Os dois cegam o mesmo aqui, mas so o primeiro se resolve
       // subindo o servidor: um 500 quer outro conselho, e a nota que a pagina
       // mostra nao pode mandar reiniciar algo que esta de pe.
-      const http = String(e.message).startsWith('HTTP ');
-      return { error: e.message, offline: true, sem_conexao: !http };
+      return { error: e.message, offline: true, sem_conexao: true };
     }
   }
 
@@ -656,6 +682,261 @@
     // desligado), mas se algo ligou o interruptor antes deste ponto - ou o
     // HTML mudar de default - e aqui que a tela e o estado se alinham.
     syncRankerFields();
+  })();
+
+  // ---------- Meus provedores ----------
+  // O card guarda so o que a lista precisa para se redesenhar. A fonte da
+  // verdade e o servidor: cada POST devolve a lista inteira JA mesclada
+  // (de fabrica + os seus), e e ela que redesenha tanto este card quanto o seletor
+  // do Curador. Assim uma aba aberta ha meia hora converge quando outra salva.
+  let provItems = [];
+  let provEditing = '';   // nome em edicao; '' = o formulario esta criando
+
+  function clearProviderForm() {
+    provEditing = '';
+    ['#prov-name', '#prov-label', '#prov-base-url', '#prov-model',
+     '#prov-api-key-env', '#prov-note'].forEach((sel) => {
+      const el = $(sel);
+      if (el) el.value = '';
+    });
+    // Ligado por padrao: quase todo endpoint remoto exige chave, e o caso
+    // "aceita qualquer chave" e o local, que a pessoa sabe que tem.
+    setToggle('#prov-requires-key', true);
+    const cancel = $('#btn-prov-clear');
+    if (cancel) cancel.hidden = true;
+    setProvStatus('');
+    hideProviderResult();
+  }
+
+  function fillProviderForm(p) {
+    provEditing = p.name;
+    $('#prov-name').value = p.name;
+    $('#prov-label').value = p.label || '';
+    $('#prov-base-url').value = p.base_url || '';
+    $('#prov-model').value = p.model || '';
+    $('#prov-api-key-env').value = p.api_key_env || '';
+    $('#prov-note').value = p.note || '';
+    setToggle('#prov-requires-key', p.requires_key !== false);
+    const cancel = $('#btn-prov-clear');
+    if (cancel) cancel.hidden = false;
+    setProvStatus('Editando "' + p.name + '". Salvar substitui.');
+    hideProviderResult();
+    $('#prov-name').focus();
+  }
+
+  function renderProviderList() {
+    const list = $('#prov-list');
+    const empty = $('#prov-empty');
+    if (!list) return;
+    list.innerHTML = '';
+    const meus = (provItems || []).filter((p) => p.user);
+    if (empty) empty.hidden = meus.length > 0;
+    meus.forEach((p) => {
+      const li = document.createElement('li');
+      li.className = 'prov-item';
+      const body = document.createElement('div');
+      body.className = 'prov-item-body';
+      const nome = document.createElement('span');
+      nome.className = 'prov-item-name';
+      nome.textContent = p.label && p.label !== p.name
+        ? p.label + ' (' + p.name + ')' : p.name;
+      const meta = document.createElement('span');
+      meta.className = 'prov-item-meta';
+      meta.textContent = p.model + ' · ' + p.base_url
+        + (p.requires_key ? ' · chave: ' + (p.api_key_env || '—') : ' · sem chave');
+      body.appendChild(nome);
+      body.appendChild(meta);
+      if (p.note) {
+        const nota = document.createElement('span');
+        nota.className = 'prov-item-meta';
+        nota.textContent = p.note;
+        body.appendChild(nota);
+      }
+      const acoes = document.createElement('div');
+      acoes.className = 'prov-item-actions';
+      const editar = document.createElement('button');
+      editar.type = 'button';
+      editar.className = 'btn pressable';
+      editar.textContent = 'Editar';
+      editar.addEventListener('click', () => fillProviderForm(p));
+      const remover = document.createElement('button');
+      remover.type = 'button';
+      remover.className = 'btn pressable';
+      remover.textContent = 'Excluir';
+      remover.addEventListener('click', () => removeProvider(p.name));
+      acoes.appendChild(editar);
+      acoes.appendChild(remover);
+      li.appendChild(body);
+      li.appendChild(acoes);
+      list.appendChild(li);
+    });
+  }
+
+  // Aplica uma resposta do servidor que ja traz a lista mesclada. Um unico
+  // caminho para salvar, excluir e o load inicial: se cada um redesenhasse por
+  // conta propria, o seletor do Curador ficaria com opcoes diferentes do card.
+  function applyProviderPayload(data) {
+    if (!data || data.error || !data.providers) return false;
+    provItems = data.providers;
+    renderProviderList();
+    // O seletor do Curador e reconstruido da mesma lista. Redesenhar aqui, e
+    // nao so no init, e o que faz um provedor recem-salvo aparecer no dropdown
+    // sem recarregar a pagina.
+    const anterior = $('#ranker-provider') ? $('#ranker-provider').value : '';
+    populateProviders(data);
+    const select = $('#ranker-provider');
+    // Preserva a escolha anterior quando ela ainda existe: salvar um provedor
+    // novo nao pode trocar o provedor selecionado por baixo do usuario.
+    if (select && anterior && provItems.some((p) => p.name === anterior)) {
+      select.value = anterior;
+      applyProvider(provItems.find((p) => p.name === anterior));
+    }
+    return true;
+  }
+
+  function providerFormPayload() {
+    return {
+      name: $('#prov-name').value.trim(),
+      label: $('#prov-label').value.trim(),
+      base_url: $('#prov-base-url').value.trim(),
+      model: $('#prov-model').value.trim(),
+      api_key_env: $('#prov-api-key-env').value.trim(),
+      requires_key: toggleOn('#prov-requires-key'),
+      note: $('#prov-note').value.trim(),
+    };
+  }
+
+  async function saveProvider() {
+    const provider = providerFormPayload();
+    setProvStatus('Salvando...');
+    const data = await api('/providers/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider }),
+    });
+    if (!data || data.error) {
+      // O erro do servidor e a mensagem de validacao — "o nome so pode ter
+      // letras...", "escreva uma nota". Mostra-la crua e melhor que um
+      // "nao consegui salvar": a frase ja diz o que corrigir.
+      setProvStatus((data && data.error) || 'Não consegui salvar.', true);
+      return;
+    }
+    applyProviderPayload(data);
+    clearProviderForm();
+    setProvStatus('Salvo: "' + data.saved + '" já aparece no seletor do Curador.');
+  }
+
+  async function removeProvider(name) {
+    setProvStatus('Excluindo "' + name + '"...');
+    const data = await api('/providers/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!data || data.error) {
+      setProvStatus((data && data.error) || 'Não consegui excluir.', true);
+      return;
+    }
+    if (provEditing === name) clearProviderForm();
+    applyProviderPayload(data);
+    setProvStatus('"' + name + '" foi removido.');
+  }
+
+  // O teste manda o formulario como esta — inclusive o que ainda nao foi
+  // salvo. E de proposito: descobrir que a URL esta errada tem de ser possivel
+  // ANTES de gravar, senao o unico jeito de testar e sujar o arquivo primeiro.
+  async function testProvider() {
+    const provider = providerFormPayload();
+    const botao = $('#btn-prov-test');
+    if (botao) {
+      botao.setAttribute('aria-busy', 'true');
+      botao.textContent = 'Testando...';
+    }
+    setProvStatus('Chamando o endpoint...');
+    hideProviderResult();
+    const data = await api('/providers/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider }),
+    });
+    if (botao) {
+      botao.removeAttribute('aria-busy');
+      botao.textContent = 'Testar modelo';
+    }
+    setProvStatus('');
+    if (!data || data.error) {
+      showProviderResult({
+        ok: false, verdict: 'erro',
+        reason: (data && data.error) || 'Não consegui testar.',
+      });
+      return;
+    }
+    showProviderResult(data);
+  }
+
+  // O painel do resultado. A classe da cor sai do veredito, e o texto do
+  // veredito e o do servidor: o mesmo que escreveu a razao decide o tom.
+  function showProviderResult(data) {
+    const box = $('#prov-result');
+    if (!box) return;
+    box.hidden = false;
+    box.className = 'prov-result';
+    const veredito = data.verdict || (data.ok ? 'ok' : 'erro');
+    // 'weak' e 'echo' sao respostas que nao servem, mas chegaram: amarelo. O
+    // vermelho e reservado para "nao deu para falar com o modelo".
+    const tom = data.ok ? 'ok'
+      : (veredito === 'weak' || veredito === 'echo') ? 'aviso' : 'erro';
+    box.classList.add(tom);
+
+    box.innerHTML = '';
+    const titulo = document.createElement('span');
+    titulo.className = 'prov-verdict';
+    const segundos = (typeof data.seconds === 'number' && data.seconds)
+      ? ' · ' + data.seconds + 's' : '';
+    const status = data.status ? 'HTTP ' + data.status : '';
+    titulo.textContent = (data.ok ? '✓ ' : '✕ ') + veredito + segundos
+      + (status ? ' · ' + status : '');
+    box.appendChild(titulo);
+
+    const razao = document.createElement('span');
+    razao.textContent = data.reason || '';
+    box.appendChild(razao);
+
+    if (data.answer) {
+      const resposta = document.createElement('span');
+      resposta.className = 'prov-answer';
+      resposta.textContent = data.answer;
+      box.appendChild(resposta);
+    }
+  }
+
+  function hideProviderResult() {
+    const box = $('#prov-result');
+    if (box) { box.hidden = true; box.innerHTML = ''; }
+  }
+
+  function setProvStatus(texto, erro) {
+    const el = $('#prov-status');
+    if (!el) return;
+    el.textContent = texto || '';
+    el.style.color = erro ? 'var(--danger)' : 'var(--text-muted)';
+  }
+
+  const btnProvTest = $('#btn-prov-test');
+  if (btnProvTest) btnProvTest.addEventListener('click', testProvider);
+  const btnProvSave = $('#btn-prov-save');
+  if (btnProvSave) btnProvSave.addEventListener('click', saveProvider);
+  const btnProvClear = $('#btn-prov-clear');
+  if (btnProvClear) btnProvClear.addEventListener('click', clearProviderForm);
+
+  (async function initProviderCard() {
+    const data = await api('/providers/user');
+    if (data && !data.error) {
+      applyProviderPayload(data);
+      clearProviderForm();
+    } else {
+      setProvStatus('Servidor fora do ar: não consegui listar seus provedores.', true);
+    }
   })();
 
   function cliCommand(o) {

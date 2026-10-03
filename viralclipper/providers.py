@@ -18,6 +18,14 @@ instruction instead of obeying it). A catalog lists what exists; this table
 lists what works.
 
 Adding a provider is a dict entry. Nothing else in the codebase changes.
+
+There are two tables, and the difference is who vetted the entry. The dict below
+is the reviewed one: every ``note`` in it is a measurement. The panel writes a
+second table to ``provedores-usuario.toml`` (see
+:mod:`viralclipper.user_providers`) for endpoints the user already has and does
+not want to wait on a commit for. Both are read through :func:`get_provider` and
+:func:`list_providers`, so nothing downstream knows which table an entry came
+from -- with one exception: a name collision resolves to the reviewed entry.
 """
 
 from __future__ import annotations
@@ -159,18 +167,41 @@ PROVIDERS: dict[str, Provider] = {
 }
 
 
+def _table() -> dict[str, Provider]:
+    """The built-in entries plus the ones the panel saved, built-ins winning.
+
+    Imported here rather than at module level: ``user_providers`` imports
+    :class:`Provider` from this module, so a top-level import would be circular.
+    The same lazy-import shape ``config`` and ``ranker`` already use.
+
+    A name collision resolves to the built-in on purpose. The user's file is
+    theirs to edit, but a hand-written entry called ``openai`` that silently
+    redirected every run to another endpoint is the kind of surprise that costs
+    a day -- and the panel refuses to save over a built-in name for the same
+    reason (see ``web/server.py``).
+    """
+    from . import user_providers
+
+    table = dict(PROVIDERS)
+    for provider in user_providers.load():
+        table.setdefault(provider.name, provider)
+    return table
+
+
 def get_provider(name: str) -> Provider:
     """Resolve a provider name, or raise with the list of the known ones."""
     key = (name or "").strip()
-    if key in PROVIDERS:
-        return PROVIDERS[key]
-    known = ", ".join(sorted(PROVIDERS))
+    table = _table()
+    if key in table:
+        return table[key]
+    known = ", ".join(sorted(table))
     raise ClipperError(f"Unknown provider '{name}'. Known providers: {known}.")
 
 
 def list_providers() -> list[Provider]:
     """Every provider, ordered by name for a stable UI listing."""
-    return [PROVIDERS[key] for key in sorted(PROVIDERS)]
+    table = _table()
+    return [table[key] for key in sorted(table)]
 
 
 def apply_to_config(config: ClipConfig, name: str) -> ClipConfig:
@@ -204,7 +235,7 @@ def provider_for_config(config: ClipConfig) -> Provider | None:
     name = getattr(config, "ranker_provider", "") or ""
     if not name:
         return None
-    return PROVIDERS.get(name)
+    return _table().get(name)
 
 
 __all__ = [

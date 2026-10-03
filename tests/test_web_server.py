@@ -3505,10 +3505,23 @@ class BackendReadinessTests(unittest.TestCase):
         `api()` marcava todo erro de `offline: true`, e `offline` ja virou
         palavra reservada para "o fetch nem saiu". Sem `sem_conexao` a pagina
         nao teria como escolher o ramo, e o conselho viraria chute.
+
+        A assercao e sobre o CONTRATO, nao sobre as linhas que o implementam:
+        a versao anterior checava `String(e.message).startsWith('HTTP ')`, que
+        sumiu quando `api()` passou a ler o corpo do erro sem lancar excecao.
+        O que nao pode mudar e: um `!res.ok` responde com `sem_conexao: false`
+        (ramo "Erro"), e uma falha de fetch responde com `sem_conexao: true`
+        (ramo "Sem servidor").
         """
         js = self.js()
-        self.assertIn("const http = String(e.message).startsWith('HTTP ')", js)
-        self.assertIn("sem_conexao: !http", js)
+        bloco = fn_body(js, "api")
+        self.assertIn("sem_conexao: false", bloco,
+                      "um erro HTTP nao e marcado como diferente de 'sem servidor'")
+        self.assertIn("sem_conexao: true", bloco,
+                      "uma falha de fetch nao e marcada como 'sem servidor'")
+        # O ramo que usa a distincao: `sem_conexao` -> Sem servidor, senao Erro.
+        self.assertIn("else if (r.sem_conexao)", js,
+                      "a pagina nao separa 'sem servidor' de 'servidor respondeu erro'")
 
 
     def test_the_first_poll_does_not_wait_for_the_timer(self):
@@ -3871,6 +3884,196 @@ class CuradorFieldsFollowTheSwitchTests(unittest.TestCase):
         self.assertIn("else markProvidersUnavailable();", self.js,
                       "a falha de /providers nao e tratada no initCurator")
 
+
+class UserProviderCardTests(unittest.TestCase):
+    """O card "Meus provedores": incluir um endpoint proprio e testa-lo.
+
+    A tabela de ``providers.py`` e revisada e versionada — a nota de cada
+    entrada e uma medicao. Este card existe para o caso que ela nao cobre: um
+    endpoint que o usuario ja tem e nao pode esperar por um commit. Duas coisas
+    aqui nao podem se perder sem quebrar o recurso em silencio:
+
+    1. o TESTE acontece ANTES de salvar, senao a unica forma de descobrir que a
+       URL esta errada e gravar primeiro;
+    2. a lista que volta do POST redesenha tambem o seletor do Curador, senao o
+       provedor recem-salvo so aparece depois de recarregar a pagina.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = page_source("index.html")
+        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+
+    def test_the_card_exists_on_the_cortes_page(self):
+        self.assertIn('id="card-meus-provedores"', self.html)
+
+    def test_every_control_the_js_reads_is_in_the_markup(self):
+        """Um id lido e nao escrito estoura com `null` no primeiro clique.
+
+        Remover markup com id e sempre um par: tirar o campo E tirar quem o le.
+        A lista e derivada do proprio JS para nao envelhecer.
+        """
+        for name in ("prov-name", "prov-label", "prov-base-url", "prov-model",
+                     "prov-api-key-env", "prov-note", "prov-requires-key",
+                     "prov-list", "prov-empty", "prov-status", "prov-result",
+                     "btn-prov-test", "btn-prov-save", "btn-prov-clear"):
+            self.assertIn(f'id="{name}"', self.html, f"falta o controle {name}")
+
+    def test_the_provider_form_requires_a_key_by_default(self):
+        """Quase todo endpoint remoto exige chave; o caso sem chave e o local.
+
+        Nascer desligado faria a pessoa testar um endpoint remoto sem chave e
+        receber um 401 sem entender por que.
+        """
+        trecho = self.html.split('id="prov-requires-key"', 1)[1][:200]
+        self.assertIn('aria-checked="true"', trecho)
+
+    def test_the_test_button_is_not_the_save_button(self):
+        """Testar e salvar sao acoes diferentes e nao podem virar uma so.
+
+        Se testar salvasse, o "testar antes de salvar" (que e o ponto do card)
+        viraria "salvar com um nome", e um teste que falha deixaria lixo no
+        arquivo.
+        """
+        self.assertIn('id="btn-prov-test"', self.html)
+        self.assertIn('id="btn-prov-save"', self.html)
+        testar = fn_body(self.js, "testProvider")
+        self.assertIn("/providers/test", testar)
+        self.assertNotIn("/providers/save", testar,
+                         "o botao de testar tambem salva")
+
+    def test_the_test_sends_what_is_typed_not_what_is_saved(self):
+        """O teste tem de valer para um provedor que ainda nao existe no arquivo.
+
+        E o motivo do card existir: descobrir que a URL esta errada antes de
+        grava-la. Se o teste lesse so o que ja foi salvo, o usuario teria de
+        salvar um palpite para poder testa-lo.
+        """
+        testar = fn_body(self.js, "testProvider")
+        self.assertIn("providerFormPayload()", testar,
+                      "o teste nao le o formulario")
+
+    def test_a_successful_save_redraws_the_curator_select(self):
+        """Salvar tem de refletir no seletor do Curador sem recarregar a pagina."""
+        aplicar = fn_body(self.js, "applyProviderPayload")
+        self.assertIn("populateProviders", aplicar,
+                      "salvar nao reconstroi o seletor do Curador")
+        self.assertIn("renderProviderList", aplicar,
+                      "salvar nao redesenha a lista do card")
+
+    def test_saving_preserves_the_selected_provider(self):
+        """Salvar um provedor novo nao pode trocar o que ja estava escolhido.
+
+        A assercao e sobre a CONDICAO do guarda, nao sobre a atribuicao: com
+        `select.value = anterior` sozinho, apagar a condicao (`if (false)`)
+        deixava o teste verde, porque a linha continuava no arquivo. O que
+        decide o comportamento e o `if`.
+        """
+        aplicar = fn_body(self.js, "applyProviderPayload")
+        self.assertIn("provItems.some((p) => p.name === anterior)", aplicar,
+                      "o guarda de 'preservar a escolha' foi removido")
+
+    def test_the_validation_message_from_the_server_is_shown_verbatim(self):
+        """A recusa do servidor ja e a frase que diz o que corrigir.
+
+        Trocar por um "nao consegui salvar" generico jogaria fora o unico texto
+        util do fluxo. E a frase so chega se `api()` ler o corpo da resposta
+        de erro: `throw new Error('HTTP ' + status)` mostrava "HTTP 400" e
+        descartava o motivo que o servidor escreveu.
+        """
+        bloco = fn_body(self.js, "api")
+        self.assertIn("await res.json()", bloco,
+                      "api() nao le o corpo do erro")
+        self.assertIn("detalhe.error", bloco,
+                      "api() nao usa a razao que o servidor mandou")
+        salvar = fn_body(self.js, "saveProvider")
+        self.assertIn("data.error", salvar)
+
+    def test_the_test_button_is_locked_while_the_probe_runs(self):
+        """Dois cliques seriam duas chamadas pagas e uma resposta fora de ordem."""
+        testar = fn_body(self.js, "testProvider")
+        self.assertIn("aria-busy", testar)
+
+    def test_a_probe_result_is_shown_not_only_logged(self):
+        testar = fn_body(self.js, "testProvider")
+        self.assertIn("showProviderResult", testar)
+
+    def test_the_verdict_drives_the_colour_not_just_ok(self):
+        """"respondeu" e "respondeu o que eu pedi" sao resultados diferentes.
+
+        Foi exatamente essa diferenca que pegou os cinco modelos inuteis que o
+        doc do projeto registra (200 com content vazio, tradutor devolvendo a
+        instrucao). Pintar tudo de verde por `ok` perderia a distincao.
+        """
+        mostrar = fn_body(self.js, "showProviderResult")
+        self.assertIn("weak", mostrar)
+        self.assertIn("echo", mostrar)
+
+    def test_the_card_reads_the_user_route_on_load(self):
+        self.assertIn("/providers/user", self.js)
+
+    def test_saving_refuses_to_shadow_a_built_in_name(self):
+        """O servidor recusa; este teste trava a recusa no lugar.
+
+        Sem ela, um arquivo editado a mao chamado "openai" seria listado,
+        editavel, e nao faria nada no run — o pior dos tres comportamentos.
+
+        A assercao e sobre a LINHA de guarda, nao sobre a presenca da tabela: o
+        corpo do handler tambem menciona ``providers.PROVIDERS`` numa checagem
+        de sanidade no topo, entao um `assertIn` solto ficava verde mesmo com o
+        guarda removido.
+        """
+        fonte = (server.REPO_ROOT / "web" / "server.py").read_text(encoding="utf-8")
+        corpo = fonte.split("def _handle_save_provider", 1)[1].split("\n    def ", 1)[0]
+        self.assertIn("if name in providers.PROVIDERS:", corpo,
+                      "o save nao recusa sobrescrever um provedor de fabrica")
+        self.assertIn("400", corpo, "a colisao nao e recusada")
+
+    def test_the_probe_route_reports_a_missing_key_without_calling_out(self):
+        """Sem a variavel no ambiente, o servidor responde ANTES de sair na rede.
+
+        Mandar a chamada sem chave daria um 401 que o usuario teria de decodificar,
+        quando a causa (a variavel nao esta exportada) e conhecida aqui.
+        """
+        fonte = (server.REPO_ROOT / "web" / "server.py").read_text(encoding="utf-8")
+        corpo = fonte.split("def _handle_test_provider", 1)[1].split("\n    def ", 1)[0]
+        self.assertIn("no-key", corpo)
+
+
+class UserProviderStoreTests(unittest.TestCase):
+    """O arquivo do painel e resolvido de um lugar so.
+
+    A primeira versao tinha duas constantes para o mesmo caminho: o servidor
+    declarava ``USER_PROVIDERS_PATH`` e o modulo tinha ``USERS_PATH``. O save
+    gravava num e a mesclagem lia o outro, entao todo save respondia 200 com
+    uma lista que nao tinha mudado.
+    """
+
+    def test_the_server_path_comes_from_the_module(self):
+        from viralclipper import user_providers
+
+        self.assertEqual(
+            server.USER_PROVIDERS_PATH,
+            (server.REPO_ROOT / user_providers.USERS_PATH).resolve()
+            if not Path(user_providers.USERS_PATH).is_absolute()
+            else Path(user_providers.USERS_PATH).resolve(),
+        )
+
+    def test_the_module_default_now_points_at_the_server_file(self):
+        """A mesclagem passa pelo modulo, entao ele tem de ler o mesmo arquivo."""
+        from viralclipper import user_providers
+
+        self.assertEqual(Path(user_providers.USERS_PATH).resolve(),
+                         server.USER_PROVIDERS_PATH)
+
+    def test_the_store_file_is_not_committed(self):
+        """É dado do usuario, nao config do projeto: nao pode aparecer no git."""
+        gitignore = server.REPO_ROOT / ".gitignore"
+        if not gitignore.is_file():
+            self.skipTest("sem .gitignore")
+        texto = gitignore.read_text(encoding="utf-8")
+        self.assertIn("provedores-usuario.toml", texto,
+                      "o arquivo do usuario nao esta no gitignore")
 
 
 if __name__ == "__main__":  # pragma: no cover

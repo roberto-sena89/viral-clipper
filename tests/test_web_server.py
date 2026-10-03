@@ -2554,6 +2554,42 @@ class RailNavigationTests(unittest.TestCase):
             with self.subTest(page=name):
                 self.assertIn('class="rail"', markup)
 
+    def test_every_rail_brand_link_is_clickable(self):
+        """A marca e um alvo de navegacao, nao um rotulo com cara de link.
+
+        `.rail-brand-link` tem hover e `:focus-visible` no shared.css. Em
+        `ajustes.html` ela era um `<span>` sem `href`: parecia clicavel (muda no
+        hover, o cursor, o anel de foco) e nao levava a lugar nenhum — o pior
+        dos dois mundos, porque o usuario clica e nada acontece. Um controle
+        que *parece* interativo e obrigado a ser.
+
+        Um `<span>` aqui so se justificaria na propria pagina que ele aponta,
+        e nao e o caso: o rail-brand leva ao Estudio, que existe.
+        """
+        for name in self.PAGES:
+            markup = self.markup(name)
+            brand = markup.split('class="rail-brand"', 1)[1].split("</div>", 1)[0]
+            with self.subTest(page=name):
+                self.assertIn("<a class=\"rail-brand-link\"", brand,
+                              f"{name}: a marca do rail nao e um link")
+                self.assertIn('href="/"', brand,
+                              f"{name}: a marca do rail nao leva ao Estudio")
+
+    def test_the_local_badge_stays_out_of_the_link(self):
+        """O selo LOCAL e rotulo, nao destino: fora do `<a>`.
+
+        Dentro, ele viraria parte da area clicavel e o leitor de tela o
+        anunciaria como o nome do link — "LOCAL" como destino nao quer dizer
+        nada.
+        """
+        for name in self.PAGES:
+            markup = self.markup(name)
+            brand = markup.split('class="rail-brand"', 1)[1].split("</div>", 1)[0]
+            with self.subTest(page=name):
+                link = brand.split("</a>", 1)[0]
+                self.assertNotIn("rail-brand-badge", link,
+                                 f"{name}: o selo LOCAL entrou no link da marca")
+
     def test_every_page_has_the_two_list_containers(self):
         """Um container no rail fixo, um no menu do header. Nada mais."""
         for name in self.PAGES:

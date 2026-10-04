@@ -205,10 +205,13 @@ body { padding-left: var(--rail-w); }
    intrinseca maior que a coluna empurra o track, e o `1fr` cresce alem da tela.
    O `min-width: 0` nos filhos (acima, na trava de overflow) resolve o mesmo caso
    um nivel abaixo; este resolve o do proprio track. E o mesmo motivo do
-   `minmax(0, 400px) minmax(0, 1fr)` do `.scrap-grid`. */
+   `minmax(0, 400px) minmax(0, 1fr)` do `.scrap-grid`.
+
+   As COLUNAS de verdade ficam na regra `.main-grid` mais abaixo (bloco do
+   redesign do Estudio) — esta aqui so garante o `display: grid` e o gap antes
+   dela. Nao mude as colunas por aqui: a de baixo sobrescreve. */
 .main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
   gap: 28px;
   padding-bottom: 60px;
 }
@@ -220,6 +223,11 @@ body { padding-left: var(--rail-w); }
      no celular a primeira dobra virava vitrine sem frase, e o titulo,
      que e a unica coisa que diz o que o site faz, descia para fora. */
 }
+
+/* A coluna do Curador empilha Curador + Meus provedores. A Execucao NAO entra
+   aqui: ela fica na coluna 1, ao lado do Fonte. */
+.studio-col-curador { min-width: 0; }
+.prompt-col { min-width: 0; }
 
 /* ---------- CARTÕES ---------- */
 .card {
@@ -1056,12 +1064,28 @@ header {
 .studio-output-spec strong { color: #f4f6fa; font-size: 0.83rem; font-variant-numeric: tabular-nums; }
 .studio-output-spec small { margin-left: 5px; color: #9ba5b5; font-size: 0.71rem; font-weight: 500; }
 
+/* A regra EFETIVA do grid. A de cima (.main-grid, ~linha 217) so define
+   `display: grid` e o gap; esta, por vir depois, sobrescreve as colunas —
+   mesma especificidade, vence a ultima. Editar so a de cima nao muda nada
+   na tela (foi o que aconteceu: as colunas continuaram 788/340).
+
+   TRES colunas iguais com `align-items: start`: cada uma fica com a altura do
+   proprio conteudo e nenhuma estica para acompanhar a mais alta. Medido em
+   1440px — largura util 1148px e a soma dos minimos intrinsecos e ~638px
+   (241 Fonte + 206 Curador + 135 prompt + 2 gaps de 28), com `scrollOverflow`
+   em 0. */
 .main-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(292px, 340px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
   align-items: start;
   gap: 20px;
   padding-top: 24px;
   padding-bottom: 36px;
+}
+/* Duas colunas antes de virar uma. 3 colunas de ~300px em 1000px apertam o
+   Fonte, que tem `.field-row.triple` (Pasta, Quantidade, Download) e quebra
+   feio abaixo disso. */
+@media (max-width: 1280px) {
+  .main-grid { grid-template-columns: minmax(0, 1fr) minmax(292px, 340px); }
 }
 .config-heading {
   display: flex;

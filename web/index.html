@@ -118,7 +118,12 @@
            trabalho. Empilhados, a pessoa preenchia os campos e depois
            rolava a pagina para achar o botao; lado a lado, o que entra
            e o que sai se leem juntos. Em coluna unica (<= 1100px) o
-           grid volta a empilhar — ver `.studio-pair` no index.css. -->
+           grid volta a empilhar — ver `.studio-pair` no index.css.
+
+           Esta e a COLUNA 1 das tres do `.main-grid`. As outras duas
+           (Curador+Provedores / Prompt) sao irmas dela no grid, nao
+           filhas: assim cada uma tem a altura do proprio conteudo e
+           nenhuma estica para acompanhar a mais alta. -->
       <div class="studio-pair">
         <div class="card card-fonte">
           <h2><span class="ico" aria-hidden="true">▶</span> Fonte</h2>
@@ -258,182 +263,192 @@
             <div class="execution-log-heading"><span>Saída técnica</span><span>DIAGNÓSTICO</span></div>
             <div class="log-box" id="log-box" role="log" aria-label="Registro técnico da execução" aria-live="polite"><span class="execution-log-empty">O registro da execução aparecerá aqui.</span></div>
           </div>
-          <div class="card">
-            <h2><span class="ico" aria-hidden="true">✦</span> Curador com IA (opcional)</h2>
-
-            <div class="form-section">
-              <div class="toggle-wrap">
-                <span class="tw-label">Reavaliar top candidatos com LLM</span>
-                <button class="toggle" type="button" id="ranker-llm" role="switch" aria-checked="false" aria-label="Ranker LLM"></button>
-              </div>
-              <!-- O bloco inteiro desabilita junto com o toggle. Sem isto o
-                   formulario aceita edicao dos seis campos e o payload do run
-                   so os le quando `ranker=llm` (index.js:cliCommand) — um
-                   controle que parece ativo e nao tem efeito. O <fieldset> faz
-                   o `disabled` valer para todos os controles de uma vez, sem
-                   precisar marcar campo a campo (que e onde o proximo esquecido
-                   entra). O JS liga/desliga pelo id. -->
-              <fieldset class="curador-campos" id="ranker-fields" disabled>
-                <p class="curador-off" id="ranker-off-note">
-                  O curador está desligado: estes campos só passam a valer
-                  quando o interruptor acima estiver ligado.
-                </p>
-                <div class="field-row">
-                  <div class="field">
-                    <label for="ranker-provider">Provedor</label>
-                    <!-- data-defer-enhance: as opcoes vem do servidor (/providers),
-                         depois do init. Sem isto o dropdown rico seria montado a
-                         partir de uma lista ainda vazia e ficaria sem opcao nenhuma. -->
-                    <select id="ranker-provider" name="ranker-provider" data-defer-enhance
-                            aria-describedby="ranker-provider-hint"></select>
-                    <span class="hint" id="ranker-provider-hint">Preenche endpoint e modelo de uma vez.</span>
-                  </div>
-                  <div class="field">
-                    <label for="ranker-model">Modelo</label>
-                    <input type="text" id="ranker-model" name="ranker-model" value="gpt-4o-mini">
-                  </div>
-                </div>
-                <div class="field-row">
-                  <div class="field">
-                    <label for="ranker-base-url">Endpoint (compatível com OpenAI)</label>
-                    <input type="url" id="ranker-base-url" name="ranker-base-url" value="https://api.openai.com/v1">
-                  </div>
-                  <div class="field">
-                    <label for="ranker-api-key-env">Variável de ambiente da chave</label>
-                    <input type="text" id="ranker-api-key-env" name="ranker-api-key-env" value="OPENAI_API_KEY"
-                           aria-describedby="ranker-api-key-env-hint">
-                    <span class="hint" id="ranker-api-key-env-hint">O <strong>nome</strong> da variável, nunca a chave em si. Ela nunca é gravada em arquivo do projeto.</span>
-                  </div>
-                </div>
-                <div class="field-row">
-                  <div class="field">
-                    <label for="ranker-top-n">Top-N candidatos</label>
-                    <input type="number" id="ranker-top-n" name="ranker-top-n" min="1" max="100" value="24"
-                           aria-describedby="ranker-top-n-hint">
-                    <!-- Aviso que so aparece com quantidade automatica (count=0):
-                         ali o ranker_top_n vira o teto REAL da saida, nao um dial
-                         de custo entre outros. O motor avisa em log; a tela nao
-                         avisava, e a pessoa pedia "quantos o video render" para
-                         receber 24 sem entender por que. -->
-                    <span class="hint" id="ranker-top-n-hint" hidden>
-                      Com a quantidade em automático (0 na página Cortes), este é o
-                      teto da saída: o curador só consegue escolher entre as janelas
-                      que julgou.
-                    </span>
-                  </div>
-                  <div class="field">
-                    <label for="ranker-weight">Peso do modelo (0-1)</label>
-                    <input type="number" id="ranker-weight" name="ranker-weight" min="0" max="1" step="0.05" value="0.6">
-                  </div>
-                </div>
-              </fieldset>
-            </div>
-          </div>
-
-          <!-- ------------------------------------------------------------
-               MEUS PROVEDORES
-
-               Fica nesta coluna, logo abaixo do Curador, porque e a mesma
-               pergunta vista de dois angulos: o Curador escolhe o provedor, e
-               este card e onde um provedor que ainda nao existe na tabela do
-               projeto passa a existir.
-
-               Duas coisas que este card faz e que uma lista estatica nao pode:
-               (1) TESTAR antes de salvar — o unico jeito de saber se um modelo
-               gratuito serve e chamar o endpoint, e o doc do projeto registra
-               cinco modelos que respondem 200 e nao servem; (2) guardar fora do
-               providers.py, que e versionado, para o proximo `git pull` nao
-               virar conflito no arquivo de quem so queria usar o proprio
-               endpoint.
-               ------------------------------------------------------------ -->
-          <div class="card" id="card-meus-provedores">
-            <h2><span class="ico" aria-hidden="true">✚</span> Meus provedores</h2>
-
-            <div class="form-section">
-              <p class="section-sub-muted">
-                Endpoints seus, que não estão na lista do projeto. Salve aqui e eles
-                aparecem no seletor <strong>Provedor</strong> do Curador como qualquer
-                outro. O arquivo fica na raiz do projeto (<code>provedores-usuario.toml</code>)
-                e não mexe em código versionado.
-              </p>
-
-              <ul class="prov-list" id="prov-list" aria-live="polite"></ul>
-              <p class="prov-empty" id="prov-empty" hidden>
-                Nenhum provedor seu ainda. Preencha o formulário abaixo — se preferir,
-                clique em <strong>Testar modelo</strong> antes de salvar.
-              </p>
-
-              <div class="field-row">
-                <div class="field">
-                  <label for="prov-name">Nome curto</label>
-                  <input type="text" id="prov-name" name="prov-name" placeholder="meu-provedor"
-                         aria-describedby="prov-name-hint">
-                  <span class="hint" id="prov-name-hint">Só letras, números, hífen e sublinhado. É o nome que você vai digitar na CLI.</span>
-                </div>
-                <div class="field">
-                  <label for="prov-label">Rótulo (opcional)</label>
-                  <input type="text" id="prov-label" name="prov-label" placeholder="Meu Provedor Grátis">
-                </div>
-              </div>
-
-              <div class="field-row">
-                <div class="field">
-                  <label for="prov-base-url">Endpoint (compatível com OpenAI)</label>
-                  <input type="url" id="prov-base-url" name="prov-base-url"
-                         placeholder="https://api.exemplo.com/v1"
-                         aria-describedby="prov-base-url-hint">
-                  <span class="hint" id="prov-base-url-hint">Precisa terminar antes de <code>/chat/completions</code> — o motor acrescenta.</span>
-                </div>
-                <div class="field">
-                  <label for="prov-model">Modelo</label>
-                  <input type="text" id="prov-model" name="prov-model" placeholder="nome-do-modelo"
-                         aria-describedby="prov-model-hint">
-                  <span class="hint" id="prov-model-hint">O id exato que o fornecedor usa, não o nome de exibição.</span>
-                </div>
-              </div>
-
-              <div class="field-row">
-                <div class="field">
-                  <label for="prov-api-key-env">Variável de ambiente da chave</label>
-                  <input type="text" id="prov-api-key-env" name="prov-api-key-env"
-                         placeholder="MEU_PROVEDOR_API_KEY"
-                         aria-describedby="prov-api-key-env-hint">
-                  <span class="hint" id="prov-api-key-env-hint">O <strong>nome</strong> da variável, nunca a chave. Deixe vazio se o endpoint local aceita qualquer chave.</span>
-                </div>
-                <div class="field">
-                  <label for="prov-note">Nota</label>
-                  <input type="text" id="prov-note" name="prov-note"
-                         placeholder="Grátis: 30 req/min. Testado em 03/10."
-                         aria-describedby="prov-note-hint">
-                  <span class="hint" id="prov-note-hint">O que decide se vale escolher. Aparece no seletor do Curador.</span>
-                </div>
-              </div>
-
-              <div class="toggle-wrap">
-                <span class="tw-label">Exige chave de API</span>
-                <button class="toggle active" type="button" id="prov-requires-key" role="switch"
-                        aria-checked="true" aria-label="Exige chave de API"></button>
-              </div>
-
-              <div class="prov-actions">
-                <button class="btn pressable" type="button" id="btn-prov-test">Testar modelo</button>
-                <button class="btn pressable btn-primary" type="button" id="btn-prov-save">Salvar provedor</button>
-                <button class="btn pressable" type="button" id="btn-prov-clear" hidden>Cancelar edição</button>
-                <span id="prov-status" role="status"
-                      style="font-size: var(--text-caption); color: var(--text-muted);"></span>
-              </div>
-
-              <div class="prov-result" id="prov-result" hidden role="status" aria-live="polite"></div>
-            </div>
           </div>
         </div>
       </div>
 
       </form>
+
+    <!-- COLUNA 2: Curador + Meus provedores.
+         Os dois cards sao a MESMA pergunta vista de dois angulos — o Curador
+         escolhe o provedor, e "Meus provedores" e onde um provedor que ainda
+         nao existe na tabela do projeto passa a existir. Empilha-los na mesma
+         coluna mantem a escolha e a origem da lista a um olhar de distancia.
+         A Execucao NAO mora aqui: ela pertence a coluna 1, ao lado do Fonte,
+         porque o que entra e o que sai se leem juntos. -->
+    <div class="studio-col studio-col-curador">
+        <div class="card">
+          <h2><span class="ico" aria-hidden="true">✦</span> Curador com IA (opcional)</h2>
+
+          <div class="form-section">
+            <div class="toggle-wrap">
+              <span class="tw-label">Reavaliar top candidatos com LLM</span>
+              <button class="toggle" type="button" id="ranker-llm" role="switch" aria-checked="false" aria-label="Ranker LLM"></button>
+            </div>
+            <!-- O bloco inteiro desabilita junto com o toggle. Sem isto o
+                 formulario aceita edicao dos seis campos e o payload do run
+                 so os le quando `ranker=llm` (index.js:cliCommand) — um
+                 controle que parece ativo e nao tem efeito. O <fieldset> faz
+                 o `disabled` valer para todos os controles de uma vez, sem
+                 precisar marcar campo a campo (que e onde o proximo esquecido
+                 entra). O JS liga/desliga pelo id. -->
+            <fieldset class="curador-campos" id="ranker-fields" disabled>
+              <p class="curador-off" id="ranker-off-note">
+                O curador está desligado: estes campos só passam a valer
+                quando o interruptor acima estiver ligado.
+              </p>
+              <div class="field-row">
+                <div class="field">
+                  <label for="ranker-provider">Provedor</label>
+                  <!-- data-defer-enhance: as opcoes vem do servidor (/providers),
+                       depois do init. Sem isto o dropdown rico seria montado a
+                       partir de uma lista ainda vazia e ficaria sem opcao nenhuma. -->
+                  <select id="ranker-provider" name="ranker-provider" data-defer-enhance
+                          aria-describedby="ranker-provider-hint"></select>
+                  <span class="hint" id="ranker-provider-hint">Preenche endpoint e modelo de uma vez.</span>
+                </div>
+                <div class="field">
+                  <label for="ranker-model">Modelo</label>
+                  <input type="text" id="ranker-model" name="ranker-model" value="gpt-4o-mini">
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="ranker-base-url">Endpoint (compatível com OpenAI)</label>
+                  <input type="url" id="ranker-base-url" name="ranker-base-url" value="https://api.openai.com/v1">
+                </div>
+                <div class="field">
+                  <label for="ranker-api-key-env">Variável de ambiente da chave</label>
+                  <input type="text" id="ranker-api-key-env" name="ranker-api-key-env" value="OPENAI_API_KEY"
+                         aria-describedby="ranker-api-key-env-hint">
+                  <span class="hint" id="ranker-api-key-env-hint">O <strong>nome</strong> da variável, nunca a chave em si. Ela nunca é gravada em arquivo do projeto.</span>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="ranker-top-n">Top-N candidatos</label>
+                  <input type="number" id="ranker-top-n" name="ranker-top-n" min="1" max="100" value="24"
+                         aria-describedby="ranker-top-n-hint">
+                  <!-- Aviso que so aparece com quantidade automatica (count=0):
+                       ali o ranker_top_n vira o teto REAL da saida, nao um dial
+                       de custo entre outros. O motor avisa em log; a tela nao
+                       avisava, e a pessoa pedia "quantos o video render" para
+                       receber 24 sem entender por que. -->
+                  <span class="hint" id="ranker-top-n-hint" hidden>
+                    Com a quantidade em automático (0 na página Cortes), este é o
+                    teto da saída: o curador só consegue escolher entre as janelas
+                    que julgou.
+                  </span>
+                </div>
+                <div class="field">
+                  <label for="ranker-weight">Peso do modelo (0-1)</label>
+                  <input type="number" id="ranker-weight" name="ranker-weight" min="0" max="1" step="0.05" value="0.6">
+                </div>
+              </div>
+            </fieldset>
+          </div>
+        </div>
+
+        <!-- ------------------------------------------------------------
+             MEUS PROVEDORES
+
+             Fica nesta coluna, logo abaixo do Curador, porque e a mesma
+             pergunta vista de dois angulos: o Curador escolhe o provedor, e
+             este card e onde um provedor que ainda nao existe na tabela do
+             projeto passa a existir.
+
+             Duas coisas que este card faz e que uma lista estatica nao pode:
+             (1) TESTAR antes de salvar — o unico jeito de saber se um modelo
+             gratuito serve e chamar o endpoint, e o doc do projeto registra
+             cinco modelos que respondem 200 e nao servem; (2) guardar fora do
+             providers.py, que e versionado, para o proximo `git pull` nao
+             virar conflito no arquivo de quem so queria usar o proprio
+             endpoint.
+             ------------------------------------------------------------ -->
+        <div class="card" id="card-meus-provedores">
+          <h2><span class="ico" aria-hidden="true">✚</span> Meus provedores</h2>
+
+          <div class="form-section">
+            <p class="section-sub-muted">
+              Endpoints seus, que não estão na lista do projeto. Salve aqui e eles
+              aparecem no seletor <strong>Provedor</strong> do Curador como qualquer
+              outro. O arquivo fica na raiz do projeto (<code>provedores-usuario.toml</code>)
+              e não mexe em código versionado.
+            </p>
+
+            <ul class="prov-list" id="prov-list" aria-live="polite"></ul>
+            <p class="prov-empty" id="prov-empty" hidden>
+              Nenhum provedor seu ainda. Preencha o formulário abaixo — se preferir,
+              clique em <strong>Testar modelo</strong> antes de salvar.
+            </p>
+
+            <div class="field-row">
+              <div class="field">
+                <label for="prov-name">Nome curto</label>
+                <input type="text" id="prov-name" name="prov-name" placeholder="meu-provedor"
+                       aria-describedby="prov-name-hint">
+                <span class="hint" id="prov-name-hint">Só letras, números, hífen e sublinhado. É o nome que você vai digitar na CLI.</span>
+              </div>
+              <div class="field">
+                <label for="prov-label">Rótulo (opcional)</label>
+                <input type="text" id="prov-label" name="prov-label" placeholder="Meu Provedor Grátis">
+              </div>
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <label for="prov-base-url">Endpoint (compatível com OpenAI)</label>
+                <input type="url" id="prov-base-url" name="prov-base-url"
+                       placeholder="https://api.exemplo.com/v1"
+                       aria-describedby="prov-base-url-hint">
+                <span class="hint" id="prov-base-url-hint">Precisa terminar antes de <code>/chat/completions</code> — o motor acrescenta.</span>
+              </div>
+              <div class="field">
+                <label for="prov-model">Modelo</label>
+                <input type="text" id="prov-model" name="prov-model" placeholder="nome-do-modelo"
+                       aria-describedby="prov-model-hint">
+                <span class="hint" id="prov-model-hint">O id exato que o fornecedor usa, não o nome de exibição.</span>
+              </div>
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <label for="prov-api-key-env">Variável de ambiente da chave</label>
+                <input type="text" id="prov-api-key-env" name="prov-api-key-env"
+                       placeholder="MEU_PROVEDOR_API_KEY"
+                       aria-describedby="prov-api-key-env-hint">
+                <span class="hint" id="prov-api-key-env-hint">O <strong>nome</strong> da variável, nunca a chave. Deixe vazio se o endpoint local aceita qualquer chave.</span>
+              </div>
+              <div class="field">
+                <label for="prov-note">Nota</label>
+                <input type="text" id="prov-note" name="prov-note"
+                       placeholder="Grátis: 30 req/min. Testado em 03/10."
+                       aria-describedby="prov-note-hint">
+                <span class="hint" id="prov-note-hint">O que decide se vale escolher. Aparece no seletor do Curador.</span>
+              </div>
+            </div>
+
+            <div class="toggle-wrap">
+              <span class="tw-label">Exige chave de API</span>
+              <button class="toggle active" type="button" id="prov-requires-key" role="switch"
+                      aria-checked="true" aria-label="Exige chave de API"></button>
+            </div>
+
+            <div class="prov-actions">
+              <button class="btn pressable" type="button" id="btn-prov-test">Testar modelo</button>
+              <button class="btn pressable btn-primary" type="button" id="btn-prov-save">Salvar provedor</button>
+              <button class="btn pressable" type="button" id="btn-prov-clear" hidden>Cancelar edição</button>
+              <span id="prov-status" role="status"
+                    style="font-size: var(--text-caption); color: var(--text-muted);"></span>
+            </div>
+
+            <div class="prov-result" id="prov-result" hidden role="status" aria-live="polite"></div>
+            </div>
+          </div>
     </div>
 
-
-  <!-- COLUNA PRINCIPAL: o card do prompt vive aqui -->
+    <!-- COLUNA 3: o card do prompt. -->
+    <div class="prompt-col">
     <div class="card prompt-card">
       <h2><span class="ico" aria-hidden="true">✎</span> Prompt do curador</h2>
 
@@ -475,6 +490,7 @@
                 style="font-size: var(--text-caption); color: var(--text-muted);"></span>
         </div>
       </div>
+    </div>
     </div>
 
   </div>

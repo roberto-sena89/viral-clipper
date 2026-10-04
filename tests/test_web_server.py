@@ -1696,7 +1696,7 @@ class GridTrackAndPollingTests(unittest.TestCase):
         return (server.WEB_DIR / nome).read_text(encoding="utf-8")
 
     def test_the_main_grid_track_can_shrink_below_its_content(self):
-        """`minmax(0, …)` nos dois tracks do `.main-grid`.
+        """TODOS os tracks do `.main-grid` sao `minmax(0, …)`.
 
         Filho de grid tem `min-width: auto` por padrao, ou seja, nunca encolhe
         abaixo do seu conteudo. A coluna da esquerda e o formulario, com o
@@ -1704,18 +1704,34 @@ class GridTrackAndPollingTests(unittest.TestCase):
         deles com largura minima intrinseca maior que a coluna empurra o track
         e o `1fr` cresce alem da tela. O `.scrap-grid` ja usa `minmax(0, …)`
         pelos dois motivos; aqui faltava.
+
+        A trava e a FORMA de cada track, nao a QUANTIDADE deles: o grid ja teve
+        duas colunas (Fonte+Exec / Prompt) e passou a ter tres (Fonte+Exec /
+        Curador+Provedores / Prompt), e contar "2" fazia o teste cair numa
+        mudanca legitima de layout em vez de num defeito. O que nao pode
+        regredir e `1fr` puro, que encolhe pelo conteudo.
         """
         css = self.body("index.css")
-        bloco = re.search(r"\.main-grid\s*\{([^}]*)\}", css)
-        self.assertIsNotNone(bloco, "o .main-grid sumiu")
-        tracks = re.search(r"grid-template-columns:\s*([^;}]+);", bloco.group(1))
-        self.assertIsNotNone(tracks, "o .main-grid nao declara grid-template-columns")
-        colunas = tracks.group(1)
+        # O `.main-grid` aparece em MAIS DE UMA regra: uma so com display/gap e
+        # a outra (a "base de colunas") com o `grid-template-columns` que vale no
+        # desktop. Casar so `\.main-grid\s*\{` acha a primeira e o teste cai
+        # dizendo que a coluna nao existe. Entao a busca e pela regra que de
+        # fato DECLARA o track — ancorada em coluna 0, fora de `@media`, onde
+        # `1fr` sozinho e LEGITIMO (e o empilhamento de coluna unica).
+        base = re.search(
+            r"^\.main-grid\s*\{[^}]*grid-template-columns:\s*([^;}]+);",
+            css, re.S | re.M)
+        self.assertIsNotNone(
+            base, "a regra base de colunas do .main-grid sumiu")
+        colunas = base.group(1)
+        # Nenhum track pode ser `1fr` SOLTO: `minmax(0, 1fr)` e a forma que
+        # colapsa e `1fr` puro e a que vaza. A trava e no `minmax`.
+        self.assertNotRegex(
+            colunas, r"(?<!minmax\(0,\s)\b1fr\b",
+            f"track com `1fr` solto na regra base do .main-grid: {colunas}")
         self.assertEqual(
-            colunas.count("minmax(0,"), 2,
-            f"as duas colunas precisam de minmax(0, …): {colunas}")
-        # `1fr` puro e o que volta a vazar: `minmax(0, 1fr)` e a forma que
-        # colapsa. A trava e no `minmax`, nao no `1fr`.
+            colunas.count("minmax(0,"), colunas.count("fr"),
+            f"nem todo track da regra base e minmax(0, …): {colunas}")
         self.assertNotIn(
             "grid-template-columns: 1fr 360px", css,
             "o .main-grid voltou para `1fr 360px`, que encolhe pelo conteudo")
@@ -4038,6 +4054,143 @@ class UserProviderCardTests(unittest.TestCase):
         fonte = (server.REPO_ROOT / "web" / "server.py").read_text(encoding="utf-8")
         corpo = fonte.split("def _handle_test_provider", 1)[1].split("\n    def ", 1)[0]
         self.assertIn("no-key", corpo)
+
+
+class ThreeColumnLayoutTests(unittest.TestCase):
+    """O `.main-grid` tem TRES colunas irmas, e cada card mora na coluna certa.
+
+    Antes era uma coluna unica de 788px com tudo empilhado dentro (Fonte,
+    Execucao, Curador, Meus provedores) mais um aside de 340px so com o prompt:
+    a coluna curta ficava ~1350px mais baixa que a longa e o vazio aparecia na
+    tela. A correcao foi distribuir em tres colunas iguais.
+
+    O que este teste trava nao e a largura — essa e medicao de navegador — e sim
+    a ARVORE: quais cards sao filhos diretos do grid e quais ficam empilhados
+    dentro de uma coluna. Trocar o aninhamento muda o layout em silencio (o
+    navegador conserta o HTML malformado e o `class` errado nao da erro nenhum).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = page_source("index.html")
+        cls.css = (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
+
+    def _sem_comentarios(self):
+        """O HTML sem os comentarios `<!-- … -->`.
+
+        Eles trazem os rotulos das colunas e quebrariam a contagem de `</div>`
+        se um comentario citasse markup. Fora de qualquer contagem, e a base de
+        todo o resto.
+        """
+        return re.sub(r"<!--.*?-->", "", self.html, flags=re.S)
+
+    def _bloco_de(self, classe, corpo=None):
+        """O `<div class="{classe}">` inteiro, do abre ao fecha que o casa.
+
+        `.*?` nao serve: o primeiro `</div>` que aparece ja nao e o do no. Aqui
+        acha-se o abre pela classe, conta-se a profundidade `<div>`/`</div>` ate
+        voltar a zero e devolve-se o recorte fechado — o unico jeito de saber
+        onde um no aninhado termina.
+        """
+        corpo = self._sem_comentarios() if corpo is None else corpo
+        alvo = f'class="{classe}"'
+        if alvo not in corpo:
+            raise AssertionError(f"o bloco `{alvo}` sumiu do index.html")
+        i = corpo.index(alvo)
+        ini = corpo.rindex("<div", 0, i)
+        depth = 0
+        for m in re.finditer(r"<div\b|</div>", corpo[ini:]):
+            depth += 1 if m.group(0) == "<div" else -1
+            if depth == 0:
+                return corpo[ini:ini + m.end()]
+        raise AssertionError(f"o bloco `{alvo}` nunca fecha")
+
+    def _grid_children(self):
+        """Os `<div>` de nivel 1 dentro do `.main-grid`, pela profundidade.
+
+        Contar `<div>` com regex por nome de classe nao serve: o que importa e a
+        POSICAO na arvore. E preciso fechar o bloco ANTES de contar: cada coluna
+        leva a profundidade a zero no proprio fecha, entao varrer o documento
+        solto pararia na primeira coluna (era o defeito deste metodo).
+        """
+        bloco = self._bloco_de("main-grid")
+        inner = bloco[bloco.index(">") + 1:bloco.rindex("</div>")]
+        depth, filhos = 0, []
+        for linha in inner.split("\n"):
+            abre = len(re.findall(r"<div\b", linha))
+            antes = depth
+            depth += abre - len(re.findall(r"</div>", linha))
+            if abre and antes == 0:
+                filhos.append(linha.strip())
+        return filhos
+
+    def test_the_grid_has_exactly_three_direct_children(self):
+        filhos = self._grid_children()
+        self.assertEqual(
+            len(filhos), 3,
+            "o .main-grid precisa de 3 filhos diretos (colunas); achou "
+            f"{len(filhos)}: {filhos}")
+
+    def test_the_first_column_keeps_fonte_next_to_execucao(self):
+        """Fonte e Execucao na MESMA coluna: e o par entrada/saida.
+
+        Separa-las devolve o problema antigo: a pessoa preenche os campos e
+        rola a pagina para achar o botao.
+        """
+        par = self._bloco_de("studio-pair")
+        self.assertIn("card-fonte", par)
+        self.assertIn("execution-card", par)
+
+    def test_the_curador_and_the_providers_share_one_column(self):
+        """Curador e Meus provedores sao a mesma pergunta em dois angulos.
+
+        O Curador ESCOLHE o provedor; o card de provedores e onde um que ainda
+        nao existe passa a existir. Empilha-los mantem escolha e origem juntas.
+        """
+        col = self._bloco_de("studio-col studio-col-curador")
+        self.assertIn("Curador com IA", col)
+        self.assertIn('id="card-meus-provedores"', col)
+
+    def test_the_prompt_has_its_own_column(self):
+        col = self._bloco_de("prompt-col")
+        self.assertIn("prompt-card", col)
+
+    def test_the_execution_card_is_not_in_the_curador_column(self):
+        """A Execucao pertence a coluna 1, nao a do Curador.
+
+        O `.studio-col` antigo embrulhava Execucao + Curador juntos; separar os
+        dois exigiu abrir uma coluna nova. Se o Execucao voltar para dentro da
+        coluna do Curador, o par entrada/saida se desfaz.
+        """
+        col = self._bloco_de("studio-col studio-col-curador")
+        self.assertNotIn("execution-card", col)
+
+    def test_the_base_rule_declares_three_tracks(self):
+        """A regra base (fora de @media) tem 3 tracks `minmax(0, …)`.
+
+        O `minmax(0, …)` e obrigatorio: filho de grid nunca encolhe abaixo do
+        conteudo sem ele, e um `<select>` mais largo que a coluna empurraria o
+        track alem da tela.
+        """
+        base = re.search(
+            r"^\.main-grid\s*\{[^}]*grid-template-columns:\s*([^;}]+);",
+            self.css, re.S | re.M)
+        self.assertIsNotNone(base, "a regra base de colunas do .main-grid sumiu")
+        colunas = base.group(1)
+        self.assertEqual(colunas.count("minmax(0,"), 3, colunas)
+
+    def test_the_narrow_breakpoint_falls_back_to_two_columns(self):
+        """Abaixo de 1280px a terceira coluna cai.
+
+        Tres colunas de ~300px apertam o Fonte, que tem `.field-row.triple`
+        (Pasta, Quantidade, Download). O corte tem de existir, senao a linha de
+        tres campos quebra feio entre 1000px e 1280px.
+        """
+        self.assertRegex(
+            self.css,
+            r"@media \(max-width: 1280px\)\s*\{\s*\.main-grid\s*\{[^}]*"
+            r"grid-template-columns:\s*minmax\(0, 1fr\)",
+            "o @media (max-width: 1280px) do .main-grid sumiu ou perdeu o fallback")
 
 
 class UserProviderStoreTests(unittest.TestCase):

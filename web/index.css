@@ -207,9 +207,10 @@ body { padding-left: var(--rail-w); }
    um nivel abaixo; este resolve o do proprio track. E o mesmo motivo do
    `minmax(0, 400px) minmax(0, 1fr)` do `.scrap-grid`.
 
-   As COLUNAS de verdade ficam na regra `.main-grid` mais abaixo (bloco do
-   redesign do Estudio) — esta aqui so garante o `display: grid` e o gap antes
-   dela. Nao mude as colunas por aqui: a de baixo sobrescreve. */
+   As COLUNAS e as AREAS de verdade ficam na regra `.main-grid` mais abaixo
+   (bloco do redesign do Estudio) — esta aqui so garante o `display: grid` e o
+   gap antes dela. Nao declare colunas por aqui: a de baixo sobrescreve, e as
+   `grid-template-areas` da de baixo sao quem posiciona as celulas. */
 .main-grid {
   display: grid;
   gap: 28px;
@@ -217,17 +218,26 @@ body { padding-left: var(--rail-w); }
 }
 @media (max-width: 960px) {
   .hero { grid-template-columns: 1fr; }
-  .main-grid { grid-template-columns: 1fr; }
   /* SEM order: -1 no visual. Ele empurrava tres videos decorativos (e
      aria-hidden, ou seja, nada para leitor de tela) para cima do H1 —
      no celular a primeira dobra virava vitrine sem frase, e o titulo,
      que e a unica coisa que diz o que o site faz, descia para fora. */
 }
 
-/* A coluna do Curador empilha Curador + Meus provedores. A Execucao NAO entra
-   aqui: ela fica na coluna 1, ao lado do Fonte. */
-.studio-col-curador { min-width: 0; }
-.prompt-col { min-width: 0; }
+/* ---------- AS CELULAS DO CORPO (grade 2x2) ----------
+   A antiga `.studio-col-curador` e a `.prompt-col` viraram celulas irmas com
+   nome proprio, posicionadas por `grid-template-areas` la embaixo. Aqui so
+   entra o que e comum: nenhuma encolhe abaixo do conteudo (`min-width: 0`) e
+   as celulas que EMPILHAM dois cards mantem o mesmo respiro do grid. */
+.studio-cell,
+.studio-cell-curador { min-width: 0; }
+
+/* Celula que empilha dois cards (Curador + Meus provedores). */
+.studio-cell-curador {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
 
 /* ---------- CARTÕES ---------- */
 .card {
@@ -1069,23 +1079,63 @@ header {
    mesma especificidade, vence a ultima. Editar so a de cima nao muda nada
    na tela (foi o que aconteceu: as colunas continuaram 788/340).
 
-   TRES colunas iguais com `align-items: start`: cada uma fica com a altura do
-   proprio conteudo e nenhuma estica para acompanhar a mais alta. Medido em
-   1440px — largura util 1148px e a soma dos minimos intrinsecos e ~638px
-   (241 Fonte + 206 Curador + 135 prompt + 2 gaps de 28), com `scrollOverflow`
-   em 0. */
+   GRADE 2x2 com `grid-template-areas`. A cabeca (config-heading + section-sub)
+   ocupa a primeira faixa, na largura toda; abaixo dela,
+
+       "fonte    exec"       Fonte | Execucao  (entrada e saida juntas)
+       "curador  prompt"     Curador (com Meus provedores) | Prompt
+
+   O `<form id="clip-form">` vira `display: contents`: o box dele desaparece do
+   layout e as QUATRO celulas passam a ser itens do grid, cada uma na sua area.
+   Sem isso o form seria UM item so e as celulas ficariam empilhadas dentro
+   dele — o grid nao veria as quatro.
+
+   POR QUE ASSIM: o pedido foi por "Curador com IA" e "Prompt do curador" LADO
+   A LADO, abaixo do Fonte. Antes eram tres colunas iguais, e a do meio
+   (Curador 605px + Meus provedores 886px = 1537px) ficava 870px mais alta que
+   a do Prompt (667px) — desalinhamento visivel. Os dois cards de entrada/saida
+   continuam na linha 1, e cada celula tem a altura do proprio conteudo por
+   causa do `align-items: start`.
+
+   Cada track e `minmax(0, 1fr)`: filho de grid tem `min-width: auto` e um
+   `<select>`/`<textarea>` mais largo que a coluna empurra o track alem da
+   tela sem isso. */
 .main-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "cabeca  cabeca"
+    "fonte   exec"
+    "curador prompt";
   align-items: start;
   gap: 20px;
   padding-top: 24px;
   padding-bottom: 36px;
 }
-/* Duas colunas antes de virar uma. 3 colunas de ~300px em 1000px apertam o
-   Fonte, que tem `.field-row.triple` (Pasta, Quantidade, Download) e quebra
-   feio abaixo disso. */
-@media (max-width: 1280px) {
-  .main-grid { grid-template-columns: minmax(0, 1fr) minmax(292px, 340px); }
+/* O form nao tem box proprio: as 4 celulas sobem para o grid. */
+.main-grid > form#clip-form { display: contents; }
+/* A cabeca ocupa a faixa de cima, na largura toda. E UM item (`main-head`)
+   com area propria: sem area explicita o auto-placement a jogaria para a
+   ULTIMA faixa, depois dos cards que tem `grid-area` (foi o que aconteceu —
+   a cabeca apareceu com y=2550, embaixo de tudo). */
+.main-grid > .main-head { grid-area: cabeca; }
+
+.studio-cell-fonte   { grid-area: fonte; }
+.studio-cell-exec    { grid-area: exec; }
+.studio-cell-curador { grid-area: curador; }
+.studio-cell-prompt  { grid-area: prompt; }
+
+/* Uma coluna. Abaixo de ~1100px duas colunas apertam o Fonte, que tem
+   `.field-row.triple` (Pasta, Quantidade, Download) e quebra feio. */
+@media (max-width: 1100px) {
+  .main-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "cabeca"
+      "fonte"
+      "exec"
+      "curador"
+      "prompt";
+  }
 }
 .config-heading {
   display: flex;
@@ -1349,12 +1399,13 @@ footer { margin-top: 38px; border-top-color: var(--border-subtle); }
 
 @media (max-width: 1160px) {
   .studio-welcome { grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr); }
-  .main-grid { grid-template-columns: minmax(0, 1fr) minmax(280px, 310px); gap: 16px; }
+  /* A grade do corpo continua 2x2; so o gap aperta. Trocar as COLUNAS aqui
+     sem trocar as AREAS quebraria o layout (as areas mandam). */
+  .main-grid { gap: 16px; }
 }
 @media (max-width: 960px) {
   .header-inner > .brand { display: flex; }
   .studio-welcome { padding-top: 24px; }
-  .main-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
   .header-inner { height: 60px; }

@@ -437,15 +437,16 @@ class PromptCardParityTests(unittest.TestCase):
         cls.cortes = page_source("index.html")
 
     def _card(self, markup: str) -> str:
-        """O bloco do card, recortado entre o <div> que o abre e o fechamento.
+        """O bloco do card, recortado entre o `<div>` que o abre e o fechamento.
 
-        O `h2` marca o inicio e vale para as duas paginas; o fim e o
-        `</div>` que fecha o card, tres niveis abaixo do `<div
-        class="form-section">`. Recortar por `</div>` balanceado em vez de por
-        um numero fixo de linhas e o que faz este recorte sobreviver a uma
+        A ancora e a CLASSE do card (`prompt-card`), nao o texto do titulo: o
+        texto solto aparece tambem num comentario `<!-- Prompt do curador … -->`
+        que a Cortes ganhou ao virar grade, e ancorar nele pegava o comentario
+        (e o `<div>` de outro card logo antes). O recorte por `</div>`
+        balanceado continua valendo para o fim, e por isso sobrevive a uma
         edicao no conteudo do card.
         """
-        i = markup.index("Prompt do curador")
+        i = markup.index('class="card prompt-card"')
         i = markup.rindex("<div", 0, i)
         profundidade = 0
         for m in re.finditer(r"<div\b|</div>", markup[i:]):

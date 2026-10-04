@@ -4056,19 +4056,27 @@ class UserProviderCardTests(unittest.TestCase):
         self.assertIn("no-key", corpo)
 
 
-class ThreeColumnLayoutTests(unittest.TestCase):
-    """O `.main-grid` tem TRES colunas irmas, e cada card mora na coluna certa.
+class BodyGridLayoutTests(unittest.TestCase):
+    """O corpo da Cortes e uma grade: Fonte|Execucao e, abaixo, Curador|Prompt.
 
-    Antes era uma coluna unica de 788px com tudo empilhado dentro (Fonte,
-    Execucao, Curador, Meus provedores) mais um aside de 340px so com o prompt:
-    a coluna curta ficava ~1350px mais baixa que a longa e o vazio aparecia na
-    tela. A correcao foi distribuir em tres colunas iguais.
+    Historico das duas mudancas de forma:
 
-    O que este teste trava nao e a largura — essa e medicao de navegador — e sim
-    a ARVORE: quais cards sao filhos diretos do grid e quais ficam empilhados
-    dentro de uma coluna. Trocar o aninhamento muda o layout em silencio (o
-    navegador conserta o HTML malformado e o `class` errado nao da erro nenhum).
+    1. Era UMA coluna (788px) com tudo empilhado mais um aside de 340px so com
+       o prompt — a coluna curta ficava ~1350px mais baixa e o vazio aparecia.
+    2. Virou TRES colunas iguais; a do meio (Curador 605 + Provedores 886 =
+       1537px) ficou ~870px mais alta que a do Prompt (667px).
+    3. Agora e uma grade 2x2: `fonte | exec` na linha 1 e `curador | prompt` na
+       linha 2, cada celula com a altura do proprio conteudo.
+
+    O que este teste trava NAO e a largura (isso e medicao de navegador, feita
+    no `e2e_reorg.js`) e sim a ARVORE e a ORDEM: qual celula contem qual card e
+    onde cada uma cai na grade. Trocar o aninhamento muda o layout em silencio —
+    o navegador conserta HTML malformado e uma `grid-area` errada nao da erro.
     """
+
+    # As quatro areas, na ordem em que o pedido as quer no documento.
+    CELULAS = ("studio-cell-fonte", "studio-cell-exec",
+               "studio-cell-curador", "studio-cell-prompt")
 
     @classmethod
     def setUpClass(cls):
@@ -4078,9 +4086,8 @@ class ThreeColumnLayoutTests(unittest.TestCase):
     def _sem_comentarios(self):
         """O HTML sem os comentarios `<!-- … -->`.
 
-        Eles trazem os rotulos das colunas e quebrariam a contagem de `</div>`
-        se um comentario citasse markup. Fora de qualquer contagem, e a base de
-        todo o resto.
+        Eles citam markup e quebrariam a contagem de `</div>`; tirar antes de
+        contar e a base de todo o resto.
         """
         return re.sub(r"<!--.*?-->", "", self.html, flags=re.S)
 
@@ -4089,8 +4096,8 @@ class ThreeColumnLayoutTests(unittest.TestCase):
 
         `.*?` nao serve: o primeiro `</div>` que aparece ja nao e o do no. Aqui
         acha-se o abre pela classe, conta-se a profundidade `<div>`/`</div>` ate
-        voltar a zero e devolve-se o recorte fechado — o unico jeito de saber
-        onde um no aninhado termina.
+        voltar a zero e devolve-se o recorte fechado — o unico jeito honesto de
+        saber onde um no aninhado termina.
         """
         corpo = self._sem_comentarios() if corpo is None else corpo
         alvo = f'class="{classe}"'
@@ -4105,92 +4112,238 @@ class ThreeColumnLayoutTests(unittest.TestCase):
                 return corpo[ini:ini + m.end()]
         raise AssertionError(f"o bloco `{alvo}` nunca fecha")
 
-    def _grid_children(self):
-        """Os `<div>` de nivel 1 dentro do `.main-grid`, pela profundidade.
+    def _itens_do_grid(self):
+        """Os filhos diretos do `.main-grid`, em ordem.
 
-        Contar `<div>` com regex por nome de classe nao serve: o que importa e a
-        POSICAO na arvore. E preciso fechar o bloco ANTES de contar: cada coluna
-        leva a profundidade a zero no proprio fecha, entao varrer o documento
-        solto pararia na primeira coluna (era o defeito deste metodo).
+        O `<form>` conta como item porque nao e `<div>` (a varredura de
+        profundidade so ve `<div>`/`</div>`); as QUATRO celulas vivem dentro
+        dele e sobem para o grid via `display: contents`, entao a lista de
+        filhos do grid na arvore HTML inclui o form e NAO as celulas — que e
+        exatamente o que este teste precisa distinguir.
         """
         bloco = self._bloco_de("main-grid")
         inner = bloco[bloco.index(">") + 1:bloco.rindex("</div>")]
-        depth, filhos = 0, []
+        itens, depth = [], 0
         for linha in inner.split("\n"):
-            abre = len(re.findall(r"<div\b", linha))
+            faixa = linha.strip()
+            abre_div = len(re.findall(r"<div\b", linha))
             antes = depth
-            depth += abre - len(re.findall(r"</div>", linha))
-            if abre and antes == 0:
-                filhos.append(linha.strip())
-        return filhos
+            depth += abre_div - len(re.findall(r"</div>", linha))
+            if antes == 0 and (abre_div or faixa.startswith("<form")):
+                itens.append(faixa)
+        return itens
 
-    def test_the_grid_has_exactly_three_direct_children(self):
-        filhos = self._grid_children()
-        self.assertEqual(
-            len(filhos), 3,
-            "o .main-grid precisa de 3 filhos diretos (colunas); achou "
-            f"{len(filhos)}: {filhos}")
+    # ---------------------------------------------------------------- arvore
 
-    def test_the_first_column_keeps_fonte_next_to_execucao(self):
-        """Fonte e Execucao na MESMA coluna: e o par entrada/saida.
+    def test_the_cells_are_the_four_expected_ones(self):
+        """Cada celula existe UMA vez — a base de tudo o resto neste teste."""
+        for celula in self.CELULAS:
+            with self.subTest(celula=celula):
+                self.assertEqual(
+                    self.html.count(f'class="studio-cell {celula}"'), 1,
+                    f"a celula `{celula}` nao aparece exatamente 1 vez")
 
-        Separa-las devolve o problema antigo: a pessoa preenche os campos e
-        rola a pagina para achar o botao.
+    def test_fonte_and_execucao_are_two_sibling_cells(self):
+        """Fonte e Execucao sao celulas IRMAS: o par entrada/saida.
+
+        Empilha-las devolve o problema antigo: preencher os campos e rolar a
+        pagina para achar o botao. Irmas, o CSS as poem lado a lado.
         """
-        par = self._bloco_de("studio-pair")
-        self.assertIn("card-fonte", par)
-        self.assertIn("execution-card", par)
+        fonte = self._bloco_de("studio-cell studio-cell-fonte")
+        exec_ = self._bloco_de("studio-cell studio-cell-exec")
+        self.assertIn("card-fonte", fonte)
+        self.assertIn("execution-card", exec_)
+        # uma nao contem a outra
+        self.assertNotIn("execution-card", fonte)
+        self.assertNotIn("card-fonte", exec_)
 
-    def test_the_curador_and_the_providers_share_one_column(self):
-        """Curador e Meus provedores sao a mesma pergunta em dois angulos.
+    def test_the_curador_cell_carries_the_curador_and_the_providers(self):
+        """Curador e Meus provedores na MESMA celula.
 
         O Curador ESCOLHE o provedor; o card de provedores e onde um que ainda
-        nao existe passa a existir. Empilha-los mantem escolha e origem juntas.
+        nao existe passa a existir. Juntos, a escolha e a origem da lista ficam
+        a um olhar de distancia.
         """
-        col = self._bloco_de("studio-col studio-col-curador")
-        self.assertIn("Curador com IA", col)
-        self.assertIn('id="card-meus-provedores"', col)
+        cel = self._bloco_de("studio-cell studio-cell-curador")
+        self.assertIn("Curador com IA", cel)
+        self.assertIn('id="card-meus-provedores"', cel)
 
-    def test_the_prompt_has_its_own_column(self):
-        col = self._bloco_de("prompt-col")
-        self.assertIn("prompt-card", col)
+    def test_the_prompt_is_its_own_cell(self):
+        """O prompt e a QUARTA celula, separado do Curador na arvore.
 
-    def test_the_execution_card_is_not_in_the_curador_column(self):
-        """A Execucao pertence a coluna 1, nao a do Curador.
+        Na tela ele fica ao lado do Curador (area `prompt`); separado na arvore
+        para nao herdar a altura da coluna do Curador.
+        """
+        cel = self._bloco_de("studio-cell studio-cell-prompt")
+        self.assertIn("prompt-card", cel)
+        self.assertNotIn("Curador com IA", cel)
+        self.assertNotIn("card-meus-provedores", cel)
+
+    def test_the_execution_card_is_not_in_the_curador_cell(self):
+        """A Execucao pertence a linha 1 (par do Fonte), nao a do Curador.
 
         O `.studio-col` antigo embrulhava Execucao + Curador juntos; separar os
-        dois exigiu abrir uma coluna nova. Se o Execucao voltar para dentro da
-        coluna do Curador, o par entrada/saida se desfaz.
+        dois foi o que abriu a coluna nova. Se o Execucao voltar para dentro da
+        celula do Curador, o par entrada/saida se desfaz.
         """
-        col = self._bloco_de("studio-col studio-col-curador")
-        self.assertNotIn("execution-card", col)
+        cel = self._bloco_de("studio-cell studio-cell-curador")
+        self.assertNotIn("execution-card", cel)
 
-    def test_the_base_rule_declares_three_tracks(self):
-        """A regra base (fora de @media) tem 3 tracks `minmax(0, …)`.
+    def test_the_four_cells_follow_the_declared_order_in_the_document(self):
+        """A ordem no documento e fonte, exec, curador, prompt.
+
+        A ordem importa em duas frentes: e a ordem de leitura para teclado e
+        leitor de tela, e e a ordem que a coluna unica usa ao empilhar.
+        """
+        posicoes = [self.html.index(f'class="studio-cell {c}"') for c in self.CELULAS]
+        self.assertEqual(
+            posicoes, sorted(posicoes),
+            f"as celulas sairam de ordem: {list(zip(self.CELULAS, posicoes))}")
+
+    def test_the_cells_live_inside_the_form(self):
+        """As quatro celulas ficam DENTRO do `<form id="clip-form">`.
+
+        Os campos de cada card precisam estar no form para o botao "Gerar
+        cortes" os ler. Com `display: contents` o form nao tem caixa, mas a
+        arvore continua mandando: fora do form, o payload perde os campos.
+        """
+        corpo = self._sem_comentarios()
+        ini = corpo.index('<form id="clip-form"')
+        fim = corpo.index("</form>", ini)
+        for celula in self.CELULAS:
+            with self.subTest(celula=celula):
+                pos = corpo.index(f'class="studio-cell {celula}"')
+                self.assertTrue(
+                    ini < pos < fim,
+                    f"a celula `{celula}` ficou fora do form")
+
+    def test_the_head_sits_above_the_cells(self):
+        """A cabeca (overline + titulo + instrucao) vem ANTES das celulas."""
+        corpo = self._sem_comentarios()
+        cabeca = corpo.index('class="main-head"')
+        for celula in self.CELULAS:
+            with self.subTest(celula=celula):
+                self.assertLess(
+                    cabeca, corpo.index(f'class="studio-cell {celula}"'),
+                    f"`{celula}` aparece antes da cabeca .main-head")
+
+    # ------------------------------------------------------------------- css
+
+    def _regra_base(self):
+        """O corpo da regra `.main-grid` da GRADE (fora de `@media`).
+
+        `.main-grid` aparece mais de uma vez no arquivo: a primeira so tem
+        `display`/`gap`, e a grade do `@media` tambem declara areas. A regra
+        base e a que tem DUAS colunas `minmax(0, 1fr)` — e a unica assinatura
+        que so ela carrega.
+        """
+        regras = [
+            corpo for corpo in re.findall(r"\.main-grid\s*\{([^}]*)\}", self.css, re.S)
+            if "grid-template-areas" in corpo
+            and corpo.count("minmax(0, 1fr)") == 2
+        ]
+        self.assertEqual(
+            len(regras), 1,
+            f"esperava UMA regra base .main-grid (2 tracks); achei {len(regras)}")
+        return regras[0]
+
+    def test_the_base_rule_declares_two_tracks(self):
+        """A grade base tem DOIS tracks `minmax(0, 1fr)`.
 
         O `minmax(0, …)` e obrigatorio: filho de grid nunca encolhe abaixo do
         conteudo sem ele, e um `<select>` mais largo que a coluna empurraria o
         track alem da tela.
         """
-        base = re.search(
-            r"^\.main-grid\s*\{[^}]*grid-template-columns:\s*([^;}]+);",
-            self.css, re.S | re.M)
-        self.assertIsNotNone(base, "a regra base de colunas do .main-grid sumiu")
-        colunas = base.group(1)
-        self.assertEqual(colunas.count("minmax(0,"), 3, colunas)
+        colunas = re.search(
+            r"grid-template-columns:\s*([^;]+);", self._regra_base()
+        ).group(1)
+        self.assertEqual(colunas.count("minmax(0,"), 2, colunas)
+        self.assertNotRegex(colunas, r"(?<!minmax\(0,\s)\b1fr\b",
+                            f"track com `1fr` solto: {colunas}")
 
-    def test_the_narrow_breakpoint_falls_back_to_two_columns(self):
-        """Abaixo de 1280px a terceira coluna cai.
+    def test_the_areas_put_curador_and_prompt_side_by_side_below_fonte(self):
+        """As areas poem `fonte exec` na linha 1 e `curador prompt` na linha 2.
 
-        Tres colunas de ~300px apertam o Fonte, que tem `.field-row.triple`
-        (Pasta, Quantidade, Download). O corte tem de existir, senao a linha de
-        tres campos quebra feio entre 1000px e 1280px.
+        E O PEDIDO, literal: Curador e Prompt lado a lado, abaixo do Fonte.
+        As `grid-template-areas` sao o contrato disso — mudar a ordem nelas
+        muda a tela inteira sem nenhum outro sinal.
+        """
+        areas = re.search(
+            r"grid-template-areas:\s*((?:\s*\"[^\"]+\")+)", self._regra_base()
+        )
+        self.assertIsNotNone(areas, "as grid-template-areas do .main-grid sumiram")
+        # normaliza o espaco interno: alinhar as colunas no texto e so estetica
+        linhas = [" ".join(l.split()) for l in re.findall(r'"([^"]+)"', areas.group(1))]
+        self.assertEqual(
+            linhas,
+            ["cabeca cabeca", "fonte exec", "curador prompt"],
+            f"as areas do corpo mudaram: {linhas}")
+
+    def test_every_cell_has_its_area_declared(self):
+        """Cada `.studio-cell-*` recebe uma `grid-area` com o proprio nome.
+
+        Celula sem `grid-area` cai no auto-placement e vai parar em qualquer
+        faixa livre — foi o que jogou a cabeca para o rodape numa tentativa.
+        """
+        for celula in self.CELULAS:
+            area = celula.replace("studio-cell-", "")
+            with self.subTest(celula=celula):
+                self.assertRegex(
+                    self.css,
+                    rf"\.{celula}\s*\{{\s*grid-area:\s*{area}\s*;",
+                    f"a `{celula}` nao declara `grid-area: {area}`")
+
+    def test_the_form_dissolves_into_the_grid(self):
+        """O form vira `display: contents`.
+
+        Sem isso ele seria UM item do grid e as quatro celulas ficariam
+        empilhadas dentro dele — o grid nunca as veria, e nao haveria grade.
         """
         self.assertRegex(
             self.css,
-            r"@media \(max-width: 1280px\)\s*\{\s*\.main-grid\s*\{[^}]*"
-            r"grid-template-columns:\s*minmax\(0, 1fr\)",
-            "o @media (max-width: 1280px) do .main-grid sumiu ou perdeu o fallback")
+            r"\.main-grid\s*>\s*form#clip-form\s*\{\s*display:\s*contents\s*;",
+            "o form perdeu o `display: contents` e o grid nao ve as celulas")
+
+    def test_the_narrow_breakpoint_stacks_the_cells(self):
+        """Abaixo de 1100px a grade cai para UMA coluna.
+
+        Duas colunas em ~1000px apertam o Fonte, que tem `.field-row.triple`
+        (Pasta, Quantidade, Download) e quebra feio. O corte tem de existir, e
+        tem de trocar as AREAS junto com as colunas — trocar so os tracks
+        deixaria as areas antigas posicionando as celulas.
+        """
+        # Ha varios `@media (max-width: 1100px)` no arquivo; o do corpo e o que
+        # mexe no `.main-grid`. Filtrar pelo conteudo, nao pela posicao.
+        faixas = re.findall(
+            r"@media \(max-width: 1100px\)\s*\{((?:[^{}]|\{[^}]*\})*)\n\}",
+            self.css, re.S)
+        corpo = next((f for f in faixas if ".main-grid" in f), None)
+        self.assertIsNotNone(corpo, "o @media (max-width: 1100px) do .main-grid sumiu")
+        self.assertRegex(
+            corpo,
+            r"grid-template-columns:\s*minmax\(0, 1fr\)\s*;",
+            "o @media de 1100px nao colapsou para uma coluna")
+        self.assertRegex(corpo, r"grid-template-areas:",
+                         "o @media de 1100px trocou as colunas mas nao as areas")
+
+    def test_no_other_rule_overrides_the_columns(self):
+        """Nenhuma outra regra `.main-grid` declara colunas fora do padrao.
+
+        Havia uma segunda regra de colunas num breakpoint antigo (1160px) que
+        sobrevivia e reescrevia os tracks por baixo da grade nova. Declarar
+        colunas em dois lugares sem declarar as AREAS junto quebra o layout.
+        """
+        ocorrencias = re.findall(
+            r"grid-template-columns:\s*([^;}]+);", self.css)
+        # a grade do corpo tem exatamente DUAS regras de coluna: a base (2
+        # tracks) e o @media de 1100px (1 track). Qualquer terceira com
+        # `.main-grid` por perto e suspeita.
+        blocos = re.findall(r"\.main-grid[^{]*\{([^}]*)\}", self.css, re.S)
+        com_colunas = [b for b in blocos if "grid-template-columns" in b]
+        self.assertEqual(
+            len(com_colunas), 2,
+            "o numero de regras de `.main-grid` com `grid-template-columns` "
+            f"mudou ({len(com_colunas)}); confira se sobrou breakpoint antigo")
 
 
 class UserProviderStoreTests(unittest.TestCase):

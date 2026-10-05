@@ -68,8 +68,24 @@
       // do run le os seis so sob `ranker=llm`. Desabilitar aqui e o que impede
       // a pessoa de preencher campos que seriam descartados em silencio.
       if (t.id === 'ranker-llm') syncRankerFields();
+      // "Exige chave" desligado = endpoint local que aceita qualquer chave. O
+      // campo da chave colada nao teria efeito, entao ele esmaece junto - a
+      // mesma regra do bloco do curador: um controle que PARECE ativo e nao
+      // tem efeito e pior que um desabilitado.
+      if (t.id === 'prov-requires-key') syncProviderKeyField();
     });
   });
+
+  // ---------- provedor: a chave colada segue o interruptor ----------
+  function syncProviderKeyField() {
+    const on = toggleOn('#prov-requires-key');
+    const key = $('#prov-api-key');
+    const env = $('#prov-api-key-env');
+    const reveal = $('#btn-prov-key-reveal');
+    if (key) key.disabled = !on;
+    if (env) env.disabled = !on;
+    if (reveal) reveal.disabled = !on;
+  }
 
   // ---------- curador: os campos seguem o interruptor ----------
   function syncRankerFields() {
@@ -695,13 +711,17 @@
   function clearProviderForm() {
     provEditing = '';
     ['#prov-name', '#prov-label', '#prov-base-url', '#prov-model',
-     '#prov-api-key-env', '#prov-note'].forEach((sel) => {
+     '#prov-api-key-env', '#prov-api-key', '#prov-note'].forEach((sel) => {
       const el = $(sel);
       if (el) el.value = '';
     });
+    // A chave volta a ser secreta: revelar e por sessao de edicao, nao um
+    // estado que sobrevive ao proximo provedor que eu for digitar.
+    setProviderKeyVisible(false);
     // Ligado por padrao: quase todo endpoint remoto exige chave, e o caso
     // "aceita qualquer chave" e o local, que a pessoa sabe que tem.
     setToggle('#prov-requires-key', true);
+    syncProviderKeyField();
     const cancel = $('#btn-prov-clear');
     if (cancel) cancel.hidden = true;
     setProvStatus('');
@@ -715,13 +735,34 @@
     $('#prov-base-url').value = p.base_url || '';
     $('#prov-model').value = p.model || '';
     $('#prov-api-key-env').value = p.api_key_env || '';
+    // A chave salva NAO volta para o campo: o servidor so diz `has_key`. O
+    // placeholder avisa que ja existe uma, e deixar o campo vazio mantem a
+    // chave atual (o payload manda vazio = "nao mexi"). Redigitar por cima
+    // substitui.
+    $('#prov-api-key').value = '';
+    $('#prov-api-key').placeholder = p.has_key
+      ? 'chave salva — deixe vazio para manter'
+      : 'cole a chave aqui';
     $('#prov-note').value = p.note || '';
     setToggle('#prov-requires-key', p.requires_key !== false);
+    syncProviderKeyField();
+    setProviderKeyVisible(false);
     const cancel = $('#btn-prov-clear');
     if (cancel) cancel.hidden = false;
     setProvStatus('Editando "' + p.name + '". Salvar substitui.');
     hideProviderResult();
     $('#prov-name').focus();
+  }
+
+  // O botao "Mostrar" troca o type do input entre password e text. `aria-pressed`
+  // e o que diz ao leitor de tela que o estado mudou; o rotulo do botao acompanha.
+  function setProviderKeyVisible(visivel) {
+    const key = $('#prov-api-key');
+    const reveal = $('#btn-prov-key-reveal');
+    if (!key || !reveal) return;
+    key.type = visivel ? 'text' : 'password';
+    reveal.setAttribute('aria-pressed', String(Boolean(visivel)));
+    reveal.textContent = visivel ? 'Ocultar' : 'Mostrar';
   }
 
   function renderProviderList() {
@@ -801,6 +842,10 @@
       base_url: $('#prov-base-url').value.trim(),
       model: $('#prov-model').value.trim(),
       api_key_env: $('#prov-api-key-env').value.trim(),
+      // Vazio significa "nao mexi na chave": numa EDICAO o servidor conserva a
+      // que ja esta salva, e na criacao e simplesmente nao haver chave. Sem isso
+      // abrir um provedor para trocar a nota apagaria o segredo em silencio.
+      api_key: $('#prov-api-key').value.trim(),
       requires_key: toggleOn('#prov-requires-key'),
       note: $('#prov-note').value.trim(),
     };
@@ -928,6 +973,15 @@
   if (btnProvSave) btnProvSave.addEventListener('click', saveProvider);
   const btnProvClear = $('#btn-prov-clear');
   if (btnProvClear) btnProvClear.addEventListener('click', clearProviderForm);
+  // "Mostrar"/"Ocultar": conferir uma chave recem-colada antes de salvar e o
+  // unico jeito de pegar um espaco a mais ou um caractere trocado, que viram um
+  // 401 identico ao de chave errada.
+  const btnProvKeyReveal = $('#btn-prov-key-reveal');
+  if (btnProvKeyReveal) {
+    btnProvKeyReveal.addEventListener('click', () => {
+      setProviderKeyVisible($('#prov-api-key').type === 'password');
+    });
+  }
 
   (async function initProviderCard() {
     const data = await api('/providers/user');

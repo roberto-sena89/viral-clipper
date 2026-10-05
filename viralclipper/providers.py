@@ -48,7 +48,18 @@ class Provider:
     label: str
     base_url: str
     model: str
+    #: The **name** of the environment variable that holds the key. This is what
+    #: the CLI reads, and what keeps a key out of the versioned table.
     api_key_env: str
+    #: A key pasted straight into the panel, kept in the user's own
+    #: (gitignored) ``provedores-usuario.toml``. The built-in table never sets
+    #: it -- a literal secret in tracked source is exactly the thing
+    #: ``api_key_env`` exists to avoid. It lives here, not in an env var, for
+    #: the case ``api_key_env`` cannot serve: a machine where the user cannot or
+    #: will not export a variable before opening the panel. ``api_key_env``
+    #: remains authoritative when both are set, so exporting a variable still
+    #: overrides a key saved from a browser.
+    api_key: str = ""
     #: Local endpoints (Ollama, LM Studio) usually accept any key, so a missing
     #: one must not abort the run.
     requires_key: bool = True

@@ -9,6 +9,7 @@ by running the real server against the rendered output.
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import tempfile
@@ -18,6 +19,7 @@ from pathlib import Path
 from unittest import mock
 
 from viralclipper import report
+from viralclipper.config import ClipConfig
 from viralclipper.ig_profile import ProfileItem, ProfileListing
 from viralclipper.util import ClipperError
 from web import server
@@ -4380,6 +4382,218 @@ class UserProviderStoreTests(unittest.TestCase):
         texto = gitignore.read_text(encoding="utf-8")
         self.assertIn("provedores-usuario.toml", texto,
                       "o arquivo do usuario nao esta no gitignore")
+
+
+class ManualApiKeyTests(unittest.TestCase):
+    """A chave colada no card, sem depender de exportar uma variavel.
+
+    ``api_key_env`` guarda o NOME de uma variavel: certo para quem exporta uma
+    vez no perfil, errado para quem so quer colar a chave e clicar em testar. O
+    caminho novo tem quatro propriedades que, se perderem, quebram em silencio:
+
+    1. a chave colada satisfaz ``requires_key`` sozinha (sem ``api_key_env``);
+    2. a chave e gravada e lida de volta do TOML do usuario;
+    3. a chave NAO volta para o navegador — a lista manda so ``has_key``;
+    4. a chave chega ao run via ambiente, e uma variavel ja exportada vence.
+    """
+
+    def setUp(self):
+        import tempfile
+
+        from viralclipper import user_providers
+
+        self.user_providers = user_providers
+        self.tmp = Path(tempfile.mkdtemp()) / "provedores-usuario.toml"
+        # Redireciona o arquivo do modulo E a constante do servidor: duas
+        # constantes para o mesmo arquivo e a armadilha que a
+        # UserProviderStoreTests ja documenta.
+        self._mod_path = user_providers.USERS_PATH
+        self._srv_path = server.USER_PROVIDERS_PATH
+        user_providers.USERS_PATH = self.tmp
+        server.USER_PROVIDERS_PATH = self.tmp
+
+    def tearDown(self):
+        self.user_providers.USERS_PATH = self._mod_path
+        server.USER_PROVIDERS_PATH = self._srv_path
+
+    def _entrada(self, **over):
+        base = {
+            "name": "meu-endpoint", "label": "Meu", "model": "m",
+            "base_url": "https://api.exemplo.com/v1", "note": "nota",
+            "requires_key": True,
+        }
+        base.update(over)
+        return base
+
+    # ------------------------------------------------------------- o validador
+
+    def test_a_pasted_key_satisfies_requires_key_on_its_own(self):
+        """Sem ``api_key_env``, a chave colada ja e uma chave."""
+        prov, motivo = self.user_providers.validate(
+            self._entrada(api_key="sk-cole-aqui")
+        )
+        self.assertEqual(motivo, "")
+        self.assertIsNotNone(prov)
+        self.assertEqual(prov.api_key, "sk-cole-aqui")
+        self.assertEqual(prov.api_key_env, "")
+
+    def test_requires_key_with_neither_channel_is_refused(self):
+        """Sem variavel E sem chave, o run nao teria o que enviar."""
+        prov, motivo = self.user_providers.validate(self._entrada())
+        self.assertIsNone(prov)
+        self.assertIn("chave", motivo)
+
+    def test_a_blank_key_is_absence_not_an_empty_secret(self):
+        """``api_key=""`` e ``api_key="   "`` significam "nao dei chave".
+
+        Tratar espaço como chave enviaria um Authorization vazio e o 401 nao
+        diria de onde veio.
+        """
+        prov, motivo = self.user_providers.validate(self._entrada(api_key="   "))
+        self.assertIsNone(prov)
+        self.assertIn("chave", motivo)
+
+    # --------------------------------------------------------------- o arquivo
+
+    def test_the_key_round_trips_through_the_toml(self):
+        prov, _ = self.user_providers.validate(self._entrada(api_key="sk-secreta"))
+        self.user_providers.save([prov], self.tmp)
+        voltou = self.user_providers.load(self.tmp)
+        self.assertEqual(len(voltou), 1)
+        self.assertEqual(voltou[0].api_key, "sk-secreta")
+
+    def test_a_provider_without_a_key_writes_no_key_line(self):
+        """Nao poluir o TOML de quem nunca usou o campo.
+
+        Uma linha ``api_key = ""`` em todo provedor obrigaria o leitor a saber
+        que vazio significa ausente.
+        """
+        prov, _ = self.user_providers.validate(
+            self._entrada(name="local-x", api_key="", api_key_env="",
+                          requires_key=False, base_url="http://127.0.0.1:1/v1")
+        )
+        texto = self.user_providers.dump([prov])
+        self.assertNotIn("api_key = ", texto)
+        self.assertIn('api_key_env = ""', texto)
+
+    # ------------------------------------------------------------- o navegador
+
+    def test_the_payload_never_ships_the_literal_key(self):
+        """A lista do painel diz SE ha chave, nunca QUAL e.
+
+        Devolver o segredo poria a chave no DOM e no historico do devtools a
+        cada recarregamento, sem ganho: o campo so precisa saber que existe uma.
+        """
+        prov, _ = self.user_providers.validate(self._entrada(api_key="sk-secreta"))
+        self.user_providers.save([prov], self.tmp)
+        payload = server._providers_payload()
+        meu = next(p for p in payload["providers"] if p["name"] == "meu-endpoint")
+        self.assertNotIn("api_key", meu, "a chave vazou para o navegador")
+        self.assertTrue(meu["has_key"])
+        self.assertNotIn("sk-secreta", json.dumps(payload),
+                         "o literal da chave apareceu em algum campo do payload")
+
+    def test_an_edit_that_does_not_retype_the_key_keeps_it(self):
+        """Abrir o provedor para corrigir a nota nao pode apagar o segredo.
+
+        O painel nunca recebe a chave de volta, entao um save de edicao manda
+        ``api_key=""``; isso tem de ser "nao mexi", nao "apague".
+        """
+        prov, _ = self.user_providers.validate(self._entrada(api_key="sk-secreta"))
+        self.user_providers.save([prov], self.tmp)
+        handler = object.__new__(server.Handler)
+        enviado: dict = {}
+        handler._send_json = lambda payload, code=200: enviado.update(
+            payload, _code=code)
+        # Edicao que so muda a nota: sem api_key no payload.
+        handler._handle_save_provider(
+            {"provider": self._entrada(note="nota nova", api_key="")}
+        )
+        self.assertEqual(enviado.get("_code"), 200, enviado.get("error"))
+        voltou = self.user_providers.load(self.tmp)
+        self.assertEqual(voltou[0].note, "nota nova")
+        self.assertEqual(voltou[0].api_key, "sk-secreta",
+                         "a edicao apagou a chave salva")
+
+    # ------------------------------------------------------------------- o run
+
+    def test_the_saved_key_reaches_the_run_environment(self):
+        """``build_provider`` le do ambiente; e onde a chave colada entra."""
+        prov, _ = self.user_providers.validate(self._entrada(api_key="sk-do-painel"))
+        self.user_providers.save([prov], self.tmp)
+        self.assertNotIn("MEU_KEY", os.environ)
+        cfg = ClipConfig(url="x", ranker_provider="meu-endpoint",
+                         ranker_api_key_env="MEU_KEY")
+        var = server._export_saved_key(cfg)
+        self.addCleanup(os.environ.pop, "MEU_KEY", None)
+        self.assertEqual(var, "MEU_KEY")
+        self.assertEqual(os.environ["MEU_KEY"], "sk-do-painel")
+
+    def test_an_exported_variable_wins_over_a_pasted_key(self):
+        """A maquina que tem o segredo de verdade nao pode ser ofuscada."""
+        prov, _ = self.user_providers.validate(self._entrada(api_key="sk-do-painel"))
+        self.user_providers.save([prov], self.tmp)
+        os.environ["MEU_KEY"] = "sk-do-ambiente"
+        self.addCleanup(os.environ.pop, "MEU_KEY", None)
+        cfg = ClipConfig(url="x", ranker_provider="meu-endpoint",
+                         ranker_api_key_env="MEU_KEY")
+        self.assertIsNone(server._export_saved_key(cfg))
+        self.assertEqual(os.environ["MEU_KEY"], "sk-do-ambiente")
+
+    def test_a_provider_that_needs_no_key_publishes_nothing(self):
+        """Endpoint local: publicar uma chave ali seria efeito colateral."""
+        prov, _ = self.user_providers.validate(
+            self._entrada(name="local-y", api_key="qualquer", requires_key=False,
+                          base_url="http://127.0.0.1:1/v1")
+        )
+        self.user_providers.save([prov], self.tmp)
+        self.assertNotIn("MEU_KEY", os.environ)
+        cfg = ClipConfig(url="x", ranker_provider="local-y",
+                         ranker_api_key_env="MEU_KEY")
+        self.assertIsNone(server._export_saved_key(cfg))
+        self.assertNotIn("MEU_KEY", os.environ)
+
+    # --------------------------------------------------------------- a interface
+
+    def test_the_key_field_and_its_reveal_button_exist(self):
+        html = page_source("index.html")
+        self.assertIn('id="prov-api-key"', html)
+        self.assertIn('type="password"', html)
+        self.assertIn('id="btn-prov-key-reveal"', html)
+
+    def test_the_reveal_button_is_wired_to_something(self):
+        """Um botao no HTML sem listener e um controle que nao faz nada.
+
+        Custou um ciclo: o campo e o botao existiam, o clique nao mudava nada, e
+        o E2E pegou (o `type` continuava `password`).
+        """
+        js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        self.assertIn("#btn-prov-key-reveal", js)
+        self.assertIn("setProviderKeyVisible", js)
+        corpo = fn_body(js, "setProviderKeyVisible")
+        self.assertIn("password", corpo)
+        self.assertIn("type", corpo)
+
+    def test_the_key_field_follows_the_requires_key_toggle(self):
+        """Campo que so vale sob condicao tem de desabilitar sob a condicao."""
+        js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        corpo = fn_body(js, "syncProviderKeyField")
+        self.assertIn("#prov-api-key", corpo)
+        self.assertIn("disabled", corpo)
+        self.assertIn("prov-requires-key", js,
+                      "o interruptor nao chama o sincronizador do campo")
+
+    def test_the_js_reads_the_key_field_but_never_writes_it_back(self):
+        """Ler o campo e escrever o valor salvo nele sao coisas diferentes.
+
+        O segundo poria o segredo no DOM apos um reload — o que o payload
+        justamente evita ao mandar so ``has_key``.
+        """
+        js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        corpo = fn_body(js, "fillProviderForm")
+        self.assertIn("has_key", corpo, "a edicao nao avisa que ja existe chave")
+        self.assertIn("#prov-api-key').value = ''", corpo,
+                      "o formulario repoe a chave salva no campo")
 
 
 if __name__ == "__main__":  # pragma: no cover

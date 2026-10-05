@@ -86,9 +86,17 @@ def validate(entry: dict) -> tuple[Provider | None, str]:
     # the provider *requires* a key, because then there is a variable name the
     # run needs and the user has not given one.
     api_key_env = str(entry.get("api_key_env") or "").strip()
+    # A key pasted into the panel. Kept apart from ``api_key_env`` because they
+    # are two ways to say the same thing: the *name* of a variable the machine
+    # already exports, or the secret itself for a machine that exports nothing.
+    # A blank string is "not given", never "the key is empty" -- sending an empty
+    # Authorization header is a 401 the user cannot read.
+    api_key = str(entry.get("api_key") or "").strip()
     requires_key = bool(entry.get("requires_key", True))
-    if requires_key and not api_key_env:
-        return None, "provedor que exige chave precisa da variavel de ambiente"
+    # Either one satisfies the requirement: the point of the check is that a
+    # *run* has a key to send, not that it arrives by a particular channel.
+    if requires_key and not api_key_env and not api_key:
+        return None, "provedor que exige chave precisa da variavel de ambiente ou da chave colada"
 
     # ``or 180.0`` would swallow a legitimate ``0`` and turn it into the default,
     # which is the falsy-zero trap: the entry would be accepted with a timeout
@@ -118,6 +126,7 @@ def validate(entry: dict) -> tuple[Provider | None, str]:
             base_url=base_url,
             model=model,
             api_key_env=api_key_env,
+            api_key=api_key,
             requires_key=requires_key,
             timeout=timeout,
             note=note,
@@ -192,6 +201,13 @@ def dump(entries: list[Provider]) -> str:
         lines.append(f'base_url = "{_escape(provider.base_url)}"')
         lines.append(f'model = "{_escape(provider.model)}"')
         lines.append(f'api_key_env = "{_escape(provider.api_key_env)}"')
+        # Only written when set: a line for every provider would put an empty
+        # ``api_key = ""`` in files that never used the field, and a reader
+        # skimming the TOML would have to know blank means absent. The field is
+        # a secret in a gitignored file -- ``dump`` is not where it leaks, the
+        # browser is, and the payload in ``web/server.py`` does not ship it.
+        if provider.api_key:
+            lines.append(f'api_key = "{_escape(provider.api_key)}"')
         lines.append(
             "requires_key = " + ("true" if provider.requires_key else "false")
         )

@@ -257,6 +257,12 @@ def _providers_payload() -> dict:
                 "base_url": provider.base_url,
                 "model": provider.model,
                 "api_key_env": provider.api_key_env,
+                # Whether a key is already saved, never the key itself. The
+                # browser needs to say "there is one" so the edit form does not
+                # look empty; a reload that echoed the secret back into an
+                # <input> would put it in the DOM and the devtools history for
+                # no gain. A pasted key is write-only from the panel's side.
+                "has_key": bool(provider.api_key),
                 "requires_key": provider.requires_key,
                 "note": provider.note,
                 "timeout": provider.timeout,
@@ -362,6 +368,55 @@ def _options_to_config(options: dict) -> config_mod.ClipConfig:
     cfg = config_mod.ClipConfig(**clean)
     cfg.validate()
     return cfg
+
+
+def _export_saved_key(config) -> str | None:
+    """Expose a provider's pasted key to the run, and say whether we set it.
+
+    ``ranker.build_provider`` reads the key from ``os.environ`` under
+    ``config.ranker_api_key_env`` -- that is the CLI contract, and the panel
+    must not fork it. So a key the user pasted into the card is published into
+    the environment for the duration of the run, which is enough because the
+    pipeline runs in this process (``_run_job`` calls ``pipeline.analyse``
+    directly, no subprocess).
+
+    Two rules keep this from surprising anyone:
+
+    * an already-exported variable wins -- the same precedence the test route
+      uses, so "test what I typed" and "run it" cannot disagree;
+    * nothing is set when the provider needs no key, or the config names no
+      provider at all.
+
+    Returns the variable name that was set (so a test can assert it), or
+    ``None`` when nothing changed. The variable is left behind on purpose: a
+    second run in the same process re-reads it, and scrubbing it would make the
+    behaviour depend on which run came first.
+    """
+    import os as os_mod
+
+    name = getattr(config, "ranker_provider", "") or ""
+    if not name:
+        return None
+    try:
+        from viralclipper import providers
+        provider = providers.get_provider(name)
+    except Exception:  # noqa: BLE001 - an unknown provider is reported by the run itself
+        return None
+    if not provider.api_key or not provider.requires_key:
+        return None
+    # The variable the *run* will read. ``providers.apply_to_config`` copies
+    # ``provider.api_key_env`` onto the config when it is set and otherwise
+    # leaves whatever the panel sent, so the config is the authority and not a
+    # guess made here. Falling back to a constant would be how a key pasted for
+    # a keyless-named provider lands on ``OPENAI_API_KEY`` and shadows a real
+    # OpenAI key used by a different entry.
+    var = config.ranker_api_key_env or provider.api_key_env
+    if not var:
+        return None
+    if os_mod.environ.get(var):
+        return None
+    os_mod.environ[var] = provider.api_key
+    return var
 
 
 def _mark_failed(anteriores: list) -> list:
@@ -581,6 +636,10 @@ def _run_job(options: dict, plan_only: bool) -> dict:
     try:
         config = _options_to_config(options)
         config.dry_run = bool(plan_only)
+        # A key pasted into the card travels with the provider, not with the
+        # form: this is where it reaches ``ranker.build_provider`` without the
+        # panel inventing a second place a run reads a secret from.
+        _export_saved_key(config)
     except (ValueError, TypeError) as exc:
         job["status"] = "fail"
         job["meta"] = f"erro: {exc}"
@@ -2789,6 +2848,27 @@ class Handler(http_server.BaseHTTPRequestHandler):
             )
             return
 
+        # The panel never receives the saved key back (only `has_key`), so an
+        # edit that does not retype it sends an empty ``api_key``. Empty means
+        # "leave it alone", not "delete it": without this, correcting a typo in
+        # the note of a provider would wipe the secret and the next run would
+        # fail with a 401 the form gives no clue about. Removing the key is
+        # turning "Exige chave" off, which is a different, visible action.
+        #
+        # Folded into the ENTRY, before ``validate``: validate is what enforces
+        # "a provider that requires a key must have one", so a preservation done
+        # after it would arrive too late and the edit would be refused with the
+        # very message the merge exists to prevent.
+        entry = dict(entry)
+        if not str(entry.get("api_key") or "").strip():
+            anterior = next(
+                (p for p in user_providers.load(USER_PROVIDERS_PATH)
+                 if p.name == name),
+                None,
+            )
+            if anterior is not None and anterior.api_key:
+                entry["api_key"] = anterior.api_key
+
         provider, reason = user_providers.validate(entry)
         if provider is None:
             self._send_json({"error": reason}, 400)
@@ -2859,17 +2939,28 @@ class Handler(http_server.BaseHTTPRequestHandler):
             return
 
         api_key = None
+        if provider.api_key:
+            # The key pasted into the panel wins only over *absence*: an
+            # exported variable still overrides it below, so a machine that has
+            # the real secret in the environment is not shadowed by a key saved
+            # from a browser on the same machine.
+            api_key = provider.api_key
         if provider.api_key_env:
-            api_key = os_mod.environ.get(provider.api_key_env)
+            api_key = os_mod.environ.get(provider.api_key_env) or api_key
         if not api_key and provider.requires_key:
             # A missing key is a result the user needs, not a server error: the
             # probe cannot get past it, and saying so now is faster than a 401
             # the user has to decode.
+            alvo = (
+                f"${provider.api_key_env}" if provider.api_key_env
+                else "a chave colada no painel"
+            )
             self._send_json({
                 "ok": False, "kind": "OK", "verdict": "no-key", "status": 0,
                 "seconds": 0.0, "answer": "",
-                "reason": f"nao ha valor em ${provider.api_key_env} neste servidor. "
-                          f"Exporte a variavel e reinicie o painel.",
+                "reason": f"nao ha chave em {alvo} neste servidor. "
+                          f"Exporte a variavel (e reinicie o painel) ou cole a chave "
+                          f"no campo \"Chave de API\" e salve.",
             })
             return
 

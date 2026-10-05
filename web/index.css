@@ -1737,6 +1737,16 @@ header .nav-actions .btn { min-height: 42px; }
   line-height: 1.5;
 }
 
+/* Campo com botao a direita (a chave + "Mostrar"). Grid e nao flex: o input
+   leva `auto` mas o botao tem largura propria, e um `flex: 1` no input faria o
+   botao encolher junto quando a coluna aperta. */
+.input-com-acao {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
 .prov-actions {
   display: flex;
   flex-wrap: wrap;

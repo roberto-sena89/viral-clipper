@@ -399,6 +399,23 @@
                     </div>
                   </div>
 
+                  <div class="field">
+                    <label for="prov-api-key">Chave de API (opcional)</label>
+                    <div class="input-com-acao">
+                      <input type="password" id="prov-api-key" name="prov-api-key"
+                             placeholder="cole a chave aqui" autocomplete="off" spellcheck="false"
+                             aria-describedby="prov-api-key-hint">
+                      <button class="btn pressable" type="button" id="btn-prov-key-reveal"
+                              aria-pressed="false" aria-label="Mostrar a chave">Mostrar</button>
+                    </div>
+                    <span class="hint" id="prov-api-key-hint">
+                      Cole a chave para não depender de exportar uma variável. Ela fica só
+                      no <code>provedores-usuario.toml</code> desta máquina (fora do git) e
+                      não volta para o navegador depois de salva. Se a variável acima
+                      estiver preenchida e exportada, ela tem prioridade.
+                    </span>
+                  </div>
+
                   <div class="toggle-wrap">
                     <span class="tw-label">Exige chave de API</span>
                     <button class="toggle active" type="button" id="prov-requires-key" role="switch"

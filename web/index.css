@@ -1367,6 +1367,42 @@ main > section > .card { padding: 17px; }
   .card-fonte .field-row.triple { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+/* ---------- DUPLA na pagina Ajustes (Transcricao | Renderizacao) ----------
+   Os dois cards que produzem o video — o texto que entra e o visual que sai —
+   ficam lado a lado em vez de empilhados. A grade e DENTRO da coluna principal
+   (564px medidos em 1440px de viewport), entao cada card fica com ~272px.
+
+   `align-items: start` pelo mesmo motivo do grid do Estudio: sem ele os dois
+   cards esticam ate a altura do mais alto e o mais curto ganha um vazio no
+   rodape. Com `start` cada um tem a altura do proprio conteudo.
+
+   Abaixo de 1280px VOLTA a empilhar. Medido: em 1440px o card fica com 275px e
+   o par fica legivel; a 1181px cai para 210px e o valor dos selects passa a
+   truncar ("Recomendado — bo…") e os rotulos dos toggles vao a 3 linhas. 1280
+   e a ultima largura em que o lado a lado ainda compensa; abaixo dela os dois
+   cards empilhados recuperam os 564px e ficam melhores que apertados. */
+.dupla {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.dupla > .card { margin-bottom: 0; }
+/* Dentro da dupla, os `.triple` viram UMA coluna. Medido a ~275px de card: as
+   tres colunas ficam com ~80px cada e o rotulo ("Modelo Whisper") ocupa duas
+   linhas enquanto o `select-rich` sobrepoe o texto na seta. Uma coluna por
+   linha e o que o espaco comporta — o campo nao encolhe, so desce. */
+.dupla .field-row,
+.dupla .field-row.triple,
+.dupla .field-row.single { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 1280px) {
+  .dupla { grid-template-columns: minmax(0, 1fr); }
+  .dupla > .card { margin-bottom: 14px; }
+  /* Empilhado o card volta aos 564px: o triple cabe de novo. */
+  .dupla .field-row.triple { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dupla .field-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 /* ---------- CARD DO PROMPT na coluna lateral ----------
    O card mora no aside (292-340px), nao na coluna principal. A largura
    estreita muda dois ajustes: `rows="12"` num textarea de ~300px vira uma

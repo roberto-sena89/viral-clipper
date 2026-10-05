@@ -166,6 +166,14 @@
           </div>
         </div>
 
+        <!-- Transcricao e Renderizacao lado a lado. Sao os dois passos que
+             produzem o video (o texto que entra, o visual que sai) e ficam
+             juntos por isso. `.dupla` e uma grade de 2 colunas iguais DENTRO da
+             coluna principal; abaixo de 1180px ela volta a empilhar, porque a
+             564px de hoje viram ~272px por card e `.field-row.triple` nao cabe
+             nisso. -->
+        <div class="dupla">
+
         <div class="card">
           <h2><span class="ico" aria-hidden="true">♪</span> Transcrição</h2>
 
@@ -379,6 +387,8 @@
             </div>
           </div>
         </div>
+
+        </div><!-- /.dupla -->
 
         <div class="card prompt-card">
           <h2><span class="ico" aria-hidden="true">✎</span> Prompt do curador</h2>

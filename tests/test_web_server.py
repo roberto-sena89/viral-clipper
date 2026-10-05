@@ -4608,5 +4608,103 @@ class ManualApiKeyTests(unittest.TestCase):
                       "o formulario repoe a chave salva no campo")
 
 
+class AjustesDuplaTests(unittest.TestCase):
+    """Transcricao e Renderizacao ficam lado a lado em /ajustes.
+
+    Sao os dois passos que produzem o video — o texto que entra e o visual que
+    sai — e por isso dividem a linha. O `.dupla` e uma grade de 2 colunas
+    DENTRO da coluna principal.
+
+    O que este teste trava e a ARVORE e o PAR de regras CSS, nao a largura
+    (isso e medicao de navegador, feita no `ajustes_dupla_bp.js`): uma grade
+    sem as regras de contencao deixa `.field-row.triple` em tres colunas de
+    ~80px e os rotulos quebram — o navegador nao reclama, so fica feio.
+    """
+
+    #: Os dois cards que formam o par, pelo texto do H2.
+    CARDS = ("Transcrição", "Renderização")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = (server.WEB_DIR / "ajustes.html").read_text(encoding="utf-8")
+        cls.css = (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
+
+    def _trecho_dupla(self):
+        """O recorte do `.dupla`, do abre ao `<!-- /.dupla -->`."""
+        if 'class="dupla"' not in self.html:
+            raise AssertionError("o `.dupla` sumiu de ajustes.html")
+        return self.html[self.html.index('class="dupla"'):self.html.index("<!-- /.dupla -->")]
+
+    def test_the_two_cards_are_inside_the_dupla(self):
+        trecho = self._trecho_dupla()
+        for card in self.CARDS:
+            self.assertIn(card, trecho, f"o card {card} saiu do par lado a lado")
+
+    def test_the_card_order_is_transcricao_then_renderizacao(self):
+        """A ordem importa: o texto e o que entra, o render e o que sai."""
+        trecho = self._trecho_dupla()
+        self.assertLess(trecho.index("Transcrição"), trecho.index("Renderização"))
+
+    def test_the_dupla_opens_and_closes_exactly_once(self):
+        self.assertEqual(self.html.count('class="dupla"'), 1,
+                         "o `.dupla` foi duplicado")
+        self.assertEqual(self.html.count("<!-- /.dupla -->"), 1,
+                         "o marcador de fim do `.dupla` sumiu ou duplicou")
+
+    def test_the_dupla_does_not_swallow_the_prompt_card(self):
+        """O prompt do curador fica FORA — ele nao e o par."""
+        fim = self.html.index("<!-- /.dupla -->")
+        depois = self.html[fim:]
+        self.assertIn("Prompt do curador", depois,
+                      "o Prompt entrou no par por engano")
+
+    def test_the_balance_of_divs_is_intact(self):
+        """A arvore fechou: -1 em qualquer ponto = `</div>` sobrando.
+
+        O navegador conserta HTML malformado em silencio e a tela parece certa,
+        entao a contagem e a unica prova barata de que o wrapper nao desalinhou
+        o aninhamento. `<form>` nao entra na conta (nao e `<div>`).
+        """
+        corpo = re.sub(r"<!--.*?-->", "", self.html, flags=re.S)
+        depth = 0
+        for token in re.findall(r"<div\b|</div>", corpo):
+            depth += 1 if token == "<div" else -1
+            self.assertGreaterEqual(depth, 0, "`</div>` a mais — arvore quebrada")
+        self.assertEqual(depth, 0, "sobrou `<div>` sem fechar")
+
+    def test_the_css_declares_the_two_column_grid(self):
+        self.assertRegex(
+            self.css, r"\.dupla\s*\{[^}]*grid-template-columns:\s*repeat\(2,",
+            "o `.dupla` perdeu a grade de duas colunas",
+        )
+
+    def test_the_css_containers_the_field_rows_inside_the_narrow_card(self):
+        """Sem isto o `.triple` fica com ~80px por coluna e o rotulo quebra.
+
+        O par de regras e o que faz o card de ~275px funcionar: uma coluna por
+        linha dentro da dupla, e a volta do `.triple` quando ela empilha.
+        """
+        sem_comentarios = re.sub(r"/\*.*?\*/", "", self.css, flags=re.S)
+        self.assertRegex(
+            sem_comentarios,
+            r"\.dupla\s+\.field-row[^{]*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)",
+            "os `.field-row` dentro do `.dupla` nao foram para uma coluna",
+        )
+        self.assertRegex(
+            sem_comentarios,
+            r"\.dupla\s+\.field-row\.triple\s*\{[^}]*repeat\(3,",
+            "o `.triple` nao volta a tres colunas quando a dupla empilha",
+        )
+
+    def test_the_css_stacks_below_the_breakpoint(self):
+        """Abaixo do limite a grade volta a uma coluna, senao os cards apertam."""
+        sem_comentarios = re.sub(r"/\*.*?\*/", "", self.css, flags=re.S)
+        i = sem_comentarios.find("@media (max-width: 1280px)")
+        self.assertNotEqual(i, -1, "o `@media` que empilha o `.dupla` sumiu")
+        bloco = sem_comentarios[i:i + 400]
+        self.assertRegex(bloco, r"\.dupla\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)",
+                         "o `.dupla` nao empilha no breakpoint")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

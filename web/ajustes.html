@@ -93,11 +93,12 @@
 
   <div class="main-grid">
 
-    <!-- COLUNA PRINCIPAL -->
-    <div>
-      <form id="ajustes-form" novalidate>
+    <!-- O formulario nao tem box proprio: `display: contents` (no CSS) faz os
+         cards dele subirem para o grid, ao lado do Resumo. Sem isso o form e
+         UM item so e tudo empilha dentro dele — o grid nao veria card nenhum. -->
+    <form id="ajustes-form" novalidate>
 
-        <div class="card">
+        <div class="card card-selecao">
           <h2><span class="ico" aria-hidden="true">◎</span> Seleção</h2>
 
           <div class="form-section">
@@ -166,15 +167,14 @@
           </div>
         </div>
 
-        <!-- Transcricao e Renderizacao lado a lado. Sao os dois passos que
-             produzem o video (o texto que entra, o visual que sai) e ficam
-             juntos por isso. `.dupla` e uma grade de 2 colunas iguais DENTRO da
-             coluna principal; abaixo de 1180px ela volta a empilhar, porque a
-             564px de hoje viram ~272px por card e `.field-row.triple` nao cabe
-             nisso. -->
-        <div class="dupla">
+        <!-- Transcricao, Renderizacao e Prompt lado a lado. Sao os tres passos
+             que produzem o corte — o texto que entra, o visual que sai e o
+             criterio que escolhe os trechos — por isso andam juntos. `.trio` e
+             uma grade de 3 colunas iguais que divide a largura da pagina; abaixo
+             do breakpoint ela empilha e cada card recupera a largura cheia. -->
+        <div class="trio">
 
-        <div class="card">
+        <div class="card card-transcricao">
           <h2><span class="ico" aria-hidden="true">♪</span> Transcrição</h2>
 
           <div class="form-section">
@@ -269,7 +269,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card card-renderizacao">
           <h2><span class="ico" aria-hidden="true">▣</span> Renderização</h2>
 
           <div class="form-section">
@@ -388,8 +388,6 @@
           </div>
         </div>
 
-        </div><!-- /.dupla -->
-
         <div class="card prompt-card">
           <h2><span class="ico" aria-hidden="true">✎</span> Prompt do curador</h2>
 
@@ -431,11 +429,13 @@
           </div>
         </div>
 
-      </form>
-    </div>
+        </div><!-- /.trio -->
 
-    <!-- COLUNA LATERAL -->
-    <aside>
+      </form>
+
+    <!-- COLUNA LATERAL: o Resumo e a QUARTA coluna do grid (ao lado do trio),
+         nao mais um aside de metade da pagina. O sticky continua. -->
+    <aside class="card-resumo">
       <div class="card" style="position: sticky; top: 92px;">
         <h2><span class="ico" aria-hidden="true">▦</span> Resumo</h2>
 

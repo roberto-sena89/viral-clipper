@@ -1367,62 +1367,108 @@ main > section > .card { padding: 17px; }
   .card-fonte .field-row.triple { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* ---------- DUPLA na pagina Ajustes (Transcricao | Renderizacao) ----------
-   Os dois cards que produzem o video — o texto que entra e o visual que sai —
-   ficam lado a lado em vez de empilhados. A grade e DENTRO da coluna principal
-   (564px medidos em 1440px de viewport), entao cada card fica com ~272px.
+/* ---------- GRID DA PAGINA AJUSTES: 4 colunas iguais ----------
+   A pagina de Ajustes preenche a largura toda com QUATRO colunas iguais:
+   Selecao ocupa a faixa de cima (na largura toda) e, abaixo, ficam
+   Transcricao | Renderizacao | Prompt | Resumo — um card por coluna, tudo do
+   mesmo tamanho. O Resumo deixou de ser um aside de metade da pagina e virou a
+   quarta coluna; o sticky dele continua.
 
-   `align-items: start` pelo mesmo motivo do grid do Estudio: sem ele os dois
-   cards esticam ate a altura do mais alto e o mais curto ganha um vazio no
-   rodape. Com `start` cada um tem a altura do proprio conteudo.
+   POR QUE 4 E NAO 3: o pedido foi "lado a lado das secoes Transcricao e
+   Renderizacao, preenchendo toda a pagina, colunas de tamanho igual". Manter o
+   Resumo fora roubaria metade da largura para o trio (3x ~188px, ilegivel).
+   Trazendo o Resumo para dentro, as quatro dividem a largura toda.
 
-   Abaixo de 1280px VOLTA a empilhar. Medido: em 1440px o card fica com 275px e
-   o par fica legivel; a 1181px cai para 210px e o valor dos selects passa a
-   truncar ("Recomendado — bo…") e os rotulos dos toggles vao a 3 linhas. 1280
-   e a ultima largura em que o lado a lado ainda compensa; abaixo dela os dois
-   cards empilhados recuperam os 564px e ficam melhores que apertados. */
-.dupla {
+   O `<form id="ajustes-form">` ganha `display: contents`: o box dele some e os
+   cards viram itens do grid direto. Sem isso o form seria UM item so e todos os
+   cards ficariam empilhados dentro dele — o grid nao veria card nenhum.
+
+   Cada track e `minmax(0, 1fr)`: filho de grid tem `min-width: auto` e um
+   `<select>`/`<textarea>` mais largo que a coluna empurraria o track alem da
+   tela sem isso.
+
+   ESCOPADO por `[data-page="ajustes"]`: o Estudio usa `.main-grid` com outra
+   grade (2x2 com areas) e nao pode receber esta. A regra nao-escopada de cima
+   (`.main-grid`, ~linha 1103) continua valendo para a Cortes; esta, por ser mais
+   especifica e vir depois, vence na pagina de Ajustes. */
+[data-page="ajustes"] .main-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-areas:
+    "selecao selecao selecao selecao"
+    "trans   rend    prompt  resumo";
+  gap: 16px;
+}
+[data-page="ajustes"] .main-grid > form#ajustes-form { display: contents; }
+[data-page="ajustes"] .card-selecao   { grid-area: selecao; }
+[data-page="ajustes"] .card-transcricao { grid-area: trans; }
+[data-page="ajustes"] .card-renderizacao { grid-area: rend; }
+/* A coluna do prompt usa a classe que o card JA tem (`prompt-card`, a mesma
+   da Cortes) em vez de uma nova: o card e compartilhado e um segundo nome so
+   criaria mais uma coisa a manter sincronizada entre as duas paginas. */
+[data-page="ajustes"] .prompt-card    { grid-area: prompt; }
+[data-page="ajustes"] .card-resumo    { grid-area: resumo; }
+
+/* ---------- TRIO dentro de uma coluna ----------
+   Os tres cards andam juntos. Em Ajustes cada um ocupa UMA celula do grid (o
+   `.trio` e `display: contents` la, para nao aninhar grade dentro de grade);
+   na Cortes, se um dia o trio aparecer solto, ele vira grade de 3 colunas.
+   `align-items: start` para cada card ter a altura do proprio conteudo. */
+.trio {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   align-items: start;
 }
-.dupla > .card { margin-bottom: 0; }
-/* Dentro da dupla, os `.triple` viram UMA coluna. Medido a ~275px de card: as
-   tres colunas ficam com ~80px cada e o rotulo ("Modelo Whisper") ocupa duas
-   linhas enquanto o `select-rich` sobrepoe o texto na seta. Uma coluna por
-   linha e o que o espaco comporta — o campo nao encolhe, so desce. */
-.dupla .field-row,
-.dupla .field-row.triple,
-.dupla .field-row.single { grid-template-columns: minmax(0, 1fr); }
+[data-page="ajustes"] .trio { display: contents; }
+.trio > .card { margin-bottom: 0; }
+/* Dentro de uma coluna do trio, os `.triple` viram UMA coluna. Medido a
+   ~272px de card: as tres colunas ficam com ~80px cada e o rotulo ("Modelo
+   Whisper") ocupa duas linhas enquanto o `select-rich` sobrepoe o texto na
+   seta. Uma coluna por linha e o que o espaco comporta — o campo nao encolhe,
+   so desce. */
+.trio .field-row,
+.trio .field-row.triple,
+.trio .field-row.single { grid-template-columns: minmax(0, 1fr); }
+
+/* Abaixo do breakpoint as QUATRO colunas empilham: cada card recupera a largura
+   cheia da pagina e o `.triple` volta a caber. O breakpoint foi MEDIDO (sonda
+   `ajustes_4col_probe.js`): a 1281px os quatro cards ficam com 235px medidos e
+   ainda leem; a 1280px ja empilham. */
 @media (max-width: 1280px) {
-  .dupla { grid-template-columns: minmax(0, 1fr); }
-  .dupla > .card { margin-bottom: 14px; }
-  /* Empilhado o card volta aos 564px: o triple cabe de novo. */
-  .dupla .field-row.triple { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .dupla .field-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  [data-page="ajustes"] .main-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "selecao"
+      "trans"
+      "rend"
+      "prompt"
+      "resumo";
+  }
+  [data-page="ajustes"] .card-resumo .card { position: static; }
+  .trio { grid-template-columns: minmax(0, 1fr); }
+  .trio > .card { margin-bottom: 14px; }
+  /* Empilhado o card volta a largura cheia: o triple cabe de novo. */
+  .trio .field-row.triple { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .trio .field-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* ---------- CARD DO PROMPT na coluna lateral ----------
-   O card mora no aside (292-340px), nao na coluna principal. A largura
-   estreita muda dois ajustes: `rows="12"` num textarea de ~300px vira uma
-   tira alta demais, entao a ALTURA passa a ser do CSS (e o resize vertical
-   continua disponivel); e os dois botoes com o status ao lado nao cabem
-   numa linha, entao o status desce sozinho em vez de empurrar os botoes. */
+/* ---------- CARD DO PROMPT ----------
+   O card vive nas DUAS paginas. Na Cortes ele mora no aside estreito
+   (292-340px); em Ajustes, numa coluna de ~272px do trio. Nas duas a largura e
+   estreita, e isso muda dois ajustes: `rows="16"` num textarea de ~300px vira
+   uma tira alta demais, entao a ALTURA passa a ser do CSS (com resize vertical
+   disponivel); e os dois botoes com o status ao lado nao cabem numa linha, entao
+   o status desce sozinho em vez de empurrar os botoes. */
 .prompt-card textarea { min-height: 150px; resize: vertical; }
 .prompt-card .prompt-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .prompt-card .prompt-actions .btn { flex: 1 1 auto; }
 .prompt-card .prompt-actions #curator-prompt-status { flex: 1 0 100%; }
 
-/* O card do prompt vive nas DUAS paginas, com o mesmo contrato: mesmos ids,
-   mesmos botoes, mesma rota /prompts/curador, mesmas frases de estado. Na
-   Cortes ele mora no aside estreito (292-340px) e por isso a ALTURA vem daqui,
-   nao do `rows="12"`. Em Ajustes ele fica na coluna principal, que e larga -
-   a mesma altura minima continua certa, mas precisa ser maior para o card nao
-   ficar desproporcional ao lado do textarea de transcricao.
-   As duas carregam este arquivo, entao o escopo e por pagina:
-   `[data-page="ajustes"]` no <body> e o gancho. Nao da para escopar pelo
-   wrapper - as duas usam `<main class="wrap">`, recebido do shared.css. */
+/* Em Ajustes a coluna do prompt tem ~272px — a mesma largura que na Cortes.
+   O `min-height` maior deixa o textarea proporcional ao da transcricao, que
+   fica ao lado. As duas paginas carregam este arquivo, entao o escopo e por
+   pagina: `[data-page="ajustes"]` no <body> e o gancho. Nao da para escopar
+   pelo wrapper - as duas usam `<main class="wrap">`, recebido do shared.css. */
 [data-page="ajustes"] .prompt-card textarea { min-height: 220px; }
 [data-page="ajustes"] .prompt-card .prompt-actions { margin-top: 4px; }
 

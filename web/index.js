@@ -947,6 +947,17 @@
     razao.textContent = data.reason || '';
     box.appendChild(razao);
 
+    // O corpo cru da resposta de erro. A `reason` e a frase que o servidor
+    // montou (ja com o texto do endpoint), mas quem depura precisa ver o que o
+    // provedor respondeu de verdade -- foi assim que um 403 do Groq ("error
+    // code: 1010", Cloudflare) deixou de ser lido como "chave errada".
+    if (data.detail) {
+      const detalhe = document.createElement('code');
+      detalhe.className = 'prov-detalhe';
+      detalhe.textContent = data.detail;
+      box.appendChild(detalhe);
+    }
+
     if (data.answer) {
       const resposta = document.createElement('span');
       resposta.className = 'prov-answer';

@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from viralclipper import ranker
+from viralclipper import providers, ranker
 from viralclipper.config import ClipConfig
 from viralclipper.score import Window
 from viralclipper.util import ClipperError, Logger
@@ -181,6 +181,41 @@ class BuildProviderTests(unittest.TestCase):
         with patch.dict("os.environ", {}, clear=True):
             provider = ranker.build_provider(self._config(ranker="llm"))
         self.assertIsNone(provider.api_key)
+
+
+class UserAgentTests(unittest.TestCase):
+    """O cliente do run e o da sonda tem de mandar a MESMA identidade.
+
+    O 403 que o usuario viu nao era a chave: o urllib, sem User-Agent explicito,
+    vai como ``Python-urllib/3.x`` e o Cloudflare na frente do endpoint recusa o
+    cliente antes de olhar a chave ("error code: 1010"). Se a sonda mandasse um
+    User-Agent e o run nao, o teste passaria verde e a execucao daria 403 -- por
+    isso a constante e compartilhada, e nao dois literais parecidos.
+    """
+
+    def test_the_run_client_sends_a_real_user_agent(self):
+        provider = ranker.HttpChatProvider(
+            base_url="https://x.test/v1", model="m", api_key="k"
+        )
+        headers = provider._headers()
+        self.assertEqual(headers["User-Agent"], providers.LLM_USER_AGENT)
+        self.assertNotIn("Python-urllib", headers["User-Agent"])
+
+    def test_the_user_agent_does_not_replace_the_authorization(self):
+        """O ganho nao pode custar o header que autentica."""
+        provider = ranker.HttpChatProvider(
+            base_url="https://x.test/v1", model="m", api_key="segredo"
+        )
+        headers = provider._headers()
+        self.assertEqual(headers["Authorization"], "Bearer segredo")
+
+    def test_both_clients_read_the_same_constant(self):
+        """A sonda importa ``LLM_USER_AGENT``; o run tambem. Um so valor."""
+        from viralclipper import provider_probe
+
+        self.assertIs(
+            provider_probe.LLM_USER_AGENT, providers.LLM_USER_AGENT
+        )
 
 
 class ApplyTests(RankerTestCase):

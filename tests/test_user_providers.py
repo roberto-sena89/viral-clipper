@@ -389,6 +389,99 @@ class ProbeCallTests(unittest.TestCase):
         )
         self.assertEqual(seen["url"], "https://x.test/v1/chat/completions")
 
+    def test_the_probe_sends_a_real_user_agent(self):
+        """Sem User-Agent, o urllib se identifica como ``Python-urllib/3.x``.
+
+        Foi essa a causa do 403 que o usuario viu: o Cloudflare, na frente de
+        ``vyceai.com``, recusa o cliente **antes de olhar a chave** e responde
+        ``error code: 1010``. A chave era valida o tempo todo -- a identidade da
+        chamada e que estava errada.
+        """
+        seen = {}
+
+        def capture(req, timeout=None):
+            seen["ua"] = req.get_header("User-agent")
+            raise OSError("stop")
+
+        provider_probe.test_provider(self._provider(), opener=capture)
+        self.assertEqual(seen["ua"], providers.LLM_USER_AGENT)
+        # A regressao exata: o default do urllib.
+        self.assertNotIn("Python-urllib", seen["ua"] or "")
+
+
+class HttpReasonTests(unittest.TestCase):
+    """A frase de erro tem de comecar pelo que o endpoint disse.
+
+    O defeito que originou estes testes: um 403 do Groq ("error code: 1010", um
+    bloqueio do Cloudflare ao CLIENTE) aparecia como "a chave foi recusada,
+    confira o nome da variavel de ambiente" -- mandando o usuario atras de uma
+    correcao que nao existe. A causa estava no proprio corpo da resposta e o
+    codigo jogava fora.
+    """
+
+    def test_a_401_leads_with_the_endpoint_message(self):
+        texto = provider_probe._http_reason(
+            401, '{"status":401,"title":"Unauthorized","detail":"Authentication failed"}'
+        )
+        self.assertIn("Authentication failed", texto)
+        self.assertIn("401", texto)
+
+    def test_a_nested_openai_error_message_is_unwrapped(self):
+        """OpenAI/OpenRouter/DeepSeek usam ``{"error":{"message":...}}``."""
+        texto = provider_probe._http_reason(
+            401, '{"error":{"message":"Missing Authentication header","code":401}}'
+        )
+        self.assertIn("Missing Authentication header", texto)
+
+    def test_the_cloudflare_403_is_not_blamed_on_the_key(self):
+        """1010 e Cloudflare barrando o cliente: nenhuma variavel conserta.
+
+        E a mensagem NAO nomeia o provedor: o bloqueio vem do Cloudflare, que
+        qualquer vendor por tras dele usa, e chutar "o Groq" acusaria o provedor
+        errado (o caso real era um endpoint proprio, ``vyceai.com``).
+        """
+        texto = provider_probe._http_reason(403, "error code: 1010\n")
+        self.assertIn("1010", texto)
+        self.assertIn("Cloudflare", texto)
+        # A armadilha antiga: dizer que e a chave.
+        self.assertNotIn("nome da variavel de ambiente", texto)
+        # Nao atribuir a um provedor que nao conhecemos.
+        self.assertNotIn("Groq", texto)
+
+    def test_a_403_that_is_not_cloudflare_does_not_claim_to_know(self):
+        """Sem a assinatura do Cloudflare, nao inventar a causa."""
+        texto = provider_probe._http_reason(403, '{"error":{"message":"forbidden"}}')
+        self.assertIn("403", texto)
+        self.assertIn("forbidden", texto)
+
+    def test_a_bodyless_error_still_produces_a_sentence(self):
+        texto = provider_probe._http_reason(401, "")
+        self.assertIn("401", texto)
+        self.assertTrue(texto.strip())
+
+    def test_a_non_json_body_is_passed_through(self):
+        texto = provider_probe._http_reason(500, "upstream exploded")
+        self.assertIn("upstream exploded", texto)
+
+    def test_the_detail_field_is_kept_for_the_panel(self):
+        """O corpo cru tem de chegar ao navegador, nao so a frase montada."""
+        import urllib.error
+
+        def boom(req, timeout=None):
+            raise urllib.error.HTTPError(
+                "https://x", 403, "forbidden", {},
+                io.BytesIO(b"error code: 1010"),
+            )
+
+        result = provider_probe.test_provider(
+            Provider(name="p", label="P", base_url="https://x.test/v1", model="m",
+                     api_key_env="K", requires_key=True, note="n"),
+            opener=boom,
+        )
+        self.assertEqual(result["status"], 403)
+        self.assertIn("1010", result["detail"])
+        self.assertIn("Cloudflare", result["reason"])
+
 
 if __name__ == "__main__":
     unittest.main()

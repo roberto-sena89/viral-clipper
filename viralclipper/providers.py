@@ -39,6 +39,17 @@ from .util import ClipperError
 #: why one client covers all of them and no vendor SDK is needed.
 DEFAULT_PROVIDER = "openai"
 
+#: The User-Agent both HTTP clients send. Without it, Python's urllib identifies
+#: itself as ``Python-urllib/3.x`` and Cloudflare -- which fronts a number of
+#: these vendors, not just the obvious ones -- answers **403 "error code: 1010"**
+#: before the request ever reaches the API. The key is not even looked at, so
+#: the failure looks like a refused key and is not one. Measured 2026-10-05
+#: against ``vyceai.com``: identical 403 with and without the key, HTTP 200 with
+#: any normal User-Agent. This is why the constant lives next to the table and
+#: both ``ranker.HttpChatProvider`` and ``provider_probe`` read it: the run and
+#: the test must agree, or "the test passes but the run 403s" becomes possible.
+LLM_USER_AGENT = "viral-clipper/1.0 (+https://github.com/)"
+
 
 @dataclass(frozen=True)
 class Provider:
@@ -251,6 +262,7 @@ def provider_for_config(config: ClipConfig) -> Provider | None:
 
 __all__ = [
     "DEFAULT_PROVIDER",
+    "LLM_USER_AGENT",
     "PROVIDERS",
     "Provider",
     "apply_to_config",

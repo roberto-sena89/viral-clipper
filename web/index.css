@@ -1792,6 +1792,23 @@ header .nav-actions .btn { min-height: 42px; }
 .prov-result.erro { border-color: rgba(255, 92, 92, 0.42); }
 .prov-result.erro .prov-verdict { color: #ff7a7a; }
 
+/* O corpo cru do erro, exatamente como o endpoint respondeu. Monoespacado e
+   discreto: e prova, nao leitura -- quem olha rapido ve a frase em portugues
+   acima; quem depura abre isto para conferir o que o provedor disse. */
+.prov-result .prov-detalhe {
+  display: block;
+  margin-top: 7px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #a9b2c0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.71rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Enquanto o teste corre: o botao nao pode ser clicado duas vezes, porque a
    segunda chamada paga de novo e a primeira resposta chega depois. */
 .btn[aria-busy="true"] { opacity: 0.6; pointer-events: none; }

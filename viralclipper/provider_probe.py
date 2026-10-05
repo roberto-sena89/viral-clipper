@@ -35,7 +35,7 @@ import time
 import urllib.error
 import urllib.request
 
-from .providers import Provider
+from .providers import LLM_USER_AGENT, Provider
 
 #: The three probes, in the order a user benefits from them. Each is
 #: ``(kind, system, user)`` and each has an answer a program can grade.
@@ -144,7 +144,12 @@ def test_provider(
     """
     kind, system, user = PROBES[0]
     url = f"{provider.base_url.rstrip('/')}/chat/completions"
-    headers = {"Content-Type": "application/json"}
+    # The same User-Agent the real client sends. Without it the request goes out
+    # as ``Python-urllib/3.x`` and Cloudflare-fronted vendors answer 403 "error
+    # code: 1010" -- which reads as a refused key and is not one. The probe and
+    # the run must send the same identity, or "the test passed but the run
+    # failed" becomes possible.
+    headers = {"Content-Type": "application/json", "User-Agent": LLM_USER_AGENT}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     request = urllib.request.Request(
@@ -218,36 +223,96 @@ def test_provider(
     }
 
 
+def _endpoint_message(detail: str) -> str:
+    """The endpoint's own words, pulled out of whatever envelope it used.
+
+    Every vendor wraps the same idea differently -- ``{"detail":"Authentication
+    failed"}`` (NVIDIA), ``{"error":{"message":"..."}}`` (OpenAI, OpenRouter,
+    DeepSeek), or bare text (Groq's Cloudflare answers ``error code: 1010``).
+    Showing the raw JSON makes the user parse it; showing nothing (the old
+    behaviour) made the user guess. This returns the sentence inside, falling
+    back to the trimmed body when there is no envelope to unwrap.
+    """
+    body = (detail or "").strip()
+    if not body:
+        return ""
+    try:
+        document = json.loads(body)
+    except (json.JSONDecodeError, TypeError):
+        # Not JSON: Groq's Cloudflare block is a bare "error code: 1010", and
+        # that string IS the diagnosis. Pass it through.
+        return body[:200]
+    # ``error`` may be a string (OpenAI-style) or an object; ``message`` and
+    # ``detail`` are the two field names seen across the providers.
+    for key in ("message", "detail", "error_description", "title"):
+        value = document.get(key) if isinstance(document, dict) else None
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:200]
+    err = document.get("error") if isinstance(document, dict) else None
+    if isinstance(err, str) and err.strip():
+        return err.strip()[:200]
+    if isinstance(err, dict):
+        for key in ("message", "detail", "code"):
+            value = err.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()[:200]
+    return body[:200]
+
+
 def _http_reason(code: int, detail: str) -> str:
     """Turn a status code into the sentence the user needs, not the number.
 
-    The codes below are the ones ``docs/modelos-nvidia.md`` actually observed,
-    and each maps to a different action -- which is the only reason to spell
-    them out instead of printing "HTTP 401" and letting the user guess.
+    The shape is always the same: **the endpoint's own message first**, then a
+    short hint when the code is one we can interpret. The endpoint knows why it
+    refused; a generic sentence written here does not. The old version returned
+    only the generic sentence for 401/403/404, which is how a Groq 403 --
+    Cloudflare blocking the client, nothing to do with the key -- came out as
+    "confira o nome da variavel de ambiente", sending the user after a fix that
+    cannot work.
     """
-    if code == 401 or code == 403:
+    said = _endpoint_message(detail)
+    prefix = f"o endpoint disse: {said}. " if said else ""
+
+    if code == 401:
         return (
-            "401/403: a chave foi recusada. Confira o nome da variavel de ambiente "
-            "e se ela tem valor no servidor."
+            f"{prefix}401: a chave foi recusada. Confira se a variavel "
+            f"(ou a chave colada) tem mesmo o valor do provedor certo."
+        )
+    if code == 403:
+        # NOT the same story as 401, and the difference decides what the user
+        # does next. A 403 with Cloudflare's "error code: 1010" is the edge
+        # refusing the CLIENT (IP, region, fingerprint), not the key -- no
+        # variable name or pasted key fixes it. The provider is NOT named here:
+        # the block comes from Cloudflare, which any vendor behind it can use,
+        # and guessing the vendor ("o Groq...") would be a wrong attribution.
+        if "1010" in (said or ""):
+            return (
+                f"{prefix}403: o provedor recusou o cliente antes de olhar a chave "
+                f"(Cloudflare, erro 1010). Nao e a chave: e IP, regiao ou o "
+                f"User-Agent da chamada. Teste de outra rede/proxy, ou use outro provedor."
+            )
+        return (
+            f"{prefix}403: o acesso foi barrado. Pode ser permissao da chave "
+            f"(modelo fora do seu plano) ou bloqueio do cliente pelo provedor."
         )
     if code == 404:
         return (
-            "404: o modelo ou o caminho nao existe para esta chave. Costuma ser id "
-            "de modelo errado, ou a chave sem acesso a ele."
+            f"{prefix}404: o modelo ou o caminho nao existe para esta chave. "
+            f"Costuma ser id de modelo errado, ou a chave sem acesso a ele."
         )
     if code == 410:
         return "410: o modelo saiu de linha. Definitivo, nao adianta tentar de novo."
     if code == 429:
-        return "429: limite de uso estourado neste minuto. Espere e teste de novo."
+        return f"{prefix}429: limite de uso estourado neste minuto. Espere e teste de novo."
     if code == 503:
         return (
-            "503: indisponivel agora. O doc do projeto registra isto como "
-            "transitorio -- teste de novo antes de descartar o modelo."
+            f"{prefix}503: indisponivel agora. O doc do projeto registra isto como "
+            f"transitorio -- teste de novo antes de descartar o modelo."
         )
     if code == 400:
-        return "400: o endpoint recusou o pedido. Confira o id do modelo e o formato do endpoint."
-    if detail:
-        return f"HTTP {code}: {detail[:160]}"
+        return f"{prefix}400: o endpoint recusou o pedido. Confira o id do modelo e o formato do endpoint."
+    if said:
+        return f"HTTP {code}: {said}"
     return f"HTTP {code}"
 
 

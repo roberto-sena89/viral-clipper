@@ -38,6 +38,11 @@ from .config import ClipConfig
 from .score import Window
 from .util import ClipperError, Logger
 
+# No topo, e nao no ``build_provider``: ``_headers`` precisa da constante, e
+# ``providers`` so importa ``config``/``util`` -- nao este modulo --, entao nao
+# ha ciclo. A importacao tardia que resta ali e para ``apply_to_config``.
+from . import providers
+
 # Bump when the prompt or the criteria change: the cache key includes it, so
 # old verdicts are not reused against a different question.
 #
@@ -325,7 +330,14 @@ class HttpChatProvider:
             raise ClipperError(f"Unexpected ranker response: {body[:200]}") from exc
 
     def _headers(self) -> dict[str, str]:
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            # Sem isto o urllib se identifica como ``Python-urllib/3.x`` e o
+            # Cloudflare -- que fica na frente de varios destes provedores --
+            # responde 403 "error code: 1010" antes de a chave ser olhada. Vale
+            # para o run, nao so para o teste.
+            "User-Agent": providers.LLM_USER_AGENT,
+        }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers

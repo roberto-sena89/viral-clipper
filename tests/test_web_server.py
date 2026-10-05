@@ -4027,6 +4027,18 @@ class UserProviderCardTests(unittest.TestCase):
         self.assertIn("weak", mostrar)
         self.assertIn("echo", mostrar)
 
+    def test_the_raw_endpoint_body_is_shown_when_there_is_one(self):
+        """A `reason` resume; o corpo cru prova.
+
+        Sem ele, um 403 do Groq ("error code: 1010" do Cloudflare) fica so com a
+        frase generica e o usuario nao tem como ver o que o provedor respondeu.
+        """
+        mostrar = fn_body(self.js, "showProviderResult")
+        self.assertIn("data.detail", mostrar,
+                      "o painel descarta o corpo cru da resposta de erro")
+        css = (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
+        self.assertIn(".prov-detalhe", css, "sem estilo, o detalhe nao aparece")
+
     def test_the_card_reads_the_user_route_on_load(self):
         self.assertIn("/providers/user", self.js)
 

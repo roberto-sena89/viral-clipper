@@ -537,47 +537,93 @@ body { padding-left: var(--rail-w); }
 
 
 
-.queue-list { display: flex; flex-direction: column; gap: 14px; }
+/* ---------- FILA DE PROCESSAMENTO ----------
+   Cada card e um "editor dark": coluna de poster (identidade), conteudo
+   (titulo/URL/badge, fase/tempo, barra) e a faixa de previas. O estado mora
+   na CLASSE do card (`running`/`done`/`fail`) e e de la que saem a borda, o
+   badge e a cor da barra — o JS nunca escreve cor, so o estado.
+
+   O progresso e REAL: o servidor publica `stage_label` e `elapsed`, o poll
+   de `followRun` repinta `.job-phase` e `.job-elapsed` sem re-renderizar o
+   card. Enquanto o job roda a barra e indeterminada (varredura), porque o
+   backend nao manda percentual; quando conclui ela trava em 100% e o `fail`
+   trava em 100% na cor de erro. Nenhum numero e inventado no cliente. */
+.queue-list { display: flex; flex-direction: column; gap: 12px; }
 .job-card {
-  display: grid; grid-template-columns: 112px minmax(0, 1fr) minmax(180px, 260px);
+  position: relative; display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) minmax(180px, 260px);
   align-items: center; gap: 18px; padding: 16px;
-  background: linear-gradient(120deg, rgba(25, 29, 42, 0.96), rgba(14, 17, 25, 0.96));
-  border: 1px solid var(--border-subtle); border-radius: 16px;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
-  transition: border-color 180ms ease, box-shadow 180ms ease;
+  background: linear-gradient(140deg, rgba(20, 26, 36, 0.98), rgba(10, 14, 22, 0.98));
+  border: 1px solid var(--border-subtle); border-radius: 14px;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
-.job-card.running { border-color: color-mix(in srgb, var(--accent-primary) 50%, var(--border-subtle)); }
-.job-card.running { box-shadow: 0 12px 30px rgba(89, 76, 214, 0.13), inset 0 1px rgba(255,255,255,0.025); }
+/* O fio de estado no topo do card: 2px, na cor do estado, so quando ha estado
+   a comunicar. Sem `overflow: hidden` no card para nao cortar o glow do
+   poster, o fio e um pseudo proprio com os mesmos cantos do card. */
+.job-card::before {
+  content: ""; position: absolute; inset: 0 0 auto; height: 2px;
+  border-radius: 14px 14px 0 0; background: transparent;
+}
+.job-card.running { border-color: color-mix(in srgb, var(--accent-primary) 52%, var(--border-subtle)); }
+.job-card.running { box-shadow: 0 16px 34px rgba(79, 70, 229, 0.16), inset 0 1px rgba(255,255,255,0.03); }
+.job-card.running::before { background: linear-gradient(90deg, transparent, var(--accent-soft), transparent); }
 .job-card.done { border-color: color-mix(in srgb, var(--success) 42%, var(--border-subtle)); }
-.job-card.fail { border-color: color-mix(in srgb, var(--danger) 42%, var(--border-subtle)); }
+.job-card.done::before { background: linear-gradient(90deg, transparent, var(--success), transparent); }
+.job-card.fail { border-color: color-mix(in srgb, var(--danger) 44%, var(--border-subtle)); }
+.job-card.fail::before { background: linear-gradient(90deg, transparent, var(--danger), transparent); }
+
 .job-poster {
-  min-height: 118px; border-radius: 12px; overflow: hidden;
+  position: relative; min-height: 118px; border-radius: 12px; overflow: hidden;
   display: flex; flex-direction: column; justify-content: space-between;
-  padding: 12px; color: white; background:
+  padding: 12px; color: #fff; background:
     radial-gradient(ellipse at 80% 15%, rgba(174, 95, 255, 0.72), transparent 48%),
     radial-gradient(ellipse at 15% 85%, rgba(55, 122, 255, 0.7), transparent 52%),
     linear-gradient(145deg, #171b2a, #090b11);
   border: 1px solid rgba(255,255,255,0.1);
 }
+/* Scan-line do poster so no card que roda: e o sinal de "em producao" que o
+   olho pega antes de ler o badge. */
+.job-card.running .job-poster::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(190, 200, 255, 0.22), transparent);
+  background-size: 100% 40%; background-repeat: no-repeat;
+  animation: poster-scan 2.8s ease-in-out infinite;
+}
+@keyframes poster-scan { 0% { background-position: 0 -45%; } 100% { background-position: 0 145%; } }
 .job-poster-mark { font-size: 1.35rem; font-weight: 850; letter-spacing: -0.08em; }
-.job-poster-caption { font-size: 0.65rem; line-height: 1.3; color: rgba(255,255,255,0.75); }
+.job-poster-caption { font-size: 0.65rem; line-height: 1.3; color: rgba(255,255,255,0.78); }
 .job-content { min-width: 0; }
 .job-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .job-info { min-width: 0; }
 .job-title { color: var(--text-primary); font-size: 0.98rem; font-weight: 650; line-height: 1.35; overflow-wrap: anywhere; }
 .job-url { margin-top: 5px; color: var(--text-muted); font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.job-badge { flex: 0 0 auto; padding: 5px 9px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; color: var(--text-secondary); background: rgba(255,255,255,0.07); }
-.job-badge.running { color: #d7cbff; background: rgba(145, 105, 255, 0.18); }
-.job-badge.done { color: #9ee8bf; background: rgba(54, 177, 111, 0.15); }
-.job-badge.fail { color: #ffb4b4; background: rgba(234, 83, 83, 0.15); }
-.job-details { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 19px; color: var(--text-muted); font-size: 0.73rem; }
-.job-phase { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.job-elapsed { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.job-badge {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 999px; border: 1px solid transparent;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.01em;
+  color: var(--text-secondary); background: rgba(255,255,255,0.07);
+}
+/* O ponto do badge: so o `running` pulsa. E o mesmo vocabulario do
+   `job-render-live`, para que o card e a faixa contem a mesma historia. */
+.job-badge::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.75;
+}
+.job-badge.running { color: #d7cbff; background: rgba(145, 105, 255, 0.18); border-color: rgba(145, 105, 255, 0.4); }
+.job-badge.running::before { opacity: 1; box-shadow: 0 0 8px rgba(167,139,250,0.75); animation: render-live 1.6s ease-in-out infinite; }
+.job-badge.done { color: #9ee8bf; background: rgba(54, 177, 111, 0.15); border-color: rgba(54, 177, 111, 0.35); }
+.job-badge.fail { color: #ffb4b4; background: rgba(234, 83, 83, 0.15); border-color: rgba(234, 83, 83, 0.38); }
+.job-details { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; color: var(--text-muted); font-size: 0.73rem; }
+.job-phase { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-elapsed { flex: 0 0 auto; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
 .job-progress { height: 5px; margin-top: 9px; border-radius: 99px; background: rgba(255,255,255,0.08); overflow: hidden; }
 .job-progress-fill { display: block; width: 38%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent-primary), #bb8cff); }
 .job-card.running .job-progress-fill { animation: queue-progress 2.2s ease-in-out infinite; }
 .job-progress.complete .job-progress-fill { width: 100%; background: var(--success); animation: none; }
 .job-progress.failed .job-progress-fill { width: 100%; background: var(--danger); animation: none; }
+/* Na fila: nada comecou, entao a barra fica vazia. Sem esta regra o `fill`
+   herdava os 38% da base e o card parecia ter andado sem ter saido do lugar. */
+.job-progress.idle .job-progress-fill { width: 0; animation: none; }
 @keyframes queue-progress { 0% { transform: translateX(-110%); } 55% { transform: translateX(100%); } 100% { transform: translateX(260%); } }
 .job-previews { display: flex; justify-content: flex-start; gap: 8px; min-width: 0; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; padding: 2px 2px 6px; scrollbar-width: thin; }
 .job-preview { position: relative; flex: 0 0 64px; width: 64px; margin: 0; overflow: hidden; aspect-ratio: 9 / 16; border-radius: 9px; background: #090b11; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; }
@@ -626,6 +672,8 @@ body { padding-left: var(--rail-w); }
 @media (prefers-reduced-motion: reduce) {
   .job-card { transition: none; }
   .job-card.running .job-progress-fill { width: 48%; animation: none; }
+  .job-card.running .job-poster::after { animation: none; background: none; }
+  .job-badge.running::before { animation: none; }
   .job-render-glow, .job-render-scan, .job-render-core, .job-render-live i, .job-render-meter i { animation: none; }
   .job-render-meter i { width: 34%; transform: none; }
 }

@@ -1141,7 +1141,7 @@
       const posterCaption = document.createElement('span');
       posterCaption.className = 'job-poster-caption';
       posterCaption.textContent = job.status === 'running'
-        ? 'Corte em produção · prévia ' + runningPreviewSpeed + '×'
+        ? 'Em produção · ' + runningPreviewSpeed + '×'
         : job.previewFiles && job.previewFiles.length
           ? (job.previewFiles.length + ' prévia' + (job.previewFiles.length > 1 ? 's' : '') + ' pronta' + (job.previewFiles.length > 1 ? 's' : ''))
           : 'Video clipper';
@@ -1161,6 +1161,17 @@
       url.textContent = job.url || '';
       const badge = document.createElement('span');
       badge.className = 'job-badge ' + (job.status || 'queued');
+      // O badge e um indicador VISUAL (ponto colorido + palavra curta). Sem
+      // rotulo ele anunciaria só o texto — que ja e o status — entao o valor
+      // esta em manter o texto como esta e dar `role="img"` + `aria-label`:
+      // NAO `role="status"`, que criaria uma segunda regiao viva no mesmo card
+      // (a faixa "EM PRODUCAO" ja e uma) e faria o leitor repetir o status.
+      badge.setAttribute('role', 'img');
+      badge.setAttribute('aria-label', 'Status: ' + (
+        job.status === 'running' ? 'renderizando'
+          : job.status === 'done' ? 'concluído'
+            : job.status === 'fail' ? 'falhou' : 'na fila'
+      ));
       badge.textContent = job.status === 'running' ? 'Renderizando'
         : job.status === 'done' ? 'Concluído'
           : job.status === 'fail' ? 'Falhou' : 'Na fila';
@@ -1178,12 +1189,20 @@
       details.append(phase, elapsed);
 
       const track = document.createElement('div');
-      track.className = 'job-progress ' + (job.status === 'done' ? 'complete' : job.status === 'fail' ? 'failed' : '');
+      // `idle` e o estado que faltava: sem ele um card "Na fila" herdava o
+      // `width: 38%` da base e mostrava uma barra parada em 38% — um progresso
+      // que nao existe. Na fila nao ha trabalho comecado, entao a barra e zero.
+      track.className = 'job-progress ' + (
+        job.status === 'done' ? 'complete'
+          : job.status === 'fail' ? 'failed'
+            : job.status === 'running' ? 'running' : 'idle'
+      );
       track.setAttribute('role', 'progressbar');
       track.setAttribute('aria-label', 'Progresso do processamento');
       track.setAttribute('aria-valuemin', '0');
       track.setAttribute('aria-valuemax', '100');
       if (job.status === 'done') track.setAttribute('aria-valuenow', '100');
+      else if (job.status === 'queued') track.setAttribute('aria-valuenow', '0');
       else track.setAttribute('aria-valuetext', job.progress || 'Em processamento');
       const fill = document.createElement('span');
       fill.className = 'job-progress-fill';

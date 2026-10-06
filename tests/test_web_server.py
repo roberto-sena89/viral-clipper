@@ -4760,5 +4760,188 @@ class AjustesTrioTests(unittest.TestCase):
         )
 
 
+class QueueCardTests(unittest.TestCase):
+    """O card da fila fala o estado do job — e so ele.
+
+    O markup e GERADO em `index.js` (`renderQueue`), nao vive no `index.html`.
+    Por isso o contrato que vale e o par (classe de estado no card + regra que
+    pinta aquele estado). A cor nunca e escrita pelo JS: o JS poe a CLASSE e o
+    CSS decide. Se alguem trocar o `className` por um `style` inline, o card
+    fica com a cor de um estado so e este teste cai.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        cls.css = (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
+
+    @staticmethod
+    def _sem_comentarios_css(css):
+        return re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+    def _bloco(self, seletor):
+        """Devolve o corpo da PRIMEIRA regra cujo seletor bate ao inicio da linha.
+
+        Ancora no seletor completo + `{`, e nao em `[^}]*<prop>:`, porque essa
+        forma casa tambem a regra dentro de um `@media` com a mesma cabeca e
+        mascararia a corrupcao da regra base (foi assim que a sabotagem passou
+        duas vezes no grid do corpo).
+        """
+        sem = self._sem_comentarios_css(self.css)
+        achado = re.search(
+            r"^" + re.escape(seletor) + r"\s*\{([^}]*)\}", sem, re.M
+        )
+        self.assertIsNotNone(achado, "a regra `%s` sumiu do index.css" % seletor)
+        return achado.group(1)
+
+    def test_the_running_state_is_a_class_not_an_inline_style(self):
+        """O estado mora na classe do card; a cor fica no CSS."""
+        self.assertRegex(
+            self.js,
+            r"card\.className\s*=\s*'job-card '\s*\+\s*\(job\.status",
+            "o card deixou de carregar o status como classe",
+        )
+        # Um `style.background`/`style.borderColor` no card significaria cor
+        # decidida no JS: o `fail` e o `running` divergiriam na mao.
+        bloco = self.js[self.js.index("function renderQueue"):]
+        bloco = bloco[:bloco.index("\n  }")] if "\n  }" in bloco else bloco
+        self.assertNotRegex(
+            bloco,
+            r"card\.style\.|\.style\.background",
+            "o JS voltou a pintar o card em vez de usar a classe de estado",
+        )
+
+    def test_every_state_has_its_own_border(self):
+        """`running`, `done` e `fail` tem de dar bordas DIFERENTES.
+
+        Se as tres cairem no mesmo token, o card perde a leitura de relance e
+        o usuario tem de ler o texto do badge para saber o que aconteceu.
+        """
+        bordas = {}
+        for estado, token in (
+            ("running", "--accent-primary"),
+            ("done", "--success"),
+            ("fail", "--danger"),
+        ):
+            corpo = self._bloco(".job-card." + estado)
+            self.assertIn(
+                token, corpo,
+                "o card `%s` nao usa o token de cor do seu estado" % estado,
+            )
+            bordas[estado] = token
+        self.assertEqual(len(set(bordas.values())), 3, "os tres estados colorem igual")
+
+    def test_the_badge_pulses_only_while_running(self):
+        """O ponto do badge so anima no `running` — pulsar parado vira ruido."""
+        # A pulsacao vive no PONTO (`::before`), nao na caixa do badge: a caixa
+        # so carrega cor. Olhar a regra base daria falso negativo.
+        corpo = self._bloco(".job-badge.running::before")
+        self.assertIn("animation:", corpo, "o badge do job rodando parou de pulsar")
+        self.assertIn("render-live", corpo, "a pulsacao deixou de reusar o keyframe")
+        # O badge do `done` nao pode herdar a animacao por acidente: nem na
+        # caixa, nem no ponto (que pode nem existir como regra propria — o
+        # importante e que, se existir, nao anime).
+        self.assertNotIn("animation:", self._bloco(".job-badge.done"))
+        ponto_done = re.search(
+            r"^\.job-badge\.done::before\s*\{([^}]*)\}",
+            self._sem_comentarios_css(self.css), re.M,
+        )
+        if ponto_done is not None:
+            self.assertNotIn("animation:", ponto_done.group(1))
+
+    def test_the_progress_bar_stays_honest(self):
+        """Rodando = indeterminado; concluido/falhou = 100% e sem animacao.
+
+        O backend nao manda percentual, entao o cliente NUNCA inventa um. A
+        barra que anda sozinha e a varredura (`queue-progress`), e ela para
+        quando o job resolve — senao um card concluido continuaria "trabalhando".
+        """
+        rodando = self._bloco(".job-card.running .job-progress-fill")
+        self.assertIn("queue-progress", rodando)
+        completo = self._bloco(".job-progress.complete .job-progress-fill")
+        self.assertIn("width: 100%", completo)
+        self.assertIn("animation: none", completo)
+        falhou = self._bloco(".job-progress.failed .job-progress-fill")
+        self.assertIn("width: 100%", falhou)
+        self.assertIn("animation: none", falhou)
+        # `idle` (na fila) nao pode mostrar progresso nenhum: herdar os 38% da
+        # base fazia um card parado parecer ter andado.
+        parado = self._bloco(".job-progress.idle .job-progress-fill")
+        self.assertRegex(parado, r"width:\s*0\b")
+        self.assertIn("animation: none", parado)
+        self.assertIn(
+            "'idle'", self.js,
+            "o card da fila deixou de receber o estado `idle`",
+        )
+        # Nenhum setter de largura em porcentagem no JS: nao ha progresso falso.
+        # A busca e frouxa DE PROPOSITO: `fill.style.width = 62 + '%'` escapa de
+        # um padrao que so aceite o digito colado no `%`.
+        bloco = self.js[self.js.index("function renderQueue"):]
+        bloco = bloco[:bloco.index("\n  }")]
+        self.assertNotRegex(
+            bloco,
+            r"style\.width\s*=",
+            "o JS passou a inventar uma largura de progresso",
+        )
+
+    def test_the_render_stage_only_shows_while_there_is_no_preview(self):
+        """A faixa "EM PRODUCAO" e do vazio: com previa pronta ela nao entra."""
+        self.assertIn("job-render-stage", self.js)
+        self.assertIn("EM PRODUÇÃO", self.js)
+        self.assertRegex(
+            self.js,
+            r"if\s*\(!\(job\.previewFiles \|\| \[\]\)\.length && job\.status === 'running'\)",
+            "a faixa de producao deixou de ser condicional a ausencia de previa",
+        )
+
+    def test_the_scan_line_covers_the_card_without_capturing_clicks(self):
+        """O brilho da varredura e decorativo: nao intercepta o clique da previa."""
+        corpo = self._bloco(".job-card.running .job-poster::after")
+        self.assertIn("pointer-events: none", corpo)
+
+    def test_the_reduced_motion_branch_kills_every_animation(self):
+        """Quem pediu menos movimento nao pode levar varredura nem pulso."""
+        sem = self._sem_comentarios_css(self.css)
+        # Ha MAIS DE UM `@media (prefers-reduced-motion)` no arquivo (utilitarios,
+        # skeleton, fila). Ancorar no PRIMEIRO pega o dos utilitarios e o teste
+        # passa sem nunca olhar a fila — por isso o alvo e o bloco que cita `.job-`.
+        blocos = [
+            m.start() for m in re.finditer(r"@media \(prefers-reduced-motion: reduce\)", sem)
+        ]
+        alvo = None
+        for inicio in blocos:
+            fim = sem.find("\n}", inicio)
+            if ".job-" in sem[inicio:fim]:
+                alvo = sem[inicio:fim]
+                break
+        self.assertIsNotNone(alvo, "a fila perdeu o ramo de movimento reduzido")
+        for seletor in (
+            ".job-card.running .job-progress-fill",
+            ".job-card.running .job-poster::after",
+            ".job-badge.running::before",
+        ):
+            self.assertIn(seletor, alvo, "`%s` segue animando com movimento reduzido" % seletor)
+        # E os que aparecem tem de estar desligados, nao so listados.
+        self.assertRegex(alvo, r"\.job-render-glow[\s\S]{0,160}?animation: none")
+        self.assertRegex(
+            alvo,
+            r"\.job-card\.running \.job-poster::after\s*\{[^}]*animation: none",
+            "a varredura do poster continua ligada com movimento reduzido",
+        )
+
+    def test_the_card_keeps_three_columns_until_the_first_breakpoint(self):
+        """Poster | conteudo | previas. O card empilha por medida, nao por chute."""
+        corpo = self._bloco(".job-card")
+        self.assertRegex(
+            corpo,
+            r"grid-template-columns:\s*112px\s+minmax\(0,\s*1fr\)\s+minmax\(\d+px,\s*\d+px\)",
+            "as tres colunas do card mudaram de forma inesperada",
+        )
+        # Nos dois breakpoints as colunas tem de reduzir, nao sumir.
+        sem = self._sem_comentarios_css(self.css)
+        self.assertRegex(sem, r"@media \(max-width: 760px\)[\s\S]{0,400}?\.job-card\s*\{")
+        self.assertRegex(sem, r"@media \(max-width: 420px\)[\s\S]{0,400}?\.job-card\s*\{")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

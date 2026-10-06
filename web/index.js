@@ -1276,7 +1276,33 @@
       fill.className = 'job-progress-fill';
       track.appendChild(fill);
 
-      content.append(head, details, track);
+      // Um job concluido carrega `clips` (ate 3, gravados por `finish` no
+      // servidor). Sao dados reais: cada um traz a duracao que o renderizador
+      // mediu. Nao ha nada disso enquanto o job roda — por isso a linha so
+      // existe quando ha o que mostrar, em vez de um bloco com tracejados.
+      const resumo = document.createElement('div');
+      resumo.className = 'job-clips';
+      const clipsDoJob = Array.isArray(job.clips) ? job.clips : [];
+      if (job.status === 'done' && clipsDoJob.length) {
+        const total = document.createElement('span');
+        total.className = 'job-clips-total';
+        total.textContent = clipsDoJob.length === 1 ? '1 corte' : clipsDoJob.length + ' cortes';
+        resumo.appendChild(total);
+        clipsDoJob.forEach((clip, clipIndex) => {
+          const chip = document.createElement('span');
+          chip.className = 'job-clip' + (clip.rendered === false ? ' is-plan' : '');
+          // `duration` vem em segundos do renderizador. `rendered:false` = run
+          // plan-only: o corte foi pontuado mas o arquivo nao existe, entao o
+          // chip nao pode se passar por um clipe pronto para assistir.
+          const quando = Number(clip.duration) > 0 ? queueClock(clip.duration) : null;
+          chip.textContent = 'Corte ' + String(clipIndex + 1).padStart(2, '0')
+            + (quando ? ' · ' + quando : '')
+            + (clip.rendered === false ? ' · só análise' : '');
+          resumo.appendChild(chip);
+        });
+      }
+      if (resumo.children.length) content.append(head, details, track, resumo);
+      else content.append(head, details, track);
       const previews = document.createElement('div');
       previews.className = 'job-previews';
       previews.setAttribute('aria-label', 'Pré-visualização dos cortes');

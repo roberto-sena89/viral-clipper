@@ -5126,5 +5126,70 @@ class QueueChromeTests(unittest.TestCase):
         )
 
 
+class JobResultSummaryTests(unittest.TestCase):
+    """O que um card CONCLUIDO mostra — e so quando ha dado real.
+
+    `finish()` grava `title`, `clips` (ate 3) e `meta` no job. Nada disso existe
+    enquanto ele roda. O contrato aqui e: o resumo dos cortes nasce do `job.clips`
+    que o servidor mandou, nunca de um numero que o front inventa.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        cls.css = (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
+        cls.server = (server.WEB_DIR / "server.py").read_text(encoding="utf-8")
+
+    def test_the_summary_reads_the_clips_the_server_sent(self):
+        """A fonte e `job.clips` — nao uma contagem derivada de outro campo."""
+        self.assertIn("const clipsDoJob = Array.isArray(job.clips) ? job.clips : []", self.js)
+        # A classe e posta pelo `className` (sem o ponto — o ponto e do seletor
+        # CSS). Procurar `.job-clips` no JS daria falso negativo.
+        self.assertRegex(self.js, r"resumo\.className = 'job-clips'")
+        self.assertIn(".job-clips", self.css)
+
+    def test_the_summary_only_exists_for_a_finished_job_with_clips(self):
+        """Job em andamento nao pode exibir um resumo vazio."""
+        self.assertRegex(
+            self.js,
+            r"if \(job\.status === 'done' && clipsDoJob\.length\)",
+        )
+        # E o container so entra no card se tiver filho: sem isso um job `fail`
+        # ganharia uma faixa `job-clips` de altura zero, mas com margem.
+        self.assertRegex(self.js, r"if \(resumo\.children\.length\) content\.append")
+
+    def test_each_chip_carries_the_real_duration(self):
+        """A duracao vem do renderizador, nao de um valor de exemplo."""
+        self.assertRegex(self.js, r"queueClock\(clip\.duration\)")
+        self.assertIn("String(clipIndex + 1).padStart(2, '0')", self.js)
+
+    def test_a_plan_only_clip_is_not_dressed_as_a_watchable_one(self):
+        """`rendered:false` = corte pontuado sem arquivo. O chip tem de dizer."""
+        self.assertRegex(self.js, r"clip\.rendered === false \? ' · só análise'")
+        self.assertIn(".job-clip.is-plan", self.css)
+        self.assertRegex(self.css, r"\.job-clip\.is-plan\s*\{[^}]*border-style:\s*dashed")
+
+    def test_the_finished_job_keeps_its_own_clock(self):
+        """A escada e zerada no proximo run; o job tem de guardar o total.
+
+        Sem `job["elapsed"]` gravado no `finish`, a duracao de um job concluido
+        desaparecia no instante em que o usuario disparava o video seguinte.
+        """
+        self.assertRegex(self.server, r'job\["started_at"\] = started')
+        self.assertRegex(self.server, r'job\["elapsed"\] = final')
+        # O lado do card le `job.elapsed`, o mesmo campo que `followRun` alimenta.
+        self.assertRegex(self.js, r"job\.elapsed \? queueClock\(job\.elapsed\)")
+
+    def test_the_summary_wraps_instead_of_clipping_a_chip(self):
+        """Tres chips mais a contagem nao cabem em 375px — quebrar, nao cortar."""
+        ini = self.css.index(".job-clips ")
+        bloco = self.css[ini:ini + 900]
+        self.assertRegex(bloco, r"flex-wrap:\s*wrap")
+        self.assertRegex(bloco, r"font-variant-numeric:\s*tabular-nums")
+        # Um chip que quebra no meio da duracao fica ilegivel: cada chip e uma
+        # unidade. `nowrap` mantem o par "Corte 02 · 00:47" inteiro.
+        self.assertRegex(bloco, r"\.job-clip\s*\{[^}]*white-space:\s*nowrap")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

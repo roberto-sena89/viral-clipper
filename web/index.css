@@ -689,6 +689,15 @@ body { padding-left: var(--rail-w); }
 /* Na fila: nada comecou, entao a barra fica vazia. Sem esta regra o `fill`
    herdava os 38% da base e o card parecia ter andado sem ter saido do lugar. */
 .job-progress.idle .job-progress-fill { width: 0; animation: none; }
+/* Resumo dos cortes de um job concluido. `wrap` porque a contagem mais os tres
+   chips nao cabem numa linha a 375px — quebrar e melhor que cortar um chip ao
+   meio. O `tabular-nums` alinha as duracoes MM:SS na vertical. */
+.job-clips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
+.job-clips-total { color: var(--text-primary); font-weight: 650; letter-spacing: 0.01em; }
+.job-clip { padding: 3px 8px; border-radius: 999px; color: var(--text-muted); background: rgba(255,255,255,0.045); border: 1px solid var(--border-subtle); white-space: nowrap; }
+/* Run plan-only: o corte existe no relatorio mas nao no disco. O chip fica
+   tracejado para nao se passar por um clipe que da para assistir. */
+.job-clip.is-plan { border-style: dashed; color: var(--text-muted); opacity: 0.85; }
 @keyframes queue-progress { 0% { transform: translateX(-110%); } 55% { transform: translateX(100%); } 100% { transform: translateX(260%); } }
 .job-previews { display: flex; justify-content: flex-start; gap: 8px; min-width: 0; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; padding: 2px 2px 6px; scrollbar-width: thin; }
 .job-preview { position: relative; flex: 0 0 64px; width: 64px; margin: 0; overflow: hidden; aspect-ratio: 9 / 16; border-radius: 9px; background: #090b11; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; }

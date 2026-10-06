@@ -653,8 +653,18 @@ def _run_job(options: dict, plan_only: bool) -> dict:
             with _lock:
                 anteriores = list((_state.get(_RUN_SLOT) or {}).get("stages") or [])
             stages = _mark_failed(anteriores)
+        final = round(time.time() - started, 1)
         _publish_run(active=False, state=state, error=error, stages=stages,
-                     elapsed=round(time.time() - started, 1))
+                     elapsed=final)
+        # O `elapsed` so vive na escada, e ela e zerada no proximo run. Sem gravar
+        # o total no proprio job, um card "Concluido" perde a duracao no instante
+        # em que o usuario dispara o proximo video — e a informacao mais util de
+        # um job terminado e justamente quanto ele levou. `started_at` vai junto
+        # para o card poder recalcular sozinho enquanto o run esta no ar, sem
+        # depender do relogio da escada (que e do run, nao do job).
+        with _lock:
+            job["started_at"] = started
+            job["elapsed"] = final
 
     try:
         config = _options_to_config(options)

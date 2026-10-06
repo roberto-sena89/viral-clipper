@@ -454,6 +454,13 @@ def _mark_stage(index: int, *, skipped: bool = False) -> None:
         stages.append({"key": key, "label": label, "state": state})
     _publish_run(stages=stages, stage=_RUN_STAGES[index][0],
                  stage_label=_RUN_STAGES[index][1], stage_index=index + 1)
+    # O card da fila le `job.progress`, nao o `_run_record` da escada: sao duas
+    # vistas do mesmo instante. Escrever a etapa aqui (e nao no meio do
+    # `_run_job`) mantem uma fonte so — se a escada muda, o card muda junto.
+    with _lock:
+        ativos = [j for j in _state["jobs"] if j.get("status") == "running"]
+        for ativo in ativos:
+            ativo["progress"] = _RUN_STAGES[index][1]
 
 
 # ---------- ajustes: o estado da pagina de Ajustes ----------
@@ -598,6 +605,12 @@ def _run_job(options: dict, plan_only: bool) -> dict:
     logger = RunLogger()
     url = str(options.get("url") or "")
     job = {"url": url, "status": "running",
+           # `progress` nasce com a PRIMEIRA etapa, nao vazio. O card faz
+           # `job.progress || job.meta` para escolher o texto da fase: sem isto
+           # o campo caia no `meta` e o card mostrava "small" (o modelo de
+           # transcricao) onde devia ler a etapa. A lista de etapas e a mesma
+           # que a escada publica, entao o vocabulario nao diverge.
+           "progress": _RUN_STAGES[0][1],
            "meta": ("plan-only · " if plan_only else "") + str(options.get("whisper_model", "small"))}
     started = time.time()
     _publish_run(active=True, state="rodando", url=url, plan_only=bool(plan_only),
@@ -606,6 +619,16 @@ def _run_job(options: dict, plan_only: bool) -> dict:
                          for k, lbl in _RUN_STAGES],
                  stage="", stage_label="Preparando…", stage_index=0)
     with _lock:
+        # Um run por vez: o registro anterior que ficou `running` e fantasma —
+        # a thread que o escreveu ja morreu (servidor reiniciado no meio, ou
+        # excecao fora do try), e ele nunca mais vira `done`. Sem esta poda a
+        # lista so cresce: medido ao vivo, `/status` devolvia 8 jobs identicos
+        # em `running` para a mesma URL, com 1 so realmente rodando. So os
+        # terminais sobrevivem a um run novo; eles tem resultado a mostrar.
+        _state["jobs"] = [
+            j for j in _state["jobs"]
+            if j.get("status") in ("done", "fail")
+        ]
         _state["jobs"].append(job)
         _state["clips"] = []
 

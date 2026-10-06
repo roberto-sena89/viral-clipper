@@ -1508,6 +1508,11 @@
       baselineFiles,
       observedFiles: new Map(),
       previewFiles: [],
+      // A janela entre o `push` e o primeiro `/status` que ja traga este job.
+      // Marca-lo evita que o merge o descarte por "o servidor nao conhece" —
+      // a regra que impede um card fantasma de se empilhar por poll. O poll
+      // seguinte ja o encontra no servidor e a marca deixa de ser necessaria.
+      localOnly: true,
     };
     state.jobs.push(job);
     // A galeria vira esqueleto, mas a fila continua mostrando o card real.
@@ -1528,6 +1533,10 @@
     hideSkeletons();
 
     job.status = r.error ? 'fail' : 'done';
+    // O servidor ja conhece este job (o POST voltou): a marca de "so local"
+    // cumpriu o papel e sai, senao o merge seguinte trataria um job terminal
+    // como se ainda estivesse em transito.
+    delete job.localOnly;
     job.title = r.title || '';
     job.clips = Array.isArray(r.clips) ? r.clips : [];
     job.meta = r.error ? ('erro: ' + r.error) : (job.clips.length + ' clips');
@@ -1874,9 +1883,18 @@
           }
           return localJob;
         });
+        // Um `running` LOCAL que o servidor nao devolveu e um job que ele nao
+        // conhece mais: re-anexa-lo (como se fazia) o mantinha na tela para
+        // sempre, empilhando um card por poll. O servidor e a fonte de verdade
+        // da fila — ele agora poda os fantasmas no inicio de cada run — entao
+        // o que nao veio dele nao entra. O unico caso legitimo de job local
+        // sem par remoto e o que acabou de nascer e ainda nao foi publicado;
+        // esse e curto: `state.running` some assim que o POST volta.
         if (state.running) {
           state.jobs.forEach((job, index) => {
-            if (job.status === 'running' && !used.has(index)) merged.push(job);
+            if (job.status !== 'running' || used.has(index)) return;
+            const publicado = r.jobs.some((remoto) => remoto.url === job.url);
+            if (!publicado && !job.localOnly) merged.push(job);
           });
         }
         state.jobs = merged;

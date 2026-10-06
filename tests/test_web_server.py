@@ -4943,5 +4943,91 @@ class QueueCardTests(unittest.TestCase):
         self.assertRegex(sem, r"@media \(max-width: 420px\)[\s\S]{0,400}?\.job-card\s*\{")
 
 
+class JobLifecycleTests(unittest.TestCase):
+    """A fila nao pode acumular fantasma nem mentir sobre a etapa.
+
+    Medido ao vivo em 2026-10-05: `/status` devolvia **8 jobs identicos** em
+    `running` para a mesma URL, com **1 so** realmente rodando no
+    `/run/progress`. Os outros sete eram threads mortas que nunca virariam
+    `done`. E o card mostrava `small` (o modelo de transcricao) no lugar da
+    etapa, porque o job nascia sem `progress` e o front caia no `meta`.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.src = Path(server.__file__).read_text(encoding="utf-8")
+        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+
+    def setUp(self):
+        # O modulo guarda estado global; um teste limpa o que o outro sujou.
+        self._anterior = list(server._state["jobs"])
+
+    def tearDown(self):
+        server._state["jobs"] = self._anterior
+
+    def test_the_job_is_born_with_a_stage_not_the_model_name(self):
+        """`progress` nasce com a 1a etapa; `meta` guarda o modelo, nao a fase.
+
+        O card escolhe o texto com `job.progress || job.meta`. Sem `progress`
+        ele mostra o `meta`, que e `"small"` — o nome do modelo de transcricao
+        aparecendo como se fosse a etapa do job.
+        """
+        self.assertIn('"progress": _RUN_STAGES[0][1]', self.src)
+        # E o `meta` continua sendo o modelo (a informacao nao se perdeu).
+        self.assertIn('"meta": ("plan-only · " if plan_only else "")', self.src)
+
+    def test_starting_a_run_drops_the_ghosts(self):
+        """Um run novo poda os `running` orfaos: sem isso a lista so cresce.
+
+        So os terminais sobrevivem — eles tem resultado a mostrar. Os que
+        ficaram presos em `running` (thread morta) sao descartados.
+        """
+        with server._lock:
+            server._state["jobs"] = [
+                {"url": "u1", "status": "running"},   # fantasma
+                {"url": "u2", "status": "running"},   # fantasma
+                {"url": "u3", "status": "done", "title": "ok"},
+                {"url": "u4", "status": "fail", "meta": "erro"},
+            ]
+        # Reproduz a poda que `_run_job` faz ao registrar um job novo.
+        with server._lock:
+            server._state["jobs"] = [
+                j for j in server._state["jobs"]
+                if j.get("status") in ("done", "fail")
+            ]
+            restantes = [j["url"] for j in server._state["jobs"]]
+        self.assertEqual(restantes, ["u3", "u4"], "os fantasmas nao foram podados")
+        # E a poda tem de estar NO codigo, nao so no teste.
+        self.assertRegex(
+            self.src,
+            r'_state\["jobs"\] = \[\s*j for j in _state\["jobs"\]\s*if j\.get\("status"\) in \("done", "fail"\)',
+            "o `_run_job` deixou de podar os jobs terminais",
+        )
+
+    def test_the_stage_writer_feeds_the_card_too(self):
+        """`_mark_stage` atualiza o job ativo, senao o card trava na 1a etapa."""
+        inicio = self.src.index("def _mark_stage")
+        corpo = self.src[inicio:self.src.index("\ndef ", inicio + 10)]
+        self.assertIn('ativo["progress"] = _RUN_STAGES[index][1]', corpo,
+                      "a etapa publicada nao chega ao card da fila")
+
+    def test_the_merge_does_not_resurrect_an_unknown_running_job(self):
+        """O front nao re-anexa um `running` que o servidor nao devolveu.
+
+        Re-anexar era o que empilhava um card por poll quando o `/status`
+        parava de trazer o job.
+        """
+        self.assertIn("job.localOnly", self.js)
+        self.assertIn("r.jobs.some((remoto) => remoto.url === job.url)", self.js)
+        # A linha antiga, incondicional, nao pode voltar.
+        self.assertNotIn("if (job.status === 'running' && !used.has(index)) merged.push(job)", self.js)
+
+    def test_a_fresh_job_is_kept_until_the_server_publishes_it(self):
+        """O job recem-criado sobrevive ao primeiro merge (`localOnly`)."""
+        self.assertRegex(self.js, r"localOnly:\s*true")
+        self.assertRegex(self.js, r"delete job\.localOnly",
+                         "a marca de 'so local' nunca e removida")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

@@ -6,6 +6,10 @@
 
   const state = {
     running: false, jobs: [], clips: [], viral: [], jobSignature: null,
+    // Filtro ativo da fila (`all` | `processing` | `queued` | `done` | `fail`).
+    // Vive no state, e nao no DOM, para o re-render (que troca o innerHTML da
+    // lista a cada tick) nao perder a escolha do usuario.
+    queueFilter: 'all',
     // Caminho do arquivo de prompt do curador e se ele ja existe em disco. Os
     // dois vem do servidor: o painel nunca inventa o caminho, porque quem
     // decide onde o arquivo mora e o servidor (CURATOR_PROMPT_PATH).
@@ -1114,10 +1118,65 @@
     if (changed) renderQueue();
   }
 
+  // ---------- fila: agrupamento, contadores e filtro ----------
+  // Os tres usam a MESMA classificacao: um so lugar decide o que e "Em
+  // processamento" e o contador nunca discorda do filtro. `queued` e o
+  // default porque um job sem status ainda nao comecou.
+  function queueGroup(job) {
+    const s = job.status || 'queued';
+    if (s === 'running') return 'processing';
+    if (s === 'done') return 'done';
+    if (s === 'fail') return 'fail';
+    return 'queued';
+  }
+
+  function queueCounts(jobs) {
+    const counts = { all: jobs.length, processing: 0, queued: 0, done: 0, fail: 0 };
+    jobs.forEach((job) => { counts[queueGroup(job)] += 1; });
+    return counts;
+  }
+
+  // A ordem e estavel e por importancia: o que roda primeiro, depois a fila,
+  // depois o resultado e por fim as falhas — o que exige acao humana fica no
+  // fim, onde o olho chega depois de ver o que deu certo.
+  const QUEUE_ORDER = { processing: 0, queued: 1, done: 2, fail: 3 };
+
+  function paintQueueChrome(counts) {
+    ['processing', 'queued', 'done', 'fail'].forEach((key) => {
+      const num = document.getElementById('stat-' + key);
+      if (num) num.textContent = String(counts[key]);
+      const box = num && num.closest('.queue-stat');
+      // Zero esmaece o cartao: um "0" colorido parece um dado, e nao a
+      // ausencia dele.
+      if (box) box.classList.toggle('is-empty', counts[key] === 0);
+    });
+    $$('#queue-filters .queue-filter').forEach((btn) => {
+      const key = btn.dataset.filter;
+      const badge = btn.querySelector('.queue-filter-count');
+      if (badge) badge.textContent = String(counts[key] || 0);
+      // Só "Todos" e os estados zerados ficam inativos; o filtro ativo nunca
+      // some, senao o usuario perde a referencia de onde esta.
+      if (key !== 'all') btn.classList.toggle('is-empty', !counts[key]);
+    });
+  }
+
   function renderQueue() {
     const list = $('#queue-list');
     const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const runningPreviewSpeed = reduceMotion ? 1 : 2;
+
+    const counts = queueCounts(state.jobs);
+    paintQueueChrome(counts);
+
+    const filtro = state.queueFilter || 'all';
+    const visiveis = state.jobs
+      .map((job, index) => ({ job, index }))
+      .filter(({ job }) => filtro === 'all' || queueGroup(job) === filtro)
+      .sort((a, b) => {
+        const d = QUEUE_ORDER[queueGroup(a.job)] - QUEUE_ORDER[queueGroup(b.job)];
+        return d !== 0 ? d : a.index - b.index;
+      });
+
     list.innerHTML = '';
     if (!state.jobs.length) {
       const empty = document.createElement('div');
@@ -1126,8 +1185,17 @@
       list.appendChild(empty);
       return;
     }
+    if (!visiveis.length) {
+      // Vazio contextual: o filtro escondeu tudo, mas ha fila. A frase muda
+      // para o usuario nao pensar que a fila se esvaziou.
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'Nenhum job neste filtro. Escolha "Todos" para ver a fila inteira.';
+      list.appendChild(empty);
+      return;
+    }
 
-    state.jobs.forEach((job, index) => {
+    visiveis.forEach(({ job, index }) => {
       const card = document.createElement('article');
       card.className = 'job-card ' + (job.status || 'queued');
       card.dataset.jobIndex = String(index);
@@ -1276,6 +1344,27 @@
 
       card.append(poster, content, previews);
       list.appendChild(card);
+    });
+  }
+
+  // Os filtros sao delegados no container: a lista de botoes e estatica (vive
+  // no HTML, nao no render), entao um listener so cobre os cinco e nao
+  // precisa ser religado a cada tick.
+  function bindQueueFilters() {
+    const bar = $('#queue-filters');
+    if (!bar) return;
+    bar.addEventListener('click', (event) => {
+      const btn = event.target.closest('.queue-filter');
+      if (!btn || !bar.contains(btn)) return;
+      const escolha = btn.dataset.filter || 'all';
+      state.queueFilter = escolha;
+      // O `aria-pressed` e a fonte de verdade do visual: o CSS pinta por ele,
+      // e o leitor de tela anuncia pelo mesmo atributo. Escrever nos dois
+      // lugares separados seria como eles divergem.
+      $$('#queue-filters .queue-filter').forEach((other) => {
+        other.setAttribute('aria-pressed', other === btn ? 'true' : 'false');
+      });
+      renderQueue();
     });
   }
 
@@ -1921,6 +2010,7 @@
   renderSelectionSummary();
   loadAjustes();
 
+  bindQueueFilters();
   renderQueue();
   renderClips();
 })();

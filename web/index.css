@@ -548,6 +548,71 @@ body { padding-left: var(--rail-w); }
    card. Enquanto o job roda a barra e indeterminada (varredura), porque o
    backend nao manda percentual; quando conclui ela trava em 100% e o `fail`
    trava em 100% na cor de erro. Nenhum numero e inventado no cliente. */
+
+/* Resumo por estado. Grade de 4 que colapsa em 2x2 no estreito — os quatro
+   numeros continuam visiveis, so mudam de arranjo. `minmax(0, 1fr)` impede o
+   numero grande de empurrar a coluna. */
+.queue-summary {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px; margin-bottom: 14px;
+}
+.queue-stat {
+  display: flex; flex-direction: column; gap: 4px; min-width: 0;
+  padding: 12px 14px; border-radius: 11px;
+  border: 1px solid var(--border-subtle); background: rgba(255, 255, 255, 0.025);
+}
+.queue-stat-num {
+  color: var(--text-primary); font-size: 1.5rem; font-weight: 700;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.queue-stat-label {
+  color: var(--text-muted); font-size: var(--text-2xs); letter-spacing: 0.03em;
+  text-transform: uppercase;
+  /* Sem `overflow-wrap: anywhere`: ele quebrava a palavra NO MEIO
+     ("PROCESSAMEN / TO") na faixa de 120px do celular. Palavra longa em caixa
+     alta nao hifeniza — ela fica inteira e o cartao cresce, que e o certo
+     quando o resumo ja rola na horizontal. */
+  white-space: nowrap;
+}
+/* O numero do estado carrega a cor do estado: bater o olho no 2 verde ja diz
+   "concluido" sem ler o rotulo. A cor NUNCA e o unico sinal — o rotulo ao lado
+   e o texto que um leitor de tela (e um daltonico) usa. */
+.queue-stat[data-stat="processing"] .queue-stat-num { color: var(--accent-soft); }
+.queue-stat[data-stat="done"] .queue-stat-num { color: var(--success); }
+.queue-stat[data-stat="fail"] .queue-stat-num { color: var(--danger); }
+.queue-stat.is-empty .queue-stat-num { color: var(--text-muted); }
+
+/* Filtros: botoes que quebram em linhas. Nenhum tem largura fixa porque o
+   rotulo + a contagem variam ("Erros 0" vs "Em processamento 3"). */
+.queue-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.queue-filter {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 34px;
+  padding: 7px 12px; border-radius: 999px; cursor: pointer;
+  font-family: inherit; font-size: var(--text-2xs); font-weight: 650;
+  color: var(--text-secondary); background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+.queue-filter:hover { border-color: var(--border-strong); background: rgba(255, 255, 255, 0.07); }
+.queue-filter[aria-pressed="true"] {
+  color: var(--accent-soft); background: var(--active-tint);
+  border-color: var(--accent-primary);
+}
+/* O alvo de toque da WCAG 2.2 (2.5.8) so aperta em ponteiro grosso: no mouse
+   34px de altura e confortavel, no dedo nao. */
+@media (pointer: coarse) { .queue-filter { min-height: 44px; padding: 10px 14px; } }
+.queue-filter-count {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px;
+  padding: 0 6px; border-radius: 999px;
+  font-size: 0.65rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  background: rgba(255, 255, 255, 0.09); color: var(--text-secondary);
+}
+.queue-filter[aria-pressed="true"] .queue-filter-count { background: rgba(99, 102, 241, 0.28); color: #d7cbff; }
+.queue-filter:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
+/* Um filtro sem itens fica apagado mas CONTINUA clicavel: o usuario precisa
+   poder voltar para "Todos" sem cacar o botao. */
+.queue-filter.is-empty { opacity: 0.55; }
+
 .queue-list { display: flex; flex-direction: column; gap: 12px; }
 .job-card {
   position: relative; display: grid;
@@ -683,12 +748,28 @@ body { padding-left: var(--rail-w); }
   .job-poster { min-height: 102px; padding: 10px; }
   .job-previews { grid-column: 1 / -1; justify-content: flex-start; }
   .job-preview { flex-basis: 58px; width: 58px; }
+  /* 2x2: quatro numeros nao cabem lado a lado sem o rotulo quebrar letra a
+     letra. Empilhados em dois pares eles continuam legiveis. */
+  .queue-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .queue-stat { padding: 10px 12px; }
+  .queue-stat-num { font-size: 1.25rem; }
 }
 @media (max-width: 420px) {
   .job-card { grid-template-columns: minmax(0, 1fr); }
   .job-poster { min-height: 72px; }
   .job-head { flex-wrap: wrap; }
   .job-previews { grid-column: auto; }
+  /* O resumo vira uma faixa de rolagem horizontal DELIMITADA — a unica
+     rolagem lateral do bloco. Sem ela os quatro cartoes nao cabem em 375px
+     e a pagina inteira ganharia barra. `max-content` deixa cada cartao do
+     tamanho do seu rotulo (que nao quebra), em vez de espremer a palavra. */
+  .queue-summary {
+    grid-template-columns: repeat(4, max-content);
+    overflow-x: auto; overscroll-behavior-x: contain;
+    padding-bottom: 4px; scrollbar-width: thin;
+  }
+  .queue-stat { min-width: 116px; }
+  .queue-filter { flex: 1 1 auto; justify-content: center; }
 }
 .empty-state {
   text-align: center; padding: 28px 12px; color: var(--text-muted); font-size: 0.88rem;

@@ -488,7 +488,52 @@
     <h2 class="section-title" id="queue">Fila de processamento</h2>
     <p class="section-sub">Acompanhe a etapa de cada renderização e veja previews dos cortes assim que os arquivos ficarem prontos.</p>
     <div class="card">
-      <div class="queue-list" id="queue-list">
+      <!-- Resumo por estado: os quatro numeros que dizem, de relance, quantos
+           jobs estao em cada canto da fila. O JS preenche; o HTML so declara
+           os rotulos para a tela nao nascer vazia se o servidor demorar. -->
+      <div class="queue-summary" id="queue-summary" role="group" aria-label="Resumo da fila">
+        <div class="queue-stat" data-stat="processing">
+          <span class="queue-stat-num" id="stat-processing">0</span>
+          <span class="queue-stat-label">Em processamento</span>
+        </div>
+        <div class="queue-stat" data-stat="queued">
+          <span class="queue-stat-num" id="stat-queued">0</span>
+          <span class="queue-stat-label">Na fila</span>
+        </div>
+        <div class="queue-stat" data-stat="done">
+          <span class="queue-stat-num" id="stat-done">0</span>
+          <span class="queue-stat-label">Concluídos</span>
+        </div>
+        <div class="queue-stat" data-stat="fail">
+          <span class="queue-stat-num" id="stat-fail">0</span>
+          <span class="queue-stat-label">Com erro</span>
+        </div>
+      </div>
+
+      <!-- Filtros: um botao por estado, com a contagem no proprio rotulo. O
+           `aria-pressed` diz qual esta ativo — a cor sozinha nao anunciaria. -->
+      <div class="queue-filters" id="queue-filters" role="group" aria-label="Filtrar a fila">
+        <button class="queue-filter" type="button" data-filter="all" aria-pressed="true">
+          Todos <span class="queue-filter-count" data-count="all">0</span>
+        </button>
+        <button class="queue-filter" type="button" data-filter="processing" aria-pressed="false">
+          Em processamento <span class="queue-filter-count" data-count="processing">0</span>
+        </button>
+        <button class="queue-filter" type="button" data-filter="queued" aria-pressed="false">
+          Na fila <span class="queue-filter-count" data-count="queued">0</span>
+        </button>
+        <button class="queue-filter" type="button" data-filter="done" aria-pressed="false">
+          Concluídos <span class="queue-filter-count" data-count="done">0</span>
+        </button>
+        <button class="queue-filter" type="button" data-filter="fail" aria-pressed="false">
+          Erros <span class="queue-filter-count" data-count="fail">0</span>
+        </button>
+      </div>
+
+      <!-- A lista sozinha muda a cada tick; a regiao viva avisa o leitor de
+           tela sem interromper (polite). Sem `aria-atomic`: so o que muda e
+           anunciado, nao a lista inteira. -->
+      <div class="queue-list" id="queue-list" aria-live="polite" aria-relevant="additions text">
         <div class="empty-state">Nenhum job na fila ainda.<br>Cole a URL acima e clique em <strong>Gerar clips</strong>.</div>
       </div>
     </div>

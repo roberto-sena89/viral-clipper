@@ -5029,5 +5029,102 @@ class JobLifecycleTests(unittest.TestCase):
                          "a marca de 'so local' nunca e removida")
 
 
+class QueueChromeTests(unittest.TestCase):
+    """Resumo, filtros e estado vazio contextual da fila.
+
+    O que a pagina promete ao usuario: quantos jobs ha em cada estado, um
+    filtro por estado com a contagem, e uma frase propria quando o filtro
+    esconde a fila inteira. Tudo isso ancorado no que o JS realmente pinta.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        cls.css = (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
+
+    def test_the_summary_has_one_box_per_state(self):
+        self.assertIn('id="queue-summary"', self.html)
+        for key in ("processing", "queued", "done", "fail"):
+            with self.subTest(estado=key):
+                self.assertIn(f'data-stat="{key}"', self.html)
+                self.assertIn(f'id="stat-{key}"', self.html)
+
+    def test_the_filters_cover_every_state_plus_all(self):
+        for key in ("all", "processing", "queued", "done", "fail"):
+            with self.subTest(filtro=key):
+                self.assertIn(f'data-filter="{key}"', self.html)
+        # O ativo e declarado pelo `aria-pressed`, nao por uma classe: o mesmo
+        # atributo serve ao CSS e ao leitor de tela, entao nao divergem.
+        self.assertIn('aria-pressed="true"', self.html)
+        self.assertIn('aria-pressed="false"', self.html)
+
+    def test_one_classifier_decides_both_the_count_and_the_filter(self):
+        """Contador e filtro usam a MESMA funcao — senao discordam.
+
+        Se cada um tivesse a sua tabela de status, um job `canceled` cairia
+        num grupo para o contador e em nenhum para o filtro (a lista mostraria
+        menos itens do que o numero ao lado do botao).
+        """
+        self.assertIn("function queueGroup(job)", self.js)
+        self.assertIn("function queueCounts(jobs)", self.js)
+        self.assertRegex(self.js, r"counts\[queueGroup\(job\)\] \+= 1")
+        self.assertRegex(self.js, r"queueGroup\(job\) === filtro")
+
+    def test_the_order_is_stable_and_puts_active_first(self):
+        """Ativo, fila, resultado, falha — e estavel dentro do grupo."""
+        self.assertRegex(self.js, r"QUEUE_ORDER = \{\s*processing: 0,\s*queued: 1,\s*done: 2,\s*fail: 3")
+        # O desempate por indice e o que mantem a ordem ao re-renderizar.
+        self.assertRegex(self.js, r"return d !== 0 \? d : a\.index - b\.index")
+
+    def test_an_empty_filter_says_which_one(self):
+        """Filtro sem itens nao pode se passar pela fila vazia."""
+        self.assertIn('Nenhum job neste filtro', self.js)
+        self.assertIn('Nenhum job na fila ainda', self.js)
+
+    def test_the_filter_is_kept_in_state_not_in_the_dom(self):
+        """O render recria a lista a cada tick; a escolha tem de sobreviver."""
+        self.assertRegex(self.js, r"queueFilter:\s*'all'")
+        self.assertRegex(self.js, r"state\.queueFilter = escolha")
+
+    def test_the_summary_shrinks_before_it_scrolls(self):
+        """Em 375px o resumo rola DENTRO do container, nunca a pagina.
+
+        `max-content` porque o rotulo em caixa alta nao quebra (quebrar no
+        meio da palavra era o defeito visivel). O scroll fica delimitado.
+        """
+        sem = re.sub(r"/\*.*?\*/", "", self.css, flags=re.S)
+        bloco = sem[sem.index("@media (max-width: 420px)"):]
+        bloco = bloco[:bloco.index("\n}")]
+        self.assertIn(".queue-summary", bloco)
+        self.assertRegex(bloco, r"overflow-x:\s*auto")
+        self.assertRegex(bloco, r"grid-template-columns:\s*repeat\(4,\s*max-content\)")
+        # E o rotulo nao pode voltar a quebrar no meio da palavra. A checagem
+        # roda no CSS SEM COMENTARIOS: o proprio comentario explica o defeito
+        # citando a propriedade, e ler o comentario daria falso positivo.
+        limpo = re.sub(r"/\*.*?\*/", "", self.css, flags=re.S)
+        inicio = limpo.index(".queue-stat-label")
+        self.assertNotIn("overflow-wrap: anywhere", limpo[inicio:inicio + 200])
+
+    def test_a_filter_with_no_items_is_dimmed_but_still_clickable(self):
+        """Apagar um filtro sem itens e visual, nao funcional."""
+        self.assertIn(".queue-filter.is-empty", self.css)
+        self.assertRegex(self.css, r"\.queue-filter\.is-empty\s*\{[^}]*opacity:")
+        self.assertNotIn("pointer-events: none", self.css[self.css.index(".queue-filter.is-empty"):self.css.index(".queue-filter.is-empty") + 120])
+
+    def test_the_list_is_a_live_region(self):
+        """Mudanca de estado e anunciada, sem roubar o foco."""
+        self.assertRegex(self.html, r'id="queue-list"[^>]*aria-live="polite"')
+        # Sem `aria-atomic`: so o trecho que muda e lido, nao a lista toda.
+        self.assertNotIn('aria-live="assertive"', self.html)
+
+    def test_the_touch_target_grows_on_a_coarse_pointer(self):
+        """44px e o minimo da WCAG 2.2 — mas so onde o dedo e o apontador."""
+        self.assertRegex(
+            self.css,
+            r"@media \(pointer: coarse\)\s*\{\s*\.queue-filter\s*\{[^}]*min-height:\s*44px",
+        )
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

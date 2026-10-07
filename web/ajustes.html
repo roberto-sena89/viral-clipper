@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ajustes — Viral Clipper</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&display=swap" rel="stylesheet">
+<!-- A fonte vem de /shared.css (@font-face, auto-hospedada). Nao ha
+     <link> do Google aqui: o CSP do servidor ja e `font-src 'self'`, entao
+     essa requisição era bloqueada em producao e o navegador ainda pagava o
+     preconnect na renderizacao. Mesmo host, zero dependencias externas. -->
 <link rel="stylesheet" href="/shared.css?v=rail-brand-20261001">
 <link rel="stylesheet" href="/index.css?v=abertura-ajustes-20261003">
 </head>
@@ -459,12 +461,7 @@
 
 </main>
 
-<footer>
-  <div class="wrap footer-inner">
-    <span>viral-clipper · interface web · CLI <code>python -m viralclipper</code></span>
-    <span>Whisper · yt-dlp · ffmpeg</span>
-  </div>
-</footer>
+<footer class="site-footer" aria-label="Rodapé do Viral Clipper" data-footer></footer>
 
 <div class="toast-zone" id="toast-zone" aria-live="polite"></div>
 

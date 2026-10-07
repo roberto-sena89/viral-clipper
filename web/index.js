@@ -535,7 +535,14 @@
     const o = {
       url: $('#url').value.trim(),
       output: $('#output').value.trim() || 'output',
-      count: parseInt($('#count').value, 10) || 5,
+      // `0` e o modo AUTOMATICO, e e o mesmo sentinela do motor: `ClipConfig.count`
+// tem default 0, e a CLI le `-n auto` e `-n 0` para o mesmo valor. O `|| 5`
+// que estava aqui transformava o zero em cinco e deixava o modo automatico
+// inalcancavel pela tela — so de digitar "0" num campo com `min="1"`. O que
+// volta ao padrao e o campo VAZIO, nao o zero.
+count: $('#count').value.trim() === ''
+  ? 5
+  : Math.max(0, parseInt($('#count').value, 10) || 0),
       download_mode: $('#download-mode').value,
       cookies_from_browser: $('#cookies-from-browser').value || null,
       cookies_file: $('#cookies-file').value.trim() || null,
@@ -746,8 +753,12 @@
   function refreshRankerTopNHint() {
     const hint = $('#ranker-top-n-hint');
     if (!hint) return;
-    const automatico = (parseInt($('#count').value, 10) || 0) === 0;
-    hint.hidden = !(automatico && toggleOn('#ranker-llm'));
+// Automatico e so quando a pessoa DIGITOU zero. Campo vazio cai no padrao 5
+// no `collectOptions`, e mostrar aqui o aviso de teto do curador seria
+// descrever um estado que o run nao vai usar.
+const bruto = $('#count').value.trim();
+const automatico = bruto !== '' && (parseInt(bruto, 10) || 0) === 0;
+hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   }
 
   async function loadAjustes() {
@@ -1822,7 +1833,7 @@
     state.lastRunOptions = { ...o };
 
     state.running = true;
-    $$('#btn-run, #btn-run-side, #btn-plan').forEach((b) => b.disabled = true);
+    $$('#btn-run-side, #btn-plan, #btn-render').forEach((b) => b.disabled = true);
     setStatus('running', planOnly ? 'Simulando…' : 'Renderizando…');
     startTimer();
     const comando = '$ ' + cliCommand(o);
@@ -1929,7 +1940,7 @@
 
     stopTimer();
     state.running = false;
-    $$('#btn-run, #btn-run-side, #btn-plan').forEach((b) => b.disabled = false);
+    $$('#btn-run-side, #btn-plan, #btn-render').forEach((b) => b.disabled = false);
   }
 
   // ---------- previa do hero (videos reais, quando existem) ----------
@@ -2043,7 +2054,10 @@
   }
 
   // ---------- eventos ----------
-  $('#btn-run').addEventListener('click', () => run(false));
+  // O run de um video tem UM botao: `#btn-run-side`, no card de Execucao, ao
+  // lado de "Simular sem renderizar". O header teve um identico e saiu — duas
+  // primarias com o mesmo rotulo e o mesmo handler, visiveis juntas no topo,
+  // nao davam escolha nenhuma. Quem quiser so simular tambem esta a um clique.
   $('#btn-run-side').addEventListener('click', () => run(false));
   $('#btn-plan').addEventListener('click', () => run(true));
   $('#btn-render').addEventListener('click', () => run(false));
@@ -2084,65 +2098,12 @@
     window.open('/docs', '_blank');
   };
   $('#btn-docs').addEventListener('click', abrirDocs);
-  // O rodape repete os mesmos destinos do rail: quem chega ao fim da pagina
-  // (ou esta no celular, onde o rail virou hamburguer) precisa de uma saida
-  // ali. Os elementos vivem no HTML com id proprio; o JS so liga a acao, para
-  // a lista de rotas continuar num lugar so.
-  const irPara = (rota) => { window.location.href = rota; };
-  const liga = (id, acao) => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('click', acao);
-  };
-  liga('btn-docs-foot', abrirDocs);
-  liga('btn-rail-cortes', () => irPara('/'));
-  liga('btn-rail-scrap', () => irPara('/scrap'));
-  // O comando da CLI vive num <code> que a pessoa teria de selecionar a mao.
-  // O botao copia o TEXTO DO ALVO (nao uma copia da string no JS): duas copias
-  // do mesmo comando divergiriam na primeira edicao, e o `#footer-cli-command`
-  // ja e a fonte que o `aria-describedby` aponta.
-  const cmdEl = document.getElementById('footer-cli-command');
-  const feedbackEl = document.getElementById('footer-feedback');
-  const feedbackTimer = { id: 0 };
-  // O aviso se limpa sozinho depois de um tempo: um texto de "copiado" que
-  // fica para sempre deixa de ser feedback e vira parte do rodape — quem
-  // voltasse a olhar depois nao saberia se a ultima copia deu certo agora ou
-  // cinco minutos atras. O timer e cancelado a cada anuncio para um aviso novo
-  // nao ser apagado pelo do anterior.
-  const anunciar = (texto) => {
-    if (!feedbackEl) return;
-    window.clearTimeout(feedbackTimer.id);
-    feedbackEl.textContent = texto;
-    feedbackTimer.id = window.setTimeout(() => { feedbackEl.textContent = ''; }, 5000);
-  };
-  liga('btn-copy-cli', async (ev) => {
-    if (!cmdEl) return;
-    const botao = ev.currentTarget;
-    const comando = cmdEl.textContent.trim();
-    // `isSecureContext` antes de tentar: em http puro a `navigator.clipboard`
-    // existe mas rejeita, e o aviso generico de erro esconderia o motivo real
-    // ("copie a mao") atras de um "nao foi possivel". O teste e o que escolhe
-    // a mensagem certa, nao o que evita a tentativa.
-    if (!window.isSecureContext || !navigator.clipboard || !navigator.clipboard.writeText) {
-      anunciar('Cópia automática indisponível. Selecione e copie o comando.');
-      return;
-    }
-    // Desabilitar durante a copia impede o clique duplo de disparar duas
-    // escritas concorrentes no clipboard, cujo resultado e indefinido.
-    botao.disabled = true;
-    try {
-      await navigator.clipboard.writeText(comando);
-      anunciar('Comando copiado para a área de transferência.');
-      toast('Comando copiado.', 'ok');
-    } catch (err) {
-      // Clipboard negado (permissao, iframe): o comando continua visivel na
-      // tela, entao falhar em copiar nao e um beco — o aviso diz o que fazer
-      // em vez de so acusar o erro.
-      anunciar('Não foi possível copiar. Selecione e copie o comando.');
-      toast('Não foi possível copiar. Selecione o comando manualmente.', 'err');
-    } finally {
-      botao.disabled = false;
-    }
-  });
+  // O rodape (marca, navegacao, "Como usar" e o copiar da CLI) saiu daqui
+  // para /comum.js. Ele agora vive nas TRES paginas, e um comportamento que so
+  // o index tinha deixaria Ajustes e Biblioteca com um rodape morto. A
+  // navegacao dele e' derivada de RAIL_PAGES, entao este arquivo nao guarda
+  // mais nenhuma copia da lista de rotas -- nem os `liga('btn-rail-*')` que
+  // havia aqui.
   $('#hero-cta').addEventListener('click', () => {
     document.getElementById('config').scrollIntoView({ behavior: 'smooth' });
     setTimeout(() => $('#url').focus(), 500);

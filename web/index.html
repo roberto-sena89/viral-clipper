@@ -56,7 +56,16 @@
         <ul class="rail-menu" id="rail-menu-sm" data-rail-menu data-rail-list hidden></ul>
       </div>
       <button class="btn pressable header-batch" type="button" id="btn-batch" title="Processa uma lista de URLs pela linha de comando"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M7 7h10v10H7" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><span>Lote via CLI</span></button>
-      <button class="btn pressable btn-primary header-run" type="button" id="btn-run"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m10 2 1.6 5.2L17 9l-5.4 1.8L10 16l-1.7-5.2L3 9l5.3-1.8L10 2Z" fill="currentColor"/><path d="m16 13 .8 2.2L19 16l-2.2.8L16 19l-.8-2.2L13 16l2.2-.8L16 13Z" fill="currentColor"/></svg><span class="header-run-full">Gerar cortes</span><span class="header-run-short">Gerar</span></button>
+      <!-- O header NAO tem "Gerar cortes". Havia, e era o mesmo botao do card
+           de Execucao: mesmo rotulo, mesmo handler, os dois `btn-primary` e
+           visiveis ao mesmo tempo logo no topo da pagina. Duas primarias
+           identicas nao dao escolha — dao duvida sobre qual e a de verdade.
+
+           O que ficou aqui e o modo LOTE, que e o outro caminho de entrada
+           (varias URLs pela CLI). O run de um video tem um unico lugar: o card
+           de Execucao, ao lado de "Simular sem renderizar" — porque renderizar
+           e simular sao dois modos do MESMO pipeline, e separar os dois botoes
+           entre o header e o card obrigava a pessoa a cacar o par. -->
     </div>
   </div>
 </header>
@@ -73,7 +82,8 @@
         <span>EDIÇÃO VERTICAL</span>
       </div>
       <h1 id="studio-title">Transforme vídeos longos em cortes prontos.</h1>
-      <p class="lead">Configure a seleção, o enquadramento e as legendas em um só lugar. Revise os resultados antes de publicar.</p>
+      <p class="lead">Só o link é obrigatório; seleção, enquadramento e legendas já vêm com
+        padrão. Você revisa antes de publicar.</p>
       <div class="studio-actions">
         <button class="btn pressable btn-primary" type="button" id="hero-cta">Colar link do vídeo</button>
         <button class="btn pressable" type="button" id="btn-docs">Documentação</button>
@@ -150,7 +160,10 @@
                     </div>
                     <div class="field">
                       <label for="count">Quantidade</label>
-                      <input type="number" id="count" name="count" min="1" max="50" value="5">
+                      <input type="number" id="count" name="count" min="0" max="50" value="5"
+                             aria-describedby="count-hint">
+                      <span class="hint" id="count-hint">0 = automático: o vídeo decide
+                        quantos clips vale a pena gerar.</span>
                     </div>
                     <div class="field">
                       <label for="download-mode">Download</label>
@@ -611,47 +624,7 @@
 
 </main>
 
-<footer class="site-footer" aria-label="Rodapé do Viral Clipper">
-  <div class="footer-container">
-    <div class="footer-main">
-      <a class="footer-brand" href="/" aria-label="Viral Clipper — início">
-        <span class="footer-brand__icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none">
-            <path d="m9 6 9 6-9 6V6Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
-            <path d="M5 5v14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-          </svg>
-        </span>
-        <span class="footer-brand__content">
-          <span class="footer-brand__name">viral-clipper</span>
-          <span class="footer-brand__description">Seu conteúdo. Novas possibilidades.</span>
-        </span>
-      </a>
-      <nav class="footer-nav" aria-label="Navegação do rodapé">
-        <button class="footer-link" type="button" id="btn-docs-foot" data-footer-action="docs">Como usar</button>
-        <button class="footer-link" type="button" id="btn-rail-cortes" data-footer-action="estudio">Estúdio</button>
-        <button class="footer-link" type="button" id="btn-rail-scrap" data-footer-action="biblioteca">Biblioteca</button>
-      </nav>
-    </div>
-    <div class="footer-bottom">
-      <p class="footer-caption">
-        Interface web
-        <span class="footer-caption__separator" aria-hidden="true"></span>
-        Também disponível via CLI
-      </p>
-      <div class="footer-cli">
-        <span class="footer-cli__prompt" aria-hidden="true">$</span>
-        <code id="footer-cli-command">python -m viralclipper</code>
-        <button class="footer-copy" type="button" id="btn-copy-cli" aria-label="Copiar comando da CLI" aria-describedby="footer-cli-command">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <rect x="8" y="8" width="12" height="12" rx="3" stroke="currentColor" stroke-width="1.7" />
-            <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7" />
-          </svg>
-        </button>
-      </div>
-    </div>
-    <p class="footer-feedback" id="footer-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
-  </div>
-</footer>
+<footer class="site-footer" aria-label="Rodapé do Viral Clipper" data-footer></footer>
 
 <div class="toast-zone" id="toast-zone" aria-live="polite"></div>
 

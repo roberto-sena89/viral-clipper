@@ -259,7 +259,7 @@ body { padding-left: var(--rail-w); }
 }
 .card h2 .ico {
   width: 26px; height: 26px; border-radius: 6px;
-  background: rgba(99, 102, 241, 0.14); color: var(--accent-soft);
+  background: rgba(255, 79, 174, 0.14); color: var(--accent-soft);
   display: grid; place-items: center; font-size: 0.9rem;
 }
 .section-title {
@@ -339,7 +339,7 @@ body { padding-left: var(--rail-w); }
 }
 .cue-stats {
   padding: 10px 14px; font-size: 0.78rem; color: var(--text-secondary);
-  border-bottom: 1px solid var(--border-subtle); background: rgba(99, 102, 241, 0.06);
+  border-bottom: 1px solid var(--border-subtle); background: rgba(255, 79, 174, 0.06);
 }
 .cue-table-wrap { max-height: 320px; overflow-y: auto; overflow-x: auto; }
 .cue-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
@@ -379,7 +379,7 @@ body { padding-left: var(--rail-w); }
   background: rgba(52, 211, 153, 0.12); color: var(--success);
   border: 1px solid rgba(52, 211, 153, 0.3);
 }
-.viral-potential.mid { background: rgba(251, 191, 36, 0.12); color: var(--accent-warm); border-color: rgba(251, 191, 36, 0.3); }
+.viral-potential.mid { background: rgba(251, 191, 36, 0.12); color: var(--warn); border-color: rgba(251, 191, 36, 0.3); }
 .viral-potential.low { background: rgba(248, 113, 113, 0.12); color: var(--danger); border-color: rgba(248, 113, 113, 0.3); }
 .viral-field { margin: 6px 0; font-size: 0.86rem; color: var(--text-secondary); }
 .viral-field strong { color: var(--text-primary); font-weight: 600; }
@@ -451,7 +451,7 @@ body { padding-left: var(--rail-w); }
 .select-option:hover, .select-option:focus-visible { background: rgba(255, 255, 255, 0.06); outline: none; }
 .select-option .opt-title { font-size: 0.88rem; font-weight: 600; }
 .select-option .opt-desc { font-size: 0.75rem; color: var(--text-secondary); }
-.select-option.selected { background: rgba(99, 102, 241, 0.14); }
+.select-option.selected { background: rgba(255, 79, 174, 0.14); }
 .select-option.selected .opt-title { color: var(--accent-soft); }
 .select-option.selected::after {
   content: "✓"; position: absolute; right: 12px; top: 50%;
@@ -615,7 +615,7 @@ body { padding-left: var(--rail-w); }
   font-size: 0.65rem; font-weight: 700; font-variant-numeric: tabular-nums;
   background: rgba(255, 255, 255, 0.09); color: var(--text-secondary);
 }
-.queue-filter[aria-pressed="true"] .queue-filter-count { background: rgba(99, 102, 241, 0.28); color: #d7cbff; }
+.queue-filter[aria-pressed="true"] .queue-filter-count { background: rgba(255, 79, 174, 0.28); color: #ffd6ec; }
 .queue-filter:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
 /* Um filtro sem itens fica apagado mas CONTINUA clicavel: o usuario precisa
    poder voltar para "Todos" sem cacar o botao. */
@@ -828,11 +828,11 @@ body { padding-left: var(--rail-w); }
 /* corte apenas analisado (plan-only): existe na lista, não existe no disco */
 .clip-item.analysis-only { border-style: dashed; }
 .clip-item.analysis-only .overlay {
-  background: linear-gradient(180deg, rgba(99, 102, 241, 0.12), rgba(0, 0, 0, 0.6));
+  background: linear-gradient(180deg, rgba(255, 79, 174, 0.12), rgba(0, 0, 0, 0.6));
 }
 .clip-item.analysis-only .play-hint { opacity: 0.5; font-size: 1.35rem; }
 .clip-meta .pending {
-  color: var(--accent-warm); font-size: 0.62rem; letter-spacing: 0.02em;
+  color: var(--warn); font-size: 0.62rem; letter-spacing: 0.02em;
 }
 
 /* ---------- GALERIA: BARRA DE BUSCA + CONTAGEM + VAZIO ----------
@@ -944,264 +944,6 @@ body { padding-left: var(--rail-w); }
 }
 .quality-fix:hover { background: var(--accent-primary); color: white; }
 
-/* ---------- FOOTER ----------
-   O rodape deixou de ser uma linha de texto: agora tem marca, navegacao e o
-   atalho da CLI.
-
-   Os seletores sao todos `.site-footer .algo` de proposito: o rodape tem
-   nomes genericos (`.footer-link`, `.footer-nav`) e um `footer-link` solto
-   pegaria qualquer outro elemento da pagina com a mesma classe vestindo a
-   regra do rodape. O escopo por ancestral e o que impede o rodape de mexer no
-   resto da tela.
-
-   As cores vem dos tokens do painel (`--*`). A referencia trazia uma paleta
-   propria (`--footer-bg: #0b1120` e um brilho indigo), o que daria ao rodape
-   um bloco de cor diferente do resto da pagina — a mesma divergencia que a
-   galeria ja teve. Os nomes `--footer-*` ficam como apelidos dos tokens, para
-   quem le o CSS da referencia achar as variaveis citadas. */
-.site-footer {
-  --footer-bg: var(--bg-deep, #0b0d12);
-  --footer-text: var(--text-primary);
-  --footer-muted: var(--text-muted);
-  --footer-accent: var(--accent-soft);
-  --footer-border: var(--border-subtle);
-
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  margin-top: 4rem;
-  color: var(--footer-text);
-  background: var(--footer-bg);
-  border-top: 1px solid var(--footer-border);
-  font-size: 0.82rem;
-}
-
-.site-footer,
-.site-footer * { box-sizing: border-box; }
-
-/* O fio de luz no topo. `pointer-events: none` porque ele cobre a faixa
-   superior do rodape e nao pode roubar o clique de quem passa por baixo. */
-.site-footer::before {
-  content: "";
-  position: absolute;
-  inset: 0 15% auto;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--footer-accent), transparent);
-  opacity: 0.7;
-  pointer-events: none;
-}
-
-.site-footer .footer-container {
-  width: min(100% - 3rem, 1120px);
-  margin-inline: auto;
-  padding-block: 2.5rem 1rem;
-}
-
-.site-footer .footer-main,
-.site-footer .footer-bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1.5rem;
-}
-
-.site-footer .footer-main { padding-bottom: 2rem; }
-
-.site-footer .footer-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.875rem;
-  min-width: 0;
-  color: inherit;
-  text-decoration: none;
-  border-radius: 0.75rem;
-}
-
-.site-footer .footer-brand__icon {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 48px;
-  height: 48px;
-  color: var(--footer-accent);
-  background: rgba(99, 102, 241, 0.1);
-  border: 1px solid rgba(165, 180, 252, 0.22);
-  border-radius: 14px;
-}
-.site-footer .footer-brand__icon svg { width: 26px; height: 26px; }
-
-.site-footer .footer-brand__content { display: grid; gap: 0.3rem; }
-.site-footer .footer-brand__name {
-  font-size: 1.125rem;
-  font-weight: 750;
-  letter-spacing: -0.035em;
-}
-.site-footer .footer-brand__description {
-  color: var(--footer-muted);
-  font-size: 0.8125rem;
-  line-height: 1.5;
-}
-
-.site-footer .footer-nav {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-/* `min-height: 44px` nos destinos. Nao e estetica: o alvo de toque minimo do
-   WCAG 2.5.8 e 44px, e o rodape e justamente onde se clica com o polegar. */
-.site-footer .footer-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 0.625rem 0.875rem;
-  color: var(--footer-muted);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 0.75rem;
-  font: inherit;
-  font-size: 0.875rem;
-  font-weight: 550;
-  cursor: pointer;
-  transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease;
-}
-.site-footer .footer-link:hover {
-  color: var(--footer-text);
-  background: rgba(148, 163, 184, 0.08);
-  border-color: var(--footer-border);
-}
-.site-footer .footer-link:active { background: rgba(148, 163, 184, 0.14); }
-
-.site-footer .footer-bottom {
-  flex-wrap: wrap;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--footer-border);
-}
-
-.site-footer .footer-caption {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.625rem;
-  margin: 0;
-  color: var(--footer-muted);
-  font-size: 0.75rem;
-  line-height: 1.6;
-}
-
-/* O separador e um ponto decorativo: era um `·` no meio do texto e ficava no
-   fluxo do leitor de tela. Como elemento `aria-hidden` com a propria forma,
-   ele aparece sem virar palavra. */
-.site-footer .footer-caption__separator {
-  width: 3px;
-  height: 3px;
-  background: currentColor;
-  border-radius: 50%;
-}
-
-.site-footer .footer-cli {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  max-width: 100%;
-  padding: 0.25rem 0.25rem 0.25rem 0.875rem;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid var(--footer-border);
-  border-radius: 0.75rem;
-}
-.site-footer .footer-cli__prompt {
-  color: var(--footer-accent);
-  font-family: ui-monospace, monospace;
-}
-.site-footer .footer-cli code {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--footer-text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.75rem;
-}
-
-.site-footer .footer-copy {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  color: var(--footer-muted);
-  background: transparent;
-  border: 0;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  transition: color 180ms ease, background-color 180ms ease;
-}
-.site-footer .footer-copy:hover {
-  color: var(--footer-accent);
-  background: rgba(165, 180, 252, 0.1);
-}
-.site-footer .footer-copy svg { width: 18px; height: 18px; }
-/* O botao fica desabilitado durante a copia (o JS faz isso): sem esta regra
-   ele pareceria clicavel enquanto esta fora do ar. */
-.site-footer .footer-copy:disabled { opacity: 0.6; cursor: progress; }
-
-.site-footer .footer-brand:focus-visible,
-.site-footer .footer-link:focus-visible,
-.site-footer .footer-copy:focus-visible {
-  outline: 2px solid var(--footer-accent);
-  outline-offset: 4px;
-}
-
-/* `min-height` reserva a linha do aviso mesmo vazia: e o que impede o rodape
-   de pular quando o texto aparece. Antes isso era resolvido com
-   `:empty { display: none }`, que tirava o anuncio do fluxo — o `min-height`
-   resolve o mesmo problema sem esconder a regiao viva. */
-.site-footer .footer-feedback {
-  min-height: 1.5em;
-  margin: 0.75rem 0 0;
-  color: var(--footer-muted);
-  font-size: 0.75rem;
-  line-height: 1.5;
-  text-align: right;
-}
-
-@media (max-width: 640px) {
-  .site-footer .footer-container {
-    width: calc(100% - 2rem);
-    padding-top: 2rem;
-  }
-  .site-footer .footer-main,
-  .site-footer .footer-bottom {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .site-footer .footer-main { gap: 1.25rem; padding-bottom: 1.5rem; }
-  .site-footer .footer-nav { width: 100%; }
-  .site-footer .footer-link {
-    flex: 1 1 auto;
-    background: rgba(148, 163, 184, 0.04);
-    border-color: var(--footer-border);
-  }
-  .site-footer .footer-feedback { text-align: left; }
-}
-
-/* `prefers-reduced-motion` NO FIM do bloco, e com o seletor do proprio
-   elemento — nao `.site-footer *`.
-   O `.site-footer *` da referencia TEM especificidade (0,1,0), e
-   `.site-footer .footer-link` tem (0,2,0): pela cascata, a regra base vence a
-   do media query e a transicao de 180ms continuava correndo com o sistema
-   pedindo movimento reduzido. Medido no navegador: `transitionDuration`
-   seguia "0.18s". Repetir os seletores reais empata a especificidade e a
-   regra de acessibilidade passa a valer. */
-@media (prefers-reduced-motion: reduce) {
-  .site-footer .footer-link,
-  .site-footer .footer-copy {
-    transition: none;
-    animation: none;
-  }
-}
-
 /* ---------- TOAST ---------- */
 .toast-zone {
   position: fixed; bottom: 20px; right: 20px; z-index: 100;
@@ -1308,29 +1050,17 @@ body { padding-left: var(--rail-w); }
 
 /* ---------- STUDIO WORKSPACE ----------
    Direção local: ferramenta de edição, não landing page. Superfícies sólidas
-   e compactas deixam fonte, fila e execução visíveis antes da rolagem. */
-:root {
-  --bg-deep: #090b10;
-  --bg-surface: #11151e;
-  --bg-card: #131923;
-  --border-subtle: rgba(218, 226, 243, 0.09);
-  --border-strong: rgba(218, 226, 243, 0.16);
-  --accent-primary: #ff4fae;
-  --accent-glow: rgba(255, 79, 174, 0.22);
-  --accent-soft: #ff8bc8;
-  --accent-warm: #70c9ee;
-  --success: #54d6a6;
-  --danger: #ff7184;
-  --shell-bg: #0d1118;
-  --shell-surface: #11151e;
-  --shell-border: rgba(218, 226, 243, 0.09);
-  --active-tint: rgba(255, 79, 174, 0.11);
-  --well-bg: #0a0d13;
-  --text-ink: #f4f6fb;
-  --text-ink-muted: #b2bac9;
-  --text-ink-subtle: #929bad;
-  --motion-fast: 160ms;
-}
+   e compactas deixam fonte, fila e execução visíveis antes da rolagem.
+
+   A paleta saiu daqui. Este bloco era a SEGUNDA definição de --accent-primary
+   e --bg-deep: o /shared.css carregava a paleta base (índigo #6366f1) e este
+   :root a sobrescrevia com a do painel (magenta #ff4fae). Como só o index e o
+   ajustes carregam este arquivo, a Biblioteca — que usa o scrap.css — ficava
+   índigo enquanto as outras duas ficavam magenta.
+
+   Os tokens agora vivem no /shared.css, o único lugar onde a cor da aplicação
+   é decidida. Um :root aqui voltaria a ser duas verdades, e a da página
+   manda. */
 
 body {
   background-color: var(--bg-deep);
@@ -1949,8 +1679,6 @@ main > section > .card { padding: 17px; }
 .gallery { gap: 13px; }
 .clip-item { border-radius: 11px; background: #141a24; }
 
-footer { margin-top: 38px; border-top-color: var(--border-subtle); }
-
 @media (max-width: 1160px) {
   .studio-welcome { grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr); }
   /* A grade do corpo continua 2x2; so o gap aperta. Trocar as COLUNAS aqui
@@ -1981,7 +1709,6 @@ footer { margin-top: 38px; border-top-color: var(--border-subtle); }
   .studio-overline { font-size: 0.62rem; }
   .local-indicator { font-size: 0.55rem; }
   .studio-output-spec small { display: block; margin: 1px 0 0; text-align: right; }
-  .nav-actions #btn-run { max-width: 122px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -2015,10 +1742,7 @@ footer { margin-top: 38px; border-top-color: var(--border-subtle); }
 header .nav-actions { flex: 0 0 auto; gap: 9px; }
 header .nav-actions .btn { min-height: 42px; }
 .header-batch { gap: 8px; padding-inline: 13px; color: #d1d7e2; }
-.header-batch svg, .header-run svg { flex: 0 0 17px; width: 17px; height: 17px; }
-.header-run { gap: 9px; padding-inline: 16px; font-weight: 650; }
-.header-run-full { display: inline; }
-.header-run-short { display: none; }
+.header-batch svg { flex: 0 0 17px; width: 17px; height: 17px; }
 .rail-dropdown .menu-btn { min-width: 42px; min-height: 42px; justify-content: center; padding: 0 10px; }
 .rail-dropdown .mb-bars { display: grid; width: 19px; height: 19px; place-items: center; }
 .rail-dropdown .mb-bars svg { display: block; width: 19px; height: 19px; }
@@ -2040,17 +1764,12 @@ header .nav-actions .btn { min-height: 42px; }
   header .nav-actions { gap: 7px; }
   header .nav-actions #btn-batch { display: none; }
   header .nav-actions .btn { min-height: 42px; }
-  .header-run { min-width: 88px; justify-content: center; padding-inline: 11px; }
 }
 @media (max-width: 420px) {
   .header-inner > .header-context { min-width: 0; }
   .header-context-copy { gap: 0; }
   .header-context-long { display: none; }
   .header-context-short { display: inline !important; padding: 0 !important; color: var(--text-primary) !important; }
-  .header-run { min-width: 76px; max-width: none !important; gap: 7px; padding-inline: 10px; overflow: visible; }
-  header .nav-actions #btn-run { overflow: visible; text-overflow: clip; }
-  .header-run-full { display: none; }
-  .header-run-short { display: inline; }
 }
 
 /* Painel de execução: status primeiro, etapa atual em seguida, diagnóstico por último.
@@ -2393,6 +2112,3 @@ header .nav-actions .btn { min-height: 42px; }
 @media (prefers-reduced-motion: reduce) {
   .clips-search-clear, .clip-play-btn { transition: none; }
 }
-
-
-

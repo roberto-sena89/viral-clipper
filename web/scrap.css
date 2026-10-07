@@ -224,7 +224,7 @@ input::placeholder { color: var(--text-muted); }
 /* sessionid colado sem o arquivo: tem credencial, mas falta o `csrftoken` que
    o jar carrega. Nao e "pronto" (verde) nem "sem sessao" (cinza). */
 .auth-status[data-state="session"] {
-  color: var(--accent-warm); border-color: rgba(251, 191, 36, 0.45); background: rgba(251, 191, 36, 0.08);
+  color: var(--warn); border-color: rgba(251, 191, 36, 0.45); background: rgba(251, 191, 36, 0.08);
 }
 .auth-grid {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 12px; min-width: 0;
@@ -243,7 +243,7 @@ input::placeholder { color: var(--text-muted); }
 .auth-tag {
   font-size: var(--text-2xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
   white-space: nowrap; line-height: 1.6;
-  color: var(--accent-warm); background: rgba(251, 191, 36, 0.10);
+  color: var(--warn); background: rgba(251, 191, 36, 0.10);
   border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 999px; padding: 1px 9px;
   flex: none; align-self: flex-start;
 }
@@ -287,7 +287,7 @@ input::placeholder { color: var(--text-muted); }
   padding: 0 12px; min-height: 40px;
   display: inline-flex; align-items: center; gap: 6px;
 }
-.auth-icon-btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.10); }
+.auth-icon-btn:hover { border-color: var(--accent-primary); background: rgba(255, 79, 174, 0.10); }
 .auth-icon-btn--ghost { color: var(--text-muted); }
 .auth-note { font-size: var(--text-caption); color: var(--text-muted); margin: 0; line-height: var(--text-caption-lh); }
 .auth-note code, .auth-note kbd {
@@ -566,7 +566,7 @@ input::placeholder { color: var(--text-muted); }
 .arq-card[data-status="doing"] .arq-card-st::before { background: var(--accent-soft); box-shadow: 0 0 8px var(--accent-glow); }
 .arq-card[data-status="done"] .arq-card-st { color: var(--success); }
 .arq-card[data-status="done"] .arq-card-st::before { background: var(--success); }
-.arq-card[data-status="skipped"] .arq-card-st::before { background: var(--accent-warm); }
+.arq-card[data-status="skipped"] .arq-card-st::before { background: var(--warn); }
 .arq-card[data-status="photo"] { opacity: 0.72; }
 .arq-card[data-status="failed"] { border-color: rgba(248, 113, 113, 0.45); }
 .arq-card[data-status="failed"] .arq-card-st { color: var(--danger); }
@@ -604,7 +604,7 @@ input::placeholder { color: var(--text-muted); }
 .arq-log-line .ln-prefix { opacity: 0.55; margin-right: 6px; }
 .arq-log-line.ln-err { color: var(--danger); }
 .arq-log-line.ln-ok { color: var(--success); }
-.arq-log-line.ln-warn { color: var(--accent-warm); }
+.arq-log-line.ln-warn { color: var(--warn); }
 .arq-log-line.ln-sys { color: var(--accent-soft); }
 .arq-log-line.ln-step { color: var(--text-primary); }
 .arq-log-empty { color: var(--text-muted); padding: 8px 12px; font-style: italic; }
@@ -842,11 +842,6 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
 }
 .card h2 .ico { color: var(--accent-soft); }
 .card-sub { color: var(--text-muted); font-size: var(--text-caption); margin-bottom: 16px; }
-
-footer {
-  border-top: 1px solid var(--border-subtle);
-  padding: 26px 0 40px; color: var(--text-muted); font-size: var(--text-caption);
-}
 
 /* ---------- Scrap workspace redesign ---------- */
 .scrap-welcome {
@@ -1132,4 +1127,3 @@ header .nav-actions .btn { min-height: 42px; }
   .scrap-cta-long { display: none; }
   .scrap-cta-short { display: inline; }
 }
-

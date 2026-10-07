@@ -2456,12 +2456,33 @@ class FieldDescriptionTests(unittest.TestCase):
                             nomeado.group(1), desc.group(1),
                             f"{pagina}: <{tag}> usa o MESMO id para o nome e "
                             "para a descrição — o rótulo do campo sairia de cena")
-                # E o `sr-only` do scrap: o campo de URL é lido pelo label
-                # escondido, e a dica entra DEPOIS dele. Sem o rótulo, o
-                # controle leria só a dica.
-                self.assertIn(
-                    '<label class="sr-only" for="scrap-url">', self.body("scrap.html"),
-                    "o campo de URL do scrap perdeu o rotulo sr-only")
+                # E o rotulo do campo de URL do scrap, com a dica DEPOIS dele.
+
+        # A checagem mora aqui FORA do laco das paginas: ela e do scrap.html, e
+        # dentro do laco ela reprovava o index.html tambem, por uma string que
+        # nunca esteve no arquivo dele.
+
+        # O rotulo deixou de ser `sr-only` e passou a ser VISIVEL ("Link do
+        # video ou perfil"). Nao e perda: rotulo visivel serve a quem ve e a
+        # quem usa leitor de tela, enquanto `sr-only` so servia ao segundo. O
+        # principio do docstring continua inteiro e e o que se verifica aqui: o
+        # controle tem NOME proprio, e a dica (#scrap-hint) entra DEPOIS dele
+        # em vez de no lugar dele. Por isso o teste aceita as duas formas e
+        # exige, nas duas, que o rotulo carregue texto.
+        scrap = self.body("scrap.html")
+        rotulo = re.search(
+            r'<label[^>]*\bfor="scrap-url"[^>]*>(.*?)</label>', scrap, re.S)
+        self.assertIsNotNone(
+            rotulo,
+            "o campo de URL do scrap perdeu o rotulo: sem ele o controle chega "
+            "ao leitor de tela nomeado so pela dica")
+        self.assertTrue(
+            re.sub(r"<[^>]+>", "", rotulo.group(1)).strip(),
+            "o rotulo do campo de URL do scrap esta vazio — um rotulo sem "
+            "texto nao nomeia nada, visivel ou escondido")
+        self.assertNotEqual(
+            rotulo.group(1).strip(), "",
+            "o rotulo virou um placeholder: precisa dizer o que o campo e")
 
     def test_the_descriptions_are_the_real_hints(self):
         """A referência aponta para a dica, e a dica não é outro campo.
@@ -2484,10 +2505,17 @@ class FieldDescriptionTests(unittest.TestCase):
         prefixo reprovaria os dois, e era o teste errado, não o HTML.
         """
         # As classes que SAO dica de campo. Um <p class="card-sub"> no topo de
-        # um card explica a secao inteira, e nao descreve um controle:
+        # uma secao explica a secao inteira, e nao descreve um controle:
         # referencia-lo seria errado, nao apenas inutil.
+        #
+        # O `[^"]*` antes do id aceita CLASSES EXTRAS depois da dica. A forma
+        # anterior exigia `class="hint"` com aspas logo depois, entao um
+        # `class="hint field-note"` ou `class="field-hint tool-note"` nao era
+        # reconhecido -- e o elemento ERA uma dica legitima, so que com uma
+        # classe a mais. Um teste que reprova a grafia correta deixa de
+        # comparar e passa a caçar estilo.
         dica = re.compile(
-            r'class="(?:hint|auth-note|field-hint)"[^>]*\bid="([\w-]+)"')
+            r'class="(?:hint|auth-note|field-hint)(?:\s[^"]*)?"[^>]*\bid="([\w-]+)"')
         for pagina in self.PAGES:
             markup = self.body(pagina)
             ids_de_campo = set(re.findall(
@@ -2768,14 +2796,18 @@ class RailNavigationTests(unittest.TestCase):
         self.assertEqual(home[0].get("title"), "Est\u00fadio",
                          "a raiz do rail voltou a se chamar de outro nome")
 
-        # O rotulo do rodape que leva a raiz tem de dizer o mesmo nome.
+        # O rotulo do rodape que leva a raiz nao pode divergir. Ele nao mora
+        # mais no HTML: o rodape e' montado por comum.js e a navegacao dele
+        # deriva do MESMO RAIL_PAGES, entao o nome sai daqui por construcao.
+        # Antes havia um `<button id="btn-rail-cortes">Cortes</button>` escrito
+        # a mao no HTML -- era uma segunda copia do nome, e foi ela que divergiu.
+        comum = (server.WEB_DIR / "comum.js").read_text(encoding="utf-8")
+        ini = comum.index("function footerNavHtml(")
+        nav = comum[ini:comum.index("function footerHtml(")]
+        self.assertIn("esc(page.title)", nav)
+        self.assertNotIn(">Cortes<", nav)
+
         index = self.markup("index.html")
-        button = re.search(
-            r'<button[^>]*id="btn-rail-cortes"[^>]*>([^<]*)</button>', index, re.S
-        )
-        self.assertIsNotNone(button, "o botao do rodape que leva a / sumiu")
-        self.assertEqual(button.group(1).strip(), "Est\u00fadio",
-                         "o botao do rodape discorda do nome do rail")
 
         # O "Cortes" que sobrar na interface tem de ser o RESULTADO, nunca um
         # destino. O header da raiz e' o caso que ja divergiu uma vez.
@@ -3370,16 +3402,20 @@ class FirstVisitTests(unittest.TestCase):
         """O rodape oferece os mesmos destinos do rail.
 
         Era o unico lugar da pagina sem saida. Importa sobretudo no celular,
-        onde o rail vira um hamburguer e o Scrap fica a dois toques.
+        onde o rail vira um hamburguer e a Biblioteca fica a dois toques.
+
+        O rodape passou a ser montado por /comum.js e a estar nas TRES paginas.
+        A navegacao dele DERIVA de RAIL_PAGES, entao os destinos do rodape nao
+        podem mais divergir dos do rail -- era justamente o que os tres ids
+        escritos a mao no HTML permitiam.
         """
         html = self.html()
-        self.assertIn('class="footer-nav"', html)
-        for alvo in ("btn-docs-foot", "btn-rail-cortes", "btn-rail-scrap"):
-            with self.subTest(alvo=alvo):
-                self.assertIn(f'id="{alvo}"', html)
-        js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
-        self.assertIn("liga('btn-rail-scrap'", js)
-        self.assertIn("liga('btn-docs-foot'", js)
+        self.assertIn('class="site-footer"', html)
+        self.assertIn("data-footer", html)
+        comum = (server.WEB_DIR / "comum.js").read_text(encoding="utf-8")
+        self.assertIn('class="footer-nav"', comum)
+        self.assertIn("RAIL_PAGES.map(", comum)
+        self.assertIn('data-footer-action="docs"', comum)
 
     def test_the_headline_comes_before_the_decorative_video_on_mobile(self):
         """No celular o H1 vem primeiro, e nao os videos decorativos.
@@ -3437,10 +3473,18 @@ class FrontendPolishTests(unittest.TestCase):
     """
 
     def test_pages_do_not_call_google_fonts(self):
-        for name in ("index.html", "scrap.html"):
+        # A lista incluye as TRÊS páginas. Faltava a ajustes.html, e era por
+        # isso que ela ainda carregava <link> do Google: o teste passava sem
+        # olhar para ela. Sobrava um preconnect no <head> que o proprio CSP
+        # (`font-src 'self'`) bloqueia em produção — ou seja, o custo era pago
+        # e o resultado nunca chegava.
+        for name in ("index.html", "scrap.html", "ajustes.html"):
             html = (server.WEB_DIR / name).read_text(encoding="utf-8")
             self.assertNotIn("fonts.googleapis.com", html)
             self.assertNotIn("fonts.gstatic.com", html)
+            # E nenhuma pagina pode reescrever a familia: a @font-face do
+            # compartilhado e a unica fonte de verdade da interface.
+            self.assertNotIn("fonts.googleapis", html)
         css = (server.WEB_DIR / "shared.css").read_text(encoding="utf-8")
         self.assertIn("@font-face", css, "a fonte deixou de ser self-hosted")
         self.assertIn("/fonts/inter-latin.woff2", css)
@@ -3536,7 +3580,20 @@ class BackendReadinessTests(unittest.TestCase):
         """
         html = self.html()
         self.assertIn('id="backend-state"', html)
-        self.assertIn('class="backend-note" id="backend-state" hidden', html)
+        # O `hidden` e procurado DENTRO da tag, e nao como substring da linha
+        # toda. A forma anterior exigia a sequencia exata
+        # `class="backend-note" id="backend-state" hidden`, o que reprovava o
+        # elemento por causa da ORDEM dos atributos — e ordem de atributo nao
+        # significa nada em HTML. O elemento real tem `role` e `aria-live`
+        # entre o id e o `hidden`, que e a forma correta de uma regiao viva que
+        # comeca escondida. O que o teste quer garantir e que ela nasca oculta.
+        tag = re.search(r'<p class="backend-note"[^>]*\bid="backend-state"[^>]*>', html)
+        self.assertIsNotNone(tag, "a nota de backend nao existe")
+        self.assertIn(
+            "hidden", tag.group(0),
+            "a nota de backend precisa nascer OCULTA: numa pagina funcionando "
+            "o painel nao pode carregar uma linha de aviso a toa, senao um aviso "
+            "que sempre aparece deixa de informar")
         pino = html.index('id="backend-state"')
         self.assertLess(html.index('id="status-pill"'), pino)
         self.assertLess(pino, html.index('id="progress-track"'))
@@ -5438,17 +5495,41 @@ class GallerySearchTests(unittest.TestCase):
         self.assertIn("var(--text-primary)", bloco)
         self.assertIn("var(--border-subtle)", bloco)
 
-    def test_the_panel_tokens_are_the_dark_ones(self):
-        """Prova que o painel reescreve o `:root` claro do shared.css.
+    def test_the_panel_palette_lives_in_the_shared_sheet(self):
+        """A paleta da aplicacao esta no /shared.css, e nowhere mais.
 
-        Se o shared.css fosse a ultima palavra, `--bg-deep` seria #0b0d12 e
-        `--accent-primary` #6366f1 (indigo); o painel sobrescreve com #090b10 e
-        #ff4fae (magenta). A secao herda o segundo par.
+        Este teste ANTES afirmava o contrario: que o `:root` do index.css
+        reescrevia a paleta do compartilhado (`#090b10` + `#ff4fae`). Ele
+        contradizia o `test_no_token_definition_stayed_behind_in_the_pages`, que
+        proibe `--accent-primary` e `--bg-deep` no css da pagina -- os dois
+        olhavam o mesmo unico bloco `:root` do index.css e um dos dois tinha de
+        falhar sempre.
+
+        A contradicao era o defeito, nao o contrato. Havia duas paletas de verdade:
+        o compartilhado carregava a base indigo (#6366f1) e o index a sobrescrevia
+        com a do painel (magenta). Como so o index e o ajustes carregam o
+        index.css, a Biblioteca ficava indigo enquanto as outras duas ficavam
+        magenta -- tres paginas, dois produtos.
+
+        Agora a paleta e unica e mora no compartilhado, e este teste fecha a porta
+        para a duplicata voltar.
         """
-        ini = self.css.index(":root {")
-        bloco = self.css[ini:ini + 900]
-        self.assertIn("#090b10", bloco)
-        self.assertIn("#ff4fae", bloco)
+        # O index.css nao pode mais ter um bloco `:root {` de verdade. A busca e
+        # por `:root {` e nao pela palavra solta porque os COMENTARIOS do arquivo
+        # citam `:root` ao explicar por que ele saiu -- e um `assertNotIn(":root")`
+        # reprovaria o proprio texto que documenta a regra.
+        self.assertIsNone(
+            re.search(r":root\s*\{", self.css),
+            "o index.css voltou a definir :root -- a paleta da aplicacao vive no "
+            "/shared.css; duas verdades, e a da pagina manda")
+        # E o valor certo precisa estar no compartilhado, nas tres paginas.
+        compartilhado = (server.WEB_DIR / "shared.css").read_text(encoding="utf-8")
+        for cor in ("#090b10", "#ff4fae"):
+            with self.subTest(cor=cor):
+                self.assertIn(
+                    cor, compartilhado,
+                    f"{cor} sumiu do /shared.css: a galeria perderia a paleta "
+                    "do painel sem nenhuma falha de sintaxe acusar")
 
     def test_the_reference_palette_is_shimmed_to_the_panel(self):
         """Se a referencia voltar com o <style>, ela nao pinta claro.
@@ -5757,92 +5838,161 @@ class GalleryOpenLibraryEventTests(unittest.TestCase):
 class FooterRedesignTests(unittest.TestCase):
     """O rodape novo: marca, navegacao, atalho da CLI e o copiar.
 
-    A referencia trazia um rodape com estrutura propria (`.site-footer`,
-    `footer-container`, marca com icone, bloco de CLI). O que os testes travam:
+    O rodape deixou de ser markup estatico do index.html: ele e' montado por
+    `renderFooter()` em comum.js -- como o rail -- e vive nas TRES paginas.
 
-    * a estrutura nova existe e os TRES destinos antigos sobreviveram — o
-      rodape continua sendo a saida para quem chega ao fim da pagina;
-    * as cores vem dos tokens do painel, e nao de uma paleta propria: um
-      rodape claro sobre painel escuro e a mesma falha que a galeria ja teve;
+    O motivo e' o mesmo que fez o rail subir para comum.js: a navegacao do
+    rodape era uma SEGUNDA copia das rotas, escrita a mao no HTML
+    (`btn-rail-cortes` -> `/`, `btn-rail-scrap` -> `/scrap`). Duas listas da
+    mesma coisa divergem -- o rail ja chegou a ter tres nomes para o mesmo
+    destino. Agora o rodape deriva de RAIL_PAGES.
+
+    O que os testes travam:
+
+    * o rodape esta nas tres paginas (era o que faltava: so o index o tinha,
+      e como ele era a unica entrada para `/docs`, a ajuda ficava
+      inalcancavel de Ajustes e Biblioteca);
+    * a estrutura nova existe e os destinos sobreviveram -- o rodape continua
+      sendo a saida de quem chega ao fim da pagina;
+    * as cores vem dos tokens do painel, e nao de uma paleta propria;
     * o botao de copiar copia o TEXTO DO ALVO e anuncia numa regiao viva, em
-      vez de guardar uma copia da string no JS — duas copias do mesmo comando
-      divergem na primeira edicao.
+      vez de guardar uma copia da string no JS.
     """
+
+    PAGES = ("index.html", "ajustes.html", "scrap.html")
 
     @classmethod
     def setUpClass(cls):
-        cls.html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
-        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
-        cls.css = (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
+        # O markup E o comportamento moram em comum.js; o estilo, em
+        # shared.css (o rodape esta nas tres paginas, entao o css nao pode
+        # ficar no css de uma delas).
+        cls.comum = (server.WEB_DIR / "comum.js").read_text(encoding="utf-8")
+        cls.css = (server.WEB_DIR / "shared.css").read_text(encoding="utf-8")
+        cls.index_js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+
+    def test_every_page_carries_the_footer(self):
+        """As TRES paginas tem o rodape -- e era isso que faltava.
+
+        Enquanto o rodape so existia no index, `/docs` (a unica ajuda do
+        produto) ficava inalcancavel de Ajustes e Biblioteca: o rodape era a
+        unica entrada para ele.
+        """
+        for name in self.PAGES:
+            body = (server.WEB_DIR / name).read_text(encoding="utf-8")
+            with self.subTest(page=name):
+                self.assertRegex(body, r'<footer[^>]*class="site-footer"')
+                self.assertRegex(body, r'<footer[^>]*aria-label=')
+                self.assertIn("data-footer", body)
 
     def test_the_new_structure_is_in_place(self):
         """Os blocos da referencia existem, com os nomes que o CSS espera."""
-        for marca in ("site-footer", "footer-container", "footer-main",
+        # `site-footer` NAO entra nesta lista: ele e' a classe do proprio
+        # `<footer>`, que fica no HTML de cada pagina (coberto por
+        # test_every_page_carries_the_footer). O template de comum.js cria o
+        # CONTEUDO do rodape, nao o elemento.
+        for marca in ("footer-container", "footer-main",
                       "footer-brand", "footer-brand__icon", "footer-brand__name",
                       "footer-bottom", "footer-caption", "footer-cli", "footer-copy"):
             with self.subTest(classe=marca):
-                self.assertIn(marca, self.html)
-        # O rodape tem nome acessivel proprio (regiao declarada).
-        self.assertRegex(self.html, r'site-footer[^>]*aria-label=')
+                self.assertIn(marca, self.comum)
 
-    def test_the_old_destinations_survived(self):
-        """Os tres botoes do rodape antigo continuam no lugar.
+    def test_the_footer_is_rendered_by_the_shared_module(self):
+        """Quem monta o rodape e' o comum.js, nao a pagina.
 
-        Reescrever o rodape nao pode custar a saida que ele passou a oferecer:
-        era o unico lugar da pagina com os destinos do rail.
+        O comportamento segue o markup: um rodape montado pelo modulo comum mas
+        ligado so pelo index.js deixaria Ajustes e Biblioteca com um rodape
+        morto -- botoes que nao levam a lugar nenhum.
         """
-        for alvo in ("btn-docs-foot", "btn-rail-cortes", "btn-rail-scrap"):
+        self.assertIn("function renderFooter(", self.comum)
+        self.assertIn("querySelectorAll('[data-footer]')", self.comum)
+        self.assertIn("global.renderFooter = renderFooter", self.comum)
+        # E o index.js nao pode ter voltado a ligar os botoes do rodape.
+        for alvo in ("btn-copy-cli", "btn-rail-cortes", "btn-rail-scrap",
+                     "btn-docs-foot", "footer-cli-command", "footer-feedback"):
             with self.subTest(alvo=alvo):
-                self.assertIn(f'id="{alvo}"', self.html)
-        self.assertIn("liga('btn-rail-scrap'", self.js)
-        self.assertIn("liga('btn-docs-foot'", self.js)
+                self.assertNotIn(alvo, self.index_js)
+
+    def test_the_navigation_derives_from_rail_pages(self):
+        """A navegacao do rodape vem de RAIL_PAGES, e nao de copias no HTML.
+
+        Era o ponto da mudanca: `btn-rail-cortes` e `btn-rail-scrap` repetiam
+        os caminhos do rail. Derivando, uma pagina nova entra no rodape sozinha.
+        """
+        ini = self.comum.index("function footerNavHtml(")
+        bloco = self.comum[ini:self.comum.index("function footerHtml(")]
+        self.assertIn("RAIL_PAGES.map(", bloco)
+        self.assertIn("data-footer-page=", bloco)
+        # Nenhum caminho de pagina escrito a mao no rodape.
+        for rota in ("/scrap", "/ajustes"):
+            with self.subTest(rota=rota):
+                self.assertNotIn("'" + rota + "'", bloco)
+
+    def test_the_help_link_survived_and_is_not_a_rail_page(self):
+        """`/docs` nao e' destino do rail: e' ajuda, e tem de continuar aqui.
+
+        Ele fica fora de RAIL_PAGES de proposito -- nao e' uma etapa do fluxo.
+        Se sumisse, a unica ajuda do produto ficaria sem entrada.
+        """
+        ini = self.comum.index("function footerNavHtml(")
+        bloco = self.comum[ini:self.comum.index("function footerHtml(")]
+        self.assertIn('data-footer-action="docs"', bloco)
 
     def test_the_brand_links_home_without_a_second_route_list(self):
-        """A marca e um link para `/`, e nao um quarto <button> com handler.
-
-        O rodape ja tem os destinos do rail em botoes ligados pelo JS; repetir
-        a rota num `href` seria a quarta lista de rotas para manter em
-        sincronia.
-        """
-        ini = self.html.index('class="footer-brand"')
-        bloco = self.html[ini:ini + 200]
+        """A marca e um link para `/`, e nao um quarto <button> com handler."""
+        ini = self.comum.index('class="footer-brand"')
+        bloco = self.comum[ini:ini + 200]
         self.assertIn('href="/"', bloco)
         self.assertIn("aria-label=", bloco)
+
+    def test_the_cli_command_lives_in_one_place(self):
+        """O comando da CLI aparece UMA vez no modulo comum.
+
+        Duas copias do mesmo comando divergem na primeira edicao -- e o alvo do
+        `aria-describedby` e' o `<code>` que a pessoa ve na tela.
+        """
+        self.assertEqual(self.comum.count("python -m viralclipper"), 1)
 
     def test_the_footer_uses_the_panel_tokens(self):
         """Os `--footer-*` sao apelidos dos tokens do painel, nao uma paleta.
 
         A referencia declarava `--footer-bg: #0b1120` e um brilho indigo
-        proprios: o rodape virava um bloco de cor diferente do resto da
-        pagina. Aqui cada `--footer-*` aponta para um token `--*` que ja
-        existe; um literal de cor no valor seria a paleta voltando pela porta
-        dos fundos.
+        proprios: o rodape virava um bloco de cor diferente do resto da pagina.
         """
         ini = self.css.index(".site-footer {")
         bloco = self.css[ini:self.css.index(".site-footer,", ini)]
-        # Todo `--footer-*` citado resolve para um token do painel.
         for token in ("--footer-bg", "--footer-text", "--footer-muted",
                       "--footer-accent", "--footer-border"):
             with self.subTest(token=token):
                 self.assertRegex(bloco, re.escape(token) + r":\s*var\(--")
-        # O apelido de fundo nao pode apontar para a cor da referencia.
         self.assertNotIn("#0b1120", bloco.lower())
         self.assertNotIn("--clips-", bloco)
+
+    def test_the_footer_does_not_inherit_the_page_padding(self):
+        """`padding: 0` neutraliza o `footer { padding }` que o scrap declarava.
+
+        O scrap.css tinha `padding: 26px 0 40px` no ELEMENTO `footer`. Como
+        `.site-footer` (classe) vence, mas nao declarava padding, o rodape da
+        Biblioteca ficaria 26/40px mais alto que o das outras duas paginas --
+        divergencia silenciosa, so visivel comparando as telas.
+        """
+        ini = self.css.index(".site-footer {")
+        bloco = self.css[ini:self.css.index("\n}", ini)]
+        self.assertRegex(bloco, r"padding:\s*0")
 
     def test_the_copy_button_copies_the_target_text(self):
         """O handler le o texto do `<code>`, e nao uma string embutida.
 
-        Duas copias do mesmo comando divergem na primeira edicao; a fonte e o
+        Duas copias do mesmo comando divergem na primeira edicao; a fonte e' o
         proprio `#footer-cli-command`, que o `aria-describedby` ja aponta.
         """
-        ini = self.js.index("const cmdEl = document.getElementById('footer-cli-command')")
-        bloco = self.js[ini:self.js.index("liga('btn-copy-cli'") ]
+        ini = self.comum.index("const cmdEl = host.querySelector('#footer-cli-command')")
+        bloco = self.comum[ini:self.comum.index("copiar.addEventListener(")]
         self.assertIn("footer-cli-command", bloco)
-        copia = self.js[self.js.index("liga('btn-copy-cli'"):]
-        copia = copia[:copia.index("$('#hero-cta')")]
+        copia = self.comum[self.comum.index("copiar.addEventListener("):]
+        copia = copia[:copia.index("function renderFooter(")]
         self.assertIn("cmdEl.textContent", copia)
         self.assertIn("writeText", copia)
-        # Nao pode ter o comando escrito a mao no JS.
+        # Nao pode ter o comando escrito a mao DENTRO do handler.
         self.assertNotIn("python -m viralclipper", copia)
 
     def test_the_copy_button_announces_and_degrades(self):
@@ -5850,11 +6000,10 @@ class FooterRedesignTests(unittest.TestCase):
 
         Ha TRES desfechos, e cada um tem a sua mensagem: sem secure-context /
         sem clipboard (nem tenta), falha da API, e sucesso. Um generico
-        "nao foi possivel" esconderia o caso em que copiar a mao e a unica
-        saida.
+        "nao foi possivel" esconderia o caso em que copiar a mao e a unica saida.
         """
-        ini = self.js.index("const feedbackEl = document.getElementById('footer-feedback')")
-        bloco = self.js[ini:self.js.index("$('#hero-cta')")]
+        ini = self.comum.index("const feedbackEl = host.querySelector('#footer-feedback')")
+        bloco = self.comum[ini:self.comum.index("function renderFooter(")]
         self.assertIn("catch", bloco)
         # O teste de disponibilidade decide a mensagem ANTES de tentar copiar.
         # Ancorar no `if` real: as tres mensagens existem no texto de qualquer
@@ -5866,9 +6015,9 @@ class FooterRedesignTests(unittest.TestCase):
         self.assertRegex(bloco, r"anunciar\('[^']*indispon[^']*'\)")
         self.assertRegex(bloco, r"anunciar\('[^']*copiad[^']*'\)")
         self.assertRegex(bloco, r"anunciar\('[^']*copie[^']*'\)")
-        # O alvo da regiao viva existe no HTML e nasce vazia.
-        self.assertRegex(self.html, r'id="footer-feedback"[^>]*role="status"')
-        self.assertRegex(self.html, r'id="footer-feedback"[^>]*aria-live="polite"')
+        # O alvo da regiao viva e' criado pelo template, com os atributos certos.
+        self.assertRegex(self.comum, r'id="footer-feedback"[^>]*role="status"')
+        self.assertRegex(self.comum, r'id="footer-feedback"[^>]*aria-live="polite"')
 
     def test_the_copy_button_cannot_be_clicked_twice_at_once(self):
         """O botao desabilita durante a copia e volta no `finally`.
@@ -5878,8 +6027,8 @@ class FooterRedesignTests(unittest.TestCase):
         ficar habilitado mesmo quando a copia falha, senao um erro unico
         deixaria o controle morto para sempre.
         """
-        copia = self.js[self.js.index("liga('btn-copy-cli'"):]
-        copia = copia[:copia.index("$('#hero-cta')")]
+        copia = self.comum[self.comum.index("copiar.addEventListener("):]
+        copia = copia[:copia.index("function renderFooter(")]
         self.assertRegex(copia, r"\.disabled = true")
         self.assertIn("finally", copia)
         self.assertRegex(copia, r"\.disabled = false")
@@ -5890,12 +6039,11 @@ class FooterRedesignTests(unittest.TestCase):
         """O aviso some sozinho, senao deixa de ser feedback.
 
         Um "copiado" permanente vira parte do rodape: quem olhasse depois nao
-        saberia se a copia foi agora ou cinco minutos atras. O timer e
-        cancelado a cada anuncio para um aviso novo nao ser apagado pelo
-        anterior.
+        saberia se a copia foi agora ou cinco minutos atras. O timer e cancelado
+        a cada anuncio para um aviso novo nao ser apagado pelo anterior.
         """
-        ini = self.js.index("const anunciar = (texto)")
-        bloco = self.js[ini:self.js.index("liga('btn-copy-cli'")]
+        ini = self.comum.index("const anunciar = (texto)")
+        bloco = self.comum[ini:self.comum.index("copiar.addEventListener(")]
         self.assertIn("clearTimeout", bloco)
         self.assertIn("setTimeout", bloco)
         self.assertRegex(bloco, r"feedbackEl\.textContent = ''")
@@ -5904,30 +6052,29 @@ class FooterRedesignTests(unittest.TestCase):
         """O botao so-icone tem rotulo e uma descricao com texto.
 
         Um botao so com SVG nao diz o que faz; e `aria-describedby` apontando
-        para um alvo vazio nao descreve nada — o alvo aqui e o proprio comando.
+        para um alvo vazio nao descreve nada -- o alvo aqui e o proprio comando.
         """
-        ini = self.html.index('class="footer-copy"')
-        bloco = self.html[ini:ini + 260]
+        ini = self.comum.index('class="footer-copy"')
+        bloco = self.comum[ini:ini + 260]
         self.assertIn("aria-label=", bloco)
         self.assertIn('aria-describedby="footer-cli-command"', bloco)
-        alvo = re.search(r'id="footer-cli-command"[^>]*>(.*?)</code>', self.html, re.S)
-        self.assertIsNotNone(alvo, "o alvo da descricao nao existe")
-        self.assertTrue(re.sub(r"<[^>]+>", "", alvo.group(1)).strip(),
-                        "o alvo da descricao esta vazio")
+        # O alvo e' o `<code>`, e ele e' preenchido por COMANDO_CLI -- nao por um
+        # literal solto dentro do template (que seria uma copia a mais).
+        self.assertRegex(self.comum, r'<code id="footer-cli-command">.*?COMANDO_CLI')
+        self.assertRegex(self.comum, r"const COMANDO_CLI = 'python -m viralclipper'")
 
     def test_the_live_region_reserves_its_line(self):
         """A regiao viva reserva a linha com `min-height`, sem sair do fluxo.
 
         Ela nasce sem texto; se nao reservasse altura, o rodape inteiro pularia
-        ao copiar. A referencia resolve com `min-height` — e nao com
-        `display: none` — porque a regiao viva precisa continuar existindo para
+        ao copiar. A referencia resolve com `min-height` -- e nao com
+        `display: none` -- porque a regiao viva precisa continuar existindo para
         o leitor de tela anunciar. Esconder o proprio alvo do anuncio seria
         consertar o pulo quebrando o aviso.
         """
         ini = self.css.index(".site-footer .footer-feedback {")
         bloco = self.css[ini:ini + 200]
         self.assertIn("min-height", bloco)
-        # E nao ha `display: none` nesta regiao.
         self.assertNotIn("display: none", bloco)
 
     def test_the_footer_styles_are_scoped_to_the_footer(self):
@@ -5938,12 +6085,13 @@ class FooterRedesignTests(unittest.TestCase):
         lugar da pagina vestindo a regra do rodape. O escopo por ancestral e o
         que a condicao "os estilos ficam restritos ao rodape" significa em
         codigo.
+
+        O bloco vai ate o FIM do shared.css: ele foi anexado la, porque o rodape
+        passou a estar nas tres paginas.
         """
-        # Do inicio do bloco do rodape ate o proximo comentario de secao.
         ini = self.css.index("/* ---------- FOOTER ----------")
-        fim = self.css.index("/* ---------- TOAST ----------")
-        bloco = self.css[ini:fim]
-        # Tira comentarios e blocos de @media/@keyframes para ler so as regras.
+        bloco = self.css[ini:]
+        # Tira comentarios para ler so as regras.
         sem_comentario = re.sub(r"/\*.*?\*/", "", bloco, flags=re.S)
         for m in re.finditer(r"(?m)^\s*([.a-zA-Z][^{}:]*)\{", sem_comentario):
             seletor = m.group(1).strip()
@@ -5954,8 +6102,7 @@ class FooterRedesignTests(unittest.TestCase):
                     # precisam do ancestral `.site-footer`.
                     if parte.startswith(".site-footer"):
                         continue
-                    self.fail(f"seletor sem escopo do rodape: {parte!r}")
-        # E o @media tambem escopa.
+                    self.fail("seletor sem escopo do rodape: " + repr(parte))
         self.assertIn(".site-footer .footer-container", bloco)
 
     def test_the_touch_targets_are_big_enough(self):
@@ -5979,28 +6126,30 @@ class FooterRedesignTests(unittest.TestCase):
         reduzir movimento nao deve receber animacao so porque ela e curta.
 
         O seletor precisa ser o MESMO do elemento (`.site-footer .footer-link`),
-        e nao `.site-footer *`: aquele tem especificidade menor que a regra
-        base e perderia na cascata — foi o defeito medido no navegador, com
+        e nao `.site-footer *`: aquele tem especificidade menor que a regra base
+        e perderia na cascata -- foi o defeito medido no navegador, com
         `transitionDuration` ainda em 0.18s.
         """
-        ini = self.css.index("prefers-reduced-motion: reduce", self.css.index("/* ---------- FOOTER ----------"))
+        ini = self.css.index("prefers-reduced-motion: reduce",
+                             self.css.index("/* ---------- FOOTER ----------"))
         bloco = self.css[ini:ini + 300]
         self.assertIn("transition: none", bloco)
         self.assertIn("animation: none", bloco)
-        # O seletor da regra tem de empatar com o da regra base.
         self.assertIn(".site-footer .footer-link", bloco)
-        # E nao pode ser so o curinga, que perde na cascata.
         self.assertNotRegex(bloco, r"\{\s*\n\s*\.site-footer \*,")
 
-    def test_every_element_the_js_reaches_exists_in_the_html(self):
-        """Os ids que o JS liga existem mesmo no HTML.
+    def test_every_element_the_js_reaches_is_created_by_the_template(self):
+        """Os ids que o JS liga sao criados pelo proprio template.
 
-        `liga` engole um id ausente (faz `if (el)`), entao um erro de digitacao
-        viraria um botao mudo sem nenhum sinal.
+        Antes esta garantia era "o id existe no HTML". Agora o markup nasce do
+        template, entao o que importa e' que `renderFooter` consiga ACHAR cada
+        alvo -- um id que o `host.querySelector` procura e o template nao cria
+        seria um botao mudo, sem nenhum sinal.
         """
         for alvo in ("btn-copy-cli", "footer-cli-command", "footer-feedback"):
             with self.subTest(alvo=alvo):
-                self.assertIn(f'id="{alvo}"', self.html)
+                self.assertIn('id="' + alvo + '"', self.comum)
+                self.assertIn("#" + alvo, self.comum)
 
 
 if __name__ == "__main__":  # pragma: no cover

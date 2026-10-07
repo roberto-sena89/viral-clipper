@@ -371,16 +371,173 @@
     });
   }
 
-  // Cada pagina so precisa incluir /comum.js: o rail se monta sozinho. O
-  // readyState cobre o caso de o script ser movido para o <head> um dia.
+  /* ---------- RODAPE ----------
+     O rodape se monta sozinho, como o rail, e pelo mesmo motivo: a navegacao
+     dele era uma SEGUNDA copia das rotas escrita a mao no HTML (`btn-rail-cortes`
+     -> `/`, `btn-rail-scrap` -> `/scrap`). Duas listas da mesma coisa divergem --
+     foi exatamente o que aconteceu com o rail, que chegou a ter tres nomes para
+     o mesmo destino.
+
+     Aqui a navegacao e' DERIVADA de RAIL_PAGES: acrescentar uma pagina ao menu
+     a coloca no rodape sem tocar em HTML nenhum. O unico destino que nao vem do
+     rail e' "Como usar" (`/docs`), que e' ajuda e nao uma etapa do fluxo.
+
+     O rodape vive nas TRES paginas. Antes so o index o tinha -- e como ele era
+     a unica entrada para `/docs`, a ajuda ficava inalcancavel de Ajustes e
+     Biblioteca. */
+
+  const ICONE_MARCA =
+    '<svg viewBox="0 0 24 24" fill="none">' +
+      '<path d="m9 6 9 6-9 6V6Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>' +
+      '<path d="M5 5v14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' +
+    '</svg>';
+
+  const ICONE_COPIA =
+    '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+      '<rect x="8" y="8" width="12" height="12" rx="3" stroke="currentColor" stroke-width="1.7"/>' +
+      '<path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/>' +
+    '</svg>';
+
+  // O comando da CLI mora aqui UMA vez. O botao de copiar le o texto deste
+  // `<code>` em vez de guardar uma copia propria: duas copias do mesmo comando
+  // divergem na primeira edicao.
+  const COMANDO_CLI = 'python -m viralclipper';
+
+  function footerNavHtml() {
+    // "Como usar" primeiro: e' a saida de quem ainda nao sabe o que fazer, e o
+    // rodape e' justamente onde essa pessoa chega.
+    const ajuda =
+      '<button class="footer-link" type="button" data-footer-action="docs">Como usar</button>';
+    return ajuda + RAIL_PAGES.map((page) =>
+      '<button class="footer-link" type="button" data-footer-page="' + esc(page.path) + '">' +
+        esc(page.title) +
+      '</button>'
+    ).join('');
+  }
+
+  function footerHtml() {
+    return '' +
+      '<div class="footer-container">' +
+        '<div class="footer-main">' +
+          '<a class="footer-brand" href="/" aria-label="Viral Clipper — início">' +
+            '<span class="footer-brand__icon" aria-hidden="true">' + ICONE_MARCA + '</span>' +
+            '<span class="footer-brand__content">' +
+              '<span class="footer-brand__name">viral-clipper</span>' +
+              '<span class="footer-brand__description">Seu conteúdo. Novas possibilidades.</span>' +
+            '</span>' +
+          '</a>' +
+          '<nav class="footer-nav" aria-label="Navegação do rodapé">' + footerNavHtml() + '</nav>' +
+        '</div>' +
+        '<div class="footer-bottom">' +
+          '<p class="footer-caption">' +
+            'Interface web' +
+            '<span class="footer-caption__separator" aria-hidden="true"></span>' +
+            'Também disponível via CLI' +
+          '</p>' +
+          '<div class="footer-cli">' +
+            '<span class="footer-cli__prompt" aria-hidden="true">$</span>' +
+            '<code id="footer-cli-command">' + COMANDO_CLI + '</code>' +
+            '<button class="footer-copy" type="button" id="btn-copy-cli"' +
+              ' aria-label="Copiar comando da CLI" aria-describedby="footer-cli-command">' +
+              ICONE_COPIA +
+            '</button>' +
+          '</div>' +
+        '</div>' +
+        '<p class="footer-feedback" id="footer-feedback" role="status"' +
+          ' aria-live="polite" aria-atomic="true"></p>' +
+      '</div>';
+  }
+
+  function wireFooter(host) {
+    const nav = host.querySelector('.footer-nav');
+    if (nav) {
+      // Delegacao: um listener cobre os destinos todos. Sem um id por botao, a
+      // lista pode crescer (uma pagina nova em RAIL_PAGES) sem que este arquivo
+      // ganhe mais uma linha por destino.
+      nav.addEventListener('click', (ev) => {
+        const destino = ev.target.closest('[data-footer-page]');
+        if (destino) {
+          window.location.href = destino.getAttribute('data-footer-page');
+          return;
+        }
+        if (ev.target.closest('[data-footer-action="docs"]')) {
+          // O README do repo renderizado pelo proprio servidor. O link para o
+          // GitHub dava 404 (repo privado/renomeado) -- a unica ajuda do
+          // produto nao pode depender de endereco externo.
+          window.open('/docs', '_blank');
+        }
+      });
+    }
+
+    const cmdEl = host.querySelector('#footer-cli-command');
+    const feedbackEl = host.querySelector('#footer-feedback');
+    const copiar = host.querySelector('#btn-copy-cli');
+    if (!cmdEl || !copiar) return;
+
+    const timer = { id: 0 };
+    // O aviso se limpa sozinho: um "copiado" permanente vira parte do rodape, e
+    // quem olhasse depois nao saberia se a copia foi agora ou cinco minutos
+    // atras. O timer e cancelado a cada anuncio para um aviso novo nao ser
+    // apagado pelo anterior.
+    const anunciar = (texto) => {
+      if (!feedbackEl) return;
+      window.clearTimeout(timer.id);
+      feedbackEl.textContent = texto;
+      timer.id = window.setTimeout(() => { feedbackEl.textContent = ''; }, 5000);
+    };
+
+    copiar.addEventListener('click', async (ev) => {
+      const botao = ev.currentTarget;
+      const comando = cmdEl.textContent.trim();
+      // `isSecureContext` antes de tentar: em http puro a `navigator.clipboard`
+      // existe mas rejeita, e o aviso generico de erro esconderia o motivo real
+      // ("copie a mao") atras de um "nao foi possivel". O teste e' o que escolhe
+      // a mensagem certa, nao o que evita a tentativa.
+      if (!window.isSecureContext || !navigator.clipboard || !navigator.clipboard.writeText) {
+        anunciar('Cópia automática indisponível. Selecione e copie o comando.');
+        return;
+      }
+      // Desabilitar durante a copia impede o clique duplo de disparar duas
+      // escritas concorrentes no clipboard, cujo resultado e indefinido. E o
+      // `finally` devolve o botao mesmo quando a copia falha: sem ele um erro
+      // unico deixaria o controle morto para sempre.
+      botao.disabled = true;
+      try {
+        await navigator.clipboard.writeText(comando);
+        anunciar('Comando copiado para a área de transferência.');
+      } catch (err) {
+        // Clipboard negado (permissao, iframe): o comando continua visivel na
+        // tela, entao falhar em copiar nao e' um beco -- o aviso diz o que
+        // fazer em vez de so acusar o erro.
+        anunciar('Não foi possível copiar. Selecione e copie o comando.');
+      } finally {
+        botao.disabled = false;
+      }
+    });
+  }
+
+  function renderFooter() {
+    const hosts = Array.prototype.slice.call(document.querySelectorAll('[data-footer]'));
+    if (!hosts.length) return;
+    const html = footerHtml();
+    hosts.forEach((host) => {
+      host.innerHTML = html;
+      wireFooter(host);
+    });
+  }
+
+  // Cada pagina so precisa incluir /comum.js: o rail e o rodape se montam
+  // sozinhos. O readyState cobre o caso de o script ser movido para o <head>.
+  const monta = () => { renderRail(); renderFooter(); };
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', renderRail);
+    document.addEventListener('DOMContentLoaded', monta);
   } else {
-    renderRail();
+    monta();
   }
 
   global.esc = esc;
   global.enhanceSelect = enhanceSelect;
   global.renderRail = renderRail;
+  global.renderFooter = renderFooter;
   global.RAIL_PAGES = RAIL_PAGES;
 })(window);

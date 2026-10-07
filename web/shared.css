@@ -18,9 +18,17 @@
      arquivo linkado antes, elas passariam a vir antes da base e perderiam o
      gradiente. Medido: cinco botoes do index ficavam com o fundo errado.
 
-   `.log-box`, `.toast`, `.card h2` e `footer` tem o mesmo seletor e valores
-   diferentes: sao escolha de cada pagina, nao duplicacao. Sobem quando — e se
-   — convergirem.
+   `.log-box`, `.toast` e `.card h2` tem o mesmo seletor e valores diferentes:
+   sao escolha de cada pagina, nao duplicacao. Sobem quando — e se —
+   convergirem.
+
+   `footer` SAIU desta lista. Ele deixou de ser "o rodape de cada pagina" e
+   virou o componente `.site-footer`, que esta nas TRES — por isso o css dele
+   subiu para o fim deste arquivo. As duas regras de ELEMENTO `footer` (em
+   index.css e scrap.css) declaravam valores diferentes para o mesmo seletor,
+   que e' exatamente a divergencia que este arquivo existe para evitar; foram
+   removidas, e o `padding` que so o scrap declarava virou `padding: 0` no
+   `.site-footer`.
    ------------------------------------------------------------------------ */
 
 /* ---------- FONTE (self-hosted) ----------
@@ -116,13 +124,13 @@
   border: 1px solid var(--border-strong); background: var(--bg-surface);
   color: var(--text-primary); padding: 10px 14px; border-radius: var(--radius-sm);
   cursor: pointer;
-}.menu-btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }.menu-btn .mb-bars { font-size: 1rem; line-height: 1; }.menu-btn .mb-caret { color: var(--accent-soft); font-size: 0.75rem; transition: transform var(--transition); }.menu-btn[aria-expanded="true"] .mb-caret { transform: rotate(180deg); }.rail-dropdown .rail-menu {
+}.menu-btn:hover { border-color: var(--accent-primary); background: rgba(255, 79, 174, 0.08); }.menu-btn .mb-bars { font-size: 1rem; line-height: 1; }.menu-btn .mb-caret { color: var(--accent-soft); font-size: 0.75rem; transition: transform var(--transition); }.menu-btn[aria-expanded="true"] .mb-caret { transform: rotate(180deg); }.rail-dropdown .rail-menu {
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 70; min-width: 258px;
   background: var(--bg-surface); border: 1px solid var(--border-strong);
   border-radius: var(--radius-md); box-shadow: var(--shadow-card);
   padding: 6px;
   animation: railMenuIn 180ms var(--ease-out-expo);
-}.btn:hover { border-color: var(--accent-primary); background: rgba(99, 102, 241, 0.08); }.btn:disabled { opacity: 0.5; }.btn:disabled:focus-visible { outline: none; }.chip strong { color: var(--text-primary); font-weight: 600; }.log-box .ln-ok { color: var(--success); }.log-box .ln-err { color: var(--danger); }.log-box .ln-warn { color: var(--accent-warm); }a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+}.btn:hover { border-color: var(--accent-primary); background: rgba(255, 79, 174, 0.08); }.btn:disabled { opacity: 0.5; }.btn:disabled:focus-visible { outline: none; }.chip strong { color: var(--text-primary); font-weight: 600; }.log-box .ln-ok { color: var(--success); }.log-box .ln-err { color: var(--danger); }.log-box .ln-warn { color: var(--warn); }a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
   outline: 2px solid var(--accent-soft); outline-offset: 2px;
 }.sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -134,23 +142,51 @@
   line-height: 1.55;
   min-height: 100vh;
   background-image:
-    radial-gradient(1200px 600px at 80% -10%, rgba(99, 102, 241, 0.10), transparent 60%),
-    radial-gradient(900px 500px at 10% 110%, rgba(251, 191, 36, 0.05), transparent 60%);
+    radial-gradient(1200px 600px at 80% -10%, rgba(255, 79, 174, 0.10), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, rgba(112, 201, 238, 0.05), transparent 60%);
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
 }:root {
-  /* --- paleta bruta ------------------------------------------------------ */
-  --bg-deep: #0b0d12;
-  --bg-surface: #14171f;
-  --bg-card: rgba(22, 26, 35, 0.72);
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-strong: rgba(255, 255, 255, 0.10);
-  --accent-primary: #6366f1;
-  --accent-glow: rgba(99, 102, 241, 0.28);
-  --accent-soft: #818cf8;
-  --accent-warm: #fbbf24;
-  --success: #34d399;
-  --danger: #f87171;
+  /* --- paleta bruta ------------------------------------------------------
+     These are the APPLICATION colors, for all three pages. They used to be
+     two sets: this file carried an indigo/light base (--accent-primary
+     #6366f1) and index.css redefined the whole block in magenta/dark
+     (#ff4fae). Because only index.html and ajustes.html load index.css, the
+     Biblioteca — which loads scrap.css — was silently painting itself indigo
+     while the other two painted magenta. Same tool, two products.
+
+     There is ONE palette now, and it lives here. index.css no longer has a
+     `:root` at all: if a page needs to change a color, it changes it here, or
+     it stops being the same product. */
+  --bg-deep: #090b10;
+  --bg-surface: #11151e;
+  --bg-card: #131923;
+  --border-subtle: rgba(218, 226, 243, 0.09);
+  --border-strong: rgba(218, 226, 243, 0.16);
+  --accent-primary: #ff4fae;
+  --accent-glow: rgba(255, 79, 174, 0.22);
+  --accent-soft: #ff8bc8;
+  --warn: #fbbf24;
+  --success: #54d6a6;
+  --danger: #ff7184;
+
+  /* `--warn` era `--accent-warm`, e o valor era ciano (#70c9ee). Os DOIS
+     problemas ao mesmo tempo: o nome nao descrevia a cor, e a cor nao
+     combinava com o uso. Todos os sete usos eram semantica de atencao — dois
+     deles literalmente `.ln-warn` — e cada um ja estava ao lado de um
+     `rgba(251, 191, 36, ...)`: era texto CIANO sobre fundo AMBAR. Um estado
+     de "pendente", "pulado" ou "sessao" com a cor ao contrario do que a moldura
+     anuncia.
+
+     O ambar tambem passa o contraste com folga: 11,79:1 sobre --bg-deep,
+     contra 10,57:1 do ciano. Nao ha uso informacional no estudio, entao o
+     token vira so `--warn`; nao sobrou ciano para renomear. */
+
+  /* `--shell-*`, `--well-bg`, `--active-tint`, `--text-ink-*` e `--motion-fast`
+     NAO sao redefinidos aqui: eles ja vivem mais abaixo, no bloco de tokens de
+     papel, e um segundo valor mais acima seria literal morto -- dentro do mesmo
+     `:root`, a ultima declaracao e que vale. O `--active-tint` era o unico ainda
+     em indigo por la (rgba(99, 102, 241, .10)) e foi corrigido no lugar. */
 
   /* --- escala tipografica semantica --------------------------------------
      Nomes de papel, nao de tamanho: trocar os valores aqui reescala a
@@ -193,7 +229,7 @@
   --shell-bg: #0e1017;
   --shell-surface: var(--bg-surface);
   --shell-border: var(--border-subtle);
-  --active-tint: rgba(99, 102, 241, 0.10);
+  --active-tint: rgba(255, 79, 174, 0.11);
   --well-bg: rgba(0, 0, 0, 0.35);
 
   /* Texto: os nomes --text-* colidem com a escala tipografica acima, entao o
@@ -297,4 +333,274 @@
   font-weight: 750;
   letter-spacing: .09em;
   line-height: 1;
+}
+
+/* ---------- FOOTER ----------
+   Vive no shared.css, e nao no css de uma pagina, porque o rodape esta nas
+   TRES paginas. Enquanto ele so existia no index, o css dele morava no
+   index.css e Ajustes o herdava de carona (a pagina usa o mesmo index.css); a
+   Biblioteca, que usa scrap.css, nao tinha rodape nenhum.
+
+   As regras do ELEMENTO `footer` (border-top, padding, cor) foram removidas de
+   index.css e scrap.css: agora todo `<footer>` da aplicacao e' `.site-footer`,
+   e as duas declaravam valores DIFERENTES para o mesmo seletor -- exatamente a
+   divergencia que este arquivo existe para evitar. O `padding: 0` abaixo
+   substitui o `26px 0 40px` que o scrap declarava.
+
+   O rodape deixou de ser uma linha de texto: agora tem marca, navegacao e o
+   atalho da CLI.
+
+   Os seletores sao todos `.site-footer .algo` de proposito: o rodape tem
+   nomes genericos (`.footer-link`, `.footer-nav`) e um `footer-link` solto
+   pegaria qualquer outro elemento da pagina com a mesma classe vestindo a
+   regra do rodape. O escopo por ancestral e o que impede o rodape de mexer no
+   resto da tela.
+
+   As cores vem dos tokens do painel (`--*`). A referencia trazia uma paleta
+   propria (`--footer-bg: #0b1120` e um brilho indigo), o que daria ao rodape
+   um bloco de cor diferente do resto da pagina — a mesma divergencia que a
+   galeria ja teve. Os nomes `--footer-*` ficam como apelidos dos tokens, para
+   quem le o CSS da referencia achar as variaveis citadas. */
+.site-footer {
+  --footer-bg: var(--bg-deep, #0b0d12);
+  --footer-text: var(--text-primary);
+  --footer-muted: var(--text-muted);
+  --footer-accent: var(--accent-soft);
+  --footer-border: var(--border-subtle);
+
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  margin-top: 4rem;
+  color: var(--footer-text);
+  background: var(--footer-bg);
+  border-top: 1px solid var(--footer-border);
+  font-size: 0.82rem;
+  padding: 0;
+}
+
+.site-footer,
+.site-footer * { box-sizing: border-box; }
+
+/* O fio de luz no topo. `pointer-events: none` porque ele cobre a faixa
+   superior do rodape e nao pode roubar o clique de quem passa por baixo. */
+.site-footer::before {
+  content: "";
+  position: absolute;
+  inset: 0 15% auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--footer-accent), transparent);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.site-footer .footer-container {
+  width: min(100% - 3rem, 1120px);
+  margin-inline: auto;
+  padding-block: 2.5rem 1rem;
+}
+
+.site-footer .footer-main,
+.site-footer .footer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.site-footer .footer-main { padding-bottom: 2rem; }
+
+.site-footer .footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.875rem;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 0.75rem;
+}
+
+.site-footer .footer-brand__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  color: var(--footer-accent);
+  background: rgba(255, 79, 174, 0.1);
+  border: 1px solid rgba(255, 139, 200, 0.22);
+  border-radius: 14px;
+}
+.site-footer .footer-brand__icon svg { width: 26px; height: 26px; }
+
+.site-footer .footer-brand__content { display: grid; gap: 0.3rem; }
+.site-footer .footer-brand__name {
+  font-size: 1.125rem;
+  font-weight: 750;
+  letter-spacing: -0.035em;
+}
+.site-footer .footer-brand__description {
+  color: var(--footer-muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.site-footer .footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* `min-height: 44px` nos destinos. Nao e estetica: o alvo de toque minimo do
+   WCAG 2.5.8 e 44px, e o rodape e justamente onde se clica com o polegar. */
+.site-footer .footer-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.625rem 0.875rem;
+  color: var(--footer-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease;
+}
+.site-footer .footer-link:hover {
+  color: var(--footer-text);
+  background: rgba(148, 163, 184, 0.08);
+  border-color: var(--footer-border);
+}
+.site-footer .footer-link:active { background: rgba(148, 163, 184, 0.14); }
+
+.site-footer .footer-bottom {
+  flex-wrap: wrap;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--footer-border);
+}
+
+.site-footer .footer-caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 0;
+  color: var(--footer-muted);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+/* O separador e um ponto decorativo: era um `·` no meio do texto e ficava no
+   fluxo do leitor de tela. Como elemento `aria-hidden` com a propria forma,
+   ele aparece sem virar palavra. */
+.site-footer .footer-caption__separator {
+  width: 3px;
+  height: 3px;
+  background: currentColor;
+  border-radius: 50%;
+}
+
+.site-footer .footer-cli {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  max-width: 100%;
+  padding: 0.25rem 0.25rem 0.25rem 0.875rem;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--footer-border);
+  border-radius: 0.75rem;
+}
+.site-footer .footer-cli__prompt {
+  color: var(--footer-accent);
+  font-family: ui-monospace, monospace;
+}
+.site-footer .footer-cli code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--footer-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.site-footer .footer-copy {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  color: var(--footer-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: color 180ms ease, background-color 180ms ease;
+}
+.site-footer .footer-copy:hover {
+  color: var(--footer-accent);
+  background: rgba(255, 139, 200, 0.1);
+}
+.site-footer .footer-copy svg { width: 18px; height: 18px; }
+/* O botao fica desabilitado durante a copia (o JS faz isso): sem esta regra
+   ele pareceria clicavel enquanto esta fora do ar. */
+.site-footer .footer-copy:disabled { opacity: 0.6; cursor: progress; }
+
+.site-footer .footer-brand:focus-visible,
+.site-footer .footer-link:focus-visible,
+.site-footer .footer-copy:focus-visible {
+  outline: 2px solid var(--footer-accent);
+  outline-offset: 4px;
+}
+
+/* `min-height` reserva a linha do aviso mesmo vazia: e o que impede o rodape
+   de pular quando o texto aparece. Antes isso era resolvido com
+   `:empty { display: none }`, que tirava o anuncio do fluxo — o `min-height`
+   resolve o mesmo problema sem esconder a regiao viva. */
+.site-footer .footer-feedback {
+  min-height: 1.5em;
+  margin: 0.75rem 0 0;
+  color: var(--footer-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .site-footer .footer-container {
+    width: calc(100% - 2rem);
+    padding-top: 2rem;
+  }
+  .site-footer .footer-main,
+  .site-footer .footer-bottom {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .site-footer .footer-main { gap: 1.25rem; padding-bottom: 1.5rem; }
+  .site-footer .footer-nav { width: 100%; }
+  .site-footer .footer-link {
+    flex: 1 1 auto;
+    background: rgba(148, 163, 184, 0.04);
+    border-color: var(--footer-border);
+  }
+  .site-footer .footer-feedback { text-align: left; }
+}
+
+/* `prefers-reduced-motion` NO FIM do bloco, e com o seletor do proprio
+   elemento — nao `.site-footer *`.
+   O `.site-footer *` da referencia TEM especificidade (0,1,0), e
+   `.site-footer .footer-link` tem (0,2,0): pela cascata, a regra base vence a
+   do media query e a transicao de 180ms continuava correndo com o sistema
+   pedindo movimento reduzido. Medido no navegador: `transitionDuration`
+   seguia "0.18s". Repetir os seletores reais empata a especificidade e a
+   regra de acessibilidade passa a valer. */
+@media (prefers-reduced-motion: reduce) {
+  .site-footer .footer-link,
+  .site-footer .footer-copy {
+    transition: none;
+    animation: none;
+  }
 }

@@ -2751,6 +2751,57 @@ class RailNavigationTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIn(f'"{path}"', source, f"do_GET nao serve {path}")
 
+    def test_the_home_page_has_exactly_one_name(self):
+        """A raiz tem UM nome -- "Est\u00fadio" -- em todo lugar que a nomeia.
+
+        Antes ela atendia por tr\u00eas nomes ao mesmo tempo: o `<title>` dizia
+        "Est\u00fadio", o rail dizia "Cortes" e o header dizia "Est\u00fadio /
+        Cortes verticais". Quem lia o menu e depois o titulo nao sabia que era a
+        mesma pagina -- e o `<title>`, afinal, e' escrito pelo MESMO RAIL_PAGES
+        (`renderRail` faz `document.title = here.title + ' \u00b7 Viral Clipper'`),
+        entao "Cortes" era o nome de fato. O nome da pagina e' o que o rail
+        declara; "cortes" fica sendo o RESULTADO (a lista de clips), nao o destino.
+        """
+        pages = self.rail_pages()
+        home = [page for page in pages if page.get("path") == "/"]
+        self.assertEqual(len(home), 1, "RAIL_PAGES nao tem exatamente uma raiz")
+        self.assertEqual(home[0].get("title"), "Est\u00fadio",
+                         "a raiz do rail voltou a se chamar de outro nome")
+
+        # O rotulo do rodape que leva a raiz tem de dizer o mesmo nome.
+        index = self.markup("index.html")
+        button = re.search(
+            r'<button[^>]*id="btn-rail-cortes"[^>]*>([^<]*)</button>', index, re.S
+        )
+        self.assertIsNotNone(button, "o botao do rodape que leva a / sumiu")
+        self.assertEqual(button.group(1).strip(), "Est\u00fadio",
+                         "o botao do rodape discorda do nome do rail")
+
+        # O "Cortes" que sobrar na interface tem de ser o RESULTADO, nunca um
+        # destino. O header da raiz e' o caso que ja divergiu uma vez.
+        header_strong = re.search(r"<strong>(.*?)</strong>", index, re.S)
+        self.assertIsNotNone(header_strong, "o header da raiz perdeu o <strong>")
+        self.assertNotIn("Cortes", header_strong.group(1),
+                         "o header voltou a nomear a pagina de Cortes")
+
+    def test_no_user_visible_string_sends_the_user_to_cortes(self):
+        """Nenhum rotulo vis\u00edvel manda o usuario para uma pagina "Cortes".
+
+        A verificacao cobre o texto que o usuario LE (nao comentario, nao
+        docstring): o botao que leva da Biblioteca ao Estudio, e o resumo de
+        Ajustes. Os dois diziam "Cortes" e passariam a mandar para um nome que
+        nao existe em menu nenhum.
+        """
+        scrap = (server.WEB_DIR / "scrap.js").read_text(encoding="utf-8")
+        alvo = re.search(r'textContent\s*=\s*"([^"]*Cortes[^"]*)"', scrap)
+        self.assertIsNone(alvo,
+                          f"scrap.js ainda rotula um destino como Cortes: {alvo and alvo.group(1)}")
+
+        ajustes = (server.WEB_DIR / "ajustes.js").read_text(encoding="utf-8")
+        for match in re.finditer(r"\[\s*'Curador'\s*,\s*'([^']*)'\s*\]", ajustes):
+            self.assertNotIn("Cortes", match.group(1),
+                             "o resumo de Ajustes voltou a mandar o usuario a Cortes")
+
     def test_the_rail_has_a_narrow_screen_fallback(self):
         """Abaixo do breakpoint o rail some, e o menu do header tem de assumir."""
         for name in self.PAGES:
@@ -3292,7 +3343,7 @@ class FirstVisitTests(unittest.TestCase):
         self.assertIn('aria-describedby="cookies-summary-hint"', html)
 
     def test_the_transcript_card_moved_to_ajustes(self):
-        """O card da transcricao vive em Ajustes, e nao mais em Cortes.
+        """O card da transcricao vive em Ajustes, e nao mais no Estudio.
 
         A garantia continua a mesma -- o card diz o que acontece se ficar em
         branco -- mas ela agora e verificada na pagina que tem o card. Deixar a
@@ -3706,7 +3757,7 @@ class AjustesHeadingTests(unittest.TestCase):
 
 
 class RenderSectionOwnershipTests(unittest.TestCase):
-    """A secao Renderizacao vive so em /ajustes; a Cortes apenas a le.
+    """A secao Renderizacao vive so em /ajustes; o Estudio apenas a le.
 
     Antes as duas paginas desenhavam os mesmos 11 controles, cada uma com a sua
     copia do markup. Duas copias do mesmo formulario divergem: a do index.html
@@ -3714,7 +3765,7 @@ class RenderSectionOwnershipTests(unittest.TestCase):
     do loudness (`lufs`, que o servidor so aceitava por um alias de
     compatibilidade). O index.js lia os 11 campos do DOM e mandava no POST /run.
 
-    Agora a Cortes le state.ajustes, carregado de /ajustes.json no boot -- o
+    Agora o Estudio le state.ajustes, carregado de /ajustes.json no boot -- o
     mesmo padrao que Selecao e Transcricao ja usavam. Estes testes travam as
     duas metades do contrato: o markup saiu de la, e a coleta le do estado.
     """
@@ -3747,7 +3798,7 @@ class RenderSectionOwnershipTests(unittest.TestCase):
             )
 
     def test_the_controls_still_live_in_ajustes(self):
-        # O outro lado: tirar da Cortes sem ter na Ajustes apagaria o controle
+        # O outro lado: tirar do Estudio sem ter na Ajustes apagaria o controle
         # das duas paginas, e o valor nao teria mais onde ser editado.
         for control in self.MIGRADOS:
             self.assertIn(
@@ -4071,7 +4122,7 @@ class UserProviderCardTests(unittest.TestCase):
 
 
 class BodyGridLayoutTests(unittest.TestCase):
-    """O corpo da Cortes e uma grade: Fonte|Execucao e, abaixo, Curador|Prompt.
+    """O corpo do Estudio e uma grade: Fonte|Execucao e, abaixo, Curador|Prompt.
 
     Historico das duas mudancas de forma:
 

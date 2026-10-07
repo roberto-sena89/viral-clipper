@@ -81,7 +81,7 @@
       min_score: num('#min-score', 0),
       min_gap: num('#min-gap', 6),
       engine: $('#engine').value,
-      // Os tres numeros do modo automatico. Ficam aqui e nao na pagina Cortes
+      // Os tres numeros do modo automatico. Ficam aqui e nao na pagina Estúdio
       // porque sao ajuste de uma vez: o que muda a cada execucao e o campo
       // "Quantidade de clips", que fica la.
       auto_margin: num('#auto-margin', 15),
@@ -114,10 +114,10 @@
       progress_bar: toggleOn('#progress-bar-on'),
       jump_cut: toggleOn('#jump-cut'),
       loudnorm: toggleOn('#loudnorm'),
-      // O Curador com IA saiu desta pagina: o card inteiro mora so em Cortes
+      // O Curador com IA saiu desta pagina: o card inteiro mora so no Estúdio
       // (que ja o tinha). As chaves ranker_* deixaram AJUSTES_KEYS junto --
       // elas continuam no ClipConfig e na CLI, so nao sao mais um ajuste
-      // persistido pelo painel. A Cortes carrega os seus proprios valores e os
+      // persistido pelo painel. O Estúdio carrega os seus proprios valores e os
       // manda no POST /run.
     };
   }
@@ -238,8 +238,8 @@
       // Sem linha de "Curador": o card saiu desta pagina, entao `readSettings()`
       // nao devolve mais ranker/ranker_provider. A ressalva vai no proprio
       // resumo em vez de sumir, senao quem le o painel acha que o curador
-      // simplesmente nao existe -- ele existe, so e configurado em Cortes.
-      ['Curador', 'configurado na página Cortes'],
+      // simplesmente nao existe -- ele existe, so e configurado no Estúdio.
+      ['Curador', 'configurado na página Estúdio'],
     ];
     rows.forEach(([label, value]) => box.appendChild(summaryRow(label, value)));
   }
@@ -361,9 +361,9 @@
 
   // ---------- prompt do curador ----------
   // O texto, os rotulos e os estados desta secao sao os MESMOS da pagina
-  // Cortes: o card existe nas duas e um usuario que alterna entre elas nao
+  // Estúdio: o card existe nas duas e um usuario que alterna entre elas nao
   // pode ver dois textos diferentes para o mesmo botao. A Ajustes e a via
-  // canonica (e onde se salva em disco pelo botao); a Cortes le o mesmo
+  // canonica (e onde se salva em disco pelo botao); o Estúdio le o mesmo
   // arquivo e mostra as mesmas frases.
   function setPromptStatus(message, kind) {
     const el = $('#curator-prompt-status');
@@ -413,7 +413,7 @@
 
   // ---------- transcricao colada ----------
   // A tabela de conferencia mora aqui desde que o campo migrou da pagina
-  // Cortes. Sem ela o texto salvo vira uma caixa preta: a pessoa cola 40
+  // Estúdio. Sem ela o texto salvo vira uma caixa preta: a pessoa cola 40
   // minutos de fala e nao tem como ver se os minutos ficaram em ordem antes de
   // gastar um render inteiro descobrindo que nao.
   function renderCueTable(data) {

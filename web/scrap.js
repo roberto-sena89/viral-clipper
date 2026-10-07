@@ -733,8 +733,8 @@
     const cortes = document.createElement("button");
     cortes.type = "button";
     cortes.className = "btn pressable btn-primary";
-    cortes.textContent = "Levar para Cortes";
-    // A pagina de cortes le ?url= do endereco: e o unico canal de hand-off
+    cortes.textContent = "Levar para o Estúdio";
+    // A pagina do Estudio le ?url= do endereco: e o unico canal de hand-off
     // que existe hoje (nenhuma das paginas guarda estado entre navegacoes).
     cortes.addEventListener("click", () => {
       window.location.href = "/?url=" + encodeURIComponent(picked.url);
@@ -1419,9 +1419,9 @@
     box.appendChild(wrap);
   }
 
-  // ---------- fio de ligacao com a pagina de cortes ----------
+  // ---------- fio de ligacao com a pagina do Estudio ----------
   // Nada aqui le ?url=; quem consome e o index.html. O botao do header so
-  // leva para la, porque a unica acao util desta pagina e ir para Cortes.
+  // leva para la, porque a unica acao util desta pagina e ir para o Estudio.
   const go = $("#btn-open-cortes");
   if (go) {
     go.addEventListener("click", () => {

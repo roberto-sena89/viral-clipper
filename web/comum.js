@@ -285,7 +285,7 @@
      a alternativa - carimbar a lista no HTML - e' exatamente a duplicacao que
      este bloco existe para eliminar. */
   const RAIL_PAGES = [
-    { path: '/',        ico: '▶', title: 'Cortes',  desc: 'Configurar e gerar os clips de um vídeo longo.' },
+    { path: '/',        ico: '▶', title: 'Estúdio', desc: 'Configurar e gerar os clips de um vídeo longo.' },
     { path: '/ajustes', ico: '▦', title: 'Ajustes', desc: 'Durações, legendas, curador e prompt.' },
     { path: '/scrap',   ico: '⤓', title: 'Biblioteca', desc: 'Buscar, revisar e importar vídeos.' },
   ];

@@ -146,6 +146,58 @@ class CollectingLogger(util.Logger):
         super()._emit(prefix, message)
 
 
+def _poster_path(video: Path) -> Path:
+    """The sidecar image that belongs to ``video`` (``clip-01.mp4`` -> ``.jpg``).
+
+    Broken out so the writer and the reader cannot disagree on the name: the
+    renderer fills ``thumb`` and the gallery asks for that exact file, and a
+    second literal somewhere else is how the panel ends up pointing at a poster
+    that was never written.
+    """
+    return video.with_suffix(".jpg")
+
+
+def _write_poster(video: Path, logger: util.Logger | None = None) -> str | None:
+    """Extract one frame of ``video`` into a sidecar ``.jpg``; return its name.
+
+    Returns ``None`` (never raises) when the poster cannot be produced. A
+    poster is a nicety of the gallery: a clip that rendered fine must not be
+    reported as a failure because ffmpeg could not be found or the frame grab
+    failed. The caller keeps ``rendered: True`` and simply has no ``thumb``.
+
+    The frame is taken at the clip's own start -- the file written by the
+    renderer begins at the cut in-point, so ``-frames:v 1`` with no ``-ss`` is
+    already the hook frame. Seeking back into the source would be a second
+    guess about the same offset the renderer already resolved.
+    """
+    if not video.exists():
+        return None
+    poster = _poster_path(video)
+    try:
+        ffmpeg = util.require_binary("ffmpeg")
+    except ClipperError:
+        return None
+    # Overwrite in place: a re-render of the same clip must not fail on an
+    # existing poster, and the frame it would write is the newer one.
+    cmd = [
+        ffmpeg, "-y",
+        "-i", str(video),
+        "-frames:v", "1",
+        "-q:v", "3",
+        "-loglevel", "error",
+        str(poster),
+    ]
+    try:
+        util.run(cmd, logger=logger, check=True)
+    except Exception as exc:  # noqa: BLE001 - a missing poster is not a failed clip
+        if logger:
+            logger.warn(f"Poster nao gerado para {video.name}: {exc}")
+        return None
+    if not poster.exists():
+        return None
+    return poster.name
+
+
 def _clip_to_payload(clip: report.ClipRecord, output_dir: Path) -> dict:
     path = Path(clip.file) if clip.file else None
     rel = None
@@ -154,6 +206,17 @@ def _clip_to_payload(clip: report.ClipRecord, output_dir: Path) -> dict:
             rel = str(path.relative_to(output_dir.resolve())).replace("\\", "/")
         except ValueError:
             rel = path.name
+    # Read the poster rather than assume it: the file is what the browser will
+    # ask for, and a `thumb` naming an image that does not exist is a broken
+    # card in the gallery. Same rule the video already follows.
+    thumb = None
+    if rel and path is not None:
+        poster = _poster_path(path)
+        if poster.exists():
+            try:
+                thumb = str(poster.relative_to(output_dir.resolve())).replace("\\", "/")
+            except ValueError:
+                thumb = poster.name
     return {
         "title": f"Clip {clip.index}",
         "score": round(clip.score, 1),
@@ -164,7 +227,7 @@ def _clip_to_payload(clip: report.ClipRecord, output_dir: Path) -> dict:
         # False for a plan-only run: the cut was scored but no file was written,
         # so the UI must not offer it as a playable preview.
         "rendered": bool(rel),
-        "thumb": None,
+        "thumb": thumb,
         "file": clip.file,
         "hook_terms": clip.hook_terms,
         "text": clip.text,
@@ -713,6 +776,11 @@ def _run_job(options: dict, plan_only: bool) -> dict:
         if not plan_only:
             for record, clip in zip(records, clips):
                 if clip["rendered"] and record.file:
+                    # Poster first: it is one cheap frame grab and it is what
+                    # `_clip_to_payload` reads back. Doing it after the quality
+                    # pass would leave the payload we already built holding the
+                    # old `thumb: None`.
+                    clip["thumb"] = _write_poster(Path(record.file), logger)
                     try:
                         clip["quality"] = quality.inspect_clip(
                             record.file, config, caption_text=record.text or ""
@@ -2455,7 +2523,12 @@ class Handler(http_server.BaseHTTPRequestHandler):
                 # neither reveals anything about the filesystem.
                 self._send_json({"error": "not found"}, 404)
                 return
-            ctype = "video/mp4" if candidate.suffix.lower() == ".mp4" else "application/octet-stream"
+            # Videos and their posters are both served from here, so the type
+            # comes from the suffix table (the same one the static route uses)
+            # instead of a hardcoded mp4 check: an image/jpeg sent as
+            # octet-stream is refused by nosniff and the poster strip stays
+            # blank.
+            ctype = asset_content_type(candidate)
             self._send_file(candidate.read_bytes(), ctype,
                             cache=self._CACHE_ASSET, etag=self._etag_for(candidate))
             return

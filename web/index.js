@@ -427,6 +427,75 @@
     if (state.galleryMode === 'library') showLibrary(); else renderClips();
   }
 
+  // ---------- API publica da galeria (contrato da referencia) ----------
+  // O painel tinha um funil so (`renderClips`) e nada exposto. Quem integra o
+  // backend de fora espera poder empurrar uma lista pronta — o formato da
+  // referencia e `{title, src, poster, duration}` — e mandar isso por fora
+  // significaria um SEGUNDO escritor em #gallery, que e exatamente o que o
+  // funil existe para impedir. Entao a API normaliza a entrada para o formato
+  // interno, guarda na MESMA fonte (`state.clips`) e chama `renderClips`:
+  // grade, contagem, regiao viva, bloco vazio e busca continuam com um dono so.
+  const CLIPS_BASE = 'clips/';
+
+  // Aceita as duas formas de caminho que aparecem na pratica: o relativo que o
+  // /status devolve ("sub/clip-01.mp4") e o caminho de URL da referencia
+  // ("/outputs/clip-01.mp4", "/clips/clip-01.mp4"). Sem isso o card apontaria
+  // para /outputs/, que nao existe neste servidor, e o video nao tocaria.
+  function clipsNormalizeSrc(src) {
+    let s = String(src == null ? '' : src).trim();
+    if (!s) return null;
+    if (/^https?:\/\//i.test(s) || s.indexOf('data:') === 0) return s;
+    s = s.replace(/^\/+/, '');
+    s = s.replace(/^clips\//i, '');
+    s = s.replace(/^outputs\//i, '');
+    s = s.replace(/^output\//i, '');
+    return s ? CLIPS_BASE + s : null;
+  }
+
+  // Uma entrada pode ser externa (referencia) ou ja interna (um clip vindo do
+  // /status). Descartar o que nao tem fonte jogavel evita um card morto.
+  function clipsNormalizeForeign(entrada) {
+    if (!entrada || typeof entrada !== 'object') return null;
+    const src = clipsNormalizeSrc(entrada.src != null ? entrada.src : entrada.video);
+    if (!src) return null;
+    const dur = Number(entrada.duration);
+    return {
+      title: String(entrada.title == null ? 'Clip' : entrada.title),
+      score: entrada.score != null ? entrada.score : null,
+      start: entrada.start != null ? String(entrada.start) : '',
+      end: entrada.end != null ? String(entrada.end) : '',
+      duration: Number.isFinite(dur) ? dur : null,
+      video: src.slice(CLIPS_BASE.length),
+      rendered: true,
+      thumb: entrada.poster != null ? clipsNormalizeSrc(entrada.poster) : null,
+      file: entrada.file != null ? entrada.file : null,
+      hook_terms: Array.isArray(entrada.hook_terms) ? entrada.hook_terms : [],
+      text: entrada.text != null ? entrada.text : '',
+      source_url: entrada.source_url != null ? entrada.source_url : null,
+      quality: entrada.quality || null,
+    };
+  }
+
+  // Contrato da referencia. Substitui a lista do job atual e repinta pelo
+  // funil. Devolve quantos itens entraram (o numero que um integrador usa para
+  // saber se a lista foi aceita), nunca lanca por entrada ruim: uma invalida e
+  // descartada em vez de derrubar a galeria inteira.
+  function setClipsDaReferencia(lista) {
+    const itens = Array.isArray(lista) ? lista : [];
+    state.clips = itens.map(clipsNormalizeForeign).filter(Boolean);
+    renderClips();
+    return state.clips.length;
+  }
+
+  window.clipsGallery = {
+    setClips: setClipsDaReferencia,
+    // Um alias com o nome que o snippet usa no argumento, para quem ler os dois
+    // nao achar que sao coisas diferentes.
+    setClipsFromReference: setClipsDaReferencia,
+    // Leitura para teste/integracao: o que a galeria esta mostrando agora.
+    getClips: () => state.clips.slice(),
+  };
+
   // ---------- coleta do form ----------
   function toggleOn(id) { return $(id).classList.contains('active'); }
 
@@ -1580,8 +1649,18 @@
       el.setAttribute('aria-label',
         'Clip ' + (c.title || '') + ', nota ' + c.score + (playable ? '' : ', ainda não renderizado'));
       const videoSrc = playable ? ('clips/' + c.video) : null;
+      // O poster vem do servidor (um jpg ao lado do mp4) ou de um `poster`
+      // externo ja normalizado para `clips/`. Sem ele o card fica preto ate o
+      // `preload="metadata"` pintar um quadro; com ele o hook aparece de cara.
+      const posterSrc = c.thumb
+        ? (c.thumb.indexOf('clips/') === 0 ? c.thumb : 'clips/' + c.thumb)
+        : null;
       el.innerHTML =
-        (videoSrc ? '<video src="' + videoSrc + '" muted loop preload="metadata" aria-hidden="true"></video>' : '') +
+        (videoSrc
+          ? '<video src="' + videoSrc + '"'
+            + (posterSrc ? ' poster="' + posterSrc + '"' : '')
+            + ' muted loop preload="metadata" aria-hidden="true"></video>'
+          : '') +
         '<div class="overlay"></div>' +
         '<span class="play-hint" aria-hidden="true">' + (playable ? '▶' : '⚙') + '</span>' +
         '<div class="clip-meta">' +

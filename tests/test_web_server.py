@@ -5484,5 +5484,161 @@ class GallerySearchTests(unittest.TestCase):
         self.assertRegex(self.html, r'id="gallery-status"[^>]*role="status"')
 
 
+class GalleryPosterAndApiTests(unittest.TestCase):
+    """Posters de verdade no servidor + a API `window.clipsGallery.setClips`.
+
+    O contrato da referencia promete `{title, src, poster, duration}`. Duas
+    coisas faltavam para ele valer aqui: `poster` nao existia (o servidor nunca
+    gerava imagem, e `thumb` era `None` fixo) e `window.clipsGallery` nao
+    existia (a galeria so era escrita pelo poll). O que os testes travam:
+
+    * o poster e um arquivo REAL ao lado do mp4, e `thumb` o reflete em vez de
+      ser um literal;
+    * a rota que serve o clip serve a imagem com o tipo certo — um jpg enviado
+      como octet-stream morre no nosniff;
+    * `setClips` normaliza o caminho da referencia (`/outputs/`) para a rota
+      real (`/clips/`) e escreve pelo MESMO funil, para nao nascer um segundo
+      dono de `#gallery`.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        cls.src = Path(server.__file__).read_text(encoding="utf-8")
+
+    def test_the_poster_path_is_derived_from_the_video(self):
+        """O nome do jpg nasce do mp4 numa unica funcao.
+
+        Escritor e leitor precisam concordar no nome; dois literais separados e
+        como o painel acaba apontando para um poster que nunca foi escrito.
+        """
+        ini = self.src.index("def _poster_path(")
+        bloco = self.src[ini:self.src.index("def _write_poster(")]
+        self.assertIn("with_suffix", bloco)
+        self.assertIn('".jpg"', bloco)
+
+    def test_the_poster_is_written_with_ffmpeg(self):
+        """O poster e um frame extraido por ffmpeg, nao um placeholder."""
+        ini = self.src.index("def _write_poster(")
+        bloco = self.src[ini:self.src.index("def _clip_to_payload(")]
+        self.assertIn("require_binary", bloco)
+        self.assertIn('"ffmpeg"', bloco)
+        # O valor importa: `-frames:v 0` nao escreve quadro nenhum e o ffmpeg
+        # ainda sai com codigo 0, entao a assercao precisa da linha inteira.
+        self.assertIn('"-frames:v", "1"', bloco)
+        # Uma falha ao gerar o poster NAO derruba o clip: o `except` amplo e o
+        # `return None` sao obrigatorios — um `except` estreito deixaria a
+        # excecao subir e mataria um render que deu certo.
+        self.assertIn("except Exception", bloco)
+        self.assertIn('logger.warn(', bloco)
+        # E o teste de existencia do arquivo e o que impede devolver um nome de
+        # poster que nao foi escrito: `.exists()` solto em qualquer lugar nao
+        # basta, o guarda precisa estar ligado no ramo que devolve o nome.
+        self.assertRegex(bloco, r"if not poster\.exists\(\):\s*\n\s*return None")
+        self.assertIn("return poster.name", bloco)
+
+    def test_the_payload_reads_the_poster_instead_of_assuming_it(self):
+        """`thumb` so aponta para um arquivo que existe.
+
+        Um `thumb` fixo nomeando um jpg ausente vira imagem quebrada na grade —
+        a mesma regra que o `video` ja seguia.
+        """
+        ini = self.src.index("def _clip_to_payload(")
+        bloco = self.src[ini:self.src.index("def _download_worker(")]
+        self.assertIn("_poster_path(", bloco)
+        # O `if` real: sem o guarda ligado a rel/path o ramo do poster nunca
+        # roda e `thumb` fica None mesmo com o jpg no disco. Ancorar no
+        # `.exists()` nao bastava — ele aparece tambem no ramo do video, entao
+        # desligar ESTE `if` passava batido.
+        self.assertRegex(bloco, r"if rel and path is not None:")
+        self.assertIn(".exists()", bloco)
+        self.assertNotIn('"thumb": None,', bloco)
+
+    def test_the_poster_is_produced_during_the_finish_pass(self):
+        """`finish` chama o gerador para cada clip renderizado."""
+        ini = self.src.index("clips = [_clip_to_payload(")
+        bloco = self.src[ini:ini + 900]
+        self.assertIn("_write_poster(", bloco)
+        self.assertIn('clip["thumb"]', bloco)
+
+    def test_the_clip_route_serves_images_with_the_right_type(self):
+        """A rota do clip deixa de ser mp4/octet-stream fixo.
+
+        Video e poster saem pelo mesmo caminho, entao o tipo tem de vir da
+        tabela por sufixo: `image/jpeg` cortado para octet-stream nao pinta.
+        """
+        ini = self.src.index('if path.startswith("/clips/")')
+        # Ate o fim do ramo (o proximo `# Static assets`), e nao uma janela de
+        # N caracteres: a janela fixa ja deixou uma assercao ler o ramo errado.
+        bloco = self.src[ini:self.src.index("# Static assets inside web/")]
+        self.assertIn("asset_content_type(candidate)", bloco)
+        self.assertNotIn('"video/mp4" if', bloco)
+        # E a tabela precisa mesmo conhecer o jpg.
+        self.assertIn('".jpg": "image/jpeg"', self.src)
+
+    def test_the_reference_api_exists_on_window(self):
+        """`window.clipsGallery.setClips` e exposto com o nome do contrato."""
+        self.assertIn("window.clipsGallery", self.js)
+        ini = self.js.index("window.clipsGallery")
+        bloco = self.js[ini:ini + 300]
+        self.assertIn("setClips", bloco)
+
+    def test_the_api_normalises_the_reference_paths(self):
+        """`/outputs/x.mp4` vira `clips/x.mp4`; `/clips/x.mp4` nao duplica.
+
+        O snippet da referencia aponta para `/outputs/`, que nao existe neste
+        servidor. Sem a normalizacao o card nasce apontando para o vazio.
+        """
+        ini = self.js.index("function clipsNormalizeSrc(")
+        bloco = self.js[ini:self.js.index("function clipsNormalizeForeign(")]
+        self.assertIn("/^outputs", bloco)
+        self.assertIn("/^clips", bloco)
+        self.assertIn("CLIPS_BASE", bloco)
+        # E o prefixo real precisa ser o que a rota do servidor atende.
+        self.assertRegex(self.js, r"const CLIPS_BASE = 'clips/'")
+
+    def test_the_api_posts_through_the_single_funnel(self):
+        """`setClips` chama `renderClips`, e nao escreve em `#gallery` direto.
+
+        O funil existe justamente porque tres pontos escreviam na grade com
+        ideias diferentes de "vazio". Uma API nova que montasse a grade por
+        fora recriaria o problema que o funil resolveu.
+        """
+        ini = self.js.index("function setClipsDaReferencia(")
+        bloco = self.js[ini:self.js.index("window.clipsGallery")]
+        self.assertIn("renderClips(", bloco)
+        self.assertNotIn("#gallery", bloco)
+        # E a fonte e a mesma que o poll usa.
+        self.assertIn("state.clips", bloco)
+
+    def test_the_api_discards_entries_it_cannot_play(self):
+        """Entrada sem fonte e descartada, nao vira card morto.
+
+        Uma lista com item invalido nao pode derrubar a galeria inteira nem
+        pintar um cartao que nao toca.
+        """
+        ini = self.js.index("function clipsNormalizeForeign(")
+        bloco = self.js[ini:self.js.index("function setClipsDaReferencia(")]
+        self.assertIn("return null", bloco)
+        ini2 = self.js.index("function setClipsDaReferencia(")
+        bloco2 = self.js[ini2:self.js.index("window.clipsGallery")]
+        self.assertIn(".filter(Boolean)", bloco2)
+
+    def test_the_card_uses_the_poster_when_there_is_one(self):
+        """O cartao passa `thumb` como `poster` do <video>.
+
+        Gerar o poster no servidor nao serve de nada se a grade o ignora: o
+        card continua preto ate o metadata carregar.
+        """
+        ini = self.js.index("function renderClips(")
+        bloco = self.js[ini:self.js.index("function formatSize(")]
+        self.assertIn("posterSrc", bloco)
+        self.assertIn("c.thumb", bloco)
+        # A concatenacao inteira, e nao so o nome do atributo: trocar o
+        # ternario por `false` deixa `poster=` na string e a assercao frouxa
+        # passava com o poster desligado.
+        self.assertIn("(posterSrc ? ' poster=\"' + posterSrc + '\"' : '')", bloco)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

@@ -6355,8 +6355,12 @@ class StudioToLibraryLinkTests(unittest.TestCase):
 
     def test_the_link_lives_in_the_source_card(self):
         """Dentro do card Fonte -- o campo que ele alimenta."""
+        # Ancorado no `href`, e nao no nome da classe. O que este teste mede e'
+        # a POSICAO do link, e a classe ja mudou uma vez (`field-alt` ->
+        # `field-alt-fora`) derrubando estes dois testes sem que nada na tela
+        # tivesse se movido. Um teste de posicao nao deveria ter nome de estilo.
         card = self.body.index('class="card card-fonte"')
-        link = self.body.index('class="field-alt"')
+        link = self.body.index('href="/scrap"')
         self.assertGreater(link, card, "o link saiu do card Fonte")
         # E nao pode ter ido parar no rodape, que e' montado por comum.js.
         comum = (server.WEB_DIR / "comum.js").read_text(encoding="utf-8")
@@ -6364,10 +6368,21 @@ class StudioToLibraryLinkTests(unittest.TestCase):
 
     def test_the_link_is_not_a_field_hint(self):
         """Nao usa `.hint`: isto nao descreve o campo, e' uma saida."""
-        ini = self.body.index('class="field-alt"')
-        bloco = self.body[ini:self.body.index("</p>", ini)]
-        self.assertIn('href="/scrap"', bloco)
-        self.assertNotIn("hint", bloco)
+        # A classe do <p> que envolve o link e' comparada TOKEN a token, e nao
+        # por substring. Um `assertNotIn("hint", bloco)` sobre o texto inteiro
+        # reprovaria por causa de uma palavra que aparece no meio do paragrafo
+        # -- o que se quer e que a CLASSE nao traga `hint`, nao que a frase nao
+        # contenha a letra.
+        ini = self.body.index('href="/scrap"')
+        abre = self.body.rindex("<p", 0, ini)
+        m = re.match(r'<p class="([^"]*)"', self.body[abre:])
+        self.assertIsNotNone(m, "o link ficou sem <p class> envolvendo")
+        classes = m.group(1).split()
+        self.assertNotIn(
+            "hint", classes,
+            "o link virou dica do campo: `.hint` e' o texto que o "
+            "`aria-describedby` do campo anuncia, e uma saida lida como "
+            "requisito do campo e' pior que nenhuma saida")
 
     def test_the_handoff_contract_is_documented(self):
         """O `?url=` deixou de ser implicito."""

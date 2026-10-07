@@ -5426,6 +5426,44 @@ class GallerySearchTests(unittest.TestCase):
         """
         self.assertRegex(self.html, r'id="gallery-count"[^>]*aria-hidden="true"')
 
+    def test_every_element_the_js_hides_also_hides_in_the_css(self):
+        """O atributo `hidden` tem de vencer o `display` que a regra declara.
+
+        `hidden` so vale display:none enquanto nenhuma outra regra reafirmar o
+        `display` — e uma declaracao de autor vence a do user-agent. Estes tres
+        elementos ja declaram `flex`/`inline-flex`, entao precisam do `[hidden]`
+        explicito. Sem ele o JS liga o atributo, o atributo entra no DOM e o
+        elemento continua na tela: foi assim que a barra de busca ficou visivel
+        sobre uma galeria vazia.
+        """
+        # Os quatro estao no MESMO grupo de seletores (separados por virgula)
+        # fechando em `display: none`.
+        ini = self.css.index(".clips-toolbar[hidden]")
+        bloco = self.css[ini:ini + 320]
+        for seletor in (".clips-toolbar", ".clips-search-clear",
+                        ".clip-play-btn", ".clips-empty"):
+            with self.subTest(seletor=seletor):
+                self.assertIn(seletor + "[hidden]", bloco)
+        self.assertRegex(bloco, r"display:\s*none")
+
+    def test_the_gallery_elements_declare_a_display_that_needs_the_hidden_rule(self):
+        """A prova de que o `[hidden]` NAO e decorativo.
+
+        Se algum dia estas regras deixarem de declarar `display`, o teste de
+        cima vira letra morta sem que ninguem perceba — este ancora a razao.
+        """
+        for seletor, valor in ((".clips-toolbar", "flex"),
+                               (".clips-search-clear", "inline-flex")):
+            with self.subTest(seletor=seletor):
+                # O corpo da regra acaba na PRIMEIRA chave de fechamento. Uma
+                # janela de N caracteres nao serve: ela ultrapassa o `}` e cai
+                # no comentario seguinte, que cita `display: flex` como texto —
+                # e o teste passaria lendo o comentario em vez da regra.
+                ini = self.css.index(seletor + " {")
+                fim = self.css.index("}", ini)
+                corpo = self.css[ini:fim]
+                self.assertRegex(corpo, r"display:\s*" + valor)
+
     def test_the_search_describes_itself_with_the_static_hint(self):
         """`aria-describedby` aponta para a dica ESTATICA, nao para a regiao viva.
 

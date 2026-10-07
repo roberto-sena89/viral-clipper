@@ -847,6 +847,17 @@ body { padding-left: var(--rail-w); }
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   margin: 0 0 16px;
 }
+/* O atributo `hidden` do HTML vale display:none — mas SO enquanto outra regra
+   nao reafirmar o `display`. Estas tres regras declaram `display: flex` /
+   `inline-flex`, e uma declaracao de autor vence a do user-agent: sem o
+   `[hidden]` explicito, o elemento fica VISIVEL mesmo com o atributo ligado.
+   (Foi o defeito que deixou a barra de busca na tela com a galeria vazia: o
+   JS setava `.hidden = true`, o atributo entrava, e a barra continuava de pe.)
+   Um lugar so, os tres elementos, para nao repetir o esquecimento. */
+.clips-toolbar[hidden],
+.clips-search-clear[hidden],
+.clip-play-btn[hidden],
+.clips-empty[hidden] { display: none; }
 .clips-search {
   position: relative; flex: 1 1 260px; min-width: 0; display: flex; align-items: center;
 }
@@ -892,7 +903,8 @@ body { padding-left: var(--rail-w); }
   display: flex; flex-direction: column; align-items: center; text-align: center;
   gap: 8px; padding: 44px 20px;
 }
-.clips-empty[hidden] { display: none; }
+/* O `[hidden]` do .clips-empty mora junto dos outros, no grupo unico lá em
+   cima — repetir aqui era a segunda verdade sobre a mesma coisa. */
 .clips-empty-icon { color: var(--text-muted); opacity: 0.55; width: 34px; height: 34px; }
 .clips-empty-icon svg { width: 100%; height: 100%; }
 .clips-empty-title { font-size: var(--text-subtitle); font-weight: 650; color: var(--text-primary); }

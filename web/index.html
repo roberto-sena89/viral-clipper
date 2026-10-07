@@ -611,16 +611,45 @@
 
 </main>
 
-<footer>
-  <div class="wrap footer-inner">
-    <span>viral-clipper · interface web · CLI <code>python -m viralclipper</code></span>
-    <nav class="footer-nav" aria-label="Rodapé">
-      <button class="footer-link" type="button" id="btn-docs-foot">Como usar</button>
-      <span aria-hidden="true">·</span>
-      <button class="footer-link" type="button" id="btn-rail-cortes">Cortes</button>
-      <span aria-hidden="true">·</span>
-      <button class="footer-link" type="button" id="btn-rail-scrap">Biblioteca</button>
-    </nav>
+<footer class="site-footer" aria-label="Rodapé do Viral Clipper">
+  <div class="footer-container">
+    <div class="footer-main">
+      <a class="footer-brand" href="/" aria-label="Viral Clipper — início">
+        <span class="footer-brand__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="m9 6 9 6-9 6V6Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+            <path d="M5 5v14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+        </span>
+        <span class="footer-brand__content">
+          <span class="footer-brand__name">viral-clipper</span>
+          <span class="footer-brand__description">Seu conteúdo. Novas possibilidades.</span>
+        </span>
+      </a>
+      <nav class="footer-nav" aria-label="Navegação do rodapé">
+        <button class="footer-link" type="button" id="btn-docs-foot" data-footer-action="docs">Como usar</button>
+        <button class="footer-link" type="button" id="btn-rail-cortes" data-footer-action="cortes">Cortes</button>
+        <button class="footer-link" type="button" id="btn-rail-scrap" data-footer-action="biblioteca">Biblioteca</button>
+      </nav>
+    </div>
+    <div class="footer-bottom">
+      <p class="footer-caption">
+        Interface web
+        <span class="footer-caption__separator" aria-hidden="true"></span>
+        Também disponível via CLI
+      </p>
+      <div class="footer-cli">
+        <span class="footer-cli__prompt" aria-hidden="true">$</span>
+        <code id="footer-cli-command">python -m viralclipper</code>
+        <button class="footer-copy" type="button" id="btn-copy-cli" aria-label="Copiar comando da CLI" aria-describedby="footer-cli-command">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="8" y="8" width="12" height="12" rx="3" stroke="currentColor" stroke-width="1.7" />
+            <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7" />
+          </svg>
+        </button>
+      </div>
+    </div>
+    <p class="footer-feedback" id="footer-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
   </div>
 </footer>
 

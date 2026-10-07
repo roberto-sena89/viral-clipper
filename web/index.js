@@ -2096,6 +2096,29 @@
   liga('btn-docs-foot', abrirDocs);
   liga('btn-rail-cortes', () => irPara('/'));
   liga('btn-rail-scrap', () => irPara('/scrap'));
+  // O comando da CLI vive num <code> que a pessoa teria de selecionar a mao.
+  // O botao copia o TEXTO DO ALVO (nao uma copia da string no JS): duas copias
+  // do mesmo comando divergiriam na primeira edicao, e o `#footer-cli-command`
+  // ja e a fonte que o `aria-describedby` aponta.
+  const cmdEl = document.getElementById('footer-cli-command');
+  const feedbackEl = document.getElementById('footer-feedback');
+  const anunciar = (texto) => { if (feedbackEl) feedbackEl.textContent = texto; };
+  liga('btn-copy-cli', async () => {
+    if (!cmdEl) return;
+    const comando = cmdEl.textContent.trim();
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('sem clipboard');
+      await navigator.clipboard.writeText(comando);
+      anunciar('Comando copiado: ' + comando);
+      toast('Comando copiado.', 'ok');
+    } catch (err) {
+      // Clipboard negado (http sem secure-context, permissao, iframe): o
+      // comando continua visivel na tela, entao falhar em copiar nao e um
+      // beco — o aviso diz o que fazer em vez de so acusar o erro.
+      anunciar('Não foi possível copiar. Selecione o comando manualmente.');
+      toast('Não foi possível copiar. Selecione o comando manualmente.', 'err');
+    }
+  });
   $('#hero-cta').addEventListener('click', () => {
     document.getElementById('config').scrollIntoView({ behavior: 'smooth' });
     setTimeout(() => $('#url').focus(), 500);

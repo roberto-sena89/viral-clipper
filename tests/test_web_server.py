@@ -5703,5 +5703,143 @@ class GalleryOpenLibraryEventTests(unittest.TestCase):
         self.assertNotIn("openLibrary(", bloco)
 
 
+class FooterRedesignTests(unittest.TestCase):
+    """O rodape novo: marca, navegacao, atalho da CLI e o copiar.
+
+    A referencia trazia um rodape com estrutura propria (`.site-footer`,
+    `footer-container`, marca com icone, bloco de CLI). O que os testes travam:
+
+    * a estrutura nova existe e os TRES destinos antigos sobreviveram — o
+      rodape continua sendo a saida para quem chega ao fim da pagina;
+    * as cores vem dos tokens do painel, e nao de uma paleta propria: um
+      rodape claro sobre painel escuro e a mesma falha que a galeria ja teve;
+    * o botao de copiar copia o TEXTO DO ALVO e anuncia numa regiao viva, em
+      vez de guardar uma copia da string no JS — duas copias do mesmo comando
+      divergem na primeira edicao.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        cls.css = (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
+
+    def test_the_new_structure_is_in_place(self):
+        """Os blocos da referencia existem, com os nomes que o CSS espera."""
+        for marca in ("site-footer", "footer-container", "footer-main",
+                      "footer-brand", "footer-brand__icon", "footer-brand__name",
+                      "footer-bottom", "footer-caption", "footer-cli", "footer-copy"):
+            with self.subTest(classe=marca):
+                self.assertIn(marca, self.html)
+        # O rodape tem nome acessivel proprio (regiao declarada).
+        self.assertRegex(self.html, r'site-footer[^>]*aria-label=')
+
+    def test_the_old_destinations_survived(self):
+        """Os tres botoes do rodape antigo continuam no lugar.
+
+        Reescrever o rodape nao pode custar a saida que ele passou a oferecer:
+        era o unico lugar da pagina com os destinos do rail.
+        """
+        for alvo in ("btn-docs-foot", "btn-rail-cortes", "btn-rail-scrap"):
+            with self.subTest(alvo=alvo):
+                self.assertIn(f'id="{alvo}"', self.html)
+        self.assertIn("liga('btn-rail-scrap'", self.js)
+        self.assertIn("liga('btn-docs-foot'", self.js)
+
+    def test_the_brand_links_home_without_a_second_route_list(self):
+        """A marca e um link para `/`, e nao um quarto <button> com handler.
+
+        O rodape ja tem os destinos do rail em botoes ligados pelo JS; repetir
+        a rota num `href` seria a quarta lista de rotas para manter em
+        sincronia.
+        """
+        ini = self.html.index('class="footer-brand"')
+        bloco = self.html[ini:ini + 200]
+        self.assertIn('href="/"', bloco)
+        self.assertIn("aria-label=", bloco)
+
+    def test_the_footer_uses_the_panel_tokens(self):
+        """Nada de cor crua: o rodape herda a paleta do painel."""
+        ini = self.css.index(".site-footer {")
+        bloco = self.css[ini:self.css.index(".footer-nav {")]
+        self.assertIn("var(--border-subtle)", bloco)
+        self.assertIn("var(--text-muted)", bloco)
+        # Um `background: #fff` (ou o token da referencia) pintaria um rodape
+        # claro sobre o painel escuro.
+        self.assertNotIn("#fff", bloco.lower())
+        self.assertNotIn("--clips-", bloco)
+
+    def test_the_copy_button_copies_the_target_text(self):
+        """O handler le o texto do `<code>`, e nao uma string embutida.
+
+        Duas copias do mesmo comando divergem na primeira edicao; a fonte e o
+        proprio `#footer-cli-command`, que o `aria-describedby` ja aponta.
+        """
+        ini = self.js.index("const cmdEl = document.getElementById('footer-cli-command')")
+        bloco = self.js[ini:self.js.index("liga('btn-copy-cli'") ]
+        self.assertIn("footer-cli-command", bloco)
+        copia = self.js[self.js.index("liga('btn-copy-cli'"):]
+        copia = copia[:copia.index("$('#hero-cta')")]
+        self.assertIn("cmdEl.textContent", copia)
+        self.assertIn("writeText", copia)
+        # Nao pode ter o comando escrito a mao no JS.
+        self.assertNotIn("python -m viralclipper", copia)
+
+    def test_the_copy_button_announces_and_degrades(self):
+        """Sucesso e falha viram texto na regiao viva do rodape.
+
+        Clipboard pode ser negado (http sem secure-context, permissao). O
+        comando segue visivel na tela, entao a falha precisa dizer o que fazer
+        em vez de sumir num console.
+        """
+        ini = self.js.index("const feedbackEl = document.getElementById('footer-feedback')")
+        bloco = self.js[ini:self.js.index("$('#hero-cta')")]
+        self.assertIn("catch", bloco)
+        self.assertIn("footer-feedback", self.js[:self.js.index("liga('btn-copy-cli'")])
+        # O sucesso anuncia com o comando; a falha anuncia o que fazer. Exigir
+        # so "anunciar(" deixaria trocar o do sucesso por nada e passar batido
+        # (o do catch ainda casaria o regex).
+        self.assertRegex(bloco, r"anunciar\('Comando copiado: ' \+ comando\)")
+        self.assertRegex(bloco, r"anunciar\('[^']*manual")
+        # O alvo da regiao viva existe no HTML e nasce vazia.
+        self.assertRegex(self.html, r'id="footer-feedback"[^>]*role="status"')
+        self.assertRegex(self.html, r'id="footer-feedback"[^>]*aria-live="polite"')
+
+    def test_the_copy_button_names_itself_and_its_target(self):
+        """O botao so-icone tem rotulo e uma descricao com texto.
+
+        Um botao so com SVG nao diz o que faz; e `aria-describedby` apontando
+        para um alvo vazio nao descreve nada — o alvo aqui e o proprio comando.
+        """
+        ini = self.html.index('class="footer-copy"')
+        bloco = self.html[ini:ini + 260]
+        self.assertIn("aria-label=", bloco)
+        self.assertIn('aria-describedby="footer-cli-command"', bloco)
+        alvo = re.search(r'id="footer-cli-command"[^>]*>(.*?)</code>', self.html, re.S)
+        self.assertIsNotNone(alvo, "o alvo da descricao nao existe")
+        self.assertTrue(re.sub(r"<[^>]+>", "", alvo.group(1)).strip(),
+                        "o alvo da descricao esta vazio")
+
+    def test_the_live_region_disappears_while_empty(self):
+        """A regiao viva sai do fluxo quando vazia.
+
+        Ela nasce sem texto; se ocupasse altura, o rodape inteiro pularia ao
+        copiar. `:empty { display: none }` e o que evita o salto.
+        """
+        ini = self.css.index(".footer-feedback:empty")
+        bloco = self.css[ini:ini + 80]
+        self.assertIn("display: none", bloco)
+
+    def test_every_element_the_js_reaches_exists_in_the_html(self):
+        """Os ids que o JS liga existem mesmo no HTML.
+
+        `liga` engole um id ausente (faz `if (el)`), entao um erro de digitacao
+        viraria um botao mudo sem nenhum sinal.
+        """
+        for alvo in ("btn-copy-cli", "footer-cli-command", "footer-feedback"):
+            with self.subTest(alvo=alvo):
+                self.assertIn(f'id="{alvo}"', self.html)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

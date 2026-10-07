@@ -944,21 +944,93 @@ body { padding-left: var(--rail-w); }
 }
 .quality-fix:hover { background: var(--accent-primary); color: white; }
 
-/* ---------- FOOTER ---------- */
-footer {
+/* ---------- FOOTER ----------
+   O rodape deixou de ser uma linha de texto: agora tem marca, navegacao e o
+   atalho da CLI. Continua dentro da paleta do painel (tokens `--*`), porque a
+   referencia trazia cores proprias e um rodape claro sobre painel escuro e a
+   mesma falha que a galeria ja teve. */
+.site-footer {
   border-top: 1px solid var(--border-subtle);
-  padding: 24px 0;
+  padding: 32px 0 24px;
   color: var(--text-muted); font-size: 0.82rem;
 }
-.footer-inner {
-  display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+.footer-container {
+  max-width: var(--wrap-max, 1180px);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.footer-main {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  flex-wrap: wrap; gap: 20px;
+}
+.footer-brand {
+  display: inline-flex; align-items: center; gap: 12px;
+  text-decoration: none; color: inherit;
+}
+.footer-brand:focus-visible {
+  outline: 2px solid var(--accent-soft); outline-offset: 3px;
+  border-radius: 6px;
+}
+.footer-brand__icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; flex: none;
+  border: 1px solid var(--border-subtle); border-radius: 10px;
+  color: var(--accent-primary);
+}
+.footer-brand__icon svg { width: 18px; height: 18px; }
+.footer-brand__content { display: flex; flex-direction: column; gap: 2px; }
+.footer-brand__name {
+  color: var(--text-primary); font-weight: 600; font-size: 0.9rem;
+}
+.footer-brand__description { color: var(--text-muted); font-size: 0.78rem; }
+.footer-bottom {
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 12px;
+  margin-top: 24px; padding-top: 18px;
+  border-top: 1px solid var(--border-subtle);
+}
+.footer-caption {
+  display: flex; align-items: center; gap: 10px; margin: 0;
+}
+/* O separador e um ponto decorativo: era um `·` no meio do texto e ficava no
+   fluxo do leitor de tela. Como elemento `aria-hidden` com a propria forma,
+   ele aparece sem virar palavra. */
+.footer-caption__separator {
+  width: 3px; height: 3px; border-radius: 50%;
+  background: var(--text-muted); opacity: 0.6;
+}
+.footer-cli {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--border-subtle); border-radius: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.footer-cli__prompt { color: var(--accent-primary); user-select: none; }
+.footer-cli code { color: var(--text-primary); font-size: 0.8rem; }
+.footer-copy {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; flex: none;
+  background: none; border: none; border-radius: 7px; cursor: pointer;
+  color: var(--text-secondary);
+}
+.footer-copy:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.06); }
+.footer-copy:focus-visible {
+  outline: 2px solid var(--accent-soft); outline-offset: 2px;
+}
+.footer-copy svg { width: 15px; height: 15px; }
+/* A regiao viva nasce vazia e so ganha texto depois do clique. Ocupar altura
+   com o vazio empurraria o rodape inteiro ao copiar — por isso ela sai do
+   fluxo enquanto nao anuncia nada. */
+.footer-feedback:empty { display: none; }
+.footer-feedback {
+  margin: 12px 0 0; color: var(--text-secondary); font-size: 0.78rem;
 }
 /* Navegacao do rodape. Existe porque o rodape era o unico lugar sem saida:
    quem rolava ate o fim e nao achava o Scrap no menu (ou estava no celular,
    onde o rail virou hamburguer) nao tinha para onde ir. Os destinos sao os
    mesmos do rail, e sao <button> porque quem navega e o JS — manter os hrefs
    aqui seria uma segunda lista de rotas para manter em sincronia. */
-.footer-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.footer-nav { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .footer-link {
   background: none; border: none; padding: 2px 0; cursor: pointer;
   font: inherit; color: var(--text-secondary);

@@ -5191,5 +5191,260 @@ class JobResultSummaryTests(unittest.TestCase):
         self.assertRegex(bloco, r"\.job-clip\s*\{[^}]*white-space:\s*nowrap")
 
 
+class GallerySearchTests(unittest.TestCase):
+    """A secao "Clips gerados": contagem viva, busca e bloco vazio dedicado.
+
+    A secao tem tres estados que precisam se distinguir na tela: nada ainda,
+    um render em andamento (esqueleto) e resultados — filtrados ou nao. O que
+    os testes travam:
+
+    * o vazio e um BLOCO IRMAO da grade, nao um placeholder escrito dentro
+      dela (a grade e reescrita pelo poll de /status a cada tique);
+    * contagem, grade, bloco vazio e regiao viva saem do MESMO funil, senao
+      discordam depois de um filtro;
+    * a secao usa os tokens do painel escuro — a paleta clara da referencia
+      (`--clips-*`) nao pode vazar para a pagina.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        cls.css = (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
+
+    def test_the_gallery_has_the_new_chrome(self):
+        """Eyebrow, titulo, contador e status: a estrutura da secao nova."""
+        self.assertIn('class="clips-section"', self.html)
+        self.assertIn('class="section-eyebrow"', self.html)
+        self.assertIn('id="gallery-title"', self.html)
+        self.assertIn('id="gallery-count"', self.html)
+        self.assertIn('id="gallery-status"', self.html)
+        # O titulo e o `aria-labelledby` da secao — renomear um sem o outro
+        # deixa a regiao sem nome acessivel.
+        self.assertRegex(self.html, r"clips-section[^>]*aria-labelledby=\"gallery-title\"")
+
+    def test_the_eyebrow_is_the_live_section_heading(self):
+        """A eyebrow fica DENTRO do bloco que carrega o titulo.
+
+        Um rotulo solto antes do <h2> le como paragrafo; aqui ele pertence ao
+        mesmo grupo, para o leitor de tela anunciar "SEUS RESULTADOS, Clips
+        gerados" como uma unidade.
+        """
+        ini = self.html.index('class="clips-section-heading"')
+        bloco = self.html[ini:ini + 400]
+        self.assertIn("section-eyebrow", bloco)
+        self.assertIn('id="gallery-title"', bloco)
+
+    def test_the_search_box_filters_the_grid(self):
+        """O campo existe, tem rotulo e o JS o escuta no `input`."""
+        self.assertIn('id="gallery-search"', self.html)
+        self.assertRegex(self.html, r'id="gallery-search"[^>]*aria-label=')
+        # `input`, e nao `change`: a lista encolhe enquanto se digita.
+        self.assertRegex(self.js, r"\$\('#gallery-search'\)\.addEventListener\('input'")
+        self.assertRegex(self.js, r"setGalleryQuery\(")
+
+    def test_the_search_matches_title_hook_and_score(self):
+        """O termo casa o que o usuario ve no cartao, nao so o id do arquivo."""
+        ini = self.js.index("function clipMatchesQuery(")
+        bloco = self.js[ini:ini + 400]
+        self.assertIn("clip.title", bloco)
+        self.assertIn("clip.hook", bloco)
+        self.assertIn("clip.score", bloco)
+        # Termo vazio casa tudo: o filtro nunca esconde a lista sem que a
+        # pessoa tenha digitado algo.
+        self.assertRegex(bloco, r"if \(!q\) return true")
+
+    def test_the_live_region_announces_what_the_filter_left(self):
+        """Contagem, grade e anuncio saem do mesmo lugar.
+
+        Se a contagem e o bloco vazio fossem calculados em pontos diferentes,
+        um filtro poderia mostrar "0 de 3" com a grade ainda cheia — ou o
+        contrario.
+        """
+        self.assertIn("function paintGallery(", self.js)
+        self.assertRegex(self.js, r"\$\('#gallery-status'\)")
+        self.assertRegex(self.js, r"\$\('#gallery-count'\)")
+        # A regiao viva tem papel e modo declarados no HTML, nao no JS: sem
+        # `role` o `aria-live` sozinho nao basta em todo leitor.
+        self.assertRegex(self.html, r'id="gallery-status"[^>]*role="status"')
+        self.assertRegex(self.html, r'id="gallery-status"[^>]*aria-live="polite"')
+
+    def test_every_gallery_render_goes_through_the_one_funnel(self):
+        """Nenhum ponto escreve na grade sem passar pelo funil.
+
+        Antes havia quatro: `renderClips`, `renderLibrary`, o esqueleto de
+        render e o poll de /status. Cada um tinha a sua ideia de "vazio" — dois
+        escondiam o bloco dedicado e pintavam um `empty-state` dentro da grade.
+        """
+        self.assertEqual(self.js.count("function paintGallery("), 1)
+        # Os dois renderizadores de lista chamam o funil com a lista filtrada.
+        self.assertRegex(self.js, r"paintGallery\(\s*\n?\s*galleryFilters\(state\.clips")
+        self.assertRegex(self.js, r"paintGallery\(\s*\n?\s*galleryFilters\(files")
+
+    def test_the_empty_block_is_a_sibling_not_a_child(self):
+        """O vazio e irmao da grade — senao o poll o apaga.
+
+        `#gallery` tem o `innerHTML` trocado a cada tique de /status; um bloco
+        vazio dentro dela sobreviveria por um tique e sumiria no seguinte.
+        """
+        grade = self.html.index('id="gallery"')
+        vazio = self.html.index('id="gallery-empty"')
+        self.assertGreater(vazio, grade)
+        # O bloco nasce escondido (o JS decide quando ele vale) e tem titulo e
+        # descricao proprios, para a copy de "nada ainda" e a de "nada
+        # encontrado" nao serem a mesma frase.
+        self.assertRegex(self.html, r'id="gallery-empty"[^>]*hidden')
+        self.assertIn('id="gallery-empty-title"', self.html)
+        self.assertIn('id="gallery-empty-description"', self.html)
+
+    def test_the_empty_copy_knows_the_two_kinds_of_empty(self):
+        """Vazio por nada gerado != vazio por filtro sem resultado."""
+        ini = self.js.index("function paintGallery(")
+        bloco = self.js[ini:ini + 2200]
+        self.assertRegex(bloco, r"total === 0")
+        self.assertRegex(bloco, r"Nada encontrado")
+        # A frase do filtro cita o termo digitado e o total, para o usuario
+        # entender que a lista existe e so a busca que nao achou.
+        self.assertRegex(bloco, r"corresponde a <strong>")
+
+    def test_the_searched_term_cannot_inject_markup(self):
+        """O termo digitado entra como texto, nunca como HTML.
+
+        A descricao do vazio e escrita com `innerHTML` (ela carrega <strong> e
+        <code>), entao o termo precisa passar por escape antes de entrar.
+        """
+        self.assertIn("function escapeHtml(", self.js)
+        self.assertRegex(self.js, r"escapeHtml\(busca\)")
+
+    def test_the_grid_keeps_the_api_contract_class_names(self):
+        """A grade continua `.gallery` com o id `#gallery`.
+
+        O servidor, o CSS antigo e os testes de clip dependem desse par; o
+        `clips-grid` da referencia entra como classe ADICIONAL, nao como
+        substituta. Por isso as duas classes tem de conviver no mesmo
+        atributo — trocar `.gallery` por `.clips-grid` deixaria a grade sem o
+        `display: grid` de que ela depende e sem os seletores ja escritos.
+        """
+        self.assertRegex(
+            self.html,
+            r'class="clips-grid gallery"[^>]*id="gallery"|id="gallery"[^>]*class="clips-grid gallery"')
+        # A regra antiga da grade tem de continuar valendo por si.
+        self.assertRegex(self.css, r"\.gallery\s*\{[^}]*display:\s*grid")
+
+    def test_escape_clears_the_field_and_not_only_the_state(self):
+        """`Escape` zera o input, nao so o filtro.
+
+        Limpar apenas o estado deixaria o texto digitado na caixa enquanto a
+        grade volta inteira — o campo mentiria sobre o que esta mostrando.
+        """
+        ini = self.js.index("$('#gallery-search').addEventListener('keydown'")
+        bloco = self.js[ini:ini + 260]
+        self.assertRegex(bloco, r"ev\.key === 'Escape'")
+        self.assertRegex(bloco, r"ev\.target\.value = ''")
+
+    def test_the_library_toggle_survives_the_redesign(self):
+        """`#btn-library` e `#gallery-sub` continuam existindo e alternando.
+
+        A secao nova trazia um `clips:open-library` solto, sem nada escutando —
+        isso perdia a alternancia entre os cortes do job e a pasta de saida.
+        Nao basta as duas funcoes existirem no arquivo: o clique tem de
+        ESCOLHER entre elas pelo estado do proprio botao.
+        """
+        self.assertIn('id="btn-library"', self.html)
+        self.assertIn('id="gallery-sub"', self.html)
+        self.assertRegex(self.js, r"indexOf\('cortes deste job'\)")
+        self.assertIn("showJobClips()", self.js)
+        self.assertIn("showLibrary()", self.js)
+        # O clique ramifica: um caminho mostra a pasta, o outro volta aos cortes.
+        ini = self.js.index("$('#btn-library').addEventListener('click'")
+        bloco = self.js[ini:ini + 320]
+        self.assertRegex(bloco, r"if \(showingLibrary\)\s*\{\s*showJobClips\(\);\s*\}"
+                                r"\s*else\s*\{\s*showLibrary\(\);\s*\}")
+        # Cada modo reescreve o proprio rotulo e a propria legenda: sem isso o
+        # botao continuaria dizendo "Ver pasta" depois de ja estar na pasta.
+        self.assertIn("$('#btn-library').textContent = 'Ver cortes deste job'", self.js)
+        self.assertIn("$('#btn-library').textContent = 'Ver pasta de saída'", self.js)
+
+    def test_the_section_uses_the_panel_theme_not_the_reference_palette(self):
+        """Nada de `--clips-*` no HTML, e nenhum `:root` novo na secao.
+
+        A referencia abria um `<style>` com a sua propria paleta clara e um
+        `:root` dentro da pagina. `:root` e o <html>: aquele bloco nao
+        redefinia so a secao, redefinia `--accent-primary` e `--radius-*` para
+        a pagina inteira — um cartao branco sobre o painel escuro.
+        """
+        self.assertNotIn("--clips-", self.html)
+        self.assertNotIn("<style>", self.html)
+        self.assertNotIn("<script>", self.html)
+        # O que a secao pinta sai dos tokens do painel.
+        ini = self.css.index(".clips-search-input")
+        bloco = self.css[ini:ini + 600]
+        self.assertIn("var(--text-primary)", bloco)
+        self.assertIn("var(--border-subtle)", bloco)
+
+    def test_the_panel_tokens_are_the_dark_ones(self):
+        """Prova que o painel reescreve o `:root` claro do shared.css.
+
+        Se o shared.css fosse a ultima palavra, `--bg-deep` seria #0b0d12 e
+        `--accent-primary` #6366f1 (indigo); o painel sobrescreve com #090b10 e
+        #ff4fae (magenta). A secao herda o segundo par.
+        """
+        ini = self.css.index(":root {")
+        bloco = self.css[ini:ini + 900]
+        self.assertIn("#090b10", bloco)
+        self.assertIn("#ff4fae", bloco)
+
+    def test_the_reference_palette_is_shimmed_to_the_panel(self):
+        """Se a referencia voltar com o <style>, ela nao pinta claro.
+
+        O shim remapeia cada `--clips-*` para o token equivalente do painel.
+        `--clips-bg-page` fica de fora de proposito: o fundo da pagina nunca e
+        da secao.
+        """
+        nome = "--clips-bg:"
+        self.assertIn(nome, self.css)
+        ini = self.css.index(nome)
+        bloco = self.css[ini:ini + 700]
+        self.assertIn("var(--bg-card)", bloco)
+        self.assertIn("--clips-accent: var(--accent-primary)", bloco)
+        self.assertNotIn("--clips-bg-page", self.css)
+
+    def test_the_empty_block_really_hides(self):
+        """`.clips-empty[hidden]` vence o `display: flex` da regra base.
+
+        Sem essa linha o `hidden` do HTML nao esconde nada num elemento que o
+        CSS declara como `display: flex` — o bloco vazio ficaria por cima da
+        grade com resultados.
+        """
+        self.assertRegex(self.css, r"\.clips-empty\[hidden\]\s*\{\s*display:\s*none")
+
+    def test_the_count_is_not_announced_twice(self):
+        """O numero vive na regiao viva; o span visivel e `aria-hidden`.
+
+        Sem isso o leitor de tela le "3 cortes" duas vezes — uma do span e uma
+        do anuncio.
+        """
+        self.assertRegex(self.html, r'id="gallery-count"[^>]*aria-hidden="true"')
+
+    def test_the_search_describes_itself_with_the_static_hint(self):
+        """`aria-describedby` aponta para a dica ESTATICA, nao para a regiao viva.
+
+        A `#gallery-status` nasce vazia e so ganha texto depois do primeiro
+        render. Apontar a descricao do campo para ela daria ao campo uma
+        descricao em branco ate o JS rodar — e um alvo vazio nao descreve nada.
+        A dica certa e a que ja tem texto no HTML.
+        """
+        self.assertRegex(self.html, r'id="gallery-search"[^>]*aria-describedby="gallery-search-hint"')
+        self.assertNotRegex(self.html, r'id="gallery-search"[^>]*aria-describedby="gallery-status"')
+        # A dica existe, tem conteudo e nao depende do JS para ter texto.
+        alvo = re.search(
+            r'id="gallery-search-hint"[^>]*>(.*?)</p>', self.html, re.S)
+        self.assertIsNotNone(alvo, "a dica do campo de busca nao existe")
+        self.assertTrue(re.sub(r"<[^>]+>", "", alvo.group(1)).strip(),
+                        "a dica do campo de busca esta vazia")
+        # A regiao viva continua declarada — agora so como anuncio.
+        self.assertRegex(self.html, r'id="gallery-status"[^>]*role="status"')
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

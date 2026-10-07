@@ -10,6 +10,14 @@
     // Vive no state, e nao no DOM, para o re-render (que troca o innerHTML da
     // lista a cada tick) nao perder a escolha do usuario.
     queueFilter: 'all',
+    // Busca da galeria e qual lista ela filtra. O texto vive no state pelo
+    // mesmo motivo do filtro da fila: o poll de /status re-renderiza a grade a
+    // cada tique e um filtro lido do input seria reaplicado do zero — mas o
+    // estado tambem decide o que a regiao viva anuncia, e anuncio nao se le do
+    // DOM sem repetir o calculo. `galleryMode: 'library'` e a pasta de saida
+    // (o botao #btn-library alterna entre as duas listas).
+    galleryQuery: '',
+    galleryMode: 'job',
     // Caminho do arquivo de prompt do curador e se ele ja existe em disco. Os
     // dois vem do servidor: o painel nunca inventa o caminho, porque quem
     // decide onde o arquivo mora e o servidor (CURATOR_PROMPT_PATH).
@@ -292,6 +300,12 @@
     const g = $('#gallery');
     if (g) {
       skeletonCount.gallery++;
+      // O esqueleto e a grade ocupando o lugar da lista: o bloco vazio dedicado
+      // tem que sair de cena, senao ele fica sobre os cartoes cinza dizendo
+      // "nenhum corte ainda" enquanto o render acontece.
+      const empty = $('#gallery-empty');
+      if (empty) empty.hidden = true;
+      g.hidden = false;
       g.innerHTML = '<div class="skeleton-card" style="grid-column: 1 / -1;">' +
                     gallerySkeleton(4) + '</div>';
     }
@@ -305,6 +319,112 @@
   function hideSkeletons() {
     skeletonCount.gallery = 0;
     skeletonCount.queue = 0;
+  }
+
+  // ---------- galeria: busca, contagem e vazio ----------
+  // A grade, o contador, o texto da regiao viva e o bloco vazio sao quatro
+  // vistas da MESMA lista. Ficam num lugar so porque ja houve tres pontos que
+  // escreviam em #gallery (renderClips, renderLibrary, o esqueleto) e cada um
+  // tinha a sua ideia de "vazio": dois deles escondiam o bloco dedicado e
+  // mostravam um `empty-state` dentro da grade. Um funil so evita que a
+  // contagem e a grade discordem depois de um filtro.
+  const gallerySearch = {
+    query: () => $('#gallery-search') ? $('#gallery-search').value.trim() : '',
+  };
+
+  // Casa titulo, gancho e nota. O termo vazio casa tudo — por isso o filtro
+  // nunca esconde a lista inteira sem que a pessoa tenha digitado algo.
+  function clipMatchesQuery(clip, q) {
+    if (!q) return true;
+    const alvo = [
+      clip.title, clip.hook, clip.score, (clip.hook_terms || []).join(' '),
+    ].filter((v) => v !== null && v !== undefined).join(' ').toLowerCase();
+    return alvo.indexOf(q.toLowerCase()) >= 0;
+  }
+
+  function galleryFilters(items, isLibrary) {
+    const q = state.galleryQuery;
+    return items.filter((item) => isLibrary
+      ? (!q || String(item.name || '').toLowerCase().indexOf(q.toLowerCase()) >= 0)
+      : clipMatchesQuery(item, q));
+  }
+
+  // Escreve as tres vistas de uma vez: some o esqueleto, publica a contagem,
+  // troca o bloco vazio pela grade (ou o contrario) e diz ao leitor de tela o
+  // que sobrou. `visiveis` ja e a lista filtrada.
+  function paintGallery(visiveis, total, modo) {
+    const empty = $('#gallery-empty');
+    const grade = $('#gallery');
+    const mostrarVazio = visiveis.length === 0;
+    // O esqueleto de render tambem mora dentro de #gallery; com o modo fora de
+    // 'job' ele nao vale mais.
+    if (grade) grade.hidden = mostrarVazio;
+    if (empty) empty.hidden = !mostrarVazio;
+
+    const busca = state.galleryQuery;
+    const titulo = $('#gallery-empty-title');
+    const descricao = $('#gallery-empty-description');
+    if (mostrarVazio && titulo && descricao) {
+      if (total === 0) {
+        // Nada gerado ainda: o texto convida a rodar um job.
+        titulo.textContent = modo === 'library' ? 'Pasta de saída vazia' : 'Nenhum corte ainda';
+        descricao.innerHTML = modo === 'library'
+          ? 'Nenhum vídeo em <code>output/</code> ainda. Rode um job com render para produzir arquivos.'
+          : 'Cole a URL de um vídeo e clique em <strong>Gerar clips</strong> — os cortes aparecem aqui.';
+      } else {
+        // Ha itens, mas a busca nao achou nenhum: o texto ensina a sair do filtro.
+        titulo.textContent = 'Nada encontrado';
+        descricao.innerHTML = 'Nenhum ' + (modo === 'library' ? 'arquivo' : 'corte')
+          + ' corresponde a <strong>' + escapeHtml(busca) + '</strong>'
+          + ' — ' + total + (total === 1 ? ' no total.' : ' no total.');
+      }
+    }
+
+    const contagem = $('#gallery-count');
+    if (contagem) {
+      contagem.textContent = busca
+        ? visiveis.length + ' de ' + total
+        : (total === 1 ? '1 item' : total + ' itens');
+    }
+
+    const status = $('#gallery-status');
+    if (status) {
+      if (total === 0) {
+        status.textContent = modo === 'library'
+          ? 'Pasta de saída vazia.' : 'Nenhum corte gerado ainda.';
+      } else if (visiveis.length === 0) {
+        status.textContent = 'Nenhum resultado para ' + busca + '.';
+      } else if (busca) {
+        status.textContent = visiveis.length + ' de ' + total + ' '
+          + (modo === 'library' ? 'arquivos' : 'cortes') + ' para ' + busca + '.';
+      } else {
+        status.textContent = visiveis.length + ' '
+          + (modo === 'library' ? (visiveis.length === 1 ? 'arquivo' : 'arquivos')
+                                : (visiveis.length === 1 ? 'corte' : 'cortes'))
+          + ' na galeria.';
+      }
+    }
+
+    // A barra so aparece quando ha o que buscar. Esconder evita um campo de
+    // busca morto sobre uma lista que ainda nao existe.
+    const toolbar = $('#clips-toolbar');
+    if (toolbar) toolbar.hidden = total === 0 && modo === 'job';
+
+    const limpar = $('#gallery-search-clear');
+    if (limpar) limpar.hidden = !busca;
+    return visiveis;
+  }
+
+  // O nome do arquivo e o termo da busca vem do usuario ou do disco: o texto
+  // entra como texto, nunca como HTML.
+  function escapeHtml(texto) {
+    return String(texto).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function setGalleryQuery(valor) {
+    state.galleryQuery = valor;
+    if (state.galleryMode === 'library') showLibrary(); else renderClips();
   }
 
   // ---------- coleta do form ----------
@@ -1444,13 +1564,12 @@
   }
 
   function renderClips() {
+    state.galleryMode = 'job';
     const g = $('#gallery');
     g.innerHTML = '';
-    if (!state.clips.length) {
-      g.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;">Ainda não há clips.<br>Rodou um job e nada apareceu? Verifique o log acima.</div>';
-      return;
-    }
-    state.clips.forEach((c) => {
+    const visiveis = paintGallery(
+      galleryFilters(state.clips, false), state.clips.length, 'job');
+    visiveis.forEach((c) => {
       const card = document.createElement('div');
       card.className = 'clip-card';
       const el = document.createElement('div');
@@ -1530,13 +1649,11 @@
   }
 
   function renderLibrary(files) {
+    state.galleryMode = 'library';
     const g = $('#gallery');
     g.innerHTML = '';
-    if (!files.length) {
-      g.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;">Nenhum vídeo na pasta de saída ainda.</div>';
-      return;
-    }
-    files.forEach((f) => {
+    const visiveis = paintGallery(galleryFilters(files, true), files.length, 'library');
+    visiveis.forEach((f) => {
       const el = document.createElement('div');
       el.className = 'clip-item library';
       el.setAttribute('tabindex', '0');
@@ -1558,11 +1675,19 @@
     });
   }
 
+  // A lista da pasta e buscada uma vez e guardada: a busca filtra no cliente,
+  // a cada tecla, e ir ao servidor por tecla digitada seria pedir a mesma
+  // lista de novo a cada caractere.
+  let galleryLibraryFiles = null;
+
   async function showLibrary() {
-    const r = await api('/library');
-    if (r.offline) { toast('Backend offline: inicie web/server.py.', 'err'); return; }
-    if (r.error) { toast('Não foi possível listar a pasta: ' + r.error, 'err'); return; }
-    renderLibrary(r.files || []);
+    if (galleryLibraryFiles === null) {
+      const r = await api('/library');
+      if (r.offline) { toast('Backend offline: inicie web/server.py.', 'err'); return; }
+      if (r.error) { toast('Não foi possível listar a pasta: ' + r.error, 'err'); return; }
+      galleryLibraryFiles = r.files || [];
+    }
+    renderLibrary(galleryLibraryFiles);
     $('#btn-library').textContent = 'Ver cortes deste job';
     $('#gallery-sub').textContent =
       'Todos os vídeos em output/ — inclusive renomeados e de execuções anteriores. Clique para reproduzir.';
@@ -1685,6 +1810,9 @@
       (r.log_lines || []).forEach((l) => log(l));
       state.clips = r.clips || [];
       state.viral = r.viral || [];
+      // O job acabou de escrever arquivos em output/: a lista guardada da
+      // pasta de saida envelheceu no mesmo instante.
+      galleryLibraryFiles = null;
       renderClips();
       renderViral(state.viral, r.title);
       if (state.viral.length) {
@@ -1830,6 +1958,20 @@
   $('#btn-library').addEventListener('click', () => {
     const showingLibrary = $('#btn-library').textContent.indexOf('cortes deste job') >= 0;
     if (showingLibrary) { showJobClips(); } else { showLibrary(); }
+  });
+  // A busca filtra no cliente, no evento `input` (nao em `change`): a lista
+  // encolhe enquanto se digita, e o `#gallery-status` anuncia o novo total.
+  // `Escape` limpa o campo, que e o que um `<input type="search">` promete.
+  $('#gallery-search').addEventListener('input', (ev) => {
+    setGalleryQuery(ev.target.value.trim());
+  });
+  $('#gallery-search').addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') { ev.target.value = ''; setGalleryQuery(''); }
+  });
+  $('#gallery-search-clear').addEventListener('click', () => {
+    $('#gallery-search').value = '';
+    setGalleryQuery('');
+    $('#gallery-search').focus();
   });
   // A transcricao colada nao mora mais aqui: o campo e a tabela de conferencia
   // foram para /ajustes, e o texto chega no run por state.ajustes. O antigo
@@ -2038,5 +2180,8 @@
 
   bindQueueFilters();
   renderQueue();
+  // Pinta o estado vazio ANTES de qualquer resposta do servidor: sem isso a
+  // grade nasce com um `empty-state` solto dentro dela, que e o mesmo texto
+  // mas sem contagem, sem regiao viva e sem titulo proprio.
   renderClips();
 })();

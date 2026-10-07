@@ -271,6 +271,14 @@ body { padding-left: var(--rail-w); }
   gap: 12px; flex-wrap: wrap;
 }
 .section-head .section-title { margin-bottom: 10px; }
+/* Eyebrow da secao. O `.header-context-eyebrow` do cabecalho e o mesmo papel,
+   mas vive num contexto so; aqui o rotulo e da secao de resultados. O `color`
+   herda o `--text-muted` do tema escuro do painel (index.css:978), e nao a
+   paleta clara que a referencia da secao trazia. */
+.section-eyebrow {
+  margin: 0 0 4px; font-size: var(--text-2xs); font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted);
+}
 /* item vindo da pasta de saida: nome de arquivo no lugar do score */
 .clip-item.library .clip-meta .file-name {
   color: var(--text-primary); font-weight: 600; font-size: 0.66rem;
@@ -826,6 +834,88 @@ body { padding-left: var(--rail-w); }
 .clip-meta .pending {
   color: var(--accent-warm); font-size: 0.62rem; letter-spacing: 0.02em;
 }
+
+/* ---------- GALERIA: BARRA DE BUSCA + CONTAGEM + VAZIO ----------
+   A secao de resultados ganhou tres estados e uma busca no cliente. Tudo aqui
+   usa os tokens do tema escuro do painel. A versao de referencia trazia uma
+   paleta propria (--clips-*) clara e um :root dentro do <style> da pagina: um
+   segundo :root nao redefine so a secao, redefine --accent-primary e
+   --radius-* para a pagina inteira, porque `:root` e o <html>. Por isso os
+   tokens sao os do painel, e nao os da referencia. */
+.clips-section-heading { min-width: 0; }
+.clips-toolbar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 16px;
+}
+.clips-search {
+  position: relative; flex: 1 1 260px; min-width: 0; display: flex; align-items: center;
+}
+.clips-search-icon {
+  position: absolute; left: 12px; display: inline-flex; pointer-events: none;
+  color: var(--text-muted); width: 16px; height: 16px;
+}
+.clips-search-icon svg { width: 100%; height: 100%; }
+.clips-search-input {
+  width: 100%; min-width: 0; font-family: inherit; font-size: var(--text-body-sm);
+  color: var(--text-primary); background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
+  padding: 9px 34px 9px 36px;
+}
+.clips-search-input::placeholder { color: var(--text-muted); }
+.clips-search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.clips-search-input:focus { outline: none; border-color: var(--accent-primary); box-shadow: 0 0 0 3px var(--accent-glow); }
+.clips-search-clear {
+  position: absolute; right: 8px; width: 22px; height: 22px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: inherit; font-size: 1rem; line-height: 1;
+  color: var(--text-muted); background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-subtle); border-radius: 50%; cursor: pointer;
+}
+.clips-search-clear:hover { color: var(--text-primary); border-color: var(--border-strong); }
+.clips-search-clear:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
+/* Contagem viva da lista. `aria-hidden` porque o mesmo numero ja vai no
+   `#gallery-status`, que e a regiao viva: sem isso o leitor de tela ouve o
+   total duas vezes. */
+/* Dica do campo de busca. O texto existe para o `aria-describedby`, nao para
+   a tela: a barra e uma linha so e um paragrafo a mais empurraria o contador
+   para baixo. Fica `sr-only` — continua no DOM com texto (que e o que o
+   contrato de descricao exige), so nao ocupa caixa visivel. */
+.clips-search-hint {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+.gallery-count {
+  flex: none; font-size: var(--text-2xs); color: var(--text-secondary);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.clips-empty {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: 8px; padding: 44px 20px;
+}
+.clips-empty[hidden] { display: none; }
+.clips-empty-icon { color: var(--text-muted); opacity: 0.55; width: 34px; height: 34px; }
+.clips-empty-icon svg { width: 100%; height: 100%; }
+.clips-empty-title { font-size: var(--text-subtitle); font-weight: 650; color: var(--text-primary); }
+.clips-empty-description {
+  font-size: var(--text-caption); color: var(--text-secondary); line-height: 1.55; max-width: 46ch;
+}
+.clips-empty-description strong { color: var(--text-primary); }
+/* O card da galeria deixa de ser so uma grade: agora pode hospedar o vazio. */
+.card:has(#gallery-empty:not([hidden])) { padding-block: 6px; }
+
+/* Botao de play por thumb. O `.clip-item` inteiro ja e clicavel e focavel; o
+   botao existe para quem navega por teclado ter um alvo com nome acessivel. */
+.clip-play-btn {
+  position: absolute; z-index: 2; bottom: 10px; right: 10px;
+  width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+  font-family: inherit; font-size: 0.95rem; line-height: 1; color: #fff;
+  background: rgba(0, 0, 0, 0.55); border: 1px solid var(--border-strong);
+  border-radius: 50%; cursor: pointer; transition: var(--transition);
+}
+.clip-play-btn:hover { background: var(--accent-primary); border-color: var(--accent-primary); }
+.clip-play-btn:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
+
+/* ---------- OUTPUT GALLERY ---------- */
 .clip-quality {
   border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
   background: var(--surface-raised, rgba(255,255,255,0.035)); padding: 10px 11px;
@@ -2032,6 +2122,33 @@ header .nav-actions .btn { min-height: 42px; }
 /* Enquanto o teste corre: o botao nao pode ser clicado duas vezes, porque a
    segunda chamada paga de novo e a primeira resposta chega depois. */
 .btn[aria-busy="true"] { opacity: 0.6; pointer-events: none; }
+
+/* ---------- COMPATIBILIDADE COM O <style> DA SECAO ----------
+   Os tokens --clips-* existem para que uma versao da secao que ainda traga o
+   proprio <style> (paleta clara) nao pinte um cartao branco sobre a pagina
+   escura: aqui cada um aponta para o token equivalente do painel. --clips-bg-
+   page fica deliberadamente ausente -- o fundo da pagina nunca e da secao. */
+:where(.clips-section) {
+  --clips-bg: var(--bg-card);
+  --clips-surface: var(--bg-surface);
+  --clips-surface-2: var(--bg-surface);
+  --clips-border: var(--border-subtle);
+  --clips-border-strong: var(--border-strong);
+  --clips-text: var(--text-primary);
+  --clips-text-muted: var(--text-secondary);
+  --clips-text-subtle: var(--text-muted);
+  --clips-accent: var(--accent-primary);
+  --clips-accent-soft: var(--active-tint);
+  --clips-accent-ring: var(--accent-glow);
+  --clips-radius-sm: var(--radius-sm);
+  --clips-radius-md: var(--radius-md);
+  --clips-radius-lg: var(--radius-lg);
+  --clips-shadow: var(--shadow-card);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clips-search-clear, .clip-play-btn { transition: none; }
+}
 
 
 

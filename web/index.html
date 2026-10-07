@@ -539,16 +539,56 @@
     </div>
   </section>
 
-  <!-- GALERIA -->
-  <section aria-label="Clips gerados">
+  <!-- GALERIA
+       A regiao tem tres estados que precisam se distinguir na tela:
+       (1) nada ainda, (2) um render em andamento (esqueleto), (3) resultados.
+       O bloco vazio e um irmao da grade, e nao um filho: assim o JS so liga e
+       desliga dois elementos, em vez de decidir se escreve placeholder dentro
+       da grade que o poll de /status reescreve. O `#gallery-status` e a
+       contagem viva: a busca filtra no cliente, e sem uma regiao viva quem
+       usa leitor de tela nao descobre que a lista encolheu. -->
+  <section class="clips-section" aria-labelledby="gallery-title">
     <div class="section-head">
-      <h2 class="section-title" id="gallery-title">Clips gerados</h2>
+      <div class="clips-section-heading">
+        <p class="section-eyebrow">SEUS RESULTADOS</p>
+        <h2 class="section-title" id="gallery-title">Clips gerados</h2>
+      </div>
       <button class="btn pressable" type="button" id="btn-library">Ver pasta de saída</button>
     </div>
     <p class="section-sub" id="gallery-sub">Pré-visualização 9:16 dos cortes renderizados. Clique para reproduzir.</p>
+
+    <div class="clips-toolbar" id="clips-toolbar">
+      <div class="clips-search">
+        <span class="clips-search-icon" aria-hidden="true">
+          <svg viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.6"/><path d="m13.5 13.5 3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </span>
+        <input type="search" id="gallery-search" class="clips-search-input"
+               placeholder="Buscar corte por título, gancho ou nota…"
+               aria-label="Buscar corte por título, gancho ou nota"
+               aria-describedby="gallery-search-hint" autocomplete="off" spellcheck="false">
+        <button type="button" id="gallery-search-clear" class="clips-search-clear pressable" hidden
+                aria-label="Limpar busca" title="Limpar busca"><span aria-hidden="true">×</span></button>
+      </div>
+      <span class="gallery-count" id="gallery-count" aria-hidden="true"></span>
+      <!-- A dica e um texto ESTATICO com id proprio, e nao a regiao viva. A
+           `#gallery-status` nasce vazia e so ganha texto depois do primeiro
+           render: apontar `aria-describedby` para ela daria ao campo uma
+           descricao em branco ate o JS rodar — e um alvo vazio e um atributo
+           que nao descreve nada (e o que o FieldDescriptionTests cobra). -->
+      <p class="hint clips-search-hint" id="gallery-search-hint">Filtra por título, gancho e nota. Esc limpa o campo.</p>
+      <p class="clips-status sr-only" id="gallery-status" role="status" aria-live="polite"></p>
+    </div>
+
     <div class="card">
-      <div class="gallery" id="gallery">
+      <div class="clips-grid gallery" id="gallery">
         <div class="empty-state" style="grid-column: 1 / -1;">Ainda não há clips.<br>Os cortados pelo job aparecem aqui ao terminar.</div>
+      </div>
+      <div class="clips-empty" id="gallery-empty" hidden>
+        <span class="clips-empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4.5" width="18" height="15" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="m10 9 5 3-5 3V9Z" fill="currentColor"/></svg>
+        </span>
+        <h3 class="clips-empty-title" id="gallery-empty-title">Nenhum corte ainda</h3>
+        <p class="clips-empty-description" id="gallery-empty-description">Cole a URL de um vídeo e clique em <strong>Gerar clips</strong> — os cortes aparecem aqui.</p>
       </div>
     </div>
   </section>

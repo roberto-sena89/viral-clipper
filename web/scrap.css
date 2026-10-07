@@ -1060,8 +1060,12 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
 
 /* Biblioteca em telas largas: buscar → resultados → item escolhido. */
 @media (min-width: 1280px) {
+  /* Piso 0, e nao `minmax(340px, …)`: os tres minimos somavam 1030px + 32 de
+     gap, e o container so tem 972px a 1280. A grade vazava ~58px para fora da
+     tela em toda a faixa 1280-1373 (medido: scrollWidth 1338 para innerWidth
+     1280). Com piso 0 as colunas encolhem no espaco que existe. */
   .scrap-grid {
-    grid-template-columns: minmax(340px, 1.05fr) minmax(410px, 1.45fr) minmax(280px, .9fr);
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.45fr) minmax(0, .9fr);
     align-items: start;
     gap: 16px;
   }
@@ -1070,8 +1074,15 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
 }
 @media (min-width: 981px) and (max-width: 1279px) {
   .scrap-grid { grid-template-columns: minmax(290px, .84fr) minmax(0, 1.3fr); }
-  .scrap-grid > .card[aria-labelledby="h-resultados"] { grid-column: 2; grid-row: 1; }
-  .scrap-grid > .pick { grid-column: 1 / -1; grid-row: 2; position: static; }
+  /* O card de resultados ocupa as DUAS linhas de proposito.
+     Uma linha com um unico item tem a altura desse item -- era o caso da linha
+     2, onde o pick morava sozinho: area de 431px para um item de 431px, viagem
+     zero, e o `top: 86px` nao tinha para onde rolar. Na pratica o card ficava
+     `static`: parado no fim de uma lista de 2605px, e sumia ao rolar. Esticando
+     a lista pelas duas linhas, a linha 2 herda a sobra dela (1403px a 1279) e o
+     pick ganha pista de verdade -- 350 a 475px de grude, medidos. */
+  .scrap-grid > .card[aria-labelledby="h-resultados"] { grid-column: 2; grid-row: 1 / span 2; }
+  .scrap-grid > .pick { grid-column: 1; grid-row: 2; position: sticky; top: 86px; align-self: start; }
 }
 
 /* Biblioteca: contexto da área, localidade dos downloads e retorno ao Estúdio. */

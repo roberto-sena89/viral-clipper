@@ -3606,6 +3606,74 @@ class FrontendPolishTests(unittest.TestCase):
         self.assertIn("vc-cookies-file", js, "o caminho deixou de ser lembrado por navegador")
 
 
+class PickStickyTests(unittest.TestCase):
+    """O card "Escolha" da Biblioteca fica fixo enquanto a lista rola.
+
+    Ele era `sticky` so a partir de 1280px. Entre 981 e 1279 caia na linha 2 da
+    grade SOZINHO, e uma linha com um unico item tem a altura desse item: area
+    de 431px para um card de 431px, viagem zero. O `top: 86px` nao tinha para
+    onde rolar, e na pratica o card ficava `static` -- parado no fim de uma
+    lista de 2605px, sumindo ao rolar. Medido no navegador: pista 0px. Com a
+    lista ocupando as DUAS linhas, a linha 2 herda a sobra dela e a pista sobe
+    para 350-475px.
+    """
+
+    def css(self) -> str:
+        return (server.WEB_DIR / "scrap.css").read_text(encoding="utf-8")
+
+    @staticmethod
+    def bloco(css: str, condicao: str) -> str:
+        """O corpo de um `@media (condicao) { ... }`, com as chaves casadas.
+
+        As regras do card vivem em duas media queries e a ultima vence. Procurar
+        a declaracao no arquivo inteiro nao distingue "esta ligada" de "esta
+        desligada logo abaixo" -- foi assim que o sticky ficou `static` por um
+        `@media` que ninguem lembrava.
+        """
+        i = css.index("@media " + condicao)
+        j = css.index("{", i)
+        nivel = 0
+        for k in range(j, len(css)):
+            if css[k] == "{":
+                nivel += 1
+            elif css[k] == "}":
+                nivel -= 1
+                if nivel == 0:
+                    return css[j + 1:k]
+        raise AssertionError(f"@media {condicao} sem fechamento")
+
+    def test_the_two_column_range_keeps_the_pick_sticky(self):
+        bloco = self.bloco(self.css(), "(min-width: 981px) and (max-width: 1279px)")
+        self.assertIn("position: sticky", bloco)
+        self.assertNotIn("position: static", bloco)
+
+    def test_the_results_card_gives_the_second_row_its_height(self):
+        """Sem isto a linha 2 tem a altura do proprio card e o sticky nao rola."""
+        bloco = self.bloco(self.css(), "(min-width: 981px) and (max-width: 1279px)")
+        self.assertIn("grid-row: 1 / span 2", bloco)
+
+    @staticmethod
+    def sem_comentario(css: str) -> str:
+        """Tira os comentarios antes de procurar codigo AUSENTE.
+
+        O comentario que explica a remocao CITA o que saiu -- o `minmax(340px)`
+        que motivou o piso 0 esta escrito nele. Sem esta limpeza, o teste da
+        remocao reprova por causa da propria explicacao dela.
+        """
+        return re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+    def test_the_wide_columns_have_no_hard_floor(self):
+        """Piso fixo somava 1030px num container de 972px: a grade vazava."""
+        bloco = self.sem_comentario(self.bloco(self.css(), "(min-width: 1280px)"))
+        self.assertNotIn("minmax(340px", bloco)
+        self.assertIn("minmax(0, 1.05fr)", bloco)
+
+    def test_the_stacked_layout_is_not_sticky(self):
+        """Empilhado o card tem 611px no celular: fixo, cobriria a tela toda."""
+        bloco = self.bloco(self.css(), "(max-width: 980px)")
+        self.assertIn("position: static", bloco)
+
+
 class BackendReadinessTests(unittest.TestCase):
     """A pagina diz se ela mesma consegue falar com o servidor.
 

@@ -2102,21 +2102,45 @@
   // ja e a fonte que o `aria-describedby` aponta.
   const cmdEl = document.getElementById('footer-cli-command');
   const feedbackEl = document.getElementById('footer-feedback');
-  const anunciar = (texto) => { if (feedbackEl) feedbackEl.textContent = texto; };
-  liga('btn-copy-cli', async () => {
+  const feedbackTimer = { id: 0 };
+  // O aviso se limpa sozinho depois de um tempo: um texto de "copiado" que
+  // fica para sempre deixa de ser feedback e vira parte do rodape — quem
+  // voltasse a olhar depois nao saberia se a ultima copia deu certo agora ou
+  // cinco minutos atras. O timer e cancelado a cada anuncio para um aviso novo
+  // nao ser apagado pelo do anterior.
+  const anunciar = (texto) => {
+    if (!feedbackEl) return;
+    window.clearTimeout(feedbackTimer.id);
+    feedbackEl.textContent = texto;
+    feedbackTimer.id = window.setTimeout(() => { feedbackEl.textContent = ''; }, 5000);
+  };
+  liga('btn-copy-cli', async (ev) => {
     if (!cmdEl) return;
+    const botao = ev.currentTarget;
     const comando = cmdEl.textContent.trim();
+    // `isSecureContext` antes de tentar: em http puro a `navigator.clipboard`
+    // existe mas rejeita, e o aviso generico de erro esconderia o motivo real
+    // ("copie a mao") atras de um "nao foi possivel". O teste e o que escolhe
+    // a mensagem certa, nao o que evita a tentativa.
+    if (!window.isSecureContext || !navigator.clipboard || !navigator.clipboard.writeText) {
+      anunciar('Cópia automática indisponível. Selecione e copie o comando.');
+      return;
+    }
+    // Desabilitar durante a copia impede o clique duplo de disparar duas
+    // escritas concorrentes no clipboard, cujo resultado e indefinido.
+    botao.disabled = true;
     try {
-      if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('sem clipboard');
       await navigator.clipboard.writeText(comando);
-      anunciar('Comando copiado: ' + comando);
+      anunciar('Comando copiado para a área de transferência.');
       toast('Comando copiado.', 'ok');
     } catch (err) {
-      // Clipboard negado (http sem secure-context, permissao, iframe): o
-      // comando continua visivel na tela, entao falhar em copiar nao e um
-      // beco — o aviso diz o que fazer em vez de so acusar o erro.
-      anunciar('Não foi possível copiar. Selecione o comando manualmente.');
+      // Clipboard negado (permissao, iframe): o comando continua visivel na
+      // tela, entao falhar em copiar nao e um beco — o aviso diz o que fazer
+      // em vez de so acusar o erro.
+      anunciar('Não foi possível copiar. Selecione e copie o comando.');
       toast('Não foi possível copiar. Selecione o comando manualmente.', 'err');
+    } finally {
+      botao.disabled = false;
     }
   });
   $('#hero-cta').addEventListener('click', () => {

@@ -5759,14 +5759,23 @@ class FooterRedesignTests(unittest.TestCase):
         self.assertIn("aria-label=", bloco)
 
     def test_the_footer_uses_the_panel_tokens(self):
-        """Nada de cor crua: o rodape herda a paleta do painel."""
+        """Os `--footer-*` sao apelidos dos tokens do painel, nao uma paleta.
+
+        A referencia declarava `--footer-bg: #0b1120` e um brilho indigo
+        proprios: o rodape virava um bloco de cor diferente do resto da
+        pagina. Aqui cada `--footer-*` aponta para um token `--*` que ja
+        existe; um literal de cor no valor seria a paleta voltando pela porta
+        dos fundos.
+        """
         ini = self.css.index(".site-footer {")
-        bloco = self.css[ini:self.css.index(".footer-nav {")]
-        self.assertIn("var(--border-subtle)", bloco)
-        self.assertIn("var(--text-muted)", bloco)
-        # Um `background: #fff` (ou o token da referencia) pintaria um rodape
-        # claro sobre o painel escuro.
-        self.assertNotIn("#fff", bloco.lower())
+        bloco = self.css[ini:self.css.index(".site-footer,", ini)]
+        # Todo `--footer-*` citado resolve para um token do painel.
+        for token in ("--footer-bg", "--footer-text", "--footer-muted",
+                      "--footer-accent", "--footer-border"):
+            with self.subTest(token=token):
+                self.assertRegex(bloco, re.escape(token) + r":\s*var\(--")
+        # O apelido de fundo nao pode apontar para a cor da referencia.
+        self.assertNotIn("#0b1120", bloco.lower())
         self.assertNotIn("--clips-", bloco)
 
     def test_the_copy_button_copies_the_target_text(self):
@@ -5786,24 +5795,59 @@ class FooterRedesignTests(unittest.TestCase):
         self.assertNotIn("python -m viralclipper", copia)
 
     def test_the_copy_button_announces_and_degrades(self):
-        """Sucesso e falha viram texto na regiao viva do rodape.
+        """Sucesso, indisponibilidade e falha viram texto na regiao viva.
 
-        Clipboard pode ser negado (http sem secure-context, permissao). O
-        comando segue visivel na tela, entao a falha precisa dizer o que fazer
-        em vez de sumir num console.
+        Ha TRES desfechos, e cada um tem a sua mensagem: sem secure-context /
+        sem clipboard (nem tenta), falha da API, e sucesso. Um generico
+        "nao foi possivel" esconderia o caso em que copiar a mao e a unica
+        saida.
         """
         ini = self.js.index("const feedbackEl = document.getElementById('footer-feedback')")
         bloco = self.js[ini:self.js.index("$('#hero-cta')")]
         self.assertIn("catch", bloco)
-        self.assertIn("footer-feedback", self.js[:self.js.index("liga('btn-copy-cli'")])
-        # O sucesso anuncia com o comando; a falha anuncia o que fazer. Exigir
-        # so "anunciar(" deixaria trocar o do sucesso por nada e passar batido
-        # (o do catch ainda casaria o regex).
-        self.assertRegex(bloco, r"anunciar\('Comando copiado: ' \+ comando\)")
-        self.assertRegex(bloco, r"anunciar\('[^']*manual")
+        # O teste de disponibilidade decide a mensagem ANTES de tentar copiar.
+        # Ancorar no `if` real: as tres mensagens existem no texto de qualquer
+        # forma, entao so a condicao prova que o ramo e alcancavel.
+        self.assertRegex(
+            bloco,
+            r"if \(!window\.isSecureContext \|\| !navigator\.clipboard"
+            r" \|\| !navigator\.clipboard\.writeText\) \{")
+        self.assertRegex(bloco, r"anunciar\('[^']*indispon[^']*'\)")
+        self.assertRegex(bloco, r"anunciar\('[^']*copiad[^']*'\)")
+        self.assertRegex(bloco, r"anunciar\('[^']*copie[^']*'\)")
         # O alvo da regiao viva existe no HTML e nasce vazia.
         self.assertRegex(self.html, r'id="footer-feedback"[^>]*role="status"')
         self.assertRegex(self.html, r'id="footer-feedback"[^>]*aria-live="polite"')
+
+    def test_the_copy_button_cannot_be_clicked_twice_at_once(self):
+        """O botao desabilita durante a copia e volta no `finally`.
+
+        Dois cliques rapidos disparariam duas escritas concorrentes no
+        clipboard, cujo resultado e indefinido. E o botao PRECISA voltar a
+        ficar habilitado mesmo quando a copia falha, senao um erro unico
+        deixaria o controle morto para sempre.
+        """
+        copia = self.js[self.js.index("liga('btn-copy-cli'"):]
+        copia = copia[:copia.index("$('#hero-cta')")]
+        self.assertRegex(copia, r"\.disabled = true")
+        self.assertIn("finally", copia)
+        self.assertRegex(copia, r"\.disabled = false")
+        # E o CSS nao pode deixar o estado desabilitado sem sinal visual.
+        self.assertIn(".site-footer .footer-copy:disabled", self.css)
+
+    def test_the_announcement_clears_itself(self):
+        """O aviso some sozinho, senao deixa de ser feedback.
+
+        Um "copiado" permanente vira parte do rodape: quem olhasse depois nao
+        saberia se a copia foi agora ou cinco minutos atras. O timer e
+        cancelado a cada anuncio para um aviso novo nao ser apagado pelo
+        anterior.
+        """
+        ini = self.js.index("const anunciar = (texto)")
+        bloco = self.js[ini:self.js.index("liga('btn-copy-cli'")]
+        self.assertIn("clearTimeout", bloco)
+        self.assertIn("setTimeout", bloco)
+        self.assertRegex(bloco, r"feedbackEl\.textContent = ''")
 
     def test_the_copy_button_names_itself_and_its_target(self):
         """O botao so-icone tem rotulo e uma descricao com texto.
@@ -5820,15 +5864,82 @@ class FooterRedesignTests(unittest.TestCase):
         self.assertTrue(re.sub(r"<[^>]+>", "", alvo.group(1)).strip(),
                         "o alvo da descricao esta vazio")
 
-    def test_the_live_region_disappears_while_empty(self):
-        """A regiao viva sai do fluxo quando vazia.
+    def test_the_live_region_reserves_its_line(self):
+        """A regiao viva reserva a linha com `min-height`, sem sair do fluxo.
 
-        Ela nasce sem texto; se ocupasse altura, o rodape inteiro pularia ao
-        copiar. `:empty { display: none }` e o que evita o salto.
+        Ela nasce sem texto; se nao reservasse altura, o rodape inteiro pularia
+        ao copiar. A referencia resolve com `min-height` — e nao com
+        `display: none` — porque a regiao viva precisa continuar existindo para
+        o leitor de tela anunciar. Esconder o proprio alvo do anuncio seria
+        consertar o pulo quebrando o aviso.
         """
-        ini = self.css.index(".footer-feedback:empty")
-        bloco = self.css[ini:ini + 80]
-        self.assertIn("display: none", bloco)
+        ini = self.css.index(".site-footer .footer-feedback {")
+        bloco = self.css[ini:ini + 200]
+        self.assertIn("min-height", bloco)
+        # E nao ha `display: none` nesta regiao.
+        self.assertNotIn("display: none", bloco)
+
+    def test_the_footer_styles_are_scoped_to_the_footer(self):
+        """Todo seletor do rodape comeca por `.site-footer`.
+
+        `footer-link`, `footer-nav` e companhia sao nomes genericos: um
+        `.footer-link` solto pegaria qualquer elemento com a classe em qualquer
+        lugar da pagina vestindo a regra do rodape. O escopo por ancestral e o
+        que a condicao "os estilos ficam restritos ao rodape" significa em
+        codigo.
+        """
+        # Do inicio do bloco do rodape ate o proximo comentario de secao.
+        ini = self.css.index("/* ---------- FOOTER ----------")
+        fim = self.css.index("/* ---------- TOAST ----------")
+        bloco = self.css[ini:fim]
+        # Tira comentarios e blocos de @media/@keyframes para ler so as regras.
+        sem_comentario = re.sub(r"/\*.*?\*/", "", bloco, flags=re.S)
+        for m in re.finditer(r"(?m)^\s*([.a-zA-Z][^{}:]*)\{", sem_comentario):
+            seletor = m.group(1).strip()
+            with self.subTest(seletor=seletor):
+                for parte in seletor.split(","):
+                    parte = parte.strip()
+                    # `.site-footer::before` e o proprio rodape; os demais
+                    # precisam do ancestral `.site-footer`.
+                    if parte.startswith(".site-footer"):
+                        continue
+                    self.fail(f"seletor sem escopo do rodape: {parte!r}")
+        # E o @media tambem escopa.
+        self.assertIn(".site-footer .footer-container", bloco)
+
+    def test_the_touch_targets_are_big_enough(self):
+        """Links e o botao de copiar tem alvo de toque de 44px (WCAG 2.5.8).
+
+        O rodape e onde se clica com o polegar no celular: um alvo de 20px
+        obriga a mirar. `min-height` no link e `height` fixo no botao.
+        """
+        ini = self.css.index(".site-footer .footer-link {")
+        bloco = self.css[ini:ini + 400]
+        self.assertRegex(bloco, r"min-height:\s*44px")
+        ini2 = self.css.index(".site-footer .footer-copy {")
+        bloco2 = self.css[ini2:ini2 + 400]
+        self.assertRegex(bloco2, r"height:\s*44px")
+        self.assertRegex(bloco2, r"width:\s*44px")
+
+    def test_the_footer_respects_reduced_motion(self):
+        """`prefers-reduced-motion` desliga transicoes do rodape.
+
+        As transicoes de cor/borda sao decorativas; quem pediu para o sistema
+        reduzir movimento nao deve receber animacao so porque ela e curta.
+
+        O seletor precisa ser o MESMO do elemento (`.site-footer .footer-link`),
+        e nao `.site-footer *`: aquele tem especificidade menor que a regra
+        base e perderia na cascata — foi o defeito medido no navegador, com
+        `transitionDuration` ainda em 0.18s.
+        """
+        ini = self.css.index("prefers-reduced-motion: reduce", self.css.index("/* ---------- FOOTER ----------"))
+        bloco = self.css[ini:ini + 300]
+        self.assertIn("transition: none", bloco)
+        self.assertIn("animation: none", bloco)
+        # O seletor da regra tem de empatar com o da regra base.
+        self.assertIn(".site-footer .footer-link", bloco)
+        # E nao pode ser so o curinga, que perde na cascata.
+        self.assertNotRegex(bloco, r"\{\s*\n\s*\.site-footer \*,")
 
     def test_every_element_the_js_reaches_exists_in_the_html(self):
         """Os ids que o JS liga existem mesmo no HTML.

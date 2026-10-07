@@ -111,7 +111,7 @@ body { padding-left: var(--rail-w); }
   align-items: start;
 }
 .scrap-grid > .card + .card { margin-top: 0; }
-.scrap-grid > .pick { grid-column: 1 / -1; position: static; }
+.scrap-grid > .pick { grid-column: 1 / -1; }
 /* Filho de grid com min-width:auto empurra a coluna e o conteúdo vaza por
    cima do vizinho — min-width:0 deixa cada coluna encolher no seu espaço. */
 .scrap-grid > * { min-width: 0; }
@@ -770,10 +770,11 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   .search-loading-track > span { left: 0; width: 100%; opacity: 0.5; }
 }
 
-/* Painel lateral: o que fazer com o item escolhido */
-/* top=header(68)+12: com 18px o card "Escolha" grudava 50px ATRAS da barra
-   sticky e o topo do conteudo sumia por baixo dela. */
-.pick { position: sticky; top: 80px; }
+/* Painel lateral: o que fazer com o item escolhido.
+   O card NAO e' `sticky`: ele rola junto com Busca e Resultados, como as demais
+   secoes. Foi fixo em `top: header(68)+12` ate 2026-10-07 (com 18px ele grudava
+   50px atras da barra, e o topo do conteudo sumia por baixo dela). Voltar com o
+   fixo e' reabrir a decisao, nao so' a declaracao. */
 /* Escolha é painel auxiliar: padding menor que os cards principais (24px). */
 .pick .card { padding: 16px 18px; }
 .pick-empty { color: var(--text-muted); font-size: var(--text-body-sm); }
@@ -895,7 +896,7 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   gap: 18px;
 }
 .scrap-grid > .card[aria-labelledby="h-resultados"] { grid-column: 2; grid-row: 1 / span 2; }
-.scrap-grid > .pick { grid-column: 1; grid-row: 2; position: sticky; top: 86px; }
+.scrap-grid > .pick { grid-column: 1; grid-row: 2; }
 .scrap-grid > .card, .scrap-grid > .pick .card {
   padding: 20px;
   border-color: rgba(218,226,243,.1);
@@ -1020,7 +1021,6 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   .scrap-welcome { grid-template-columns: minmax(0, 1fr) minmax(240px, .78fr); gap: 20px; }
   .scrap-grid { grid-template-columns: minmax(0, 1fr); }
   .scrap-grid > .card[aria-labelledby="h-resultados"], .scrap-grid > .pick { grid-column: 1; grid-row: auto; }
-  .scrap-grid > .pick { position: static; }
   #resultados:empty { min-height: 160px; }
   .empty-state { min-height: 145px; }
 }
@@ -1070,19 +1070,17 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
     gap: 16px;
   }
   .scrap-grid > .card[aria-labelledby="h-resultados"] { grid-column: auto; grid-row: auto; }
-  .scrap-grid > .pick { grid-column: auto; grid-row: auto; position: sticky; top: 86px; align-self: start; }
+  .scrap-grid > .pick { grid-column: auto; grid-row: auto; }
 }
 @media (min-width: 981px) and (max-width: 1279px) {
   .scrap-grid { grid-template-columns: minmax(290px, .84fr) minmax(0, 1.3fr); }
-  /* O card de resultados ocupa as DUAS linhas de proposito.
-     Uma linha com um unico item tem a altura desse item -- era o caso da linha
-     2, onde o pick morava sozinho: area de 431px para um item de 431px, viagem
-     zero, e o `top: 86px` nao tinha para onde rolar. Na pratica o card ficava
-     `static`: parado no fim de uma lista de 2605px, e sumia ao rolar. Esticando
-     a lista pelas duas linhas, a linha 2 herda a sobra dela (1403px a 1279) e o
-     pick ganha pista de verdade -- 350 a 475px de grude, medidos. */
+  /* Duas colunas: a lista a direita, o pick embaixo da busca na coluna da
+     esquerda. O pick NAO e' `sticky` -- rola junto com as demais secoes, como
+     pedido. O `grid-row: 1 / span 2` da lista e' o desenho da base (ver o bloco
+     "Scrap workspace redesign"): a lista atravessa as duas linhas e o pick fica
+     na coluna da busca, em vez de depois dela. */
   .scrap-grid > .card[aria-labelledby="h-resultados"] { grid-column: 2; grid-row: 1 / span 2; }
-  .scrap-grid > .pick { grid-column: 1; grid-row: 2; position: sticky; top: 86px; align-self: start; }
+  .scrap-grid > .pick { grid-column: 1; grid-row: 2; }
 }
 
 /* Biblioteca: contexto da área, localidade dos downloads e retorno ao Estúdio. */
@@ -1121,6 +1119,9 @@ header .nav-actions .btn { min-height: 42px; }
   .scrap-header-icon { flex-basis: 34px; width: 34px; height: 34px; border-radius: 10px; }
   .scrap-header-icon svg { width: 19px; height: 19px; }
   .scrap-header-eyebrow, .scrap-header-tag { display: none; }
+  /* O `.scrap-grid > .pick { position: static }` que existia aqui era o
+     DESLIGAMENTO do sticky em viewport estreita. Saiu com o sticky: sem fixo
+     para desligar, a regra nao tinha mais o que fazer. */
   .scrap-header-copy { gap: 0; }
   .scrap-header-copy strong { font-size: .8rem; }
   header .nav-actions { gap: 7px; }

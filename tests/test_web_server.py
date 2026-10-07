@@ -3584,12 +3584,11 @@ class FrontendPolishTests(unittest.TestCase):
     def test_anchors_clear_the_sticky_header(self):
         # scrollIntoView/#config e o foco do #url rolam o elemento ate a borda
         # top da viewport: sem scroll-margin o titulo para POR BAIXO da barra
-        # de 68px; o card "Escolha" do scrap com top=18px grudava atras dela.
+        # de 68px. O card "Escolha" do scrap nao precisa mais desta protecao --
+        # ele deixou de ser fixo em 2026-10-07 e hoje rola junto com a pagina,
+        # entao nao ha mais como ele parar atras da barra.
         shared = (server.WEB_DIR / "shared.css").read_text(encoding="utf-8")
         self.assertIn("scroll-margin-top: 84px", shared)
-        scrap_css = (server.WEB_DIR / "scrap.css").read_text(encoding="utf-8")
-        self.assertIn(".pick { position: sticky; top: 80px; }", scrap_css)
-        self.assertNotIn("position: sticky; top: 18px", scrap_css)
 
     def test_browse_button_tells_the_user_where_the_dialog_is(self):
         # Sem abort: o request vive enquanto o dialogo esta aberto (uma escolha
@@ -3606,29 +3605,46 @@ class FrontendPolishTests(unittest.TestCase):
         self.assertIn("vc-cookies-file", js, "o caminho deixou de ser lembrado por navegador")
 
 
-class PickStickyTests(unittest.TestCase):
-    """O card "Escolha" da Biblioteca fica fixo enquanto a lista rola.
+class PickScrollsWithThePageTests(unittest.TestCase):
+    """O card "Escolha" rola junto com as demais secoes -- ele NAO e' fixo.
 
-    Ele era `sticky` so a partir de 1280px. Entre 981 e 1279 caia na linha 2 da
-    grade SOZINHO, e uma linha com um unico item tem a altura desse item: area
-    de 431px para um card de 431px, viagem zero. O `top: 86px` nao tinha para
-    onde rolar, e na pratica o card ficava `static` -- parado no fim de uma
-    lista de 2605px, sumindo ao rolar. Medido no navegador: pista 0px. Com a
-    lista ocupando as DUAS linhas, a linha 2 herda a sobra dela e a pista sobe
-    para 350-475px.
+    Ele foi `sticky` (top: 80px) ate 2026-10-07, quando o Sr. Sena pediu o
+    contrario: "ao mover a pagina para baixo a secao move junto, verifique e
+    corrija a secao, deixando-a igual as outras". Vale registrar que este card
+    ja tinha consumido duas sessoes tentando CONSERTAR o sticky, sem que
+    ninguem tivesse perguntado se ele era desejado. A pergunta certa e' a
+    primeira: o usuario quer este efeito?
+
+    O que este teste trava e' o que sobra DEPOIS da remocao:
+
+    * nenhuma regra do `.pick` declara `position` -- nem `sticky` (o efeito) nem
+      `static` (o desligamento dele, que vira orfao);
+    * o piso 0 da grade de 3 colunas FICA: ele nao tem nada a ver com o sticky,
+      conserta um transbordo horizontal real de 1280-1373 e nao pode sair junto;
+    * o `header` continua fixo -- a remocao e' do card, nao da barra.
     """
 
     def css(self) -> str:
         return (server.WEB_DIR / "scrap.css").read_text(encoding="utf-8")
 
     @staticmethod
+    def sem_comentario(css: str) -> str:
+        """Tira os comentarios antes de procurar codigo AUSENTE.
+
+        Os comentarios que explicam a remocao CITAM o `sticky` que saiu (e o
+        `minmax(340px)` que motivou o piso 0). Sem esta limpeza, o teste da
+        remocao reprova por causa da propria explicacao dela.
+        """
+        return re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+    @staticmethod
     def bloco(css: str, condicao: str) -> str:
         """O corpo de um `@media (condicao) { ... }`, com as chaves casadas.
 
-        As regras do card vivem em duas media queries e a ultima vence. Procurar
-        a declaracao no arquivo inteiro nao distingue "esta ligada" de "esta
-        desligada logo abaixo" -- foi assim que o sticky ficou `static` por um
-        `@media` que ninguem lembrava.
+        As regras do card vivem em quatro blocos (base, >=1280, 981-1279 e
+        <=980) e a ultima vence. Procurar a declaracao no arquivo inteiro nao
+        distingue "esta ligada" de "esta desligada logo abaixo" -- foi por um
+        `@media` esquecido que o sticky virou `static` sem ninguem notar.
         """
         i = css.index("@media " + condicao)
         j = css.index("{", i)
@@ -3642,31 +3658,35 @@ class PickStickyTests(unittest.TestCase):
                     return css[j + 1:k]
         raise AssertionError(f"@media {condicao} sem fechamento")
 
-    def test_the_two_column_range_keeps_the_pick_sticky(self):
-        bloco = self.bloco(self.css(), "(min-width: 981px) and (max-width: 1279px)")
-        self.assertIn("position: sticky", bloco)
-        self.assertNotIn("position: static", bloco)
+    def test_no_rule_positions_the_pick(self):
+        """Nenhuma regra do `.pick` posiciona o card: nem sticky, nem static.
 
-    def test_the_results_card_gives_the_second_row_its_height(self):
-        """Sem isto a linha 2 tem a altura do proprio card e o sticky nao rola."""
-        bloco = self.bloco(self.css(), "(min-width: 981px) and (max-width: 1279px)")
-        self.assertIn("grid-row: 1 / span 2", bloco)
-
-    @staticmethod
-    def sem_comentario(css: str) -> str:
-        """Tira os comentarios antes de procurar codigo AUSENTE.
-
-        O comentario que explica a remocao CITA o que saiu -- o `minmax(340px)`
-        que motivou o piso 0 esta escrito nele. Sem esta limpeza, o teste da
-        remocao reprova por causa da propria explicacao dela.
+        O `static` nao e' inofensivo -- ele era o DESLIGAMENTO do sticky nas
+        viewports estreitas. Deixado para tras, ele faz o leitor achar que ha um
+        efeito para desligar, e a proxima pessoa que mexer nao sabe se pode
+        apagar.
         """
-        return re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+        codigo = self.sem_comentario(self.css())
+        for seletor, corpo in re.findall(r"([^{}]+)\{([^}]*)\}", codigo):
+            if not re.search(r"\.pick(?![-\w])", seletor):
+                continue
+            with self.subTest(seletor=seletor.strip()):
+                self.assertNotIn("position", corpo,
+                                 f"{seletor.strip()} voltou a posicionar o card")
 
     def test_the_wide_columns_have_no_hard_floor(self):
-        """Piso fixo somava 1030px num container de 972px: a grade vazava."""
+        """Piso fixo somava 1030px num container de 972px: a grade vazava.
+
+        Nada a ver com o sticky -- o conserto veio junto e FICA.
+        """
         bloco = self.sem_comentario(self.bloco(self.css(), "(min-width: 1280px)"))
         self.assertNotIn("minmax(340px", bloco)
         self.assertIn("minmax(0, 1.05fr)", bloco)
+
+    def test_the_removal_did_not_touch_the_header(self):
+        """A barra de navegacao segue fixa: a remocao foi do card, so'."""
+        shared = (server.WEB_DIR / "shared.css").read_text(encoding="utf-8")
+        self.assertIn("position: sticky; top: 0", shared)
 
     def test_the_stacked_layout_is_not_sticky(self):
         """Empilhado o card tem 611px no celular: fixo, cobriria a tela toda."""

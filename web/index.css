@@ -1489,8 +1489,9 @@ aside > .card {
   background: linear-gradient(160deg, rgba(112, 201, 238, 0.045), transparent 42%), #11161f;
 }
 /* Sem `sticky` aqui: na Cortes nao ha mais aside. O `position: sticky` do
-   `.execution-card` que esta nota citava tambem saiu (2026-10-02) — nao ha
-   mais nenhum sticky neste arquivo alem do `header` e do aside do scrap. */
+   `.execution-card` que esta nota citava saiu (2026-10-02), e o card "Escolha"
+   do scrap deixou de ser fixo (2026-10-07) — neste arquivo nao ha sticky
+   nenhum alem do `header`. */
 aside .card h2 .ico {
   border-color: rgba(112, 201, 238, 0.2);
   background: rgba(112, 201, 238, 0.08);

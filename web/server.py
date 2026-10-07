@@ -4,21 +4,74 @@ Serves web/index.html and exposes a small JSON API that drives the real
 pipeline (viralclipper.pipeline). Stdlib only: no extra dependency, so
 `python web/server.py` works from the repo root with the project venv.
 
-Endpoints:
-  GET  /            -> the SPA
-  GET  /status      -> {jobs, clips} current state
-  POST /run         -> {options: {...}, plan_only: bool} -> {clips, log_lines} | {error}
-  GET  /run/progress -> the live record the Estudio aside paints while /run works
-  GET  /clips/<id>  -> static clip file from the output dir
-  GET  /browse/native -> OS folder dialog on the server machine
+Two namespaces, and the split is the contract:
+
+  /...       pages. HTML only. These are what the user sees in the address
+             bar, bookmarks and shares, so they change rarely and only with
+             a redirect behind them.
+  /api/...   data and actions. JSON only. Called by the JS this same server
+             delivers, so they can be renamed freely -- no bookmark points
+             here. Every one of them lives under the prefix; nothing that
+             returns JSON sits at the root.
+
+Pages:
+  GET  /                    -> index.html (Estudio)
+  GET  /biblioteca          -> scrap.html (Biblioteca). The FILE keeps the
+                               name "scrap" because that is the action in the
+                               code (viralclipper/scrap*.py); the ADDRESS is
+                               what the user reads.
+  GET  /ajustes             -> ajustes.html
+  GET  /docs                -> README.md rendered as HTML
+  GET  /scrap               -> 301 to /biblioteca. The old address, kept
+                               because the Biblioteca is the only way in to
+                               search media and a saved bookmark must not
+                               404.
+
+Data (GET):
+  /api/status               -> {jobs, clips} current state
+  /api/run/progress         -> the live record the Estudio aside paints
+  /api/ajustes              -> the settings the Ajustes page owns
+  /api/saida                -> the output folder listing (what the panel
+                               calls "pasta de saida")
+  /api/providers            -> the provider registry
+  /api/providers/user       -> the providers added from the panel
+  /api/prompts/curador      -> the curator prompt
+  /api/browse/native        -> OS folder dialog on the server machine
+  /api/thumb/<name>         -> cached thumbnail bytes
+  /api/clips/<id>           -> a rendered clip, or its poster
+  /api/scrap/thumb          -> a search result thumbnail (fetched on demand)
+  /api/scrap/archive/thumb  -> a catalog item thumbnail
+  /api/scrap/download/progress -> live record while a download runs
+  /api/scrap/archive/progress  -> live record while a catalog import runs
+
+Actions (POST -- they DO something, they do not replace a resource):
+  /api/run                  -> {options: {...}, plan_only: bool}
+                               -> {clips, log_lines} | {error}
+  /api/scrap                -> search Instagram/TikTok/YouTube
+  /api/scrap/thumb          -> fetch one result thumbnail
+  /api/scrap/archive        -> walk a whole profile catalog
+  /api/scrap/download       -> download the selected items
+  /api/transcript/normalize -> clean up a pasted transcript
+  /api/providers/save       -> add/update one provider
+  /api/providers/remove     -> drop one provider
+  /api/providers/test       -> probe one provider
+
+Replacement (PUT -- the whole object, nothing else):
+  /api/ajustes              -> replace the settings
+  /api/prompts/curador      -> replace the curator prompt
+
+  The verb carries the meaning. These two used to be POST on the SAME path
+  as their GET, which meant the reader had to open the handler to learn
+  whether the call replaced or appended -- and `POST /ajustes` was
+  indistinguishable from "create a new setting".
 
 Page contracts:
-  /scrap -> /?url=<encoded>
+  /biblioteca -> /?url=<encoded>
       The only channel between pages. No page keeps state across a
       navigation, so the pick from the Biblioteca travels in the address and
       is consumed on boot by index.js (`acceptHandoff`), which fills the
       `#url` field, strips the parameter and toasts. `/` links back to
-      `/scrap` from the Fonte card, so the round trip is closed in both
+      `/biblioteca` from the Fonte card, so the round trip is closed in both
       directions -- it used to be one-way.
 """
 
@@ -74,8 +127,8 @@ USER_PROVIDERS_PATH = REPO_ROOT / "provedores-usuario.toml"
 TRANSCRIPT_SOURCE_PATH = REPO_ROOT / ".ajustes-transcript-source"
 
 #: Every key the Ajustes page owns. This tuple is the whole contract: the page
-#: may only write these, GET /ajustes.json only returns these, and index.js
-#: merges exactly these into the POST /run payload. Spelled out rather than
+#: may only write these, GET /api/ajustes only returns these, and index.js
+#: merges exactly these into the POST /api/run payload. Spelled out rather than
 #: derived from the CLI parser because it is a product decision -- what belongs
 #: to the panel -- and a parser-derived list would grow silently every time a
 #: flag is added, putting fields on the page nobody designed.
@@ -652,11 +705,11 @@ def _write_transcript_source(url: str) -> None:
 
 
 def _ajustes_payload() -> dict:
-    """What ``GET /ajustes.json`` returns.
+    """What ``GET /api/ajustes`` returns.
 
     ``curator_prompt_file`` rides along without being an AJUSTES_KEYS entry: the
     page never edits that path (it saves the prompt through
-    ``/prompts/curador``), but index.js has to forward it into the run payload,
+    ``/api/prompts/curador``), but index.js has to forward it into the run payload,
     and sending it here saves a second request. It is added *after* the merge in
     ``_handle_save_ajustes`` for the same reason -- the panel must not be able
     to point the curator at an arbitrary file.
@@ -1883,7 +1936,7 @@ def _scrap_thumb(item: dict) -> str | None:
             tmp = target.with_suffix(".jpg.part")
             tmp.write_bytes(blob)
             tmp.replace(target)
-        return f"/thumb/{quote(target.name)}"
+        return f"/api/thumb/{quote(target.name)}"
     except Exception:  # noqa: BLE001 - decoration must never break the list
         return None
 
@@ -2439,7 +2492,7 @@ class Handler(http_server.BaseHTTPRequestHandler):
             else:
                 self._send_json({"error": "README.md missing"}, 404)
             return
-        if path == "/scrap/thumb":
+        if path == "/api/scrap/thumb":
             # The <img> tag hits this directly: a GET, not the POST above.
             # Both exist because only the caller knows which it needs — the
             # page uses the GET from the tag and lets the server do the work,
@@ -2454,7 +2507,7 @@ class Handler(http_server.BaseHTTPRequestHandler):
                 return
             self._send_thumb_at(position, (query.get("s") or [""])[0])
             return
-        if path == "/scrap/archive/thumb":
+        if path == "/api/scrap/archive/thumb":
             # Capa do N-esimo item do ultimo arquivamento, para os cards do
             # progresso. Posicao em vez de id: a pagina monta o <img> direto.
             query = parse_qs(urlparse(self.path).query)
@@ -2470,12 +2523,12 @@ class Handler(http_server.BaseHTTPRequestHandler):
             self._send_file(target.read_bytes(), "image/jpeg",
                             cache=self._CACHE_ASSET, etag=self._etag_for(target))
             return
-        if path.startswith("/thumb/"):
+        if path.startswith("/api/thumb/"):
             # Cached thumbnail bytes. The name is validated against the cache
             # directory itself rather than pattern-matched: ``..\..\`` and an
             # absolute path both resolve outside the folder, and the resolved
             # path is what decides.
-            name = unquote(path[len("/thumb/"):])
+            name = unquote(path[len("/api/thumb/"):])
             candidate = (_thumb_dir() / name).resolve()
             try:
                 candidate.relative_to(_thumb_dir().resolve())
@@ -2488,19 +2541,19 @@ class Handler(http_server.BaseHTTPRequestHandler):
             else:
                 self._send_json({"error": "not found"}, 404)
             return
-        if path == "/providers":
+        if path == "/api/providers":
             self._send_json(_providers_payload())
             return
-        if path == "/providers/user":
+        if path == "/api/providers/user":
             # The card's own listing. Same payload as /providers because the
             # dropdown and the card must never disagree about what exists; the
             # ``user`` flag is what the card filters on.
             self._send_json(_providers_payload())
             return
-        if path == "/prompts/curador":
+        if path == "/api/prompts/curador":
             self._send_json(_curator_prompt_payload())
             return
-        if path == "/status":
+        if path == "/api/status":
             with _lock:
                 snapshot = dict(_state)
             # The download/archive records have their own endpoints; keeping them
@@ -2510,7 +2563,7 @@ class Handler(http_server.BaseHTTPRequestHandler):
             snapshot.pop(_RUN_SLOT, None)
             self._send_json(snapshot)
             return
-        if path == "/run/progress":
+        if path == "/api/run/progress":
             with _lock:
                 record = dict(_state.get(_RUN_SLOT) or _run_record())
             # `elapsed` is computed here rather than stored: a worker that died
@@ -2520,40 +2573,40 @@ class Handler(http_server.BaseHTTPRequestHandler):
                 record["elapsed"] = round(time.time() - record["started_at"], 1)
             self._send_json(record)
             return
-        if path == "/ajustes.json":
+        if path == "/api/ajustes":
             self._send_json({
                 "settings": _ajustes_payload(),
                 "path": _relative_to_repo(AJUSTES_PATH),
                 "exists": AJUSTES_PATH.is_file(),
             })
             return
-        if path == "/scrap/download/progress":
+        if path == "/api/scrap/download/progress":
             with _lock:
                 record = dict(_state.get(_DOWNLOAD_SLOT) or _download_record())
             self._send_json(record)
             return
-        if path == "/scrap/archive/progress":
+        if path == "/api/scrap/archive/progress":
             with _lock:
                 record = dict(_state.get(_ARCHIVE_SLOT) or _archive_record())
             self._send_json(record)
             return
-        if path == "/library":
+        if path == "/api/saida":
             # Everything playable in the output folder, not just the last job.
             base = (REPO_ROOT / "output").resolve()
             self._send_json({"files": list_library(base)})
             return
-        if path == "/browse/native":
+        if path == "/api/browse/native":
             # Native OS dialog on the server machine: the only picker that
             # returns a real local path, since the browser hides them all.
             # The request hangs while the dialog is open — same as /run.
             self._send_json(_browse_native())
             return
-        if path.startswith("/clips/"):
+        if path.startswith("/api/clips/"):
             # Serve a rendered clip from the output dir. The UI passes the
             # relative path it received from /run. The browser percent-encodes
             # accented file names ("nao" is fine, "não" arrives as "na%C3%A3o"),
             # so the segment must be decoded before it touches the filesystem.
-            rel = unquote(path[len("/clips/"):])
+            rel = unquote(path[len("/api/clips/"):])
             base = (REPO_ROOT / "output").resolve()
             candidate = resolve_within(base, rel)
             if candidate is None:
@@ -2591,48 +2644,90 @@ class Handler(http_server.BaseHTTPRequestHandler):
             return
         self._send_json({"error": "not found"}, 404)
 
-    def do_POST(self) -> None:  # noqa: N802
-        if not self._guard_origin():
-            return
-        path = urlparse(self.path).path
+    def _read_payload(self) -> dict | None:
+        """Le o corpo JSON, ou responde 400 e devolve None.
+
+        Existe porque POST e PUT precisam exatamente do mesmo tratamento de
+        entrada, e duplicar o bloco faria as duas rotas divergirem na primeira
+        mudanca -- uma delas responderia 400 e a outra estouraria.
+        """
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else b"{}"
         try:
-            payload = json.loads(raw.decode("utf-8") or "{}")
+            return json.loads(raw.decode("utf-8") or "{}")
         except json.JSONDecodeError:
             self._send_json({"error": "invalid json"}, 400)
+            return None
+
+    def do_PUT(self) -> None:  # noqa: N802
+        """PUT = substituir o recurso inteiro. Sao dois endpoints, e so dois.
+
+        `/api/ajustes` e `/api/prompts/curador` recebem o objeto COMPLETO --
+        um arquivo de configuracao e um prompt. PUT e' o verbo que diz
+        exatamente isso.
+
+        Antes eram POST no MESMO caminho do GET, o que obrigava a ler o
+        handler para saber se aquilo substituia ou acrescentava: `POST
+        /ajustes` nao dava para distinguir de "criar um ajuste novo". Agora o
+        verbo carrega a informacao, e `GET /api/ajustes` + `PUT /api/ajustes`
+        e' o par ler/escrever do mesmo recurso.
+
+        Nao existe PUT para acao: `POST /api/run` e `POST /api/scrap/*` fazem
+        coisas, nao substituem recurso nenhum, e continuam POST.
+        """
+        if not self._guard_origin():
             return
-        if path == "/scrap":
-            self._handle_scrap(payload)
+        path = urlparse(self.path).path
+        payload = self._read_payload()
+        if payload is None:
             return
-        if path == "/scrap/thumb":
-            self._handle_thumb(payload)
-            return
-        if path == "/scrap/archive":
-            self._handle_archive(payload)
-            return
-        if path == "/scrap/download":
-            self._handle_selected_download(payload)
-            return
-        if path == "/transcript/normalize":
-            self._handle_normalize(payload)
-            return
-        if path == "/prompts/curador":
-            self._handle_save_curator_prompt(payload)
-            return
-        if path == "/providers/save":
-            self._handle_save_provider(payload)
-            return
-        if path == "/providers/remove":
-            self._handle_remove_provider(payload)
-            return
-        if path == "/providers/test":
-            self._handle_test_provider(payload)
-            return
-        if path == "/ajustes":
+        if path == "/api/ajustes":
             self._handle_save_ajustes(payload)
             return
-        if path != "/run":
+        if path == "/api/prompts/curador":
+            self._handle_save_curator_prompt(payload)
+            return
+        self._send_json({"error": "not found"}, 404)
+
+    def do_POST(self) -> None:  # noqa: N802
+        """POST = executar uma acao. Nao substitui recurso nenhum.
+
+        Tudo aqui tem efeito colateral que nao e' "o novo estado deste
+        objeto": dispara o pipeline, busca no Instagram, baixa, normaliza. As
+        duas unicas rotas que SUBSTITUIAM algo (config e prompt) sairam daqui
+        para o `do_PUT`, que e' o verbo certo para elas.
+        """
+        if not self._guard_origin():
+            return
+        path = urlparse(self.path).path
+        payload = self._read_payload()
+        if payload is None:
+            return
+        if path == "/api/scrap":
+            self._handle_scrap(payload)
+            return
+        if path == "/api/scrap/thumb":
+            self._handle_thumb(payload)
+            return
+        if path == "/api/scrap/archive":
+            self._handle_archive(payload)
+            return
+        if path == "/api/scrap/download":
+            self._handle_selected_download(payload)
+            return
+        if path == "/api/transcript/normalize":
+            self._handle_normalize(payload)
+            return
+        if path == "/api/providers/save":
+            self._handle_save_provider(payload)
+            return
+        if path == "/api/providers/remove":
+            self._handle_remove_provider(payload)
+            return
+        if path == "/api/providers/test":
+            self._handle_test_provider(payload)
+            return
+        if path != "/api/run":
             self._send_json({"error": "not found"}, 404)
             return
         options = payload.get("options") or {}

@@ -232,7 +232,7 @@
     }
 
     if (!(job.baselineFiles instanceof Map)) return;
-    const library = await api('/library');
+    const library = await api('/saida');
     if (library.offline || library.error || !Array.isArray(library.files)) return;
 
     const observed = job.observedFiles || (job.observedFiles = new Map());
@@ -615,10 +615,16 @@ count: $('#count').value.trim() === ''
   // A UI conversa com um servidor local opcional (web/server.py).
   // Sem servidor, ela mostra os parâmetros e o comando CLI equivalente.
   const API = 'http://127.0.0.1:7755';
+  //: Todo dado e acao vive sob /api/. O prefixo entra AQUI, e nao em cada
+  //: chamada: sao ~15 call sites, e um esquecido viraria um 404 silencioso --
+  //: o `api()` devolve `{error}` e a tela so mostra "servidor fora do ar".
+  //: As PAGINAS (/biblioteca, /ajustes) nao passam por aqui: elas sao
+  //: navegacao, nao fetch.
+  const API_BASE = API + '/api';
 
   async function api(path, opts) {
     try {
-      const res = await fetch(API + path, opts);
+      const res = await fetch(API_BASE + path, opts);
       if (!res.ok) {
         // O corpo do erro carrega a razao, e ela e a frase que diz o que
         // corrigir: "o nome so pode ter letras...", "escreva uma nota", "a
@@ -762,7 +768,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   }
 
   async function loadAjustes() {
-    const r = await api('/ajustes.json');
+    const r = await api('/ajustes');
     // Servidor fora do ar ou rota ausente: os defaults de state.ajustes ja
     // cobrem isso, e a pagina nao tem onde mostrar um erro so por causa de
     // um valor que ela nem edita mais. Segue calada com os defaults.
@@ -871,7 +877,8 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     }
     setPromptStatus('Salvando...');
     const data = await api('/prompts/curador', {
-      method: 'POST',
+      // PUT: o corpo e' o prompt INTEIRO, nao um acrescimo a ele.
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
     });
@@ -1253,8 +1260,19 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   }
 
   // ---------- fila ----------
+  //: O caminho publico de um arquivo de clip, e o UNICO lugar que o monta.
+  //: Havia quatro pontos escrevendo `'clips/' + ...` a mao; quando o prefixo
+  //: virou `/api/clips/` os quatro quebrariam juntos, e o sintoma seria um
+  //: video que nao toca -- sem erro no console, sem teste de unidade que pegue.
+  const CLIP_URL_BASE = '/api/clips/';
+
+  function clipsPath(rel) {
+    return CLIP_URL_BASE
+      + String(rel == null ? '' : rel).split('/').map(encodeURIComponent).join('/');
+  }
+
   function videoAddress(rel) {
-    return API + '/clips/' + String(rel || '').split('/').map(encodeURIComponent).join('/');
+    return API + clipsPath(rel);
   }
 
   function youtubeVideoId(value) {
@@ -1299,7 +1317,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     });
     if (!pending.length) return;
 
-    const library = await api('/library');
+    const library = await api('/saida');
     if (library.offline || library.error || !Array.isArray(library.files)) return;
     let changed = false;
     pending.forEach((job) => {
@@ -1659,12 +1677,15 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
       el.setAttribute('role', 'button');
       el.setAttribute('aria-label',
         'Clip ' + (c.title || '') + ', nota ' + c.score + (playable ? '' : ', ainda não renderizado'));
-      const videoSrc = playable ? ('clips/' + c.video) : null;
+      const videoSrc = playable ? clipsPath(c.video) : null;
       // O poster vem do servidor (um jpg ao lado do mp4) ou de um `poster`
       // externo ja normalizado para `clips/`. Sem ele o card fica preto ate o
       // `preload="metadata"` pintar um quadro; com ele o hook aparece de cara.
+      // O poster pode vir do servidor (nome puro do jpg ao lado do mp4) ou
+      // de um `poster` externo ja normalizado com o prefixo antigo. Tirar o
+      // prefixo antes de remontar evita `/api/clips/clips/x.jpg`.
       const posterSrc = c.thumb
-        ? (c.thumb.indexOf('clips/') === 0 ? c.thumb : 'clips/' + c.thumb)
+        ? clipsPath(String(c.thumb).replace(/^\/?(api\/)?clips\//i, ''))
         : null;
       el.innerHTML =
         (videoSrc
@@ -1685,7 +1706,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
         if (v) {
           if (v.paused) { v.play().catch(function () {}); } else { v.pause(); }
         } else if (playable) {
-          window.open('clips/' + c.video, '_blank');
+          window.open(clipsPath(c.video), '_blank');
         } else {
           toast('Este corte ainda não foi renderizado. Use "Gerar clips" para produzir o arquivo.', 'err');
           setStatus('done', 'Análise pronta');
@@ -1750,7 +1771,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
       el.setAttribute('role', 'button');
       el.setAttribute('aria-label', f.name);
       el.innerHTML =
-        '<video src="clips/' + encodeURI(f.rel) + '" muted loop preload="metadata" aria-hidden="true"></video>' +
+        '<video src="' + clipsPath(f.rel) + '" muted loop preload="metadata" aria-hidden="true"></video>' +
         '<div class="overlay"></div>' +
         '<span class="play-hint" aria-hidden="true">▶</span>' +
         '<div class="clip-meta"><span class="file-name"></span><span class="time"></span></div>';
@@ -1772,7 +1793,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
 
   async function showLibrary() {
     if (galleryLibraryFiles === null) {
-      const r = await api('/library');
+      const r = await api('/saida');
       if (r.offline) { toast('Backend offline: inicie web/server.py.', 'err'); return; }
       if (r.error) { toast('Não foi possível listar a pasta: ' + r.error, 'err'); return; }
       galleryLibraryFiles = r.files || [];
@@ -1840,7 +1861,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     log(comando);
     // Registra o estado atual da pasta para separar os cortes deste job dos
     // vídeos que já existiam antes da renderização.
-    const baseline = await api('/library');
+    const baseline = await api('/saida');
     const baselineFiles = new Map(
       (Array.isArray(baseline.files) ? baseline.files : [])
         .filter((file) => file.rel)

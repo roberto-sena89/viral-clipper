@@ -6,7 +6,9 @@
   // load, entao nao ha nada para ligar aqui.
 
   // ---------- estado da pagina ----------
-  var API = "";
+  //: Caminho relativo de proposito, e o prefixo entra aqui: todo dado e
+  //: acao vive sob /api/. As PAGINAS nao passam por estas funcoes.
+  var API = "/api";
 
   // ---------- helpers ----------
   const $ = (sel) => document.querySelector(sel);
@@ -63,7 +65,7 @@
   // muda de porta.
   async function post(path, body) {
     try {
-      const res = await fetch(path, {
+      const res = await fetch(API + path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body || {}),
@@ -81,7 +83,7 @@
   // estava rodando" (409): no segundo caso o certo e continuar acompanhando.
   async function get(path) {
     try {
-      const res = await fetch(path);
+      const res = await fetch(API + path);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return { error: data.error || ("HTTP " + res.status), code: res.status };
       return data;
@@ -308,7 +310,7 @@
       if (!item) continue;
       // Resolver de novo e barato: o servidor guarda os bytes em disco e
       // responde da cache. Um GET direto ja entrega a imagem, sem extracao.
-      paintThumb(index, "/scrap/thumb?i=" + index + "&s=" + searchSeq);
+      paintThumb(index, "/api/scrap/thumb?i=" + index + "&s=" + searchSeq);
     }
     thumbRunning = false;
   }
@@ -1171,7 +1173,7 @@
         thumb.textContent = "▶";
         if (item.thumb) {
           const img = document.createElement("img");
-          img.src = "/scrap/archive/thumb?i=" + n + "&s=" + archiveThumbSeq;
+          img.src = "/api/scrap/archive/thumb?i=" + n + "&s=" + archiveThumbSeq;
           img.alt = "";
           img.loading = "lazy";
           img.decoding = "async";

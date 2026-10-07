@@ -303,15 +303,15 @@ class ScrapPageTests(unittest.TestCase):
         self.assertEqual(cabecalhos.get("Content-Length"), "0")
 
     def test_the_route_survives_the_not_run_guard(self):
-        """POST /scrap must be handled before the `path != "/run"` rejection.
+        """POST /api/scrap must be handled before the `path != "/api/run"` rejection.
 
         The normalize handler used to live nested inside that guard. A new route
         added below it would be swallowed and answered 404 with no clue why.
         """
         source = (server.WEB_DIR / "server.py").read_text(encoding="utf-8")
-        scrap_at = source.index('if path == "/scrap":')
-        guard_at = source.index('if path != "/run":')
-        self.assertLess(scrap_at, guard_at, "POST /scrap ficou atras do guard")
+        scrap_at = source.index('if path == "/api/scrap":')
+        guard_at = source.index('if path != "/api/run":')
+        self.assertLess(scrap_at, guard_at, "POST /api/scrap ficou atras do guard")
 
     def test_the_page_offers_both_modes(self):
         body = self.page
@@ -804,7 +804,7 @@ class ScrapThumbRouteTests(unittest.TestCase):
         """The CSP allows images from this origin only, so a raw CDN URL in
         ``src`` is blocked and the thumbnail silently never appears."""
         page = page_source("scrap.html")
-        self.assertIn('"/scrap/thumb?i="', page)
+        self.assertIn('"/api/scrap/thumb?i="', page)
         # The item's own ``thumb`` field is a foreign CDN URL and must not be
         # assigned to src directly.
         self.assertNotIn("img.src = item.thumb", page)
@@ -1391,7 +1391,7 @@ class ScrapSelectionPageTests(unittest.TestCase):
         self.assertIn('id="download-fill"', self.page)
 
     def test_the_server_registers_the_route(self):
-        self.assertIn('"/scrap/download"', self.source)
+        self.assertIn('"/api/scrap/download"', self.source)
         self.assertIn("_handle_selected_download", self.source)
 
     def test_the_labels_come_from_one_place(self):
@@ -5760,7 +5760,7 @@ class GalleryPosterAndApiTests(unittest.TestCase):
         Video e poster saem pelo mesmo caminho, entao o tipo tem de vir da
         tabela por sufixo: `image/jpeg` cortado para octet-stream nao pinta.
         """
-        ini = self.src.index('if path.startswith("/clips/")')
+        ini = self.src.index('if path.startswith("/api/clips/")')
         # Ate o fim do ramo (o proximo `# Static assets`), e nao uma janela de
         # N caracteres: a janela fixa ja deixou uma assercao ler o ramo errado.
         bloco = self.src[ini:self.src.index("# Static assets inside web/")]
@@ -6448,6 +6448,209 @@ class StudioToLibraryLinkTests(unittest.TestCase):
         self.assertIn("?url=", doc)
         self.assertIn("index.js", doc)
 
+
+class ApiNamespaceTests(unittest.TestCase):
+    """A separacao entre PAGINA e DADO -- o contrato que o item 4 fixou.
+
+    Antes, as ~26 rotas de dados conviviam com as 4 de pagina sem nenhum
+    agrupamento visivel: `/library`, `/status`, `/thumb/` e `/clips/` ficavam
+    lado a lado com `/ajustes` e `/docs`, e nada dizia qual era qual. Pior,
+    `/prompts/curador` e `/scrap/thumb` existiam como GET **e** como POST no
+    MESMO caminho, sem nenhuma pista de que um lia e o outro escrevia.
+
+    Agora o prefixo e' a regra: `/...` e' pagina (HTML, o que o usuario ve na
+    barra e guarda), `/api/...` e' dado e acao (JSON, chamado so pelo JS que
+    este mesmo servidor entrega). Nenhuma rota que devolve JSON mora na raiz.
+
+    O que os testes travam:
+
+    * toda rota que nao e' uma das paginas conhecidas comeca com `/api/`;
+    * as paginas sao exatamente as quatro (mais os aliases `.html` e o
+      redirect do endereco antigo da Biblioteca);
+    * `/api/ajustes` e `/api/prompts/curador` sao PUT, nao POST -- o verbo
+      carrega o significado;
+    * o docstring lista as rotas. Ele documentava SEIS de ~30, e era a
+      primeira coisa que alguem lia para entender a API.
+    """
+
+    #: As paginas. `/scrap` e' o endereco antigo, que so redireciona.
+    PAGES = ("/", "/index.html", "/biblioteca", "/biblioteca.html",
+             "/ajustes", "/ajustes.html", "/docs", "/scrap", "/scrap.html")
+
+    def rotas(self, metodo: str) -> list[str]:
+        """As rotas que o handler compara, lidas do proprio codigo.
+
+        As rotas sao `if` no corpo dos `do_*`, nao uma tabela -- entao o teste
+        le o codigo. E' o que pega o caso real: acrescentar uma rota e
+        esquecer o prefixo.
+        """
+        import inspect
+
+        src = inspect.getsource(getattr(server.Handler, metodo))
+        achadas = re.findall(r'path\s*(?:==|!=)\s*"([^"]+)"', src)
+        achadas += re.findall(r'path\.startswith\("([^"]+)"\)', src)
+        # As paginas sao declaradas em CONJUNTO (`path in {"/ajustes",
+        # "/ajustes.html"}`), porque as duas grafias servem a mesma coisa.
+        for grupo in re.findall(r'path\s+in\s+\{([^}]+)\}', src):
+            achadas += re.findall(r'"([^"]+)"', grupo)
+        return achadas
+
+    def test_no_data_route_lives_outside_the_prefix(self):
+        """Nenhuma rota de dados na raiz -- so as paginas ficam la.
+
+        `/status` respondendo no mesmo nivel de `/ajustes` e' o que fazia a
+        superficie parecer maior do que e': 30 rotas sem hierarquia parecem 30
+        coisas para conhecer, e nao duas (pagina e dado).
+        """
+        for metodo in ("do_GET", "do_POST", "do_PUT"):
+            for rota in self.rotas(metodo):
+                if rota in self.PAGES:
+                    continue
+                with self.subTest(metodo=metodo, rota=rota):
+                    self.assertTrue(
+                        rota.startswith("/api/"),
+                        f"{metodo} serve {rota} fora de /api/")
+
+    def test_the_pages_are_the_four_plus_the_old_address(self):
+        """O que mora na raiz e' uma pagina, e nada mais.
+
+        Se uma rota de dados reaparecer aqui, o teste acima falha; este falha
+        se uma pagina NOVA aparecer sem entrar na lista -- e a lista e' o que
+        o teste acima usa para permitir a excecao.
+        """
+        raiz = [r for r in self.rotas("do_GET") if not r.startswith("/api/")]
+        self.assertEqual(sorted(raiz), sorted(self.PAGES),
+                         "a raiz ganhou ou perdeu uma rota de pagina")
+
+    def test_the_replace_endpoints_are_put(self):
+        """Substituir o objeto inteiro e' PUT. Ler o mesmo recurso e' GET.
+
+        Antes eram POST no MESMO caminho do GET, o que obrigava a abrir o
+        handler para saber se a chamada substituia ou acrescentava: `POST
+        /ajustes` era indistinguivel de "criar um ajuste novo".
+        """
+        do_put = self.rotas("do_PUT")
+        self.assertIn("/api/ajustes", do_put)
+        self.assertIn("/api/prompts/curador", do_put)
+
+        # E nao podem continuar no POST: o verbo e' a informacao.
+        do_post = self.rotas("do_POST")
+        self.assertNotIn("/api/ajustes", do_post,
+                         "salvar ajustes voltou a ser POST")
+        self.assertNotIn("/api/prompts/curador", do_post,
+                         "salvar o prompt voltou a ser POST")
+
+    def test_reading_and_replacing_share_the_path(self):
+        """`GET /api/ajustes` e `PUT /api/ajustes` sao o par ler/escrever.
+
+        E' o que o PUT compra: o mesmo caminho, o verbo dizendo o que a
+        chamada faz, sem precisar de `/ajustes.json` para desambiguar.
+        """
+        do_get = self.rotas("do_GET")
+        self.assertIn("/api/ajustes", do_get)
+        self.assertNotIn("/api/ajustes.json", do_get,
+                         "o sufixo .json voltou: o recurso e' um so")
+        self.assertIn("/api/prompts/curador", do_get)
+
+    def test_the_write_path_parses_the_body_in_one_place(self):
+        """POST e PUT leem o corpo pela MESMA funcao.
+
+        Duplicar o bloco faria as duas rotas divergirem na primeira mudanca --
+        uma responderia 400 e a outra estouraria com um traceback.
+        """
+        import inspect
+
+        for metodo in ("do_POST", "do_PUT"):
+            src = inspect.getsource(getattr(server.Handler, metodo))
+            with self.subTest(metodo=metodo):
+                self.assertIn("self._read_payload()", src)
+                self.assertNotIn("json.loads(", src,
+                                 "o parsing do corpo voltou a ser copiado")
+
+    def test_the_docstring_names_every_data_route(self):
+        """O docstring lista as rotas de dados -- todas.
+
+        Ele documentava SEIS (`/`, `/status`, `/run`, `/run/progress`,
+        `/clips/<id>`, `/browse/native`) de cerca de trinta, e era a primeira
+        coisa que alguem lia para entender a API. Um docstring parcial e' pior
+        que nenhum: ele parece completo.
+        """
+        doc = server.__doc__ or ""
+        for metodo in ("do_GET", "do_POST", "do_PUT"):
+            for rota in self.rotas(metodo):
+                if not rota.startswith("/api/"):
+                    continue
+                # `/api/thumb/` e `/api/clips/` sao prefixos; o docstring
+                # escreve o parametro (`/api/thumb/<name>`), entao a comparacao
+                # e' pelo trecho sem a barra final.
+                alvo = rota.rstrip("/")
+                with self.subTest(rota=rota):
+                    self.assertIn(alvo, doc,
+                                  f"o docstring nao menciona {rota}")
+
+    def test_the_docstring_documents_the_pages_and_the_redirect(self):
+        """As paginas e o endereco antigo tambem estao no docstring."""
+        doc = server.__doc__ or ""
+        for pagina in ("/biblioteca", "/ajustes", "/docs"):
+            with self.subTest(pagina=pagina):
+                self.assertIn(pagina, doc)
+        self.assertIn("301", doc, "o redirect do endereco antigo nao esta documentado")
+
+    def test_the_frontend_prefixes_the_api_in_one_place(self):
+        """O `/api` entra no helper, e nao em cada chamada.
+
+        Sao ~15 call sites no index.js e ~5 no ajustes.js. Um esquecido viraria
+        um 404 silencioso: o `api()` devolve `{error}` e a tela so mostra
+        "servidor fora do ar" -- sem pista de qual rota faltou.
+        """
+        index = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        ajustes = (server.WEB_DIR / "ajustes.js").read_text(encoding="utf-8")
+        scrap = (server.WEB_DIR / "scrap.js").read_text(encoding="utf-8")
+        for nome, fonte in (("index.js", index), ("ajustes.js", ajustes)):
+            with self.subTest(arquivo=nome):
+                self.assertIn("const API_BASE = API + '/api';", fonte)
+        self.assertIn('var API = "/api";', scrap)
+        # E nenhuma chamada pode ter o prefixo escrito a mao (seria o segundo
+        # lugar de onde ele vem).
+        for nome, fonte in (("index.js", index), ("ajustes.js", ajustes)):
+            with self.subTest(arquivo=nome):
+                self.assertNotIn("api('/api/", fonte)
+                self.assertNotIn('api("/api/', fonte)
+
+    def test_the_clip_url_is_built_in_one_place(self):
+        """`/api/clips/` e' uma constante so, e as chamadas passam por ela.
+
+        Havia QUATRO pontos montando `'clips/' + ...` a mao. Quando o prefixo
+        mudou, os quatro quebrariam juntos -- e o sintoma seria um video que
+        nao toca, sem erro no console e sem teste de unidade que pegasse.
+        """
+        index = self.sem_comentario(
+            (server.WEB_DIR / "index.js").read_text(encoding="utf-8"))
+        self.assertIn("const CLIP_URL_BASE = '/api/clips/';", index)
+        self.assertIn("function clipsPath(", index)
+        # Nenhuma montagem a mao do caminho do clip sobrou. Comparado sem os
+        # comentarios: o proprio comentario que explica a remocao CITA o
+        # `'clips/' +`, e reprovaria o teste da remocao.
+        self.assertNotIn("'clips/' +", index)
+        self.assertNotIn('"clips/" +', index)
+        # E as quatro que existiam passam pela funcao.
+        self.assertGreaterEqual(index.count("clipsPath("), 5)
+
+    @staticmethod
+    def sem_comentario(fonte: str) -> str:
+        """Tira comentarios de linha inteira e de bloco.
+
+        Um teste que procura codigo ausente nao pode enxergar a documentacao
+        da remocao: o comentario que explica POR QUE o `'clips/' +` saiu
+        contem o `'clips/' +`.
+        """
+        linhas = []
+        for linha in fonte.split("\n"):
+            t = linha.strip()
+            if t.startswith("//") or t.startswith("/*") or t.startswith("*"):
+                continue
+            linhas.append(linha)
+        return "\n".join(linhas)
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

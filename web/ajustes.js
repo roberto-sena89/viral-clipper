@@ -8,11 +8,14 @@
   // padroes do proprio formulario e diz que nao esta salvando, em vez de
   // fingir que salvou.
   const API = 'http://127.0.0.1:7755';
+  //: Mesmo contrato do index.js: todo dado e acao vive sob /api/, e o prefixo
+  //: entra no helper para nao depender de cada call site lembrar dele.
+  const API_BASE = API + '/api';
 
   const state = {
-    // true depois que o servidor confirmou que a rota /ajustes.json existe.
+    // true depois que o servidor confirmou que a rota /api/ajustes existe.
     // Enquanto for false, o autosave fica desligado: cada tecla digitada
-    // viraria um POST 404.
+    // viraria um PUT 404.
     canSave: false,
     curatorPromptPath: '',
     saving: false,
@@ -261,7 +264,7 @@
   // ---------- backend ----------
   async function api(path, opts) {
     try {
-      const res = await fetch(API + path, opts);
+      const res = await fetch(API_BASE + path, opts);
       if (!res.ok) {
         // O corpo do erro carrega a razao ("nao consegui gravar ..."), e ela e
         // a frase que diz o que fazer. Descartar o corpo mostrava so
@@ -304,7 +307,9 @@
     state.saving = true;
     setSaveState('running', 'Salvando…');
     const r = await api('/ajustes', {
-      method: 'POST',
+      // PUT: substitui o objeto inteiro. Era POST no mesmo caminho do GET, o
+      // que nao distinguia "salvar" de "criar um ajuste novo".
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       // `transcript_source_url` vai ao lado de `settings`, nao dentro: ele nao
       // e uma chave de AJUSTES_KEYS e o servidor recusaria (ou pior, gravaria
@@ -339,7 +344,7 @@
 
   async function loadSettings() {
     setSaveState('running', 'Carregando', 'Lendo os ajustes do servidor…');
-    const r = await api('/ajustes.json');
+    const r = await api('/ajustes');
 
     if (r.offline || r.error) {
       // Esperado enquanto a rota nao existe: a pagina fica com os padroes do
@@ -397,7 +402,8 @@
     }
     setPromptStatus('Salvando…');
     const r = await api('/prompts/curador', {
-      method: 'POST',
+      // PUT: o corpo e' o prompt inteiro.
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: text }),
     });

@@ -1778,6 +1778,23 @@
     $('#gallery-sub').textContent = 'Pré-visualização 9:16 dos cortes renderizados. Clique para reproduzir.';
   }
 
+  // Abre a pasta de saida pelo caminho publico (o evento), e nao chamando
+  // `showLibrary` direto: assim o clique do botao e um `location.assign` de um
+  // integrador fazem a MESMA coisa, por um ponto so. Se `showLibrary` fosse
+  // chamado aqui e o evento so avisasse, os dois caminhos divergiriam na
+  // primeira mudanca — que e como nascem duas verdades sobre a mesma tela.
+  function openLibrary() {
+    document.dispatchEvent(new CustomEvent('clips:open-library'));
+  }
+
+  // O listener do contrato da referencia (`clips:open-library`). Aqui ele NAO
+  // navega: o snippet original faz `location.assign('/outputs')`, e essa rota
+  // nao existe neste servidor — a pasta ja e uma vista in-page, entao navegar
+  // trocaria uma tela que funciona por um 404.
+  document.addEventListener('clips:open-library', () => {
+    showLibrary();
+  });
+
   // ---------- execução ----------
   let timer = null, startedAt = 0;
 
@@ -2036,7 +2053,7 @@
   $('#count').addEventListener('input', refreshRankerTopNHint);
   $('#btn-library').addEventListener('click', () => {
     const showingLibrary = $('#btn-library').textContent.indexOf('cortes deste job') >= 0;
-    if (showingLibrary) { showJobClips(); } else { showLibrary(); }
+    if (showingLibrary) { showJobClips(); } else { openLibrary(); }
   });
   // A busca filtra no cliente, no evento `input` (nao em `change`): a lista
   // encolhe enquanto se digita, e o `#gallery-status` anuncia o novo total.

@@ -5349,17 +5349,22 @@ class GallerySearchTests(unittest.TestCase):
         isso perdia a alternancia entre os cortes do job e a pasta de saida.
         Nao basta as duas funcoes existirem no arquivo: o clique tem de
         ESCOLHER entre elas pelo estado do proprio botao.
+
+        O ramo que abre a pasta passa por `openLibrary()` (que emite o evento
+        do contrato) e nao por `showLibrary()` direto: assim o clique e um
+        emissor externo do evento fazem a mesma coisa por um ponto so.
         """
         self.assertIn('id="btn-library"', self.html)
         self.assertIn('id="gallery-sub"', self.html)
         self.assertRegex(self.js, r"indexOf\('cortes deste job'\)")
         self.assertIn("showJobClips()", self.js)
         self.assertIn("showLibrary()", self.js)
-        # O clique ramifica: um caminho mostra a pasta, o outro volta aos cortes.
+        # O clique ramifica: um caminho volta aos cortes, o outro abre a pasta
+        # pelo caminho publico (que emite `clips:open-library`).
         ini = self.js.index("$('#btn-library').addEventListener('click'")
         bloco = self.js[ini:ini + 320]
         self.assertRegex(bloco, r"if \(showingLibrary\)\s*\{\s*showJobClips\(\);\s*\}"
-                                r"\s*else\s*\{\s*showLibrary\(\);\s*\}")
+                                r"\s*else\s*\{\s*openLibrary\(\);\s*\}")
         # Cada modo reescreve o proprio rotulo e a propria legenda: sem isso o
         # botao continuaria dizendo "Ver pasta" depois de ja estar na pasta.
         self.assertIn("$('#btn-library').textContent = 'Ver cortes deste job'", self.js)
@@ -5638,6 +5643,64 @@ class GalleryPosterAndApiTests(unittest.TestCase):
         # ternario por `false` deixa `poster=` na string e a assercao frouxa
         # passava com o poster desligado.
         self.assertIn("(posterSrc ? ' poster=\"' + posterSrc + '\"' : '')", bloco)
+
+
+class GalleryOpenLibraryEventTests(unittest.TestCase):
+    """O contrato `clips:open-library` da referencia, apontado para a acao real.
+
+    O snippet da referencia navega para `/outputs`, rota que NAO existe neste
+    servidor: a pasta de saida ja e uma vista in-page. O que os testes travam:
+
+    * o botao `#btn-library` despacha o evento em vez de chamar a funcao de
+      render direto, para o clique e um emissor externo fazerem a mesma coisa
+      por um ponto so;
+    * o listener abre a pasta in-page e NAO navega — um `location.assign`
+      trocaria uma tela que funciona por um 404;
+    * o listener nao se re-chama: se ele emitisse o mesmo evento, o fluxo
+      entraria em recursao.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+
+    def test_the_button_dispatches_the_event(self):
+        """O clique emite `clips:open-library`, e nao chama `showLibrary` direto."""
+        ini = self.js.index("$('#btn-library').addEventListener('click'")
+        bloco = self.js[ini:ini + 400]
+        self.assertIn("openLibrary()", bloco)
+        self.assertNotIn("showLibrary()", bloco)
+
+    def test_open_library_dispatches_the_contract_event(self):
+        """A funcao publica emite o evento com o nome exato do contrato."""
+        ini = self.js.index("function openLibrary(")
+        bloco = self.js[ini:self.js.index("document.addEventListener('clips:open-library'")]
+        self.assertIn("dispatchEvent", bloco)
+        self.assertIn("'clips:open-library'", bloco)
+
+    def test_the_listener_opens_the_folder_without_navigating(self):
+        """O listener abre in-page; nada de `location.assign('/outputs')`.
+
+        A rota da referencia nao existe aqui, e navegar por causa do nome do
+        evento trocaria a galeria por um 404.
+        """
+        ini = self.js.index("document.addEventListener('clips:open-library'")
+        bloco = self.js[ini:ini + 400]
+        self.assertIn("showLibrary()", bloco)
+        self.assertNotIn("location.assign", bloco)
+        self.assertNotIn("/outputs", bloco)
+
+    def test_the_listener_does_not_redispatch_the_event(self):
+        """O handler nao emite o proprio evento: seria recursao.
+
+        `openLibrary` emite; o listener abre. Se o listener tambem emitisse —
+        direto ou chamando `openLibrary`, que emite — cada abertura chamaria a
+        si mesma sem parar.
+        """
+        ini = self.js.index("document.addEventListener('clips:open-library'")
+        bloco = self.js[ini:ini + 400]
+        self.assertNotIn("dispatchEvent", bloco)
+        self.assertNotIn("openLibrary(", bloco)
 
 
 if __name__ == "__main__":  # pragma: no cover

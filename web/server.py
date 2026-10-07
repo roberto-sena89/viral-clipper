@@ -2305,6 +2305,24 @@ class Handler(http_server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_redirect(self, location: str, code: int = 301) -> None:
+        """301 para o endereco novo de uma rota que mudou de nome.
+
+        301 (permanente) e nao 302: o nome mudou de vez, e o navegador deve
+        guardar e parar de bater no endereco velho. O corpo vai vazio de
+        proposito -- quem segue o `Location` nunca o le, e um corpo com HTML
+        so criaria uma segunda pagina para manter.
+
+        Existe para o caso de rota de PAGINA, que e' a que o usuario guarda em
+        favoritos. As rotas de dados nao precisam: quem as chama e' o JS que o
+        proprio servidor entrega, e esse ja vem com o endereco novo.
+        """
+        self.send_response(code)
+        self.send_header("Location", location)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     #: Freshness for files whose name never changes (style.css, 1.mp4): five
     #: minutes absorbs a burst of reloads during a session, and a revalidation
     #: via ETag still picks up an edit immediately after.
@@ -2378,13 +2396,24 @@ class Handler(http_server.BaseHTTPRequestHandler):
             else:
                 self._send_json({"error": "index.html missing"}, 404)
             return
-        if path in {"/scrap", "/scrap.html"}:
+        if path in {"/biblioteca", "/biblioteca.html"}:
+            # O ARQUIVO continua `scrap.html`. "Scrap" e' o nome da acao no
+            # codigo (viralclipper/scrap*.py) e o que a pagina faz; o endereco
+            # e' o que o usuario le, guarda e ve na barra -- e ali o nome e'
+            # "Biblioteca". Trocar o arquivo de nome arrastaria scrap.js e
+            # scrap.css junto, sem ganho para quem usa.
             page = WEB_DIR / "scrap.html"
             if page.exists():
                 self._send_file(page.read_bytes(), "text/html; charset=utf-8",
                                 cache=self._CACHE_PAGE, etag=self._etag_for(page))
             else:
                 self._send_json({"error": "scrap.html missing"}, 404)
+            return
+        if path in {"/scrap", "/scrap.html"}:
+            # Endereco antigo. Redireciona em vez de sumir: a Biblioteca e' a
+            # unica porta para buscar midia, e um favorito salvo nao pode virar
+            # 404 -- a pagina sumiria para quem ja a conhecia.
+            self._send_redirect("/biblioteca")
             return
         if path in {"/ajustes", "/ajustes.html"}:
             # Both spellings on purpose: the page links to /ajustes, but a

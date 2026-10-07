@@ -287,10 +287,10 @@
   const RAIL_PAGES = [
     { path: '/',        ico: '▶', title: 'Estúdio', desc: 'Configurar e gerar os clips de um vídeo longo.' },
     { path: '/ajustes', ico: '▦', title: 'Ajustes', desc: 'Durações, legendas, curador e prompt.' },
-    { path: '/scrap',   ico: '⤓', title: 'Biblioteca', desc: 'Buscar, revisar e importar vídeos.' },
+    { path: '/biblioteca', ico: '⤓', title: 'Biblioteca', desc: 'Buscar, revisar e importar vídeos.' },
   ];
 
-  // '/', '/index.html', '/scrap', '/scrap.html', '/ajustes/', '/qualquer' ->
+  // '/', '/index.html', '/biblioteca', '/ajustes/', '/qualquer' ->
   // a chave canonica da RAIL_PAGES. Desconhecido cai em '/'.
   function railKey(pathname) {
     let key = String(pathname == null ? '/' : pathname).replace(/\.html$/i, '');

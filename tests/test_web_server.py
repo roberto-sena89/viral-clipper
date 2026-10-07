@@ -241,10 +241,66 @@ class ScrapPageTests(unittest.TestCase):
         )
 
     def test_the_route_serves_the_page(self):
-        """do_GET must have a /scrap branch, not fall through to 404."""
+        """do_GET must have a /biblioteca branch, not fall through to 404."""
         source = (server.WEB_DIR / "server.py").read_text(encoding="utf-8")
-        self.assertIn('"/scrap", "/scrap.html"', source)
+        self.assertIn('"/biblioteca", "/biblioteca.html"', source)
         self.assertIn('WEB_DIR / "scrap.html"', source)
+
+    def test_the_old_address_still_arrives(self):
+        """`/scrap` continua chegando na Biblioteca -- por 301.
+
+        A pagina mudou de endereco (`/scrap` -> `/biblioteca`) porque
+        "Biblioteca" nomeava DUAS coisas: esta pagina (fontes externas) e a
+        pasta de saida, que e' a rota JSON. Renomear a pagina resolveu o lado
+        que o usuario le.
+
+        Mas esta e' a unica porta para buscar midia. Quem tinha o endereco
+        antigo salvo nao pode receber 404 -- a pagina simplesmente sumiria.
+        Dai o redirect em vez da rota removida.
+        """
+        import inspect
+
+        source = inspect.getsource(server.Handler.do_GET)
+        self.assertIn('"/scrap", "/scrap.html"', source,
+                      "a rota antiga sumiu: o favorito de quem ja usa vira 404")
+        self.assertIn('self._send_redirect("/biblioteca")', source)
+
+    def test_the_redirect_is_permanent_and_empty(self):
+        """301, nao 302, e sem corpo.
+
+        301 porque o nome mudou de vez: o navegador guarda e para de bater no
+        endereco velho. Com 302 ele voltaria ao endereco antigo toda vez, e o
+        redirect viraria parte permanente do produto.
+
+        Corpo vazio porque quem segue o `Location` nunca o le -- um corpo com
+        HTML criaria uma segunda pagina para manter, e ela divergiria da
+        primeira na primeira edicao.
+        """
+        import inspect
+
+        assinatura = inspect.signature(server.Handler._send_redirect)
+        self.assertEqual(assinatura.parameters["code"].default, 301,
+                         "o redirect deixou de ser permanente")
+
+        class _Stub:
+            def __init__(self):
+                self.codes, self.hdrs = [], []
+
+            def send_response(self, code):
+                self.codes.append(code)
+
+            def send_header(self, key, value):
+                self.hdrs.append((key, value))
+
+            def end_headers(self):
+                pass
+
+        stub = _Stub()
+        server.Handler._send_redirect(stub, "/biblioteca")
+        self.assertEqual(stub.codes, [301])
+        cabecalhos = dict(stub.hdrs)
+        self.assertEqual(cabecalhos.get("Location"), "/biblioteca")
+        self.assertEqual(cabecalhos.get("Content-Length"), "0")
 
     def test_the_route_survives_the_not_run_guard(self):
         """POST /scrap must be handled before the `path != "/run"` rejection.
@@ -2555,7 +2611,7 @@ class RailNavigationTests(unittest.TestCase):
 
     PAGES = ("index.html", "ajustes.html", "scrap.html")
     #: Os unicos destinos do rail. Tem de bater com RAIL_PAGES e com as rotas.
-    DESTINATIONS = ("/", "/ajustes", "/scrap")
+    DESTINATIONS = ("/", "/ajustes", "/biblioteca")
     #: Campos que cada entrada precisa para o item sair completo no render.
     FIELDS = ("path", "ico", "title", "desc")
 
@@ -5923,7 +5979,7 @@ class FooterRedesignTests(unittest.TestCase):
         self.assertIn("RAIL_PAGES.map(", bloco)
         self.assertIn("data-footer-page=", bloco)
         # Nenhum caminho de pagina escrito a mao no rodape.
-        for rota in ("/scrap", "/ajustes"):
+        for rota in ("/biblioteca", "/ajustes"):
             with self.subTest(rota=rota):
                 self.assertNotIn("'" + rota + "'", bloco)
 
@@ -6351,7 +6407,7 @@ class StudioToLibraryLinkTests(unittest.TestCase):
         self.body = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
 
     def test_the_studio_links_to_the_library(self):
-        self.assertIn('href="/scrap"', self.body)
+        self.assertIn('href="/biblioteca"', self.body)
 
     def test_the_link_lives_in_the_source_card(self):
         """Dentro do card Fonte -- o campo que ele alimenta."""
@@ -6360,11 +6416,11 @@ class StudioToLibraryLinkTests(unittest.TestCase):
         # `field-alt-fora`) derrubando estes dois testes sem que nada na tela
         # tivesse se movido. Um teste de posicao nao deveria ter nome de estilo.
         card = self.body.index('class="card card-fonte"')
-        link = self.body.index('href="/scrap"')
+        link = self.body.index('href="/biblioteca"')
         self.assertGreater(link, card, "o link saiu do card Fonte")
         # E nao pode ter ido parar no rodape, que e' montado por comum.js.
         comum = (server.WEB_DIR / "comum.js").read_text(encoding="utf-8")
-        self.assertNotIn('href="/scrap"', comum)
+        self.assertNotIn('href="/biblioteca"', comum)
 
     def test_the_link_is_not_a_field_hint(self):
         """Nao usa `.hint`: isto nao descreve o campo, e' uma saida."""
@@ -6373,7 +6429,7 @@ class StudioToLibraryLinkTests(unittest.TestCase):
         # reprovaria por causa de uma palavra que aparece no meio do paragrafo
         # -- o que se quer e que a CLASSE nao traga `hint`, nao que a frase nao
         # contenha a letra.
-        ini = self.body.index('href="/scrap"')
+        ini = self.body.index('href="/biblioteca"')
         abre = self.body.rindex("<p", 0, ini)
         m = re.match(r'<p class="([^"]*)"', self.body[abre:])
         self.assertIsNotNone(m, "o link ficou sem <p class> envolvendo")

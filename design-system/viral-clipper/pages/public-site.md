@@ -5,8 +5,9 @@ This page is the public presentation site for a local, open-source short-video e
 ## Visual direction
 
 - Use the Soft UI Evolution restraint from `MASTER.md`, adapted to the existing dark creative-tool identity.
-- Background: `#0B1020`; surfaces: `#121A2B` and `#192338`; text: `#F5F7FC`; secondary text: `#C2CAD9`.
-- Primary action: short-video-editor pink `#EC4899` / `#DB2777`; blue `#70A6FF` is reserved for timeline and information states; mint `#52D6B0` marks local/success details.
+- Background: `#090B10`; surfaces: `#11151E` and `#131923`; text: `#F3F4F6`; secondary text: `#C2CAD9`. Same values the studio uses — see the palette table in `MASTER.md`.
+- Primary action: magenta `#FF4FAE`, with `#FF8BC8` for tints and `#1C1024` for text on top. Cyan `#70C9EE` is reserved for timeline and information states; green `#54D6A6` marks local/success details.
+- The site's palette mirrors `web/shared.css`; it must not drift back to its own set of pinks and navies.
 - Keep contrast high, borders quiet, shadows broad and subtle, and corners consistent.
 - Use the repository's self-hosted Inter fonts. Use system monospace for commands; do not make the site depend on a font CDN.
 

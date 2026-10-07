@@ -88,6 +88,18 @@
         <button class="btn pressable btn-primary" type="button" id="hero-cta">Colar link do vídeo</button>
         <button class="btn pressable" type="button" id="btn-docs">Documentação</button>
       </div>
+
+      <!-- Atalhos internos. O Estudio empilha nove blocos numa coluna so e
+           nao tinha nenhum: quem queria a fila ou os clips rolava a pagina
+           inteira. Os rotulos sao os MESMOS <h2> de destino -- quem clica em
+           "Fila de processamento" chega num titulo com essas palavras, entao
+           o atalho nao ensina vocabulario novo. O relatorio ficou de fora de
+           proposito: ele nasce `hidden` e so aparece depois de um trabalho. -->
+      <nav class="jump-links" aria-label="Atalhos desta página">
+        <a href="#config">Configuração do corte <span aria-hidden="true">↓</span></a>
+        <a href="#queue">Fila de processamento <span aria-hidden="true">↓</span></a>
+        <a href="#gallery-title">Clips gerados <span aria-hidden="true">↓</span></a>
+      </nav>
     </div>
     <div class="studio-workflow" aria-label="Fluxo do estúdio">
       <div class="studio-workflow-head">
@@ -138,6 +150,15 @@
                              aria-describedby="url-hint">
                       <span class="hint" id="url-hint">O único campo obrigatório: cole e clique
                         em <strong>Gerar clips</strong> para ir com os padrões.</span>
+                      <!-- A volta que faltava. O unico canal entre as paginas
+                           era Biblioteca -> Estudio (o `?url=`); quem estava
+                           aqui e nao tinha o link na mao so chegava na
+                           Biblioteca pela rail, no topo de uma pagina de
+                           scroll longo. O link mora no card FONTE porque e'
+                           exatamente o campo que ele alimenta -- nao e' um
+                           atalho generico de rodape. -->
+                      <p class="field-alt">Não tem o link à mão?
+                        <a href="/scrap">Buscar uma fonte na Biblioteca</a>.</p>
                     </div>
                   </div>
 

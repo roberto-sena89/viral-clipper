@@ -874,14 +874,6 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   text-wrap: balance;
 }
 .scrap-welcome p.lead { max-width: 58ch; margin: 0; color: var(--text-secondary); }
-.scrap-jump-links { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 19px; }
-.scrap-jump-links a {
-  display: inline-flex; align-items: center; gap: 8px;
-  min-height: 36px; padding: 0 12px; border: 1px solid var(--border-subtle);
-  border-radius: 999px; color: var(--text-primary); font-size: .78rem;
-  font-weight: 600; text-decoration: none; background: rgba(255,255,255,.025);
-}
-.scrap-jump-links a:hover { border-color: var(--accent-primary); color: var(--accent-soft); }
 .scrap-flow-card {
   min-width: 0; padding: 18px 20px 15px;
   border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
@@ -1059,7 +1051,11 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   .search-card #perfil-opts:not([hidden]) { grid-template-columns: minmax(0,1fr); gap: 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .scrap-welcome *, .scrap-flow-card *, .scrap-grid *, .scrap-jump-links a { transition-duration: .01ms !important; }
+  /* O `.jump-links a` saiu desta lista: o componente nao e' mais desta
+     pagina e o shared.css ja declara a sua regra de movimento reduzido.
+     Duas fontes para a mesma coisa divergem -- foi o que fez o rodape
+     ter valores diferentes por pagina. */
+  .scrap-welcome *, .scrap-flow-card *, .scrap-grid * { transition-duration: .01ms !important; }
 }
 
 /* Biblioteca em telas largas: buscar → resultados → item escolhido. */

@@ -232,13 +232,19 @@ class ShippedPromptTests(unittest.TestCase):
         )
 
     def _limits_in(self, text: str, unit: str) -> set[str]:
-        """Todo limite "no maximo N <unit>" do texto, como conjunto.
+        """Todo limite "no máximo N <unit>" do texto, como conjunto.
 
         Conjunto, e nao scalar, pelo mesmo motivo de ``_ranges_in``: um texto
-        que diz "no maximo 10 palavras" numa linha e "no maximo 8 palavras"
+        que diz "no máximo 10 palavras" numa linha e "no máximo 8 palavras"
         noutra tem de reprovar. Ler so a primeira ocorrencia e como nao ler.
+
+        O padrão aceita "máximo" e "maximo". O contrato é fonte Python e escreve
+        sem acento; o prompt é prosa em português e escreve com. Os dois descrevem
+        o MESMO limite, e um teste que so aceita a forma sem acento reprovaria a
+        grafia correta — que é o jeito de se perder a comparacao que ele existe
+        para fazer.
         """
-        return set(re.findall(rf"no maximo (\d+) {unit}", text, re.IGNORECASE))
+        return set(re.findall(rf"no m[áa]ximo (\d+) {unit}", text, re.IGNORECASE))
 
     def test_the_headline_limits_agree_with_the_contract(self):
         # O mesmo defeito, no outro par: palavras e caracteres. O arquivo

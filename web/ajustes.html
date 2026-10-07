@@ -93,6 +93,18 @@
       que fazer aqui.
     </p>
 
+    <!-- Atalhos internos: quatro cards longos numa coluna (trio em telas
+         largas), sem nenhum salto. O id fica no CARD, e nao no <h2>, porque
+         o card e' a unidade -- com o id no titulo, a borda e o padding do
+         card ficariam acima do corte do cabecalho sticky. Os rotulos sao os
+         <h2> de destino, para o atalho nao ensinar vocabulario novo. -->
+    <nav class="jump-links" aria-label="Atalhos desta página">
+      <a href="#card-selecao">Seleção <span aria-hidden="true">↓</span></a>
+      <a href="#card-transcricao">Transcrição <span aria-hidden="true">↓</span></a>
+      <a href="#card-renderizacao">Renderização <span aria-hidden="true">↓</span></a>
+      <a href="#card-prompt">Prompt do curador <span aria-hidden="true">↓</span></a>
+    </nav>
+
   <div class="main-grid">
 
     <!-- O formulario nao tem box proprio: `display: contents` (no CSS) faz os
@@ -100,7 +112,7 @@
          UM item so e tudo empilha dentro dele — o grid nao veria card nenhum. -->
     <form id="ajustes-form" novalidate>
 
-        <div class="card card-selecao">
+        <div id="card-selecao" class="card card-selecao">
           <h2><span class="ico" aria-hidden="true">◎</span> Seleção</h2>
 
           <div class="form-section">
@@ -176,7 +188,7 @@
              do breakpoint ela empilha e cada card recupera a largura cheia. -->
         <div class="trio">
 
-        <div class="card card-transcricao">
+        <div id="card-transcricao" class="card card-transcricao">
           <h2><span class="ico" aria-hidden="true">♪</span> Transcrição</h2>
 
           <div class="form-section">
@@ -271,7 +283,7 @@
           </div>
         </div>
 
-        <div class="card card-renderizacao">
+        <div id="card-renderizacao" class="card card-renderizacao">
           <h2><span class="ico" aria-hidden="true">▣</span> Renderização</h2>
 
           <div class="form-section">
@@ -390,7 +402,7 @@
           </div>
         </div>
 
-        <div class="card prompt-card">
+        <div id="card-prompt" class="card prompt-card">
           <h2><span class="ico" aria-hidden="true">✎</span> Prompt do curador</h2>
 
           <div class="form-section">

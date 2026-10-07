@@ -6152,5 +6152,231 @@ class FooterRedesignTests(unittest.TestCase):
                 self.assertIn("#" + alvo, self.comum)
 
 
+class JumpLinksTests(unittest.TestCase):
+    """Atalhos internos nas tres paginas.
+
+    O componente nasceu na Biblioteca (`.scrap-jump-links`), onde a pagina e'
+    longa e tem duas paradas obvias. O Estudio empilha nove blocos e o Ajustes
+    quatro cards, e nenhum dos dois tinha atalho. O componente subiu para o
+    shared.css e perdeu o prefixo `scrap-`: um seletor com o nome de uma pagina
+    usado em outra e' uma mentira que ninguem revisa.
+
+    O que os testes travam:
+
+    * as TRES paginas tem atalhos, com `aria-label`;
+    * todo `href="#x"` aponta para um `id` que EXISTE na mesma pagina -- um
+      atalho para ancora inexistente nao da erro: o navegador nao faz nada e
+      nao ha sinal no console. Quem clica so conclui que o botao esta quebrado;
+    * o rotulo do atalho compartilha a palavra-chave do heading de destino, para
+      o atalho nao criar um segundo nome para o mesmo bloco;
+    * as regras vivem no shared.css, e nao duplicadas nos css de pagina.
+    """
+
+    PAGES = ("index.html", "ajustes.html", "scrap.html")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.shared = (server.WEB_DIR / "shared.css").read_text(encoding="utf-8")
+
+    def page(self, name: str) -> str:
+        return (server.WEB_DIR / name).read_text(encoding="utf-8")
+
+    def nav(self, name: str) -> str:
+        body = self.page(name)
+        found = re.search(r'<nav class="jump-links".*?</nav>', body, re.S)
+        self.assertIsNotNone(found, f"{name}: nav.jump-links nao existe")
+        return found.group(0)
+
+    @staticmethod
+    def sem_comentario(texto: str) -> str:
+        """Tira comentarios de HTML e de CSS.
+
+        Necessario porque a documentacao da mudanca CITA os nomes antigos: sem
+        isso, o proprio comentario que explica a remocao faria o teste da
+        remocao falhar.
+        """
+        texto = re.sub(r"<!--.*?-->", "", texto, flags=re.S)
+        return re.sub(r"/\*.*?\*/", "", texto, flags=re.S)
+
+    @staticmethod
+    def palavras(texto: str) -> set:
+        """Palavras de 4+ letras, sem acento e em minusculas."""
+        import unicodedata
+
+        plano = unicodedata.normalize("NFKD", texto.lower())
+        plano = "".join(c for c in plano if not unicodedata.combining(c))
+        return set(re.findall(r"[a-z]{4,}", plano))
+
+    def test_every_page_has_jump_links(self):
+        for name in self.PAGES:
+            body = self.page(name)
+            with self.subTest(page=name):
+                self.assertIn('class="jump-links"', body)
+                self.assertRegex(body, r'<nav class="jump-links"[^>]*aria-label=')
+
+    def test_every_target_exists_in_the_same_page(self):
+        """Nenhum atalho aponta para ancora que nao existe.
+
+        `href="#nao-existe"` nao gera erro, nao aparece no console e nao move a
+        pagina. E' o pior desfecho: falha silenciosa que parece bug do botao.
+        """
+        for name in self.PAGES:
+            body = self.page(name)
+            alvos = re.findall(r'href="#([^"]+)"', self.nav(name))
+            self.assertGreater(len(alvos), 0, f"{name}: atalhos sem destino")
+            ids = set(re.findall(r'\bid="([^"]+)"', body))
+            for alvo in alvos:
+                with self.subTest(page=name, alvo=alvo):
+                    self.assertIn(alvo, ids,
+                                  f"{name}: atalho para #{alvo}, que nao existe")
+
+    def test_the_label_shares_the_destination_word(self):
+        """O rotulo do atalho usa a palavra do bloco de destino.
+
+        O atalho nao pode batizar o bloco de outro jeito: seria mais uma
+        nomenclatura a aprender, que e' exatamente o problema que a pagina raiz
+        tinha com os tres nomes.
+
+        A Biblioteca e' o unico caso em que o rotulo NAO repete o heading --
+        la os atalhos sao verbos ("Buscar midia" -> "Buscar conteudo", "Ver
+        resultados" -> "Resultados") porque a pagina e' um fluxo de acoes. O
+        teste aceita isso e cobra o que importa nos dois estilos: a palavra
+        central do destino aparece no rotulo.
+        """
+        for name in self.PAGES:
+            body = self.page(name)
+            for alvo, rotulo in re.findall(
+                    r'href="#([^"]+)"[^>]*>(.*?)</a>', self.nav(name), re.S):
+                # Fora a seta (`<span aria-hidden>`), que e' decorativa.
+                limpo = re.sub(r'<span aria-hidden="true">.*?</span>', "",
+                               rotulo, flags=re.S)
+                texto = re.sub(r"<[^>]+>", "", limpo).strip()
+                with self.subTest(page=name, alvo=alvo, rotulo=texto):
+                    heading = self.heading_for(body, alvo)
+                    comuns = self.palavras(texto) & self.palavras(heading)
+                    self.assertTrue(
+                        comuns,
+                        f"{name}: atalho '{texto}' e heading '{heading}' "
+                        f"nao tem palavra em comum")
+
+    @staticmethod
+    def heading_for(body: str, alvo: str) -> str:
+        """O texto do heading que o atalho aponta.
+
+        O id pode estar no proprio heading (Estudio, Biblioteca) ou no card que
+        o contem (Ajustes) -- nos dois casos o heading e' o que a pessoa le.
+        """
+        direto = re.search(
+            r'<h[1-3][^>]*\bid="' + re.escape(alvo) + r'"[^>]*>(.*?)</h[1-3]>',
+            body, re.S)
+        if direto:
+            return re.sub(r"<[^>]+>", "", direto.group(1)).strip()
+        card = re.search(
+            r'\bid="' + re.escape(alvo) + r'"[^>]*>.*?<h2[^>]*>(.*?)</h2>',
+            body, re.S)
+        if card:
+            return re.sub(r"<[^>]+>", "", card.group(1)).strip()
+        raise AssertionError(f"#{alvo} nao tem heading nenhum para ancorar")
+
+    def test_the_component_lives_in_the_shared_sheet(self):
+        """As regras estao no shared.css, e nao no css de uma pagina.
+
+        Mesma razao do rodape: o componente esta nas tres paginas. No css de
+        uma delas, a Biblioteca (que usa scrap.css) nao o teria.
+        """
+        self.assertIn(".jump-links {", self.shared)
+        self.assertIn(".jump-links a {", self.shared)
+        self.assertIn(".jump-links a:hover", self.shared)
+        for name in ("index.css", "scrap.css"):
+            folha = self.sem_comentario(
+                (server.WEB_DIR / name).read_text(encoding="utf-8"))
+            with self.subTest(sheet=name):
+                self.assertNotIn(".jump-links {", folha)
+
+    def test_the_old_scrap_prefix_is_gone(self):
+        """Nenhum resquicio de `scrap-jump-links` fora dos comentarios."""
+        for name in ("scrap.html", "scrap.css", "index.html", "ajustes.html",
+                     "index.css", "shared.css"):
+            texto = self.sem_comentario(
+                (server.WEB_DIR / name).read_text(encoding="utf-8"))
+            with self.subTest(arquivo=name):
+                self.assertNotIn("scrap-jump-links", texto)
+
+    def test_the_shortcuts_respect_reduced_motion(self):
+        """O seletor do reduced-motion e' o do elemento, nao um curinga.
+
+        `.jump-links *` tem especificidade menor que `.jump-links a` e perderia
+        na cascata -- foi o defeito MEDIDO no rodape, onde a transicao de 180ms
+        continuava correndo com o sistema pedindo movimento reduzido.
+        """
+        ini = self.shared.index("@media (prefers-reduced-motion: reduce) {"
+                                "\n  .jump-links a")
+        bloco = self.shared[ini:ini + 120]
+        self.assertIn("transition: none", bloco)
+        self.assertNotIn(".jump-links *", bloco)
+
+    def test_the_page_sheets_did_not_keep_a_second_copy(self):
+        """O scrap.css nao pode ter voltado a declarar o componente.
+
+        Ele ainda tem uma regra de movimento reduzido que citava
+        `.jump-links a`; ela saiu de proposito. O componente tem UMA fonte, no
+        shared.css -- duas fontes para a mesma coisa divergem, que foi o que
+        fez o rodape ter valores diferentes por pagina.
+        """
+        folha = self.sem_comentario(
+            (server.WEB_DIR / "scrap.css").read_text(encoding="utf-8"))
+        self.assertNotIn(".jump-links", folha)
+
+
+class StudioToLibraryLinkTests(unittest.TestCase):
+    """A volta do Estudio para a Biblioteca.
+
+    O unico canal entre as paginas era Biblioteca -> Estudio (o `?url=`). Quem
+    estava no Estudio sem o link na mao so chegava na Biblioteca pela rail, no
+    topo de uma pagina de scroll longo -- e no celular a rail e' um hamburguer.
+
+    O que os testes travam:
+
+    * o Estudio tem um link para a Biblioteca;
+    * ele mora no card FONTE, e nao no rodape: e' o campo que ele alimenta,
+      entao e' ali que a pessoa procura quando o campo esta vazio;
+    * ele NAO e' `class="hint"`. `.hint` e' o texto que o `aria-describedby` do
+      campo anuncia; uma saida lida como requisito do campo e' pior que
+      nenhuma saida;
+    * o contrato `?url=` esta no docstring do server.py, porque era implicito --
+      so o codigo sabia que existia.
+    """
+
+    def setUp(self):
+        self.body = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+
+    def test_the_studio_links_to_the_library(self):
+        self.assertIn('href="/scrap"', self.body)
+
+    def test_the_link_lives_in_the_source_card(self):
+        """Dentro do card Fonte -- o campo que ele alimenta."""
+        card = self.body.index('class="card card-fonte"')
+        link = self.body.index('class="field-alt"')
+        self.assertGreater(link, card, "o link saiu do card Fonte")
+        # E nao pode ter ido parar no rodape, que e' montado por comum.js.
+        comum = (server.WEB_DIR / "comum.js").read_text(encoding="utf-8")
+        self.assertNotIn('href="/scrap"', comum)
+
+    def test_the_link_is_not_a_field_hint(self):
+        """Nao usa `.hint`: isto nao descreve o campo, e' uma saida."""
+        ini = self.body.index('class="field-alt"')
+        bloco = self.body[ini:self.body.index("</p>", ini)]
+        self.assertIn('href="/scrap"', bloco)
+        self.assertNotIn("hint", bloco)
+
+    def test_the_handoff_contract_is_documented(self):
+        """O `?url=` deixou de ser implicito."""
+        fonte = (server.WEB_DIR / "server.py").read_text(encoding="utf-8")
+        doc = fonte[:fonte.index('"""', 3)]
+        self.assertIn("Page contracts", doc)
+        self.assertIn("?url=", doc)
+        self.assertIn("index.js", doc)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

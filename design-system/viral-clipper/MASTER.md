@@ -17,26 +17,47 @@
 
 ### Color Palette
 
+**One palette for the whole product.** These values are the tokens declared in
+`web/shared.css`, which is the single source of truth: the Estúdio, the Biblioteca
+and Ajustes all inherit it, and `public-site/assets/site.css` mirrors it. A page
+must not re-declare them.
+
+There used to be two. `shared.css` carried an indigo base (`#6366F1`) and
+`index.css` redefined the whole `:root` in magenta — so the Biblioteca, the only
+page that does not load `index.css`, silently rendered itself indigo while the
+other two rendered magenta. `SharedStyleSheetTests` and
+`test_the_panel_palette_lives_in_the_shared_sheet` now hold the line.
+
 | Role | Hex | CSS Variable |
 |------|-----|--------------|
-| Primary | `#EC4899` | `--color-primary` |
-| On Primary | `#1C1024` | `--color-on-primary` |
-| Secondary | `#DB2777` | `--color-secondary` |
-| On Secondary | `#FFFFFF` | `--color-on-secondary` |
-| Accent/CTA | `#2563EB` | `--color-accent` |
-| On Accent/CTA | `#FFFFFF` | `--color-on-accent` |
-| Background | `#0B1020` | `--color-background` |
-| Foreground | `#F5F7FC` | `--color-foreground` |
-| Card | `#192338` | `--color-card` |
-| Card Foreground | `#F5F7FC` | `--color-card-foreground` |
-| Muted | `#121A2B` | `--color-muted` |
-| Muted Foreground | `#9CA8BB` | `--color-muted-foreground` |
-| Border | `rgba(220,231,255,.12)` | `--color-border` |
-| Destructive | `#DC2626` | `--color-destructive` |
-| On Destructive | `#FFFFFF` | `--color-on-destructive` |
-| Ring | `#F187BF` | `--color-ring` |
+| Primary | `#FF4FAE` | `--accent-primary` (studio) / `--pink` (site) |
+| On Primary | `#1C1024` | `--grad-ink` |
+| Primary tint | `#FF8BC8` | `--accent-soft` |
+| Primary glow | `rgba(255,79,174,.22)` | `--accent-glow` |
+| Accent/CTA | `#70C9EE` | `--blue` (site only) |
+| On Accent/CTA | `#090B10` | — |
+| Background | `#090B10` | `--bg-deep` (studio) / `--bg` (site) |
+| Surface | `#11151E` | `--bg-surface` (studio) / `--surface` (site) |
+| Card | `#131923` | `--bg-card` (studio) / `--surface-raised` (site) |
+| Foreground | `#F3F4F6` | `--text-primary` / `--ink` |
+| Muted Foreground | `#9CA3AF` | `--text-muted` / `--ink-muted` |
+| Subtle Foreground | `#818896` | `--text-ink-subtle` |
+| Border | `rgba(218,226,243,.09)` | `--border-subtle` / `--line` |
+| Success | `#54D6A6` | `--success` / `--mint` |
+| Warning | `#FBBF24` | `--warn` |
+| Destructive | `#FF7184` | `--danger` |
+| Active tint | `rgba(255,79,174,.11)` | `--active-tint` |
 
-**Color Notes:** Short-video-editor palette: pink for creator actions, timeline blue, dark navy surfaces.
+**Color Notes:** Dark neutral surfaces (not navy), magenta for creator actions,
+cyan for information and timeline states (site only), green for local/success,
+amber for anything that means *attend to this*: pending, skipped, session,
+mid-potential, and the `ln-warn` lines in both logs.
+
+**Naming warning, resolved:** `--accent-warm` held `#70C9EE` and was used for
+seven attention states, two of them literally `.ln-warn` — each sitting beside a
+`rgba(251,191,36,…)` frame, so cyan text on an amber wash. It is now `--warn`
+(`#FBBF24`), which also reads better on dark: 11.79:1 on `--bg-deep` against
+10.57:1 for the cyan.
 
 ### Typography
 
@@ -83,7 +104,7 @@ Use the locally hosted Inter WOFF2 assets and a system monospace stack for code.
 ```css
 /* Primary Button */
 .btn-primary {
-  background: #EC4899;
+  background: #FF4FAE;
   color: #1C1024;
   padding: 12px 24px;
   border-radius: 10px;
@@ -93,15 +114,15 @@ Use the locally hosted Inter WOFF2 assets and a system monospace stack for code.
 }
 
 .btn-primary:hover {
-  background: #F28ABB;
+  background: #FFB9DF;
   transform: translateY(-2px);
 }
 
 /* Secondary Button */
 .btn-secondary {
   background: transparent;
-  color: #6366F1;
-  border: 2px solid #6366F1;
+  color: #FF8BC8;
+  border: 2px solid rgba(255, 79, 174, .5);
   padding: 12px 24px;
   border-radius: 8px;
   font-weight: 600;
@@ -114,8 +135,8 @@ Use the locally hosted Inter WOFF2 assets and a system monospace stack for code.
 
 ```css
 .card {
-  background: #121A2B;
-  border: 1px solid rgba(220,231,255,.12);
+  background: #131923;
+  border: 1px solid rgba(218,226,243,.09);
   border-radius: 18px;
   padding: 24px;
   box-shadow: 0 16px 48px rgba(0,0,0,.24);
@@ -123,7 +144,7 @@ Use the locally hosted Inter WOFF2 assets and a system monospace stack for code.
 }
 
 .card:hover {
-  border-color: rgba(220,231,255,.22);
+  border-color: rgba(218,226,243,.16);
 }
 ```
 
@@ -132,16 +153,16 @@ Use the locally hosted Inter WOFF2 assets and a system monospace stack for code.
 ```css
 .input {
   padding: 12px 16px;
-  border: 1px solid #E2E8F0;
+  border: 1px solid rgba(218,226,243,.16);
   border-radius: 8px;
   font-size: 16px;
   transition: border-color 200ms ease;
 }
 
 .input:focus {
-  border-color: #6366F1;
+  border-color: #FF4FAE;
   outline: none;
-  box-shadow: 0 0 0 3px #6366F120;
+  box-shadow: 0 0 0 3px rgba(255, 79, 174, .20);
 }
 ```
 

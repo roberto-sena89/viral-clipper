@@ -335,6 +335,37 @@
   line-height: 1;
 }
 
+/* ---------- ATALHOS INTERNOS (jump links) ----------
+   Nasceu na Biblioteca (`.scrap-jump-links`), onde a pagina e' longa e tem
+   duas paradas obvias. O Estudio e o Ajustes tem o mesmo problema -- o
+   Estudio empilha nove blocos e o Ajustes quatro cards -- e nao tinham
+   atalho nenhum.
+
+   Sobe para o compartilhado e perde o prefixo `scrap-`: o componente nao e'
+   mais de uma pagina. Era o prefixo que impedia o reuso -- um seletor com o
+   nome de uma pagina usado em outra e' uma mentira que ninguem revisa.
+
+   O destino e' sempre um heading, e o cabecalho e' sticky. O
+   `[id] { scroll-margin-top: 84px }` la em cima e' o que impede o titulo de
+   parar por baixo dele -- este componente e' o unico lugar onde esse
+   deslocamento e' visivel para quem clica, entao o comentario fica aqui. */
+.jump-links { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 19px; }
+.jump-links a {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 36px; padding: 0 12px; border: 1px solid var(--border-subtle);
+  border-radius: 999px; color: var(--text-primary); font-size: .78rem;
+  font-weight: 600; text-decoration: none; background: rgba(255,255,255,.025);
+  transition: border-color var(--motion-fast) ease, color var(--motion-fast) ease;
+}
+.jump-links a:hover { border-color: var(--accent-primary); color: var(--accent-soft); }
+
+/* Mesmo seletor do elemento, e nao `.jump-links *`: o curinga tem
+   especificidade menor que `.jump-links a` e perderia na cascata. Foi o
+   defeito medido no rodape. */
+@media (prefers-reduced-motion: reduce) {
+  .jump-links a { transition: none; }
+}
+
 /* ---------- FOOTER ----------
    Vive no shared.css, e nao no css de uma pagina, porque o rodape esta nas
    TRES paginas. Enquanto ele so existia no index, o css dele morava no
@@ -362,7 +393,13 @@
    galeria ja teve. Os nomes `--footer-*` ficam como apelidos dos tokens, para
    quem le o CSS da referencia achar as variaveis citadas. */
 .site-footer {
-  --footer-bg: var(--bg-deep, #0b0d12);
+  /* O fallback e o MESMO valor do token, e nao a cor antiga. `--bg-deep` e
+     #090b10 desde que a paleta foi unificada; o #0b0d12 que estava aqui era o
+     fundo indigo anterior. Como o token sempre existe, o fallback nunca entra —
+     mas um valor errado ali engana quem le: parece que o rodape cairia para
+     um fundo navy, o que e justamente a divergencia que este bloco existe
+     para nao ter. */
+  --footer-bg: var(--bg-deep, #090b10);
   --footer-text: var(--text-primary);
   --footer-muted: var(--text-muted);
   --footer-accent: var(--accent-soft);

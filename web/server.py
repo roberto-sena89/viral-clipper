@@ -8,9 +8,18 @@ Endpoints:
   GET  /            -> the SPA
   GET  /status      -> {jobs, clips} current state
   POST /run         -> {options: {...}, plan_only: bool} -> {clips, log_lines} | {error}
-  GET  /run/progress -> the live record the Cortes aside paints while /run works
+  GET  /run/progress -> the live record the Estudio aside paints while /run works
   GET  /clips/<id>  -> static clip file from the output dir
   GET  /browse/native -> OS folder dialog on the server machine
+
+Page contracts:
+  /scrap -> /?url=<encoded>
+      The only channel between pages. No page keeps state across a
+      navigation, so the pick from the Biblioteca travels in the address and
+      is consumed on boot by index.js (`acceptHandoff`), which fills the
+      `#url` field, strips the parameter and toasts. `/` links back to
+      `/scrap` from the Fonte card, so the round trip is closed in both
+      directions -- it used to be one-way.
 """
 
 from __future__ import annotations

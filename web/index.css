@@ -1552,6 +1552,13 @@ main > section > .card { padding: 17px; }
   .card-fonte .path-picker > .btn { flex: 0 0 auto; }
 }
 .field-note { display: block; margin: -6px 0 12px; }
+
+/* A volta para a Biblioteca, dentro do card Fonte. Nao usa `.hint` de
+   proposito: `.hint` e' o texto que o `aria-describedby` do campo anuncia, e
+   isto nao DESCREVE o campo -- e' uma saida. Marcar como hint faria o leitor
+   de tela ler uma alternativa como se fosse requisito do campo. */
+.field-alt { margin: 6px 0 0; font-size: var(--text-caption); color: var(--text-muted); }
+.field-alt a { color: var(--accent-soft); }
 /* O select de download e o de cookies ficam na mesma coluna visual; o
    disclosure alinha pelo topo da linha seguinte. */
 .cookies-box { margin-top: 4px; }

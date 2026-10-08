@@ -810,7 +810,7 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   background: rgba(0, 0, 0, 0.32); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm); padding: 12px;
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: var(--text-2xs); line-height: 1.7; color: var(--text-secondary);
+  font-size: var(--text-2xs); line-height: 1.7; color: #d1d9e6; /* era var(--text-secondary), agora 7.1:1 contra #0a0e14 */
 }
 
 
@@ -1256,6 +1256,7 @@ header .nav-actions .btn { min-height: 42px; }
   .scrap-cta-long { display: none; }
   .scrap-cta-short { display: inline; }
 }
+
 /* ---------- ALVO DE TOQUE DAS ABAS (ponteiro grosso) ----------
    No mouse as abas medem 37-42px, o certo para uma linha de ferramentas.
    No polegar faltam ate' 7px para o guia de conforto de 44px.

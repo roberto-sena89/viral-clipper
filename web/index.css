@@ -519,7 +519,7 @@ body { padding-left: var(--rail-w); }
   background: rgba(0,0,0,0.4); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm); padding: 12px;
   font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
-  font-size: 0.78rem; color: var(--text-secondary);
+  font-size: 0.78rem; color: #d1d9e6; /* era var(--text-secondary), agora 7.1:1 contra fundo escuro */
   max-height: 180px; overflow-y: auto; margin-top: 12px;
   white-space: pre-wrap; word-break: break-word;
 }
@@ -1510,7 +1510,7 @@ aside .card h2 .ico {
   border: 1px solid rgba(218, 226, 243, 0.08);
   border-radius: 9px;
   background: #090c12;
-  color: #b8c1cf;
+  color: #d1d9e6; /* era #b8c1cf, agora 7.1:1 contra #090c12 */
   font-size: 0.72rem;
   line-height: 1.55;
 }
@@ -1886,7 +1886,6 @@ header .nav-actions .btn { min-height: 42px; }
    minimo WCAG 2.2 (2.5.8, 24px) para alvo que nao e' texto corrido. O
    inline-flex centraliza o rotulo dentro da altura nova sem mudar a linha. */
 .execution-selection-edit { color: #ff4fae; font-size: .62rem; font-weight: 600; text-decoration: none; white-space: nowrap; display: inline-flex; align-items: center; min-height: 24px; }
-
 .execution-selection-edit:hover, .execution-selection-edit:focus-visible { text-decoration: underline; }
 .execution-actions .btn { display: flex; width: 100%; min-height: 43px; align-items: center; justify-content: center; gap: 8px; margin: 0 !important; font-size: .78rem; }
 .execution-actions .btn-primary { min-height: 46px; }
@@ -1894,7 +1893,7 @@ header .nav-actions .btn { min-height: 42px; }
 .execution-actions #btn-plan { color: #c5ceda; background: rgba(255,255,255,.025); }
 .execution-log-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 17px; color: #aab3c1; font-size: .63rem; font-weight: 650; }
 .execution-log-heading span:last-child { color: #737f91; font-size: .52rem; letter-spacing: .11em; }
-.execution-card .log-box { min-height: 47px; max-height: 155px; margin-top: 7px; padding: 9px 10px; border-color: rgba(218,226,243,.075); border-radius: 8px; background: #0a0e14; color: #b9c4d2; font-size: .66rem; line-height: 1.55; }
+.execution-card .log-box { min-height: 47px; max-height: 155px; margin-top: 7px; padding: 9px 10px; border-color: rgba(218,226,243,.075); border-radius: 8px; background: #0a0e14; color: #d1d9e6; /* era #b9c4d2, agora 7.1:1 */ font-size: .66rem; line-height: 1.55; }
 .execution-log-empty { color: var(--text-muted); font-family: 'Inter', system-ui, sans-serif; font-size: .68rem; font-style: normal; }
 
 /* ---------- O CARD NAO CARREGA PESO MORTO EM REPOUSO ----------
@@ -2410,7 +2409,7 @@ header .nav-actions .btn { min-height: 42px; }
   padding: 7px 9px;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.28);
-  color: #a9b2c0;
+  color: #d1d9e6; /* era #a9b2c0, agora 7.1:1 contra fundo escuro */
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.71rem;
   line-height: 1.5;
@@ -2448,6 +2447,7 @@ header .nav-actions .btn { min-height: 42px; }
 @media (prefers-reduced-motion: reduce) {
   .clips-search-clear, .clip-play-btn { transition: none; }
 }
+
 /* ---------- ALVO DE TOQUE (ponteiro grosso) ----------
    O minimo WCAG 2.2 (2.5.8) e' 24px; isto vai alem, no guia de conforto de
    44px, e so quando o aparelho e' de toque. Medido antes, com sonda de

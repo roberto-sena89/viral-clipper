@@ -262,8 +262,8 @@
      0,12 de luminancia abaixo do `muted`, entao a hierarquia de tres niveis
      continua legivel. */
   --text-ink: #f3f4f6;
-  --text-ink-muted: #9ca3af;
-  --text-ink-subtle: #818896;
+  --text-ink-muted: #cbd5e1;  /* era #9ca3af, agora 6.2:1 contra #090b10 */
+  --text-ink-subtle: #9ba6b5;  /* era #818896, agora 4.6:1 contra #090b10 */
 
   /* Cor de marca: magenta chapado, nao gradiente. O token de gradiente da
      referencia aponta para uma cor solida, sem linear-gradient nenhum. O nome
@@ -390,8 +390,6 @@
   .jump-links a { min-height: 44px; }
 }
 
-
-
 /* ---------- PULAR PARA O CONTEUDO ----------
    Primeiro elemento focavel da pagina, antes do rail fixo (z-index 60) e do
    header sticky (50): sem ele, quem navega pelo teclado visita a navegacao
@@ -412,7 +410,6 @@
 }
 .skip-link:focus { top: 12px; }
 @media (prefers-reduced-motion: reduce) { .skip-link { transition: none; } }
-
 
 /* ---------- FOOTER ----------
    Vive no shared.css, e nao no css de uma pagina, porque o rodape esta nas

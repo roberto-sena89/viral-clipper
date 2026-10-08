@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Publicar — Viral Clipper</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<!-- As MESMAS duas folhas de Ajustes: /shared.css traz os tokens, o rail e o
+     rodape; /index.css, a abertura e os cards. A terceira e' so desta pagina
+     (o cartao de legenda) e usa seletores `publicar-`, para nao criar uma
+     segunda verdade sobre nada que ja exista. -->
+<link rel="stylesheet" href="/shared.css?v=rail-brand-20261001">
+<link rel="stylesheet" href="/index.css?v=abertura-ajustes-20261003">
+<link rel="stylesheet" href="/publicar.css?v=publicar-20261007">
+</head>
+<body data-page="publicar">
+
+<!-- ==================== RAIL LATERAL ====================
+     A lista de destinos mora em /comum.js (RAIL_PAGES); o `renderRail`
+     preenche os dois <ul data-rail-list> desta pagina. Para acrescentar uma
+     pagina, edite RAIL_PAGES la — nao ha lista para duplicar aqui. -->
+<nav class="rail" aria-label="Navegação principal">
+  <div class="rail-brand" aria-current="page">
+    <a class="rail-brand-link" href="/" aria-label="Viral Clipper — abrir o Estúdio">
+      <span class="brand-mark" aria-hidden="true"><img src="/favicon.svg" alt="" width="36" height="36"></span>
+      <span class="rail-brand-copy"><strong>Viral Clipper</strong><small>Publicar</small></span>
+    </a>
+    <span class="rail-brand-badge" aria-label="Aplicativo local">LOCAL</span>
+  </div>
+
+  <div class="rail-label" id="rail-label-paginas">Páginas</div>
+
+  <ul class="rail-menu" aria-labelledby="rail-label-paginas" data-rail-list></ul>
+
+  <div class="rail-foot">
+    <span>viral-clipper · 9:16 1080×1920</span>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap header-inner">
+    <div class="header-context" aria-label="Publicação dos clips gerados">
+      <span class="header-context-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 15.5V4m0 0L7.75 8.25M12 4l4.25 4.25" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.75 14.5v3.75A1.75 1.75 0 0 0 6.5 20h11a1.75 1.75 0 0 0 1.75-1.75V14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </span>
+      <span class="header-context-copy">
+        <span class="header-context-eyebrow">PÓS-RENDER</span>
+        <strong>Publicar <span class="header-context-long"><span aria-hidden="true">/</span> Legenda e tags</span><span class="header-context-short">Publicar</span></strong>
+      </span>
+    </div>
+    <div class="nav-actions">
+      <!-- Fallback do rail abaixo de 920px: mesmos destinos, em menu. -->
+      <div class="rail-dropdown" data-rail-picker>
+        <button class="menu-btn pressable" type="button" id="rail-menu-btn"
+                aria-haspopup="true" aria-expanded="false" aria-controls="rail-menu-sm">
+          <span class="mb-bars" aria-hidden="true">☰</span>
+          <span class="sr-only">Menu de páginas</span>
+          <span class="mb-caret" aria-hidden="true">▾</span>
+        </button>
+        <ul class="rail-menu" id="rail-menu-sm" data-rail-menu data-rail-list hidden></ul>
+      </div>
+      <!-- Sem botao de salvar: esta pagina nao tem estado proprio. O unico
+           controle e' reler o clips.json, que a execucao reescreve. -->
+      <button class="btn pressable" type="button" id="btn-recarregar">Recarregar</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="publicar-abertura" aria-labelledby="publicar-titulo">
+    <div class="studio-overline">
+      <span class="studio-online-dot" aria-hidden="true"></span>
+      <span>O QUE SAIU DO RENDER</span>
+      <span class="studio-overline-divider" aria-hidden="true">/</span>
+      <span>PRONTO PARA COLAR NO POST</span>
+    </div>
+    <h1 class="section-title" id="publicar-titulo">Publicar</h1>
+    <p class="section-sub">
+      Esta página lê o <code>clips.json</code> da última execução e mostra, por
+      clip, a <strong>legenda</strong> e as <strong>hashtags</strong> que o
+      curador escreveu — o texto que vai no campo de descrição do TikTok, do
+      Reels ou do Shorts.
+    </p>
+    <p class="section-sub section-sub-muted">
+      As hashtags <strong>não</strong> estão desenhadas no vídeo de propósito:
+      a plataforma lê hashtag como metadado do post e ignora legenda queimada
+      no quadro. Quem publica é você, pela plataforma — esta página não faz
+      upload de nada.
+    </p>
+
+    <!-- Atalhos internos: dois blocos numa pagina curta, mas o primeiro e' a
+         lista (que cresce com o numero de clips) e o segundo e' a ficha da
+         origem. Os rotulos sao os <h2> de destino, para o atalho nao ensinar
+         vocabulario novo.
+         O atalho da Origem leva `id` porque ele SOBE E DESCE junto com o card:
+         sem relatorio nao ha ficha, e um atalho para uma secao escondida e' um
+         clique que nao leva a lugar nenhum. O `publicar.js` liga os dois pelo
+         `id` (`mostrarOrigem`), entao este id nao pode ser escrito a mao em
+         outro lugar nem renomeado so' de um lado. -->
+    <nav class="jump-links" aria-label="Atalhos desta página">
+      <a href="#publicar-clips">Clips <span aria-hidden="true">↓</span></a>
+      <a href="#publicar-origem" id="publicar-link-origem">Origem <span aria-hidden="true">↓</span></a>
+    </nav>
+  </section>
+
+  <section class="card" id="publicar-clips">
+    <h2><span class="ico" aria-hidden="true">✎</span> Clips gerados</h2>
+
+    <p class="hint" id="publicar-resumo">
+      Lendo o relatório da última execução…
+    </p>
+
+    <!-- Onde os cartoes entram. Vazio no HTML de proposito: o conteudo e' o
+         que o servidor devolve, e carimbar uma copia aqui seria uma segunda
+         fonte que envelhece sozinha. -->
+    <div class="publicar-lista" id="publicar-lista"></div>
+
+    <!-- Primeira execucao: nao e' erro, e' o estado inicial. -->
+    <div class="clips-empty" id="publicar-vazio" hidden>
+      <div class="clips-empty-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4.75 5.75h14.5v12.5H4.75z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M9.5 9.75l5 2.25-5 2.25z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+      </div>
+      <p class="clips-empty-title">Nenhum clip para publicar ainda</p>
+      <p class="clips-empty-description">
+        Esta página lê o relatório que a execução deixa em
+        <code>output/clips.json</code>. Rode um vídeo no
+        <strong>Estúdio</strong> — mesmo em modo análise, sem renderizar — e a
+        legenda de cada trecho aparece aqui.
+      </p>
+    </div>
+
+    <p class="hint hint-erro" id="publicar-erro" role="alert" hidden></p>
+  </section>
+
+  <section class="card" id="publicar-origem">
+    <h2><span class="ico" aria-hidden="true">⤓</span> Origem</h2>
+    <p class="hint">De onde saíram estes trechos.</p>
+    <dl class="publicar-ficha" id="publicar-ficha"></dl>
+  </section>
+
+  <!-- Regiao viva: o aviso de copia nao pode depender de o usuario estar
+       olhando para o botao que ele acabou de apertar. -->
+  <p class="sr-only" role="status" id="publicar-status"></p>
+
+</main>
+
+<footer class="site-footer" aria-label="Rodapé do Viral Clipper" data-footer></footer>
+
+<div class="toast-zone" id="toast-zone" aria-live="polite"></div>
+
+<script src="/comum.js?v=studio-20261001"></script>
+<script src="/publicar.js"></script>
+
+</body>
+</html>

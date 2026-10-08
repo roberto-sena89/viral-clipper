@@ -1,0 +1,154 @@
+/* Publicar — o que so' esta pagina tem.
+ *
+ * Tudo o que da' para reusar vem das outras folhas: `/shared.css` traz os
+ * tokens, o rail, o rodape, `.btn` e `.field`; `/index.css`, a abertura
+ * (`.studio-overline`, `.section-title`, `.section-sub`), o `.card` e o estado
+ * vazio. Aqui so' mora o CARTAO DE LEGENDA, que nao existe em nenhuma outra
+ * tela.
+ *
+ * Os seletores levam `publicar-` ou sao escopados por `[data-page="publicar"]`
+ * de proposito: um seletor generico daqui passaria a valer em qualquer pagina
+ * que viesse a carregar esta folha, e a segunda verdade sobre a mesma coisa e'
+ * exatamente o que a extracao para o shared.css desfez.
+ */
+
+.publicar-abertura > .section-sub { max-width: 68ch; }
+.publicar-abertura h1.section-title { margin-bottom: 8px; }
+
+/* ---------- cartao de legenda ---------- */
+
+/* O `.card` ja' da' borda, fundo e o `margin-bottom` que separa um cartao do
+   outro; o `.clip-card` (de index.css) da' a coluna com `gap`. Somados, o
+   cartao de legenda nao precisa de nenhuma regra de caixa. */
+.publicar-clip { padding: 16px 17px; }
+.publicar-clip .field { margin-top: 12px; }
+
+.publicar-topo {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+/* 9:16 e' o formato do arquivo: uma miniatura quadrada mentiria sobre o
+   enquadramento, e o usuario confere o corte justamente por aqui. */
+.publicar-thumb {
+  flex: 0 0 92px;
+  width: 92px;
+  aspect-ratio: 9 / 16;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  background: #0b0f16;
+}
+.publicar-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.publicar-thumb-vazio {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+}
+
+.publicar-meta {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.publicar-meta .hint { margin: 0; }
+
+.publicar-index {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.publicar-titulo {
+  color: var(--text-primary);
+  font-size: var(--text-subtitle);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.publicar-titulo-vazio {
+  color: var(--text-muted);
+  font-style: italic;
+  font-weight: 500;
+}
+
+.publicar-ganchos {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+}
+
+/* A legenda e' texto para copiar, nao para digitar: monoespacada e menor que
+   o corpo, para caber a headline e as hashtags sem empurrar os botoes para
+   fora da dobra. O `min-height` de 136px do index.css e' de campo de
+   formulario -- aqui sao tres linhas de leitura. */
+[data-page="publicar"] .publicar-clip textarea {
+  min-height: 96px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  line-height: 1.55;
+}
+
+/* ---------- trecho transcrito ---------- */
+
+.publicar-trecho {
+  margin-top: 10px;
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+}
+.publicar-trecho summary { cursor: pointer; color: var(--text-muted); }
+.publicar-trecho summary:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+.publicar-trecho p {
+  margin: 8px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  line-height: 1.55;
+}
+
+/* ---------- ficha da origem ---------- */
+
+.publicar-ficha {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 7px 14px;
+  margin: 0;
+  font-size: var(--text-caption);
+}
+.publicar-ficha dt { color: var(--text-muted); }
+.publicar-ficha dd {
+  margin: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.publicar-ficha a { color: var(--accent-soft); }
+
+/* ---------- tela estreita ---------- */
+
+/* `[hidden]` tem de vencer o `display` de quem for escondido. O
+   `.clips-empty` (o estado vazio) declara `display: flex`, e sem esta regra o
+   atributo `hidden` nao esconde nada -- e' o mesmo defeito que o index.css
+   resolve para `.clips-empty[hidden]` e companhia. Aqui vale para a pagina
+   inteira: um cartao escondido por `mostrarFalha` nao pode continuar na tela. */
+[data-page="publicar"] [hidden] { display: none; }
+
+/* Abaixo disso a miniatura de 92px ao lado de um titulo de duas linhas deixa
+   o texto numa coluna de ~180px: a headline quebra a cada duas palavras e o
+   cartao fica mais alto do que a versao larga. A miniatura encolhe antes de o
+   texto ceder. */
+@media (max-width: 520px) {
+  .publicar-topo { gap: 11px; }
+  .publicar-thumb { flex-basis: 68px; width: 68px; }
+  .publicar-ficha { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .publicar-ficha dd { margin-bottom: 8px; }
+}

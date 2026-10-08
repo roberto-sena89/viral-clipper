@@ -21,6 +21,9 @@ Pages:
                                code (viralclipper/scrap*.py); the ADDRESS is
                                what the user reads.
   GET  /ajustes             -> ajustes.html
+  GET  /publicar            -> publicar.html (Publicar). Pos-render: a
+                               headline e as hashtags de cada clip, prontas
+                               para colar no campo de descricao da plataforma.
   GET  /docs                -> README.md rendered as HTML
   GET  /scrap               -> 301 to /biblioteca. The old address, kept
                                because the Biblioteca is the only way in to
@@ -31,6 +34,9 @@ Data (GET):
   /api/status               -> {jobs, clips} current state
   /api/run/progress         -> the live record the Estudio aside paints
   /api/ajustes              -> the settings the Ajustes page owns
+  /api/publicacao           -> output/clips.json, recortado para o post:
+                               headline, hashtags, tempos e o poster de cada
+                               clip. Mesmo arquivo da galeria, outro recorte.
   /api/saida                -> the output folder listing (what the panel
                                calls "pasta de saida")
   /api/providers            -> the provider registry
@@ -2059,6 +2065,80 @@ def list_library(base: Path, limit: int = 200) -> list[dict]:
     return found[:limit]
 
 
+def _publicacao_payload() -> dict:
+    """O que a aba de publicacao precisa para montar o post de cada clipe.
+
+    Le o MESMO ``clips.json`` que a galeria ja consome -- nao ha uma segunda
+    fonte, so um segundo recorte. A galeria quer os arquivos; a publicacao quer
+    o texto que vai no campo de descricao da plataforma.
+
+    O curador ja escreve ``headline`` e ``hashtags`` por clipe (ver
+    ``docs/curador.md``); ate agora eles so apareciam no ``clips.md``, que e
+    markdown e ninguem cola no TikTok. Aqui eles voltam estruturados.
+
+    As hashtags NAO entram no video de proposito: TikTok e Reels as recebem
+    como metadado do post, e uma hashtag desenhada no quadro e uma hashtag que
+    a plataforma ignora.
+    """
+    base = (REPO_ROOT / "output").resolve()
+    report_path = base / "clips.json"
+    rel_report = _relative_to_repo(report_path)
+    if not report_path.is_file():
+        # Primeira execucao. Nao e erro: a pagina diz o que fazer.
+        return {"exists": False, "path": rel_report, "clips": []}
+    try:
+        document = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"exists": True, "path": rel_report, "clips": [], "error": str(exc)}
+
+    clips: list[dict] = []
+    for clip in document.get("clips") or []:
+        if not isinstance(clip, dict):
+            continue
+        # `file` chega ABSOLUTO do motor. A pagina so pode pedir o que esta sob
+        # `output/` (e `/api/clips/` recusa o resto), entao o caminho e
+        # relativizado aqui em vez de confiar no que veio do arquivo.
+        rel = ""
+        bruto = str(clip.get("file") or "")
+        if bruto:
+            try:
+                rel = str(Path(bruto).resolve().relative_to(base)).replace("\\", "/")
+            except (ValueError, OSError):
+                rel = ""
+        poster = ""
+        if rel:
+            imagem = _poster_path(base / rel)
+            if imagem.is_file():
+                poster = str(imagem.relative_to(base)).replace("\\", "/")
+        clips.append({
+            "index": clip.get("index"),
+            "rel": rel,
+            "poster": poster,
+            "headline": str(clip.get("headline") or ""),
+            "hashtags": str(clip.get("hashtags") or ""),
+            "duration": clip.get("duration") or 0,
+            "start_label": clip.get("start_label") or "",
+            "end_label": clip.get("end_label") or "",
+            "score": clip.get("score") or 0,
+            "hook_terms": clip.get("hook_terms") or [],
+            "text": str(clip.get("text") or ""),
+        })
+    return {
+        "exists": True,
+        "path": rel_report,
+        "title": str(document.get("title") or ""),
+        "uploader": str(document.get("uploader") or ""),
+        "url": str(document.get("url") or ""),
+        # A ficha da origem. Os tres ja estao no relatorio; a pagina nao tem
+        # como deduzi-los e sem eles a unica forma de saber QUAL modelo escreveu
+        # a legenda seria abrir o JSON a mao.
+        "source_duration": document.get("source_duration") or 0,
+        "model": str(document.get("model") or ""),
+        "engine": str(document.get("engine") or ""),
+        "clips": clips,
+    }
+
+
 def _tk_askdirectory() -> str:
     """Open the OS folder dialog on the server machine, return the path.
 
@@ -2480,6 +2560,18 @@ class Handler(http_server.BaseHTTPRequestHandler):
             else:
                 self._send_json({"error": "ajustes.html missing"}, 404)
             return
+        if path in {"/publicar", "/publicar.html"}:
+            # Pos-render. Mesma dupla grafia de /ajustes, pelo mesmo motivo:
+            # sem a rota, `/publicar.html` cairia no ramo estatico, onde
+            # `.html` nao e' um sufixo conhecido, e o arquivo seria
+            # *baixado* em vez de mostrado.
+            page = WEB_DIR / "publicar.html"
+            if page.exists():
+                self._send_file(page.read_bytes(), "text/html; charset=utf-8",
+                                cache=self._CACHE_PAGE, etag=self._etag_for(page))
+            else:
+                self._send_json({"error": "publicar.html missing"}, 404)
+            return
         if path == "/docs":
             # The README, rendered here instead of sent to GitHub: the old
             # button opened a repo URL that 404s (private/renamed), so the
@@ -2589,6 +2681,9 @@ class Handler(http_server.BaseHTTPRequestHandler):
             with _lock:
                 record = dict(_state.get(_ARCHIVE_SLOT) or _archive_record())
             self._send_json(record)
+            return
+        if path == "/api/publicacao":
+            self._send_json(_publicacao_payload())
             return
         if path == "/api/saida":
             # Everything playable in the output folder, not just the last job.

@@ -286,6 +286,7 @@
      este bloco existe para eliminar. */
   const RAIL_PAGES = [
     { path: '/',        ico: '▶', title: 'Estúdio', desc: 'Configurar e gerar os clips de um vídeo longo.' },
+    { path: '/publicar', ico: '↥', title: 'Publicar', desc: 'A legenda e as hashtags de cada clip, prontas para o post.' },
     { path: '/ajustes', ico: '▦', title: 'Ajustes', desc: 'Durações, legendas, curador e prompt.' },
     { path: '/biblioteca', ico: '⤓', title: 'Biblioteca', desc: 'Buscar, revisar e importar vídeos.' },
   ];

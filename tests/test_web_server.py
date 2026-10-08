@@ -12,6 +12,7 @@ import io
 import json
 import os
 import re
+import shutil
 import tempfile
 import unittest
 from dataclasses import replace
@@ -1891,7 +1892,7 @@ class SharedEscaperTests(unittest.TestCase):
         scrap segue correto, e a duplicata só aparece quando alguém edita a
         errada.
         """
-        for nome in ("index.js", "scrap.js"):
+        for nome in ("index.js", "scrap.js", "publicar.js"):
             with self.subTest(arquivo=nome):
                 self.assertNotRegex(
                     self.arquivo(nome), r"function\s+esc\s*\(",
@@ -1907,7 +1908,8 @@ class SharedEscaperTests(unittest.TestCase):
         aparece só no clique que monta o primeiro card, não no carregamento.
         """
         for pagina, script in (("index.html", "index.js"),
-                               ("scrap.html", "scrap.js")):
+                               ("scrap.html", "scrap.js"),
+                               ("publicar.html", "publicar.js")):
             with self.subTest(pagina=pagina):
                 html = self.arquivo(pagina)
                 # O `src` carrega cache-busting (`/comum.js?v=studio-20261001`):
@@ -2609,9 +2611,9 @@ class RailNavigationTests(unittest.TestCase):
     * todo destino apontando para uma rota que o servidor realmente serve.
     """
 
-    PAGES = ("index.html", "ajustes.html", "scrap.html")
+    PAGES = ("index.html", "publicar.html", "ajustes.html", "scrap.html")
     #: Os unicos destinos do rail. Tem de bater com RAIL_PAGES e com as rotas.
-    DESTINATIONS = ("/", "/ajustes", "/biblioteca")
+    DESTINATIONS = ("/", "/publicar", "/ajustes", "/biblioteca")
     #: Campos que cada entrada precisa para o item sair completo no render.
     FIELDS = ("path", "ico", "title", "desc")
 
@@ -3273,6 +3275,507 @@ class RunProgressTests(unittest.TestCase):
 
 
 
+class PublicacaoPayloadTests(unittest.TestCase):
+    """GET /api/publicacao: o recorte do ``clips.json`` que o post consome.
+
+    A galeria do Estudio ja le o MESMO arquivo -- aqui nao ha uma segunda
+    fonte, so um segundo recorte. O que a galeria precisa sao os arquivos; o
+    que a aba Publicar precisa e o TEXTO que vai no campo de descricao da
+    plataforma, mais o poster para o usuario conferir o corte.
+
+    O ``REPO_ROOT`` e' trocado por um diretorio temporario: a funcao le
+    ``<repo>/output/clips.json``, e um teste que escrevesse no ``output/`` de
+    verdade estaria mexendo no resultado de uma execucao do usuario.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="publicacao-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.base = self.tmp / "output"
+        self.base.mkdir(parents=True)
+        self.patch = mock.patch.object(server, "REPO_ROOT", self.tmp)
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+
+    def escrever(self, documento) -> Path:
+        destino = self.base / "clips.json"
+        destino.write_bytes(json.dumps(documento, ensure_ascii=False).encode("utf-8"))
+        return destino
+
+    @staticmethod
+    def clip(indice: int = 1, **extra) -> dict:
+        base = {
+            "index": indice, "start": 12.4, "end": 40.8, "duration": 28.4,
+            "score": 8.4, "meets_minimum": True, "file": "", "hook_terms": [],
+            "text": "", "components": {}, "width": 0, "height": 0,
+            "headline": "", "hashtags": "", "start_label": "00:12",
+            "end_label": "00:40",
+        }
+        base.update(extra)
+        return base
+
+    def test_the_first_run_is_not_an_error(self):
+        """Sem relatorio, a pagina diz o que fazer -- nao acusa falha.
+
+        A primeira execucao de quem acabou de instalar cai aqui. Um ``error``
+        neste caso faria a tela pedir desculpa por um estado normal.
+        """
+        payload = server._publicacao_payload()
+        self.assertFalse(payload["exists"])
+        self.assertEqual(payload["clips"], [])
+        self.assertNotIn("error", payload)
+        self.assertEqual(payload["path"], "output/clips.json")
+
+    def test_a_broken_report_is_reported_and_not_raised(self):
+        """JSON quebrado vira ``error`` na resposta; a pagina continua de pe.
+
+        O arquivo e' reescrito a cada execucao, e uma execucao interrompida
+        pode deixar um pela metade. Estourar aqui derrubaria a aba inteira por
+        causa de um arquivo que a proxima execucao conserta.
+        """
+        (self.base / "clips.json").write_bytes(b'{"clips": [')
+        payload = server._publicacao_payload()
+        self.assertTrue(payload["exists"])
+        self.assertEqual(payload["clips"], [])
+        self.assertIn("error", payload)
+
+    def test_the_clip_path_becomes_relative_to_output(self):
+        """``file`` chega ABSOLUTO do motor; a pagina so pede sob ``output/``.
+
+        ``/api/clips/`` recusa o que sai da pasta, entao entregar o caminho
+        absoluto seria entregar um endereco que o proprio servidor nega.
+        """
+        video = self.base / "clip-01.mp4"
+        self.escrever({"title": "T", "clips": [self.clip(file=str(video))]})
+        payload = server._publicacao_payload()
+        self.assertEqual(payload["clips"][0]["rel"], "clip-01.mp4")
+
+    def test_a_file_outside_the_output_folder_is_not_offered(self):
+        """Caminho fora de ``output/`` nao vira endereco.
+
+        Nao e' um caso hipotetico: `--output` aponta para outra pasta e o
+        relatorio guarda o caminho absoluto de la. O que nao pode acontecer e'
+        a pagina montar `/api/clips/../../algo` e o servidor ter de recusar.
+        """
+        fora = self.tmp / "fora" / "clip.mp4"
+        self.escrever({"clips": [self.clip(file=str(fora))]})
+        payload = server._publicacao_payload()
+        self.assertEqual(payload["clips"][0]["rel"], "")
+        self.assertEqual(payload["clips"][0]["poster"], "")
+
+    def test_the_poster_is_only_offered_when_it_exists(self):
+        """Poster e' um jpg ao lado do mp4 -- quando ele foi escrito.
+
+        Sem o arquivo, o ``<img>`` apontaria para um 404 e o cartao mostraria o
+        icone de imagem quebrada no lugar da miniatura.
+        """
+        video = self.base / "clip-01.mp4"
+        self.escrever({"clips": [self.clip(file=str(video))]})
+        self.assertEqual(server._publicacao_payload()["clips"][0]["poster"], "")
+
+        _poster = server._poster_path(video)
+        _poster.write_bytes(b"\xff\xd8\xff\xd9")
+        self.assertEqual(server._publicacao_payload()["clips"][0]["poster"], "clip-01.jpg")
+
+    def test_the_text_of_the_post_survives_the_round_trip(self):
+        """``headline`` e ``hashtags`` chegam a pagina -- e' o ponto da aba.
+
+        Eles ja existiam no relatorio desde o curador; ate agora so apareciam
+        no ``clips.md``, que e' markdown e ninguem cola no TikTok.
+        """
+        self.escrever({"clips": [self.clip(
+            headline="O preco nao era o problema",
+            hashtags="#vendas #marketing")]})
+        clip = server._publicacao_payload()["clips"][0]
+        self.assertEqual(clip["headline"], "O preco nao era o problema")
+        self.assertEqual(clip["hashtags"], "#vendas #marketing")
+
+    def test_a_clip_without_the_model_text_still_arrives_whole(self):
+        """Ausente vira ``""``, nunca ``None``.
+
+        A pagina chama ``.trim()`` no que recebe. Um ``None`` ali nao e' um
+        campo vazio: e' um ``TypeError`` que mata o render do cartao inteiro --
+        e o clip sem texto do modelo e' justamente o caso normal de quem
+        desliga o curador.
+        """
+        self.escrever({"clips": [self.clip()]})
+        clip = server._publicacao_payload()["clips"][0]
+        for campo in ("headline", "hashtags", "text", "rel", "poster"):
+            with self.subTest(campo=campo):
+                self.assertEqual(clip[campo], "")
+        self.assertEqual(clip["hook_terms"], [])
+
+    def test_junk_entries_do_not_break_the_list(self):
+        """Uma entrada que nao e' objeto e' pulada, nao derruba as outras."""
+        self.escrever({"clips": [None, "texto", 7, self.clip(index=9)]})
+        payload = server._publicacao_payload()
+        self.assertEqual([c["index"] for c in payload["clips"]], [9])
+
+    def test_a_report_without_a_clip_list_is_an_empty_list(self):
+        for documento in ({}, {"clips": None}, {"clips": "todos"}):
+            with self.subTest(documento=documento):
+                self.escrever(documento)
+                self.assertEqual(server._publicacao_payload()["clips"], [])
+
+    def test_the_source_sheet_comes_from_the_same_document(self):
+        """Titulo, canal, duracao e modelo vem do relatorio, nao do nome do arquivo."""
+        self.escrever({
+            "title": "Como eu dobrei o faturamento",
+            "uploader": "Canal Exemplo",
+            "url": "https://youtu.be/x",
+            "source_duration": 2530.5,
+            "model": "whisper-large-v3",
+            "clips": [self.clip()],
+        })
+        payload = server._publicacao_payload()
+        self.assertEqual(payload["title"], "Como eu dobrei o faturamento")
+        self.assertEqual(payload["uploader"], "Canal Exemplo")
+        self.assertEqual(payload["source_duration"], 2530.5)
+        self.assertEqual(payload["model"], "whisper-large-v3")
+
+
+class PublicarPageTests(unittest.TestCase):
+    """A pagina Publicar: o que ela promete e o que ela nao faz.
+
+    Ela existe para responder uma pergunta que o Estudio nao responde: "o que
+    eu escrevo no post de cada clip?". O curador ja escrevia a headline e as
+    hashtags, mas elas so saiam no ``clips.md``.
+    """
+
+    HTML = server.WEB_DIR / "publicar.html"
+    JS = server.WEB_DIR / "publicar.js"
+    CSS = server.WEB_DIR / "publicar.css"
+
+    def fonte(self, caminho: Path) -> str:
+        return caminho.read_text(encoding="utf-8")
+
+    @staticmethod
+    def sem_comentario(fonte: str) -> str:
+        """Fora os comentarios -- de linha inteira e de bloco.
+
+        Um teste que procura CODIGO ausente nao pode enxergar a documentacao da
+        remocao: o comentario deste arquivo que explica por que a porta fixa
+        saiu CITA `127.0.0.1`, e reprovaria o proprio texto que a justifica.
+        """
+        sem_bloco = re.sub(r"/\*.*?\*/", "", fonte, flags=re.S)
+        linhas = [ln for ln in sem_bloco.split("\n")
+                  if not ln.strip().startswith(("//", "*"))]
+        return "\n".join(linhas)
+
+    def test_the_route_serves_both_spellings(self):
+        """`/publicar` e `/publicar.html` servem a MESMA pagina.
+
+        Duas grafias de proposito, como em /ajustes: a pagina linka a primeira,
+        e a segunda e' o que as pessoas digitam. Sem a rota, `/publicar.html`
+        cairia no ramo estatico -- onde `.html` nao e' um sufixo conhecido -- e
+        o arquivo seria *baixado* em vez de mostrado.
+        """
+        import inspect
+
+        src = inspect.getsource(server.Handler.do_GET)
+        self.assertIn('"/publicar", "/publicar.html"', src)
+        self.assertIn('WEB_DIR / "publicar.html"', src)
+
+    def test_the_page_never_writes_anything(self):
+        """A aba so LE. Nenhuma chamada com verbo de escrita.
+
+        O contrato esta escrito na propria pagina ("esta pagina nao faz upload
+        de nada"). Publicar de verdade exige a API de cada plataforma e a
+        credencial do usuario -- nada disso mora num servidor local sem
+        autenticacao.
+        """
+        js = self.fonte(self.JS)
+        self.assertNotIn("method: 'POST'", js)
+        self.assertNotIn('method: "POST"', js)
+        self.assertNotIn("method: 'PUT'", js)
+        self.assertNotIn('method: "PUT"', js)
+        self.assertNotIn("FormData", js)
+        self.assertNotIn("sendBeacon", js)
+
+    def test_the_clip_url_is_built_in_one_place_here_too(self):
+        """Mesma regra do index.js: o prefixo de `/api/clips/` entra uma vez.
+
+        Sao as duas paginas que pedem arquivo de clip. Duas montagens a mao do
+        mesmo caminho e' o que quebrou quando o prefixo virou `/api/clips/`.
+        """
+        js = self.sem_comentario(self.fonte(self.JS))
+        self.assertIn("const CLIP_URL_BASE = '/api/clips/';", js)
+        self.assertIn("function clipsPath(", js)
+        self.assertEqual(js.count("/api/clips/"), 1,
+                         "o prefixo do clip aparece mais de uma vez: ha uma "
+                         "segunda montagem do mesmo caminho")
+
+    def test_the_page_does_not_hardcode_the_port(self):
+        """A origem e' implicita: a pagina e' servida pelo proprio servidor.
+
+        As outras duas paginas escrevem a porta 7755 a mao, e por isso quebram
+        quando o servidor sobe em outra porta (`--port 7756`) -- o CSP
+        `connect-src 'self'` recusa o destino. Uma pagina nova nao precisa
+        repetir o defeito: `''` ja aponta para o host e a porta certos.
+        """
+        js = self.sem_comentario(self.fonte(self.JS))
+        self.assertIn("const API = '';", js)
+        self.assertNotIn("127.0.0.1", js)
+
+    def test_the_caption_is_visible_beside_the_button_that_copies_it(self):
+        """O texto fica na TELA, e o botao so' o copia.
+
+        E' o que salva a copia quando o clipboard e' negado (permissao, http
+        puro): a mensagem de erro manda "selecione e copie", e para isso o
+        texto tem de estar ali. Um botao que guarda a string so no JS deixa o
+        usuario sem saida.
+        """
+        js = self.fonte(self.JS)
+        self.assertIn("readonly", js)
+        self.assertIn("<textarea", js)
+
+    def test_the_page_has_its_own_sheet_and_only_its_own_selectors(self):
+        """O css proprio so' declara o que e' proprio.
+
+        Um seletor generico numa folha carregada depois do shared.css passa a
+        valer em qualquer pagina que venha a carregar esta folha, e vira uma
+        segunda verdade sobre a mesma coisa -- exatamente o que a extracao para
+        o shared.css desfez. O nome do seletor e' a unica trava possivel aqui:
+        o CSS nao diz a que pagina uma regra pertence, entao a convencao
+        (`publicar-` ou `[data-page="publicar"]`) e' o contrato.
+        """
+        css = self.fonte(self.CSS)
+        # O `@media` fica de fora: um breakpoint nao e' um seletor.
+        limpo = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+        seletores = []
+        for bloco in re.findall(r"([^{}]+)\{", limpo):
+            for seletor in bloco.split(","):
+                seletor = seletor.strip()
+                if seletor and not seletor.startswith("@"):
+                    seletores.append(seletor)
+        self.assertTrue(seletores, "o css da pagina nao declara nada")
+        for seletor in seletores:
+            with self.subTest(seletor=seletor):
+                self.assertIn(
+                    "publicar", seletor,
+                    f"{seletor} nao e' desta pagina: use um seletor "
+                    "`publicar-` ou escopado por [data-page=\"publicar\"]")
+
+    def test_the_page_borrows_what_already_exists(self):
+        """O que ja' existe nao ganha uma segunda copia aqui.
+
+        `.card`, `.btn` e `.field` vivem no shared.css; `.section-title` e
+        `.clips-empty`, no index.css. As duas folhas entram na pagina, entao
+        redefinir qualquer um deles seria uma segunda verdade sobre a mesma
+        coisa -- e a da pagina mandaria, por vir depois.
+        """
+        css = self.fonte(self.CSS)
+        for seletor in (".card", ".btn", ".field", ".section-title",
+                        ".clips-empty", ".jump-links", ".rail-item", ".hint"):
+            with self.subTest(seletor=seletor):
+                self.assertNotRegex(
+                    css, r"(?m)^\s*" + re.escape(seletor) + r"\s*\{",
+                    f"{seletor} esta no css da pagina e no compartilhado")
+
+
+class PublicarOrigemVisibilityTests(unittest.TestCase):
+    """O card da Origem e o atalho dele sobem e descem JUNTOS.
+
+    O atalho "Origem" mora no `nav.jump-links` da abertura; o card mora no fim
+    da pagina. Sao dois elementos, um estado so': "existe ficha da origem?".
+    Enquanto cada um decidia sozinho, uma leitura sem relatorio
+    (`data.exists === false`) escondia a ficha e deixava o atalho apontando para
+    uma secao vazia -- um clique que nao leva a lugar nenhum, e sem erro no
+    console. `mostrarOrigem` passou a ser a unica fonte desse estado, e os DOIS
+    caminhos que escondem (sem relatorio e servidor fora do ar) passam por ela.
+
+    O teste de comportamento roda o `publicar.js` de verdade, com um DOM falso,
+    via node. Um teste que so' lesse o HTML nao veria a divergencia: o HTML esta
+    certo -- quem decide o `hidden` e' o JS.
+    """
+
+    HTML = server.WEB_DIR / "publicar.html"
+    JS = server.WEB_DIR / "publicar.js"
+
+    #: O que o teste le de volta depois de rodar a funcao. `hidden: true`
+    #: significa fora da tela.
+    ESTADO = ("{card: els['#publicar-origem'].hidden, "
+              "atalho: els['#publicar-link-origem'].hidden}")
+
+    def _html(self) -> str:
+        return self.HTML.read_text(encoding="utf-8")
+
+    def _js(self) -> str:
+        return self.JS.read_text(encoding="utf-8")
+
+    def _nav(self) -> str:
+        achado = re.search(r'<nav class="jump-links".*?</nav>', self._html(),
+                           re.S)
+        self.assertIsNotNone(achado, "publicar.html: nav.jump-links nao existe")
+        return achado.group(0)
+
+    @staticmethod
+    def sem_comentario(fonte: str) -> str:
+        """Fora os comentarios -- de linha inteira e de bloco.
+
+        Um teste que conta ocorrencias de um seletor nao pode enxergar a
+        documentacao da regra: o comentario que explica por que o card sai
+        CITA o `#publicar-origem`, e contaria como se fosse uma segunda
+        decisao sobre o `hidden`.
+        """
+        sem_bloco = re.sub(r"/\*.*?\*/", "", fonte, flags=re.S)
+        linhas = [ln for ln in sem_bloco.split("\n")
+                  if not ln.strip().startswith(("//", "*"))]
+        return "\n".join(linhas)
+
+    # ---------- contrato HTML <-> JS ----------
+
+    def test_the_card_and_the_shortcut_carry_the_ids_the_script_looks_for(self):
+        """O atalho e o card tem os ids que o JS procura -- os DOIS.
+
+        Sem o `id` no atalho, `$('#publicar-link-origem')` devolve null,
+        `mostrarOrigem` esconde so' o card e ninguem percebe: o atalho continua
+        na tela apontando para uma ancora que sumiu. E' a falha silenciosa que
+        o teste de comportamento nao pega sozinho, porque ele monta o proprio
+        DOM falso.
+        """
+        html = self._html()
+        js = self._js()
+        self.assertIn('id="publicar-origem"', html)
+        self.assertIn('id="publicar-link-origem"', html)
+        self.assertIn("'#publicar-origem'", js)
+        self.assertIn("'#publicar-link-origem'", js)
+
+    def test_the_shortcut_points_at_the_card_it_hides_with(self):
+        """O par casa: `href="#publicar-origem"` e `id="publicar-origem"`.
+
+        Um atalho apontando para outra ancora esconderia o card errado -- e o
+        card certo ficaria visivel, que e' o defeito de volta.
+        """
+        self.assertIn('href="#publicar-origem"', self._nav())
+        self.assertIn('id="publicar-origem"', self._html())
+
+    def test_the_card_visibility_is_decided_in_one_place(self):
+        """Cada seletor aparece UMA vez no codigo: a decisao tem uma fonte.
+
+        Era este o defeito: o `render` reexibia o card (`hidden = false`) por
+        conta propria, enquanto o `mostrarFalha` o escondia. Duas decisoes sobre
+        o mesmo `hidden`, e a divergencia so' aparecia em uma das leituras.
+        """
+        js = self.sem_comentario(self._js())
+        for seletor in ("#publicar-origem", "#publicar-link-origem"):
+            with self.subTest(seletor=seletor):
+                self.assertEqual(
+                    js.count(seletor), 1,
+                    f"{seletor} aparece mais de uma vez no publicar.js: ha uma "
+                    "segunda decisao sobre o `hidden`, fora do `mostrarOrigem`")
+
+    # ---------- comportamento, com o JS de verdade ----------
+
+    def _executa(self, expressao: str):
+        """Roda `expressao` no escopo do `publicar.js`, com um DOM falso.
+
+        Nao ha copia da logica: as funcoes sao extraidas do arquivo real. Uma
+        copia passaria com a copia certa e o produto quebrado -- que foi
+        exatamente o defeito que a pagina teve antes, quando o HTML estava certo
+        e o JS desalinhado.
+        """
+        import subprocess
+
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node nao esta no PATH")
+
+        ancoras = [
+            r"function segundos\(valor\) \{[\s\S]*?\n  \}",
+            r"function nota\(valor\) \{[\s\S]*?\n  \}",
+            r"function legendaDe\(clip\) \{[\s\S]*?\n  \}",
+            r"function fichaHtml\(data\) \{[\s\S]*?\n  \}",
+            r"function mostrarOrigem\(visivel\) \{[\s\S]*?\n  \}",
+            r"function mostrarFalha\(msg\) \{[\s\S]*?\n  \}",
+            r"function render\(data\) \{[\s\S]*?\n  \}",
+        ]
+        fonte = self._js()
+        corpo = []
+        for padrao in ancoras:
+            achado = re.search(padrao, fonte)
+            if achado is None:
+                raise AssertionError(f"ancora ausente em publicar.js: {padrao}")
+            corpo.append(achado.group(0))
+
+        script = (
+            # Cada seletor vira um elemento de mentira, criado na hora: o
+            # `hidden` que ele guarda e' o que o teste le de volta.
+            "const els = {};\n"
+            "const novo = () => ({ hidden: null, innerHTML: '', textContent: '' });\n"
+            "const document = {\n"
+            "  querySelector: (s) => (s in els ? els[s] : (els[s] = novo())),\n"
+            "  addEventListener: () => {},\n"
+            "  createElement: () => novo(),\n"
+            "};\n"
+            "const $ = (s) => document.querySelector(s);\n"
+            "const window = { esc: (v) => String(v == null ? '' : v) };\n"
+            "const esc = window.esc;\n"
+            # `render` guarda os clips lidos num `let` do modulo; sem ele o
+            # `render` estoura com ReferenceError e o teste mediria o erro.
+            "let clipsLidos = [];\n"
+            + "\n".join(corpo) + "\n"
+            "console.log(JSON.stringify(" + expressao + "));\n"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=30)
+        if proc.returncode != 0:
+            linhas = [l.strip() for l in proc.stderr.splitlines() if l.strip()]
+            erro = next((l for l in linhas if re.match(r"^[A-Za-z]*Error\b", l)),
+                        linhas[0] if linhas else "sem stderr")
+            raise AssertionError("publicar.js estourou: " + erro)
+        return json.loads(proc.stdout.strip())
+
+    def test_a_reading_without_a_report_hides_both(self):
+        """`exists === false`: sem ficha, o card E o atalho saem da tela.
+
+        Era o defeito medido: o card sumia (o `mostrarFalha` ja o escondia) e o
+        atalho ficava, apontando para uma secao que nao existe mais.
+        """
+        estado = self._executa(
+            "(render({exists: false, clips: []}), " + self.ESTADO + ")")
+        self.assertTrue(estado["card"],
+                        "o card da Origem ficou visivel sem relatorio")
+        self.assertTrue(estado["atalho"],
+                        "o atalho da Origem ficou visivel sem relatorio")
+
+    def test_a_reading_with_a_report_shows_both(self):
+        """`exists === true`: a ficha existe, entao o card e o atalho voltam.
+
+        O estado do DOM sobrevive ao erro: sem esta volta, uma leitura que
+        falhou deixaria a Origem escondida para sempre.
+        """
+        estado = self._executa(
+            "(render({exists: true, clips: []}), " + self.ESTADO + ")")
+        self.assertFalse(estado["card"],
+                         "o card da Origem nao voltou com o relatorio presente")
+        self.assertFalse(estado["atalho"],
+                         "o atalho da Origem nao voltou com o relatorio presente")
+
+    def test_a_dead_server_hides_both(self):
+        """`mostrarFalha`: sem servidor nao ha o que ler, entao some tudo.
+
+        Mesmo par do caminho sem relatorio: o erro nao pode divergir dele.
+        """
+        estado = self._executa("(mostrarFalha('x'), " + self.ESTADO + ")")
+        self.assertTrue(estado["card"],
+                        "o card da Origem ficou visivel com o servidor fora")
+        self.assertTrue(estado["atalho"],
+                        "o atalho da Origem ficou visivel com o servidor fora")
+
+    def test_the_two_are_always_on_the_same_side(self):
+        """A chamada direta: um booleano, dois elementos, sempre iguais.
+
+        Prova que o par nao tem estado proprio -- e' o que permite os dois
+        caminhos (`render` e `mostrarFalha`) delegarem para ela sem repetir a
+        regra.
+        """
+        ligado = self._executa("(mostrarOrigem(true), " + self.ESTADO + ")")
+        desligado = self._executa("(mostrarOrigem(false), " + self.ESTADO + ")")
+        self.assertEqual(ligado, {"card": False, "atalho": False})
+        self.assertEqual(desligado, {"card": True, "atalho": True})
+
+
 class DocsTests(unittest.TestCase):
     """GET /docs: o README do repo, renderizado localmente.
 
@@ -3529,12 +4032,12 @@ class FrontendPolishTests(unittest.TestCase):
     """
 
     def test_pages_do_not_call_google_fonts(self):
-        # A lista incluye as TRÊS páginas. Faltava a ajustes.html, e era por
+        # A lista incluye as QUATRO páginas. Faltava a ajustes.html, e era por
         # isso que ela ainda carregava <link> do Google: o teste passava sem
         # olhar para ela. Sobrava um preconnect no <head> que o proprio CSP
         # (`font-src 'self'`) bloqueia em produção — ou seja, o custo era pago
         # e o resultado nunca chegava.
-        for name in ("index.html", "scrap.html", "ajustes.html"):
+        for name in ("index.html", "scrap.html", "ajustes.html", "publicar.html"):
             html = (server.WEB_DIR / name).read_text(encoding="utf-8")
             self.assertNotIn("fonts.googleapis.com", html)
             self.assertNotIn("fonts.gstatic.com", html)
@@ -3577,7 +4080,7 @@ class FrontendPolishTests(unittest.TestCase):
         que o teste de `.brand-mark` usa, para as duas nunca mais divergirem.
         """
         self.assertTrue((server.WEB_DIR / "favicon.svg").is_file())
-        for name in ("index.html", "ajustes.html", "scrap.html"):
+        for name in ("index.html", "ajustes.html", "scrap.html", "publicar.html"):
             html = (server.WEB_DIR / name).read_text(encoding="utf-8")
             self.assertIn('rel="icon" href="/favicon.svg"', html)
 
@@ -6003,7 +6506,7 @@ class FooterRedesignTests(unittest.TestCase):
       vez de guardar uma copia da string no JS.
     """
 
-    PAGES = ("index.html", "ajustes.html", "scrap.html")
+    PAGES = ("index.html", "publicar.html", "ajustes.html", "scrap.html")
 
     @classmethod
     def setUpClass(cls):
@@ -6316,7 +6819,7 @@ class JumpLinksTests(unittest.TestCase):
     * as regras vivem no shared.css, e nao duplicadas nos css de pagina.
     """
 
-    PAGES = ("index.html", "ajustes.html", "scrap.html")
+    PAGES = ("index.html", "publicar.html", "ajustes.html", "scrap.html")
 
     @classmethod
     def setUpClass(cls):
@@ -6553,7 +7056,7 @@ class ApiNamespaceTests(unittest.TestCase):
     O que os testes travam:
 
     * toda rota que nao e' uma das paginas conhecidas comeca com `/api/`;
-    * as paginas sao exatamente as quatro (mais os aliases `.html` e o
+    * as paginas sao exatamente as cinco (mais os aliases `.html` e o
       redirect do endereco antigo da Biblioteca);
     * `/api/ajustes` e `/api/prompts/curador` sao PUT, nao POST -- o verbo
       carrega o significado;
@@ -6562,7 +7065,8 @@ class ApiNamespaceTests(unittest.TestCase):
     """
 
     #: As paginas. `/scrap` e' o endereco antigo, que so redireciona.
-    PAGES = ("/", "/index.html", "/biblioteca", "/biblioteca.html",
+    PAGES = ("/", "/index.html", "/publicar", "/publicar.html",
+             "/biblioteca", "/biblioteca.html",
              "/ajustes", "/ajustes.html", "/docs", "/scrap", "/scrap.html")
 
     def rotas(self, metodo: str) -> list[str]:
@@ -6599,7 +7103,7 @@ class ApiNamespaceTests(unittest.TestCase):
                         rota.startswith("/api/"),
                         f"{metodo} serve {rota} fora de /api/")
 
-    def test_the_pages_are_the_four_plus_the_old_address(self):
+    def test_the_pages_are_the_five_plus_the_old_address(self):
         """O que mora na raiz e' uma pagina, e nada mais.
 
         Se uma rota de dados reaparecer aqui, o teste acima falha; este falha
@@ -6679,7 +7183,7 @@ class ApiNamespaceTests(unittest.TestCase):
     def test_the_docstring_documents_the_pages_and_the_redirect(self):
         """As paginas e o endereco antigo tambem estao no docstring."""
         doc = server.__doc__ or ""
-        for pagina in ("/biblioteca", "/ajustes", "/docs"):
+        for pagina in ("/biblioteca", "/ajustes", "/publicar", "/docs"):
             with self.subTest(pagina=pagina):
                 self.assertIn(pagina, doc)
         self.assertIn("301", doc, "o redirect do endereco antigo nao esta documentado")

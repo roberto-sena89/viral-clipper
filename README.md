@@ -8,6 +8,12 @@ The tool analyses the audio, transcribes the speech, scores every candidate
 window on hook quality, speech density, loudness, boundary cleanliness and
 length, then renders the best non-overlapping windows in 9:16.
 
+Deeper docs live in [`docs/`](docs/README.md) — the module map and contracts
+([`arquitetura.md`](docs/arquitetura.md)), the local panel
+([`painel-web.md`](docs/painel-web.md)), the configuration surface
+([`configuracao.md`](docs/configuracao.md)) and the curator prompt
+([`curador.md`](docs/curador.md)).
+
 ## Requirements
 
 - Python 3.11 or newer (verified on 3.13).
@@ -46,6 +52,14 @@ The suite runs on pytest from the same `.venv` the tool uses:
 `pytest.ini` pins `testpaths = tests`, so collection never walks `_scratch/`
 (the gitignored folder of one-off debug scripts) and a stale backup there
 cannot abort the run. Verified on Python 3.13.14 with pytest 9.1.1.
+
+1499 tests, offline and fast (no ffmpeg, no yt-dlp, no whisper model). The
+rendering, download and ranker paths are exercised through injected fakes, so
+the suite never needs a network.
+
+A fake can still lie about the process boundary, so the render tests also run the
+task through a pickle round trip before handing it to the pool — that is what
+catches a parent reading its own unmodified copy instead of the worker's result.
 
 ## Quick start
 
@@ -240,12 +254,13 @@ color, box and karaoke highlight together; any manual flag (`--font-size`,
 `--caption-margin`, `--highlight-color`, `--words-per-line`, `--uppercase` /
 `--no-uppercase`) overrides only that piece.
 
-21 presets ship. `--caption-preset` validates against the real list, so a typo
+37 presets ship. `--caption-preset` validates against the real list, so a typo
 prints the choices instead of rendering something unexpected.
 
 | Preset | Look | When it wins |
 | --- | --- | --- |
 | `karaoke` | white bold, thin dark outline, yellow word highlight | the proven default for every channel |
+| `social` | Arial Black, yellow pop, two words per line, safe zone | the TikTok/Reels default out of the box |
 | `bold-box` | white text on a semi-opaque dark box | light or busy footage |
 | `minimal` | sentence case, thin outline, no box | quiet, elegant channels |
 | `neon` | green neon highlight, deep shadow | dark, cinematic footage |
@@ -286,23 +301,6 @@ Windows system faces render out of the box; Roboto, Inter, Poppins,
 Montserrat, DM Sans, Cabin, Helvetica, Merriweather and Arvo are free on
 Google Fonts — install them or libass falls back to a system face and the
 preview in the UI will not match the burn.
-| `slim` | small, no box | dense footage where text competes |
-| `ultra-impact` | Impact, two words per line, oversized | loud, aggressive edits |
-| `fire` / `blood` | warm orange / deep red | high-energy hooks |
-| `candy` / `pop-box` / `bubble` | light or magenta boxes, dark text | playful, lifestyle content |
-| `cobalt` / `ice-blue` / `violet-vibe` | cool corporate blues and violet | business, finance, tutorials |
-| `cyan-pop` / `lime-hit` / `magenta-pop` | saturated neon accents | gaming, music, night footage |
-| `gold-box` | dark text on a gold plate | premium and money topics |
-| `sunset` | warm cream on coral | travel and slow content |
-
-<details>
-<summary>Full list</summary>
-
-`block-dark`, `blood`, `bold-box`, `bubble`, `candy`, `cobalt`, `cyan-pop`,
-`fire`, `gold-box`, `ice-blue`, `karaoke`, `lime-hit`, `magenta-pop`, `minimal`,
-`mono`, `neon`, `pop-box`, `slim`, `sunset`, `ultra-impact`, `violet-vibe`.
-
-</details>
 
 Pick one and keep it — a fixed caption look is what makes a channel's clips
 recognisable in the feed.
@@ -897,19 +895,7 @@ If port 7755 is taken, pass `--port`:
 python web/server.py --port 7756
 ```
 
-## Tests
-
-```powershell
-python -m unittest discover -s tests -t .
-```
-
-998 tests, offline and fast (no ffmpeg, no yt-dlp, no whisper model). The
-rendering, download and ranker paths are exercised through injected fakes, so
-the suite never needs a network.
-
-A fake can still lie about the process boundary, so the render tests also run the
-task through a pickle round trip before handing it to the pool — that is what
-catches a parent reading its own unmodified copy instead of the worker's result.
+## Checks against real binaries
 
 Six scripts go one level deeper against real binaries:
 

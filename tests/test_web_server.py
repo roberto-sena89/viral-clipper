@@ -4400,15 +4400,20 @@ class HostHeaderGuardTests(unittest.TestCase):
         # Sem porta no Host e aceito: o navegador omite na 80.
         self.assertTrue(server._host_is_local("127.0.0.1", 8000))
 
-    def test_both_entrypoints_call_the_guard(self):
-        """A guarda fica no topo de do_GET e do_POST, nao dentro de uma rota.
+    def test_every_entrypoint_calls_the_guard(self):
+        """A guarda fica no topo de do_GET, do_PUT e do_POST -- nao dentro de uma rota.
 
         Uma checagem por rota e uma que a proxima rota esquece; foi assim que
         a pagina de Ajustes pôde nascer sem H1 e ninguem notou.
+
+        O `do_PUT` entrou depois e ficou de fora deste assert: os dois verbos
+        originais eram cobertos, o terceiro so' existia por leitura do codigo.
+        Um verbo novo sem guarda e' uma porta a mais para uma pagina de fora
+        escrever `ajustes.toml` e o prompt do curador.
         """
         import inspect
 
-        for nome in ("do_GET", "do_POST"):
+        for nome in ("do_GET", "do_PUT", "do_POST"):
             src = inspect.getsource(getattr(server.Handler, nome))
             self.assertIn("_guard_origin()", src, nome)
             # Tem de vir antes de qualquer despacho de rota.
@@ -7460,6 +7465,154 @@ class TouchTargetTests(unittest.TestCase):
         self.assertIn('.search-card .tabs[aria-label="Plataforma"] .tab', ramo)
 
 
+class NormalizeRouteTests(unittest.TestCase):
+    """POST /api/transcript/normalize -- limpa o transcript que o usuario colou.
+
+    Era uma das rotas de dados sem NENHUM teste. O que ela tem de proprio e' a
+    validacao de entrada: o corpo vem de um `<textarea>`, entao string vazia, so'
+    espaco e um valor que nao e' string (a pagina monta JSON, entao pode chegar
+    lista ou numero) tem de virar 400 antes de chegar ao parser.
+    """
+
+    def setUp(self):
+        self.sent: dict = {}
+        self.handler = object.__new__(server.Handler)
+        self.handler._send_json = lambda payload, code=200: self.sent.update(payload, _code=code)
+
+    def _call(self, payload):
+        server.Handler._handle_normalize(self.handler, payload)
+        return self.sent
+
+    def test_a_missing_transcript_is_refused(self):
+        self.assertEqual(self._call({}).get("_code"), 400)
+        self.assertEqual(self.sent.get("error"), "transcript is required")
+
+    def test_whitespace_only_is_refused(self):
+        """Um textarea com um Enter dentro nao e' um transcript."""
+        self.assertEqual(self._call({"transcript": "  \n\t "}).get("_code"), 400)
+        self.assertEqual(self._call({"transcript": ""}).get("_code"), 400)
+
+    def test_a_non_string_transcript_is_refused(self):
+        """Sem a checagem de tipo o parser estouraria e a pagina veria um 500."""
+        for ruim in (123, ["a"], {"b": 1}, None, True):
+            with self.subTest(valor=ruim):
+                self.sent.clear()
+                self.assertEqual(self._call({"transcript": ruim}).get("_code"), 400)
+
+    def test_a_valid_transcript_comes_back_normalized(self):
+        """200 com o contrato inteiro: `normalized` + `cues` + `stats`.
+
+        Os tempos tem de sair do SRT como NUMERO: e' o `start` que a pagina usa
+        para ordenar e para saltar no player.
+        """
+        srt = "1\n00:00:01,000 --> 00:00:03,000\nOla mundo\n"
+        sent = self._call({"transcript": srt})
+        self.assertEqual(sent.get("_code"), 200)
+        self.assertEqual(
+            sorted(k for k in sent if k != "_code"), ["cues", "normalized", "stats"]
+        )
+        self.assertEqual(len(sent["cues"]), 1)
+        self.assertAlmostEqual(sent["cues"][0]["start"], 1.0, places=6)
+        self.assertAlmostEqual(sent["cues"][0]["end"], 3.0, places=6)
+        self.assertIn("Ola mundo", sent["normalized"])
+        self.assertEqual(sent["stats"]["cues"], 1)
+
+    def test_a_transcript_the_parser_rejects_is_a_400_not_a_500(self):
+        """`ClipperError` e' entrada ruim, nao defeito do servidor.
+
+        Um 500 aqui faria a pagina mostrar "erro inesperado" para algo que ela
+        mesma pode corrigir.
+        """
+        from unittest import mock
+
+        with mock.patch.object(
+            server.transcript_import, "normalize_transcript",
+            side_effect=ClipperError("nao consegui ler"),
+        ):
+            sent = self._call({"transcript": "qualquer coisa"})
+        self.assertEqual(sent.get("_code"), 400)
+        self.assertEqual(sent.get("error"), "nao consegui ler")
+
+
+class RemoveProviderRouteTests(unittest.TestCase):
+    """POST /api/providers/remove -- apaga um provedor do usuario.
+
+    Era a segunda rota de dados sem teste. O que ela precisa garantir: nao
+    apagar um provedor de FABRICA (que voltaria no proximo `load`, deixando o
+    botao sem efeito visivel) e nao responder 200 quando a gravacao falhou.
+    """
+
+    def setUp(self):
+        self.sent: dict = {}
+        self.handler = object.__new__(server.Handler)
+        self.handler._send_json = lambda payload, code=200: self.sent.update(payload, _code=code)
+
+    def _call(self, payload):
+        server.Handler._handle_remove_provider(self.handler, payload)
+        return self.sent
+
+    def test_a_missing_name_is_refused(self):
+        self.assertEqual(self._call({}).get("_code"), 400)
+        self.assertEqual(self.sent.get("error"), "name is required")
+        self.assertEqual(self._call({"name": "   "}).get("_code"), 400)
+
+    def test_a_factory_provider_cannot_be_removed(self):
+        """Apagar um de fabrica nao "nao faz nada": ele volta no proximo load.
+
+        Por isso a resposta e' 400 explicito em vez de um 200 silencioso -- senao
+        o usuario clicaria de novo achando que o botao esta quebrado.
+        """
+        from unittest import mock
+
+        from viralclipper import user_providers
+
+        with mock.patch.object(user_providers, "remove") as removed:
+            sent = self._call({"name": "openai"})
+        self.assertEqual(sent.get("_code"), 400)
+        self.assertIn("nao pode ser removido", sent.get("error", ""))
+        removed.assert_not_called()
+
+    def test_a_user_provider_is_removed_and_the_list_comes_back(self):
+        """200 com `ok`, o nome removido e a lista ATUALIZADA.
+
+        A pagina redesenha os cards a partir desta resposta: devolver so' `ok`
+        deixaria a lista velha na tela ate um refresh, e o provedor removido
+        continuaria parecendo ativo.
+        """
+        from unittest import mock
+
+        from viralclipper import user_providers
+
+        with mock.patch.object(user_providers, "remove", return_value=[]) as removed, \
+                mock.patch.object(server, "_providers_payload",
+                                  return_value={"providers": [], "active": "x"}):
+            sent = self._call({"name": "  meu-provedor  "})
+        removed.assert_called_once()
+        # O nome vai SEM espaco e a gravacao vai para o arquivo do USUARIO --
+        # nunca para o de fabrica.
+        self.assertEqual(removed.call_args[0][0], "meu-provedor")
+        self.assertEqual(removed.call_args[0][1], server.USER_PROVIDERS_PATH)
+        self.assertEqual(sent.get("_code"), 200)
+        self.assertTrue(sent.get("ok"))
+        self.assertEqual(sent.get("removed"), "meu-provedor")
+        self.assertIn("providers", sent)
+
+    def test_a_write_failure_is_a_500_not_a_silent_200(self):
+        """Se a gravacao falha, o provedor continua no arquivo.
+
+        Responder 200 faria a pagina sumir com o card e o provedor voltar no
+        proximo restart -- o usuario acharia que removeu.
+        """
+        from unittest import mock
+
+        from viralclipper import user_providers
+
+        with mock.patch.object(user_providers, "remove",
+                               side_effect=ClipperError("disco cheio")):
+            sent = self._call({"name": "meu-provedor"})
+        self.assertEqual(sent.get("_code"), 500)
+        self.assertEqual(sent.get("error"), "disco cheio")
+        self.assertNotIn("ok", sent)
 
 
 class SkipLinkAndDescriptionTests(unittest.TestCase):

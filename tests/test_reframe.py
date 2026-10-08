@@ -100,6 +100,21 @@ class MedianCenterXTests(unittest.TestCase):
         frames = [[_box(0.3)], [], [_box(0.4)]]
         self.assertIsNone(reframe.median_center_x(frames, min_hits=3))
 
+    def test_the_default_gate_is_min_hits(self):
+        """Sem `min_hits`, o portao e' `MIN_HITS` -- e nao zero.
+
+        Os testes desta classe passam `min_hits` de proposito, para medir a
+        mediana com poucas amostras. Isso deixava o valor PADRAO sem cobertura
+        nenhuma -- e foi assim que os dois testes de `focus_center_x`
+        apodreceram: mediam a mediana de TRES amostras por um caminho onde o
+        portao ja' era quatro.
+        """
+        tres = [[_box(0.3)], [_box(0.4)], [_box(0.5)]]
+        self.assertIsNone(reframe.median_center_x(tres))
+        self.assertAlmostEqual(
+            reframe.median_center_x([*tres, [_box(0.4)]]), 0.4, places=6
+        )
+
     def test_enough_hits_produce_a_median(self):
         frames = [[_box(0.2)], [_box(0.4)], [_box(0.6)], [_box(0.8)]]
         self.assertAlmostEqual(reframe.median_center_x(frames, min_hits=3), 0.5, places=6)
@@ -147,7 +162,10 @@ class FocusCenterXTests(unittest.TestCase):
 
     def _run(self, detector, frames=None):
         if frames is None:
-            frames = [self.tmp / f"sample_{index:03d}.jpg" for index in range(1, 4)]
+            # CINCO amostras, nao tres: `median_center_x` so' opina a partir de
+            # `MIN_HITS` (4) acertos, entao um teste com tres amostras mede o
+            # portao -- e falha -- em vez de medir a mediana que ele promete.
+            frames = [self.tmp / f"sample_{index:03d}.jpg" for index in range(1, 6)]
         for frame in frames:
             frame.write_bytes(b"fake")
         with patch.object(reframe, "sample_frames", return_value=frames):
@@ -156,11 +174,26 @@ class FocusCenterXTests(unittest.TestCase):
             )
 
     def test_returns_the_median_center(self):
-        detector = FakeDetector([[_box(0.3)], [_box(0.4)], [_box(0.5)]])
+        # A ordem e' de proposito: 0.3 e 0.6 sao as pontas e o 0.4 aparece duas
+        # vezes, entao a mediana (0.4) nao coincide com a media (0.44) nem com o
+        # valor do meio de uma lista ja' ordenada. Uma media passaria neste
+        # teste se as amostras estivessem em ordem.
+        detector = FakeDetector([[_box(0.6)], [_box(0.4)], [_box(0.3)],
+                                 [_box(0.4)], [_box(0.5)]])
         self.assertAlmostEqual(self._run(detector), 0.4, places=6)
 
+    def test_a_single_hit_is_not_enough_for_a_guided_crop(self):
+        """Dois acertos em cinco nao guiam o corte.
+
+        E' o portao do `MIN_HITS` visto de fora, pelo caminho que o render usa:
+        um detector que dispara em duas texturas nao pode decidir o
+        enquadramento. Antes desta trava o corte seguia o ruido.
+        """
+        detector = FakeDetector([[_box(0.1)], [_box(0.9)], [], [], []])
+        self.assertIsNone(self._run(detector))
+
     def test_returns_none_when_no_face_is_found(self):
-        detector = FakeDetector([[], [], []])
+        detector = FakeDetector([[], [], [], [], []])
         self.assertIsNone(self._run(detector))
 
     def test_returns_none_when_frames_cannot_be_extracted(self):
@@ -316,11 +349,17 @@ class CleanupSamplesTests(unittest.TestCase):
         reframe._cleanup_samples(self.tmp / "does-not-exist")
 
     def test_focus_center_x_survives_a_cleanup_failure(self):
-        """End to end: the crop is still planned when the frames cannot go."""
-        frames = [self.tmp / f"sample_{index:03d}.jpg" for index in range(3)]
+        """End to end: the crop is still planned when the frames cannot go.
+
+        Cinco amostras, nao tres, porque `median_center_x` so' opina a partir de
+        `MIN_HITS` (4) -- com tres o centro volta `None` e o teste mediria o
+        portao, nao a sobrevivencia a falha de limpeza que ele promete.
+        """
+        frames = [self.tmp / f"sample_{index:03d}.jpg" for index in range(5)]
         for frame in frames:
             frame.write_bytes(b"fake")
-        detector = FakeDetector([[_box(0.3)], [_box(0.3)], [_box(0.3)]])
+        detector = FakeDetector([[_box(0.3)], [_box(0.3)], [_box(0.3)],
+                                 [_box(0.3)], [_box(0.3)]])
         with patch.object(reframe, "sample_frames", return_value=frames), patch.object(
             Path, "unlink", side_effect=OSError("trash-failed")
         ):

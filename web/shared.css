@@ -56,7 +56,7 @@
     U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
-.wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px; }.pressable {
+.wrap { max-width: 1440px; margin: 0 auto; padding: 0 24px; }.pressable {
   transition:
     transform var(--motion-fast) var(--ease-spring),
     background-color var(--motion-fast) ease,
@@ -73,10 +73,14 @@
   outline-offset: 2px;
 }header {
   position: sticky; top: 0; z-index: 50;
-  backdrop-filter: blur(14px) saturate(180%);
-  background: rgba(11, 13, 18, 0.72);
-  border-bottom: 1px solid var(--border-subtle);
-}.header-inner {
+  /* A declaracao do header desceu daqui do index.css: as tres paginas tem o
+     MESMO cabecalho sticky, e o do index era uma copia com blur e fundo
+     diferentes. Divergir no chrome que envolve a pagina inteira nao e' uma
+     escolha de pagina -- e' o cromo que faz as tres parecerem o mesmo produto. */
+  backdrop-filter: blur(18px) saturate(145%);
+  background: rgba(9, 11, 16, 0.9);
+  border-bottom: 1px solid var(--border-subtle); border-bottom-color: rgba(218, 226, 243, 0.1);
+}.header-inner { height: 66px; gap: 16px; }.header-inner {
   display: flex; align-items: center; justify-content: space-between;
   height: 68px;
 }
@@ -93,7 +97,7 @@
      e o `font-weight` ficam porque o texto some — o slot agora e de imagem. */
   overflow: hidden;
 }
-.brand-mark img, .brand-mark svg { width: 100%; height: 100%; display: block; }.nav-actions { display: flex; gap: 10px; align-items: center; }.rail {
+.brand-mark img, .brand-mark svg { width: 100%; height: 100%; display: block; }.nav-actions { display: flex; gap: 9px; align-items: center; flex: 0 0 auto; }.rail {
   position: fixed; top: 0; left: 0; bottom: 0; width: var(--rail-w); z-index: 60;
   display: flex; flex-direction: column;
   background: linear-gradient(180deg, var(--bg-surface), var(--bg-deep));
@@ -111,7 +115,13 @@
   display: flex; flex-direction: column; gap: 2px;
   list-style: none; margin: 0; padding: 0;
 }.rail-menu[hidden] { display: none; }.rail-item {
-  display: flex; align-items: flex-start; gap: 11px;
+  display: flex; align-items: center; gap: 11px;
+  /* `center` e `min-height: 44px` vieram do index.css: o item do rail e' alvo
+     de toque (o piso do WCAG 2.5.8) e foi alinhado ao centro no Estudio. Um
+     alvo de toque e um alinhamento de item de menu nao sao preferencia de
+     pagina — a Biblioteca tem os mesmos itens, so que com o alinhamento
+     antigo. */
+  min-height: 44px;
   padding: 10px 11px; border-radius: var(--radius-sm);
   border: 1px solid transparent; background: transparent;
   color: var(--text-primary); font-family: inherit; font-size: 0.86rem;
@@ -124,8 +134,15 @@
   border: 1px solid var(--border-strong); background: var(--bg-surface);
   color: var(--text-primary); padding: 10px 14px; border-radius: var(--radius-sm);
   cursor: pointer;
+  /* O botao do rail dobrado e' um alvo de toque: 42px e o piso do WCAG 2.5.8,
+     e as duas paginas declaravam isto aqui, igual, com o resto do botao vindo
+     do bloco acima. Uma medida de alvo de toque nao e' preferencia de pagina. */
+  min-width: 42px; min-height: 42px; justify-content: center; padding: 0 10px;
 }.menu-btn:hover { border-color: var(--accent-primary); background: rgba(255, 79, 174, 0.08); }.menu-btn .mb-bars { font-size: 1rem; line-height: 1; }.menu-btn .mb-caret { color: var(--accent-soft); font-size: 0.75rem; transition: transform var(--transition); }.menu-btn[aria-expanded="true"] .mb-caret { transform: rotate(180deg); }.rail-dropdown .rail-menu {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 70; min-width: 258px;
+  /* 280px, e nao os 258px que este bloco ja trazia embaixo: as DUAS paginas
+     sobrescreviam com 280px no mesmo lugar, e a do menu que existe em tela
+     pequena era a delas. A base falava 258 e nenhuma pagina usava. */
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 70; min-width: 280px;
   background: var(--bg-surface); border: 1px solid var(--border-strong);
   border-radius: var(--radius-md); box-shadow: var(--shadow-card);
   padding: 6px;

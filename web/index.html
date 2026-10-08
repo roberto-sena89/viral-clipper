@@ -469,7 +469,18 @@
                 </div>
     </div>
 
-    <!-- Prompt do curador: lado a lado com o Curador, logo abaixo do Fonte. -->
+    <!-- Prompt do curador: na mesma FAIXA do Curador, coluna da direita — ou
+         seja, logo ABAIXO da Execucao. As duas coisas ao mesmo tempo:
+         (a) o pedido de "proximo a Execucao" (2026-10-07) e' atendido porque a
+             Execucao e' o card de cima desta mesma coluna;
+         (b) o pedido de "abaixo do Fonte, alinhado ao Curador" tambem, porque a
+             faixa e' a mesma do Curador.
+         O que mudou depois (pedido do Sr. Sena: "nao deixe nenhum espaco vazio"):
+         a grade passou a ESTICAR as celulas (`align-items: stretch` no
+         `.main-grid`). Antes, com `align-items: start`, esta coluna terminava em
+         1118px e a da esquerda em 2029px — 911px de buraco embaixo do Prompt.
+         Agora o card do Prompt estica ate' o fim da faixa e o textarea cresce
+         junto, entao as duas colunas terminam na MESMA linha. -->
     <div class="studio-cell studio-cell-prompt">
       <div class="card prompt-card">
             <h2><span class="ico" aria-hidden="true">✎</span> Prompt do curador</h2>

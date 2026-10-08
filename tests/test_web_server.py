@@ -4826,21 +4826,33 @@ class UserProviderCardTests(unittest.TestCase):
 
 
 class BodyGridLayoutTests(unittest.TestCase):
-    """O corpo do Estudio e uma grade: Fonte|Execucao e, abaixo, Curador|Prompt.
+    """O corpo do Estudio: a grade 2x2 que ESTICA, sem deixar vao.
 
-    Historico das duas mudancas de forma:
+    Historico das mudancas de forma:
 
     1. Era UMA coluna (788px) com tudo empilhado mais um aside de 340px so com
        o prompt — a coluna curta ficava ~1350px mais baixa e o vazio aparecia.
     2. Virou TRES colunas iguais; a do meio (Curador 605 + Provedores 886 =
        1537px) ficou ~870px mais alta que a do Prompt (667px).
-    3. Agora e uma grade 2x2: `fonte | exec` na linha 1 e `curador | prompt` na
-       linha 2, cada celula com a altura do proprio conteudo.
+    3. Virou uma grade 2x2: `fonte | exec` na linha 1 e `curador | prompt` na
+       linha 2.
+    4. TRES pedidos do Sr. Sena em 2026-10-07, na ordem em que chegaram:
+       (a) o Prompt PROXIMO da Execucao; (b) o Curador ABAIXO DO FONTE e
+       alinhado ao Prompt; (c) "nao deixe nenhum espaco vazio na pagina".
+       (a) e (b) foram perseguidos mexendo nas areas — o Fonte passou a cobrir
+       duas faixas, o Prompt esticou por duas, o Curador desceu para a largura
+       toda. Cada arranjo matava um vao e abria outro: no ultimo, a coluna da
+       ESQUERDA terminava em 2029px e a da direita em 1118px — 911px de buraco
+       embaixo do Prompt, que era exatamente a reclamacao de (c).
+       A solucao nao estava nas areas e sim em `align-items`: a grade volta a
+       ser a 2x2 SIMPLES (que ja atendia (a) e (b) de uma vez) e ESTICA as
+       celulas. As duas colunas terminam na mesma linha.
 
     O que este teste trava NAO e a largura (isso e medicao de navegador, feita
-    no `e2e_reorg.js`) e sim a ARVORE e a ORDEM: qual celula contem qual card e
-    onde cada uma cai na grade. Trocar o aninhamento muda o layout em silencio —
-    o navegador conserta HTML malformado e uma `grid-area` errada nao da erro.
+    no `estudio_grid.js`) e sim a ARVORE, a ORDEM e as duas regras de CSS que
+    sustentam o "sem vao": `align-items: stretch` e a corrente de `flex: 1` da
+    celula ate o card. Trocar o aninhamento muda o layout em silencio — o
+    navegador conserta HTML malformado e uma `grid-area` errada nao da erro.
     """
 
     # As quatro areas, na ordem em que o pedido as quer no documento.
@@ -4938,10 +4950,11 @@ class BodyGridLayoutTests(unittest.TestCase):
         self.assertIn('id="card-meus-provedores"', cel)
 
     def test_the_prompt_is_its_own_cell(self):
-        """O prompt e a QUARTA celula, separado do Curador na arvore.
+        """O prompt e celula propria, separado do Curador na arvore.
 
-        Na tela ele fica ao lado do Curador (area `prompt`); separado na arvore
-        para nao herdar a altura da coluna do Curador.
+        Na tela ele divide a faixa de baixo com o Curador (area `prompt`); na
+        arvore e' separado para nao herdar a altura dele nem a da Execucao — e',
+        ao contrario, a celula que ABSORVE a sobra da faixa pelo textarea.
         """
         cel = self._bloco_de("studio-cell studio-cell-prompt")
         self.assertIn("prompt-card", cel)
@@ -4962,7 +4975,13 @@ class BodyGridLayoutTests(unittest.TestCase):
         """A ordem no documento e fonte, exec, curador, prompt.
 
         A ordem importa em duas frentes: e a ordem de leitura para teclado e
-        leitor de tela, e e a ordem que a coluna unica usa ao empilhar.
+        leitor de tela, e e a ordem que a coluna unica usa ao empilhar — abaixo
+        de 1100px ela e a UNICA coisa que posiciona as celulas.
+
+        A coluna unica e' o espelho da grade: `fonte exec` na faixa de cima e
+        `curador prompt` na de baixo viram fonte, exec, curador, prompt. Trocar
+        a ordem no documento sem trocar as areas (ou o contrario) faz a tela
+        estreita contar uma historia diferente da larga.
         """
         posicoes = [self.html.index(f'class="studio-cell {c}"') for c in self.CELULAS]
         self.assertEqual(
@@ -5030,12 +5049,23 @@ class BodyGridLayoutTests(unittest.TestCase):
         self.assertNotRegex(colunas, r"(?<!minmax\(0,\s)\b1fr\b",
                             f"track com `1fr` solto: {colunas}")
 
-    def test_the_areas_put_curador_and_prompt_side_by_side_below_fonte(self):
-        """As areas poem `fonte exec` na linha 1 e `curador prompt` na linha 2.
+    def test_the_areas_are_the_plain_2x2_with_the_curador_under_the_fonte(self):
+        """As areas sao `fonte exec` / `curador prompt` — a 2x2 simples.
 
-        E O PEDIDO, literal: Curador e Prompt lado a lado, abaixo do Fonte.
-        As `grid-template-areas` sao o contrato disso — mudar a ordem nelas
-        muda a tela inteira sem nenhum outro sinal.
+        Ela atende os TRES pedidos do Sr. Sena de 2026-10-07 de uma vez, e e' por
+        isso que voltou a ser esta:
+
+        1. O Prompt PROXIMO da Execucao: esta na coluna da direita, e a Execucao
+           e' o card de cima dessa mesma coluna.
+        2. O Curador ABAIXO DO FONTE e ALINHADO ao Prompt: os dois dividem a
+           faixa de baixo, Curador na coluna 1 e Prompt na coluna 2.
+        3. "Nao deixe nenhum espaco vazio": com `align-items: stretch` (o teste
+           vizinho) as duas colunas terminam na MESMA linha.
+
+        O que nao se pode voltar a fazer e' esticar uma celula por DUAS faixas
+        (o `"fonte exec" / "fonte prompt" / "curador prompt"` tentado mais cedo
+        hoje): isso poe o Fonte com 668px numa area de 2007px e devolve 1339px de
+        vao embaixo dele. Cada celula ocupa UMA faixa.
         """
         areas = re.search(
             r"grid-template-areas:\s*((?:\s*\"[^\"]+\")+)", self._regra_base()
@@ -5047,6 +5077,90 @@ class BodyGridLayoutTests(unittest.TestCase):
             linhas,
             ["cabeca cabeca", "fonte exec", "curador prompt"],
             f"as areas do corpo mudaram: {linhas}")
+        # Todas as faixas de corpo tem DUAS colunas: nenhuma celula estica.
+        for faixa in linhas[1:]:
+            with self.subTest(faixa=faixa):
+                self.assertEqual(
+                    len(faixa.split()), 2,
+                    f"a faixa `{faixa}` deixou de ter duas colunas — uma celula "
+                    "esta esticando e vai sobrar vao na outra")
+        # O Curador na COLUNA 1 da faixa de baixo: e o que o poe sob o Fonte.
+        self.assertEqual(
+            linhas[-1].split()[0], "curador",
+            "o Curador saiu da coluna da esquerda e nao fica mais sob o Fonte")
+        # O Prompt na COLUNA 2 da mesma faixa: alinhado ao Curador e sob a
+        # Execucao, que ocupa a coluna 2 da faixa de cima.
+        self.assertEqual(
+            linhas[-1].split()[1], "prompt",
+            "o Prompt saiu da coluna da direita e nao fica mais sob a Execucao")
+
+    def test_the_base_rule_stretches_the_cells_instead_of_leaving_a_hole(self):
+        """A grade ESTICA as celulas (`align-items: stretch`).
+
+        E' o que mata o vao, e a razao de a 2x2 ter voltado. Medido em 1440px com
+        `align-items: start`: a coluna da esquerda terminava em 2029px e a da
+        direita em 1118px — 911px de buraco embaixo do Prompt. Com `stretch` as
+        duas terminam na mesma linha (2599px, medido).
+
+        `start` e' exatamente o valor que este teste existe para impedir de
+        voltar: ele parece inofensivo e devolve o buraco inteiro.
+        """
+        self.assertRegex(
+            self._regra_base(), r"align-items:\s*stretch\s*;",
+            "a grade perdeu o `align-items: stretch` e o vao volta")
+        self.assertNotRegex(
+            self._regra_base(), r"align-items:\s*start\s*;",
+            "a grade voltou para `align-items: start` — 911px de vao")
+
+    def test_every_cell_is_a_flex_column_whose_card_fills_it(self):
+        """A celula leva a altura esticada ATE' o card (`flex: 1`).
+
+        Sem isto o `stretch` do grid estica a celula e o card continua com a
+        altura do proprio conteudo — o mesmo vao, so que com um `<div>` no meio.
+        O `margin-bottom: 0` mata os 14px que o `.card` traz e que sobrariam no
+        pe' de cada celula.
+        """
+        self.assertRegex(
+            self.css,
+            r"\.studio-cell\s*\{[^}]*display:\s*flex\s*;"
+            r"[^}]*flex-direction:\s*column\s*;",
+            "a `.studio-cell` deixou de ser coluna flex")
+        self.assertRegex(
+            self.css,
+            r"\.studio-cell\s*>\s*\.card\s*\{[^}]*flex:\s*1[^;]*;"
+            r"[^}]*margin-bottom:\s*0\s*;",
+            "o card deixou de preencher a celula (ou voltou a margem de 14px)")
+
+    def test_the_slack_lands_where_it_can_be_used(self):
+        """A sobra vai para onde ela SERVE, nao para um vao.
+
+        Medido em 1440px, coluna de 564px: a Execucao tem 472px numa faixa de
+        668px, e o Prompt 618px numa faixa de 1319px. Os dois destinos:
+
+        - Execucao: as acoes descem para o rodape do card (`margin-top: auto`),
+          em vez de sobrar vao embaixo dos botoes.
+        - Prompt: o textarea cresce. E' o card certo para isso — o arquivo
+          `prompts/curador.txt` tem 349 linhas, entao editor alto e' USO, nao
+          enfeite. A corrente e' card > form-section > field > textarea, e o
+          teste cobra os quatro elos: quebrar um so ja faz o textarea voltar ao
+          tamanho natural e o vao reaparecer.
+        """
+        self.assertRegex(
+            self.css,
+            r"\.execution-card\s+\.execution-actions\s*\{\s*margin-top:\s*auto\s*;",
+            "as acoes da Execucao perderam o `margin-top: auto`")
+        for seletor in (
+            r"\.prompt-card\s*\{\s*display:\s*flex\s*;",
+            r"\.prompt-card\s+\.form-section\s*\{[^}]*flex:\s*1[^;]*;",
+            r"\.prompt-card\s+\.form-section\s*>\s*\.field:first-child\s*\{"
+            r"[^}]*flex:\s*1[^;]*;",
+            r"\.prompt-card\s+\.form-section\s*>\s*\.field:first-child\s+textarea\s*\{"
+            r"[^}]*flex:\s*1[^;]*;",
+        ):
+            with self.subTest(seletor=seletor):
+                self.assertRegex(
+                    self.css, seletor,
+                    f"elo quebrado na corrente do Prompt: {seletor}")
 
     def test_every_cell_has_its_area_declared(self):
         """Cada `.studio-cell-*` recebe uma `grid-area` com o proprio nome.

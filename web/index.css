@@ -226,17 +226,27 @@ body { padding-left: var(--rail-w); }
 
 /* ---------- AS CELULAS DO CORPO (grade 2x2) ----------
    A antiga `.studio-col-curador` e a `.prompt-col` viraram celulas irmas com
-   nome proprio, posicionadas por `grid-template-areas` la embaixo. Aqui so
-   entra o que e comum: nenhuma encolhe abaixo do conteudo (`min-width: 0`) e
-   as celulas que EMPILHAM dois cards mantem o mesmo respiro do grid. */
-.studio-cell,
-.studio-cell-curador { min-width: 0; }
+   nome proprio, posicionadas por `grid-template-areas` la embaixo.
 
-/* Celula que empilha dois cards (Curador + Meus provedores). */
-.studio-cell-curador {
+   A celula e' uma COLUNA FLEX cujo card ocupa a altura toda. Isto e' metade do
+   que faz a grade nao ter buraco: `.main-grid` estica a celula ate' o fim da
+   faixa (`align-items: stretch`) e o `flex: 1` leva essa altura ate' o card de
+   dentro. Sem ele a celula esticaria e o card continuaria com a altura do
+   proprio conteudo — o mesmo vao, com outro nome.
+
+   O `margin-bottom: 0` mata o respiro do `.card` (24px, e 14px depois do
+   override de `[data-page]`): dentro da celula quem separa um card do outro e'
+   o `gap`. Sem isto sobram 14px de vazio no pe' de cada celula — e' pouco por
+   celula, mas e' justamente o vao que o pedido de "nenhum espaco vazio" mira. */
+.studio-cell {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-width: 0;
+}
+.studio-cell > .card {
+  flex: 1 1 auto;
+  margin-bottom: 0;
 }
 
 /* ---------- CARTÕES ---------- */
@@ -415,7 +425,17 @@ body { padding-left: var(--rail-w); }
   outline: none;
 }
 .select-trigger .sel-text { display: flex; flex-direction: column; min-width: 0; }
-.select-trigger .sel-title { font-size: 0.92rem; font-weight: 600; }
+.select-trigger .sel-title {
+  font-size: 0.92rem; font-weight: 600;
+  /* Mesmo trio do .sel-desc uma regra abaixo: em coluna estreita
+     (`.triple` colapsa em telas ~320px), o titulo estourava a caixa e
+     pintava por cima do campo vizinho — medido via CDP. min-width: 0
+     deixa o flex encolher; o trio desliga o wrap para cortesia. */
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .select-trigger .sel-desc {
   font-size: 0.74rem; color: var(--text-secondary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -485,6 +505,12 @@ body { padding-left: var(--rail-w); }
   position: relative; width: 44px; height: 24px; background: rgba(255,255,255,0.08);
   border-radius: 999px; cursor: pointer; transition: var(--transition);
   flex-shrink: 0; border: none;
+}
+/* Alvo de toque 44px sem engordar o trilho de 24px: o `::before` invisivel
+   expande a area clicavel 8px para cima e para baixo (medido navegando pelo
+   CDP em todas as resolucoes). Sem animacao, sem reduced-motion. */
+.toggle::before {
+  content: ""; position: absolute; inset: -8px 0;
 }
 .toggle.active { background: var(--accent-primary); }
 .toggle::after {
@@ -1070,32 +1096,15 @@ body {
   background-attachment: fixed;
 }
 
-.wrap { max-width: 1440px; }
 
-header {
-  background: rgba(9, 11, 16, 0.9);
-  border-bottom-color: rgba(218, 226, 243, 0.1);
-  backdrop-filter: blur(18px) saturate(145%);
-}
-.header-inner { height: 66px; }
-.header-inner > .brand { display: none; }
-.nav-actions { gap: 8px; }
-.nav-actions .btn { min-height: 40px; }
 .nav-actions .btn-primary { box-shadow: 0 6px 22px -10px var(--accent-glow); }
 
-.rail {
-  background: #0e1219;
-  border-right-color: rgba(218, 226, 243, 0.1);
-  padding: 20px 12px;
-}
-.rail-brand { padding-bottom: 18px; }
-.rail-item { min-height: 44px; align-items: center; }
-.rail-item[aria-current="page"] {
-  background: linear-gradient(90deg, rgba(255, 79, 174, 0.14), rgba(255, 79, 174, 0.04));
-  border-color: rgba(255, 79, 174, 0.24);
-  color: #ff9bd1;
-}
-.rail-item[aria-current="page"] .ri-desc { color: #bac2d0; }
+/* O `.rail` da pagina SAIU daqui (2026-10-08): `shared.css` declara o
+   seletor primeiro e o index declarava de novo com background/padding
+   diferentes — duas verdades, e `test_no_selector_is_declared_on_both_sides`
+   recusa. O rail com o gradiente `--bg-surface -> --bg-deep` do
+   compartilhado e' o mesmo chrome das outras paginas, que e' o ponto do
+   shared existir. */
 
 .studio-welcome {
   padding: 28px 0 26px;
@@ -1281,23 +1290,53 @@ header {
    mesma especificidade, vence a ultima. Editar so a de cima nao muda nada
    na tela (foi o que aconteceu: as colunas continuaram 788/340).
 
-   GRADE 2x2 com `grid-template-areas`. A cabeca (config-heading + section-sub)
+   DUAS COLUNAS e DUAS faixas de corpo. A cabeca (config-heading + section-sub)
    ocupa a primeira faixa, na largura toda; abaixo dela,
 
-       "fonte    exec"       Fonte | Execucao  (entrada e saida juntas)
-       "curador  prompt"     Curador (com Meus provedores) | Prompt
+       "fonte    exec"       Fonte (entrada) | Execucao (saida)
+       "curador  prompt"     Curador (com Meus provedores) | Prompt do curador
 
    O `<form id="clip-form">` vira `display: contents`: o box dele desaparece do
    layout e as QUATRO celulas passam a ser itens do grid, cada uma na sua area.
    Sem isso o form seria UM item so e as celulas ficariam empilhadas dentro
    dele — o grid nao veria as quatro.
 
-   POR QUE ASSIM: o pedido foi por "Curador com IA" e "Prompt do curador" LADO
-   A LADO, abaixo do Fonte. Antes eram tres colunas iguais, e a do meio
+   POR QUE ASSIM, em tres etapas — as tres pedidas pelo Sr. Sena em 2026-10-07:
+
+   1. O Prompt tinha de ficar PROXIMO da Execucao. Na 2x2 ele ja estava na
+      coluna da direita, mas 216px abaixo do fim da Execucao: a altura da faixa
+      era ditada pelo Fonte (682px) e nao pela Execucao (486px), e a sobra
+      virava vao.
+   2. O Curador tinha de ficar ABAIXO DO FONTE, a meia largura e alinhado ao
+      Prompt.
+   3. "Nao deixe nenhum espaco vazio na pagina."
+
+   A 3 e' a que manda, e ela e' justamente o que faz a grade voltar a ser a 2x2
+   simples — que atende (1) e (2) de uma vez: o Prompt fica na coluna da direita
+   (logo abaixo da Execucao) e o Curador na esquerda (logo abaixo do Fonte), os
+   dois na MESMA faixa, alinhados.
+
+   Com `align-items: start` (ate' hoje) a coluna da direita terminava em 1118px
+   e a da esquerda em 2029px — 911px de buraco embaixo do Prompt, que era
+   exatamente a reclamacao. `align-items: stretch` fecha isso: a celula estica
+   ate' o fim da faixa e o card de dentro tambem (`.studio-cell > .card`), entao
+   as duas colunas terminam na MESMA linha.
+
+   QUEM ABSORVE A SOBRA (medido em 1440px, coluna de 564px):
+
+     - Execucao: 472px numa faixa de 668px. As acoes descem para o rodape do
+       card (`margin-top: auto` em `.execution-actions`), em vez de sobrar vao
+       embaixo delas.
+     - Prompt: 618px numa faixa de 1319px. O textarea CRESCE — e' o unico card
+       da grade cujo conteudo principal e' texto longo, entao a sobra vira area
+       de escrita em vez de espaco morto.
+     - Fonte e Curador DEFINEM a altura das duas faixas, entao preenchem por
+       construcao.
+
+   Historico anterior, para nao repetir: ja foi UMA coluna (788px) com um aside
+   de 340px so para o prompt, e ja foram TRES colunas iguais — a do meio
    (Curador 605px + Meus provedores 886px = 1537px) ficava 870px mais alta que
-   a do Prompt (667px) — desalinhamento visivel. Os dois cards de entrada/saida
-   continuam na linha 1, e cada celula tem a altura do proprio conteudo por
-   causa do `align-items: start`.
+   a do Prompt (667px).
 
    Cada track e `minmax(0, 1fr)`: filho de grid tem `min-width: auto` e um
    `<select>`/`<textarea>` mais largo que a coluna empurra o track alem da
@@ -1308,7 +1347,7 @@ header {
     "cabeca  cabeca"
     "fonte   exec"
     "curador prompt";
-  align-items: start;
+  align-items: stretch;
   gap: 20px;
   padding-top: 24px;
   padding-bottom: 36px;
@@ -1327,7 +1366,10 @@ header {
 .studio-cell-prompt  { grid-area: prompt; }
 
 /* Uma coluna. Abaixo de ~1100px duas colunas apertam o Fonte, que tem
-   `.field-row.triple` (Pasta, Quantidade, Download) e quebra feio. */
+   `.field-row.triple` (Pasta, Quantidade, Download) e quebra feio.
+   A ORDEM das areas segue a ordem do DOCUMENTO (fonte, exec, curador, prompt):
+   numa coluna so ela e' a unica coisa que posiciona. Nao ha o que esticar aqui
+   — cada faixa tem um item so, entao a altura da faixa e' a do proprio card. */
 @media (max-width: 1100px) {
   .main-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -1473,10 +1515,8 @@ header {
   font-size: 0.8rem;
   font-weight: 600;
 }
-.btn:hover { border-color: rgba(255, 79, 174, 0.55); background: rgba(255, 79, 174, 0.075); }
 .btn-primary { background: var(--accent-primary); color: #1c1024; }
 .btn-primary:hover { background: #ff78bf; filter: none; }
-.pressable:active { transform: translateY(1px); }
 
 /* O aside do ESTUDIO deixou de existir: o card de Execucao foi para dentro do
    hero. Mas estas regras ficam, porque `ajustes.html` carrega este mesmo
@@ -1488,10 +1528,11 @@ aside > .card {
   border-color: rgba(112, 201, 238, 0.18);
   background: linear-gradient(160deg, rgba(112, 201, 238, 0.045), transparent 42%), #11161f;
 }
-/* Sem `sticky` aqui: na Cortes nao ha mais aside. O `position: sticky` do
-   `.execution-card` que esta nota citava saiu (2026-10-02), e o card "Escolha"
-   do scrap deixou de ser fixo (2026-10-07) — neste arquivo nao ha sticky
-   nenhum alem do `header`. */
+/* Sem `sticky` no card do `aside`: o do Estúdio saiu em 2026-10-02 e o card
+   "Escolha" do scrap deixou de ser fixo em 2026-10-07. O unico `sticky` que
+   sobrou neste arquivo e' o do card Resumo da pagina de Ajustes, e ele mora
+   com as areas do grid (procuro `card-resumo .card`), porque a media query
+   das 1280px e' que o desliga. */
 aside .card h2 .ico {
   border-color: rgba(112, 201, 238, 0.2);
   background: rgba(112, 201, 238, 0.08);
@@ -1678,6 +1719,16 @@ main > section > .card { padding: 17px; }
    uma tira alta demais, entao a ALTURA passa a ser do CSS (com resize vertical
    disponivel); e os dois botoes com o status ao lado nao cabem numa linha, entao
    o status desce sozinho em vez de empurrar os botoes. */
+/* O Prompt e' o card que ABSORVE a sobra da grade. Ele e' o mais curto da faixa
+   mais alta (medido: 618px numa faixa de 1319px) e o conteudo dele e' texto
+   longo, entao a sobra vira AREA DE ESCRITA em vez de vao morto. A corrente e':
+   .studio-cell (flex) > .card (flex) > .form-section (flex) > .field (flex)
+   > textarea (flex: 1). Todas ja eram coluna flex menos o `.card` e a
+   `.form-section` — que e' o que as duas primeiras regras acrescentam. */
+.prompt-card { display: flex; flex-direction: column; }
+.prompt-card .form-section { display: flex; flex-direction: column; flex: 1 1 auto; }
+.prompt-card .form-section > .field:first-child { flex: 1 1 auto; }
+.prompt-card .form-section > .field:first-child textarea { flex: 1 1 auto; }
 .prompt-card textarea { min-height: 150px; resize: vertical; }
 .prompt-card .prompt-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .prompt-card .prompt-actions .btn { flex: 1 1 auto; }
@@ -1733,7 +1784,6 @@ main > section > .card { padding: 17px; }
 }
 
 /* Header do espaço de trabalho */
-.header-inner { gap: 16px; }
 .header-context {
   display: flex; min-width: 0; align-items: center; gap: 11px;
   color: var(--text-primary);
@@ -1756,16 +1806,13 @@ main > section > .card { padding: 17px; }
   color: #aab3c1; background: rgba(255,255,255,.025); font-size: .66rem; font-weight: 550; white-space: nowrap;
 }
 .header-context-status > span { width: 6px; height: 6px; border-radius: 50%; background: #55d6ae; box-shadow: 0 0 9px rgba(85,214,174,.42); }
-header .nav-actions { flex: 0 0 auto; gap: 9px; }
 header .nav-actions .btn { min-height: 42px; }
 .header-batch { gap: 8px; padding-inline: 13px; color: #d1d7e2; }
 .header-batch svg { flex: 0 0 17px; width: 17px; height: 17px; }
-.rail-dropdown .menu-btn { min-width: 42px; min-height: 42px; justify-content: center; padding: 0 10px; }
 .rail-dropdown .mb-bars { display: grid; width: 19px; height: 19px; place-items: center; }
 .rail-dropdown .mb-bars svg { display: block; width: 19px; height: 19px; }
 .rail-dropdown .mb-caret { display: grid; width: 13px; height: 13px; place-items: center; }
 .rail-dropdown .mb-caret svg { display: block; width: 13px; height: 13px; }
-.rail-dropdown .rail-menu { min-width: 280px; }
 
 @media (max-width: 960px) {
   .header-inner > .header-context { display: flex; }
@@ -1801,10 +1848,17 @@ header .nav-actions .btn { min-height: 42px; }
    inicial), fluxo normal, sobe junto com a pagina. Nao ha mais `align-items`
    especial no pai, nem pista a calcular, nem `min-height` de sustentacao. */
 .execution-card {
+  /* Coluna flex porque a celula a estica. A faixa e' mais alta que o conteudo
+     (medido: 472px numa faixa de 668px) e e' o `margin-top: auto` das acoes que
+     joga os botoes para o RODAPE do card: a sobra vira respiro entre as etapas
+     e os botoes, em vez de um vao morto embaixo de tudo. */
+  display: flex;
+  flex-direction: column;
   padding: 18px;
   border-color: rgba(112,201,238,.16);
   background: linear-gradient(160deg, rgba(112,201,238,.045), transparent 38%), #11161f;
 }
+.execution-card .execution-actions { margin-top: auto; }
 .execution-card .execution-card-heading {
   display: flex;
   align-items: center;

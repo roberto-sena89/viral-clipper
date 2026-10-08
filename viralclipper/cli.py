@@ -156,8 +156,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     whisper = parser.add_argument_group("transcricao")
-    whisper.add_argument("--model", dest="whisper_model", default="small")
-    whisper.add_argument("--device", dest="whisper_device", default="auto")
+    whisper.add_argument("--model", dest="whisper_model", default="small", help="Modelo Whisper: tiny (mais rápido, menos preciso), base, small (padrão), medium, large (mais preciso, mais lento)")
+    whisper.add_argument("--device", dest="whisper_device", default="auto", help="Dispositivo para o Whisper: auto (detecta automaticamente), cuda (GPU), cpu (apenas CPU). Use 'cuda' para aceleração por GPU se disponível.")
     whisper.add_argument("--compute-type", dest="whisper_compute_type", default="int8")
     whisper.add_argument("--language", default=None, help="Ex.: pt para forcar portugues")
     whisper.add_argument("--beam-size", dest="beam_size", type=int, default=1)
@@ -169,7 +169,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Pasta do cache de transcricao (padrao: output/cache/transcripts, "
              "fora do diretorio temporario do trabalho para ser reaproveitado "
-             "entre execucoes do mesmo video)",
+             "entre execucoes do mesmo video). Habilitado por padrão para melhor "
+             "performance em múltiplas execuções do mesmo vídeo.",
     )
     whisper.add_argument(
         "--no-transcript-cache",
@@ -255,6 +256,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Margem inferior da legenda em px (padrao: herda do preset; 640 mantem o texto fora da zona de botoes do TikTok)",
     )
     video.add_argument(
+        "--caption-margin-ratio",
+        dest="caption_margin_v_ratio",
+        type=float,
+        default=None,
+        help="Margem inferior da legenda como fracao da altura do quadro (0.0-1.0). Precedencia sobre --caption-margin. Padrao ~0.33 (~634px @ 1920)",
+    )
+    video.add_argument(
         "--highlight-color",
         dest="highlight_color",
         default=None,
@@ -315,6 +323,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Margem lateral do titulo do gancho em px, dos dois lados (padrao 60)",
+    )
+    video.add_argument(
+        "--headline-margin-top-ratio",
+        dest="headline_margin_top_ratio",
+        type=float,
+        default=None,
+        help="Margem superior do titulo do gancho como fracao da altura do quadro (0.0-1.0). Mantem o gancho fora do notch/Dynamic Island. Padrao ~0.06 (~115px @ 1920)",
     )
     video.add_argument(
         "--progress-bar",
@@ -401,7 +416,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--workers",
         type=int,
         default=2,
-        help="Quantos clips renderizar em paralelo (cada worker roda um encode x264 proprio)",
+        help="Quantos clips renderizar em paralelo (cada worker roda um encode x264 proprio). "
+             "Aumente este valor em sistemas com muita RAM para melhor paralelismo, "
+             "mas monitore o uso de memória (ex.: 4 para 8GB RAM, 8 para 16GB RAM).",
     )
     execution.add_argument("--no-parallel", dest="parallel", action="store_false", help="Renderiza clips um de cada vez")
     execution.set_defaults(parallel=True)

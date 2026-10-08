@@ -245,11 +245,18 @@ class Template:
     headline_align: str | None = None
     headline_font_size: int | None = None
     headline_margin_side: int | None = None
+    # Vertical top margin for headline as fraction of canvas height (0.0-1.0).
+    # Keeps the hook clear of the notch/Dynamic Island. Default ~0.06 (~115px @ 1920).
+    headline_margin_top_ratio: float | None = None
     reframe_zoom: float | None = None
     reframe_pan_x: float | None = None
     reframe_pan_y: float | None = None
     caption_box_theme: str | None = None
     progress_bar: bool | None = None
+    # Fraction of canvas height reserved as a bottom safe zone (0.0-1.0).
+    # When set, auto-configures caption_margin_v_ratio to sit above this zone.
+    # TikTok ~0.10 (200px @ 1920), Reels ~0.10, Shorts ~0.08.
+    safe_zone_ratio: float | None = None
     # Background painted before any zone is drawn. Only visible where a zone
     # uses ``contain`` or carries a margin.
     background: str = "black"
@@ -323,6 +330,14 @@ class Template:
             raise ClipperError(
                 f"Template '{self.name}': captions precisa ser true ou false."
             )
+        if self.headline_margin_top_ratio is not None and not 0.0 <= self.headline_margin_top_ratio <= 1.0:
+            raise ClipperError(
+                f"Template '{self.name}': headline_margin_top_ratio precisa ficar entre 0 e 1."
+            )
+        if self.safe_zone_ratio is not None and not 0.0 <= self.safe_zone_ratio <= 1.0:
+            raise ClipperError(
+                f"Template '{self.name}': safe_zone_ratio precisa ficar entre 0 e 1."
+            )
 
     @property
     def video_zone(self) -> Zone | None:
@@ -358,11 +373,10 @@ SPLIT_CARD = Template(
             kind="frame",
             fraction=0.38,
             fit="cover",
-            # Respiro SO em cima: e o vao que separa o video do cartao. A margem
-            # de baixo e zero de proposito — ela aparecia como uma faixa preta
-            # solta antes da borda da tela, sem nada abaixo para separar.
+            # Respiro em cima e em baixo: separa o video do cartao e evita
+            # colisao com a barra de progresso/legenda da plataforma.
             margin_top=0.012,
-            margin_bottom=0.0,
+            margin_bottom=0.04,
             margin_left=0.03,
             margin_right=0.03,
             corner_radius=0.035,
@@ -371,9 +385,60 @@ SPLIT_CARD = Template(
     ),
 )
 
+# Lower third template: video takes top 2/3, text/banner takes bottom 1/3
+LOWER_THIRD = Template(
+    name="lower-third",
+    description="Video em duas partes superiores, texto/banner na terceira inferior",
+    zones=(
+        Zone(kind="video", fraction=0.67),
+        Zone(
+            kind="text",
+            fraction=0.33,
+            text="Seu texto aqui",
+            text_size=0.06,
+            text_align="center",
+            text_valign="middle",
+            color="black",
+            text_color="#ffffff",
+            text_bold=True,
+        ),
+    ),
+)
+
+# Three-part template: video (50%), image/logo (25%), captions/text (25%)
+THREE_PART = Template(
+    name="three-part",
+    description="Video (50%), imagem/logo (25%), legenda/texto (25%)",
+    zones=(
+        Zone(kind="video", fraction=0.50),
+        Zone(
+            kind="image",
+            fraction=0.25,
+            fit="contain",
+            margin_top=0.02,
+            margin_bottom=0.02,
+            margin_left=0.02,
+            margin_right=0.02,
+        ),
+        Zone(
+            kind="text",
+            fraction=0.25,
+            text="Legenda informativa",
+            text_size=0.05,
+            text_align="center",
+            text_valign="middle",
+            color="darkred",
+            text_color="#ffffff",
+            text_bold=True,
+        ),
+    ),
+)
+
 BUILTIN: dict[str, Template] = {
     FULL_FRAME.name: FULL_FRAME,
     SPLIT_CARD.name: SPLIT_CARD,
+    LOWER_THIRD.name: LOWER_THIRD,
+    THREE_PART.name: THREE_PART,
 }
 
 
@@ -795,11 +860,13 @@ def from_dict(data: dict[str, Any], *, name: str | None = None) -> Template:
         "headline_align",
         "headline_font_size",
         "headline_margin_side",
+        "headline_margin_top_ratio",
         "reframe_zoom",
         "reframe_pan_x",
         "reframe_pan_y",
         "caption_box_theme",
         "progress_bar",
+        "safe_zone_ratio",
         "background",
     }
     unknown = sorted(set(data) - known)
@@ -863,11 +930,13 @@ def from_dict(data: dict[str, Any], *, name: str | None = None) -> Template:
         headline_align=data.get("headline_align"),
         headline_font_size=data.get("headline_font_size"),
         headline_margin_side=data.get("headline_margin_side"),
+        headline_margin_top_ratio=data.get("headline_margin_top_ratio"),
         reframe_zoom=data.get("reframe_zoom"),
         reframe_pan_x=data.get("reframe_pan_x"),
         reframe_pan_y=data.get("reframe_pan_y"),
         caption_box_theme=data.get("caption_box_theme"),
         progress_bar=data.get("progress_bar"),
+        safe_zone_ratio=data.get("safe_zone_ratio"),
         captions=_optional_bool(data, "captions"),
         background=str(data.get("background") or "black"),
     )
@@ -965,6 +1034,10 @@ def apply_to_config(config, template: Template):
         # ``--caption-style block`` escolhido na linha de comando sem o usuário
         # ter pedido. Quem religa é o painel da web, omitindo a chave.
         overrides["caption_style"] = "none"
+    if template.safe_zone_ratio is not None:
+        overrides["caption_margin_v_ratio"] = 1.0 - template.safe_zone_ratio
+    if template.headline_margin_top_ratio is not None:
+        overrides["headline_margin_top_ratio"] = template.headline_margin_top_ratio
     if not overrides:
         return config
     return replace(config, **overrides)

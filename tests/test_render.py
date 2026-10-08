@@ -125,7 +125,8 @@ class BuildCaptionsTests(unittest.TestCase):
         self.assertIn("WrapStyle: 0", body)
         # the headline style keeps side margins, so wrapping has a boundary
         headline_style = [line for line in body.splitlines() if line.startswith("Style: Headline,")][0]
-        self.assertTrue(headline_style.endswith(",60,60,60,1"))
+        # MarginV keeps the hook clear of the notch: 1920 - 6% = 1805 at default height
+        self.assertTrue(headline_style.endswith(",60,60,1805,1"))
 
     def test_headline_style_uses_the_headline_font_size(self):
         body = _write_captions(
@@ -137,7 +138,7 @@ class BuildCaptionsTests(unittest.TestCase):
     def test_headline_is_centered_by_default(self):
         body = _write_captions(self.tmp, [make_word(10.0, 10.4, "ola.")]).read_text(encoding="utf-8")
         headline_style = [line for line in body.splitlines() if line.startswith("Style: Headline,")][0]
-        self.assertIn(",1,5,2,8,60,60,60,1", headline_style)
+        self.assertIn(",1,5,2,8,60,60,1805,1", headline_style)
 
     def test_headline_align_left_and_right_move_the_digit(self):
         for align, digit in (("left", "7"), ("right", "9")):
@@ -145,7 +146,28 @@ class BuildCaptionsTests(unittest.TestCase):
                 self.tmp, [make_word(10.0, 10.4, "ola.")], headline_align=align
             ).read_text(encoding="utf-8")
             headline_style = [line for line in body.splitlines() if line.startswith("Style: Headline,")][0]
-            self.assertIn(",1,5,2," + digit + ",60,60,60,1", headline_style)
+            self.assertIn(",1,5,2," + digit + ",60,60,1805,1", headline_style)
+
+    def test_headline_top_margin_respects_the_ratio(self):
+        # A smaller ratio pushes the hook lower (larger MarginV from the bottom).
+        body = _write_captions(
+            self.tmp, [make_word(10.0, 10.4, "ola.")], headline_margin_top_ratio=0.02
+        ).read_text(encoding="utf-8")
+        headline_style = [line for line in body.splitlines() if line.startswith("Style: Headline,")][0]
+        # 1920 - 2% = 1882 at default height
+        self.assertTrue(headline_style.endswith(",60,60,1882,1"))
+
+    def test_headline_top_margin_scales_with_canvas_height(self):
+        body = _write_captions(
+            self.tmp,
+            [make_word(10.0, 10.4, "ola.")],
+            width=720,
+            height=1280,
+            headline_margin_top_ratio=0.06,
+        ).read_text(encoding="utf-8")
+        headline_style = [line for line in body.splitlines() if line.startswith("Style: Headline,")][0]
+        # 1280 - 6% = 1203 at the smaller canvas
+        self.assertTrue(headline_style.endswith(",60,60,1203,1"))
 
     def test_headline_align_rejects_unknown_values(self):
         with self.assertRaises(ValueError):
@@ -172,7 +194,8 @@ class BuildCaptionsTests(unittest.TestCase):
             self.tmp, [make_word(10.0, 10.4, "ola.")], headline_margin_side=120
         ).read_text(encoding="utf-8")
         headline_style = [line for line in body.splitlines() if line.startswith("Style: Headline,")][0]
-        self.assertIn(",8,120,120,60,1", headline_style)
+        # MarginV keeps the hook clear of the notch: 1920 - 6% = 1805 at default height
+        self.assertIn(",8,120,120,1805,1", headline_style)
 
     def test_headline_side_margins_reject_negatives(self):
         with self.assertRaises(ValueError):

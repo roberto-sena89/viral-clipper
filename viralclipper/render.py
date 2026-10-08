@@ -77,7 +77,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default,{font},{size},{primary},&H000000FF,{outline_c},{back},{bold},{italic},0,0,100,100,0,0,{border_style},{outline_w},{shadow},2,90,90,{margin_v},1
-Style: Headline,{font},{headline_size},{highlight},&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,5,2,{headline_align},{headline_margin_l},{headline_margin_r},60,1
+Style: Headline,{font},{headline_size},{highlight},&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,5,2,{headline_align},{headline_margin_l},{headline_margin_r},{headline_margin_v},1
 {zone_styles}
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -369,6 +369,7 @@ def build_captions(
         headline_margin_r=config.headline_margin_side
         if config.headline_margin_side is not None
         else 60,
+        headline_margin_v=_headline_margin_v(config),
         highlight=style.highlight_color,
         # A blank line separates the last Style from ``[Events]``; with no text
         # zone the placeholder is empty and the template's own newline provides
@@ -440,6 +441,19 @@ def _caption_margin_for_band(config: ClipConfig, style, template) -> int:
 def _social_safe_floor(config: ClipConfig) -> int:
     """Lowest caption margin that clears the TikTok/Reels bottom UI."""
     return int(round(config.height * SOCIAL_BOTTOM_SAFE))
+
+
+def _headline_margin_v(config: ClipConfig) -> int:
+    """Headline top margin that keeps the hook clear of the notch.
+
+    libass measures MarginV from the bottom, so a top margin is a *small*
+    number: PlayResY minus the top offset. The ratio field keeps it
+    resolution independent — 0.06 is 115 px at 1920 and 60 px at 1000.
+    """
+    ratio = config.headline_margin_top_ratio
+    if ratio is None:
+        ratio = 0.06
+    return max(0, config.height - int(round(config.height * ratio)))
 
 
 def _layout_filter(

@@ -41,7 +41,12 @@ class CaptionPreset:
     box_color: str | None = None
     bold: bool = True
     italic: bool = False
+    # Vertical margin from bottom in PIXELS (legacy, deprecated).
+    # Use margin_v_ratio for resolution-independent positioning.
     margin_v: int = 640
+    # Vertical margin as a fraction of canvas height (0.0-1.0).
+    # Takes precedence over margin_v when set. Default 0.33 (~634px @ 1920).
+    margin_v_ratio: float = 0.33
     words_per_line: int = 3
     highlight_color: str = "&H0000FFFF"
     highlight_scale: int = 112
@@ -295,6 +300,33 @@ PRESETS: dict[str, CaptionPreset] = {
         highlight_color="&H002D2DFF",
         words_per_line=4,
     ),
+    # --- platform-safe presets ------------------------------------------------
+    # Pre-tuned bottom margins that sit above each platform's action rail,
+    # progress bar, and video caption. Uses margin_v_ratio for resolution independence.
+    "tiktok-safe": CaptionPreset(
+        name="tiktok-safe",
+        description="TikTok seguro — 2 palavras, margem acima da barra de ação e legenda",
+        font="Arial Black",
+        font_size=88,
+        margin_v_ratio=0.22,  # ~422px @ 1920, clears bottom ~200px action rail
+        words_per_line=2,
+    ),
+    "reels-safe": CaptionPreset(
+        name="reels-safe",
+        description="Reels seguro — 2 palavras, margem acima da barra de progresso e UI",
+        font="Arial Black",
+        font_size=88,
+        margin_v_ratio=0.20,  # ~384px @ 1920, clears bottom progress + action rail
+        words_per_line=2,
+    ),
+    "shorts-safe": CaptionPreset(
+        name="shorts-safe",
+        description="Shorts seguro — 2 palavras, margem acima da barra de progresso",
+        font="Arial Black",
+        font_size=88,
+        margin_v_ratio=0.18,  # ~346px @ 1920, clears bottom progress bar
+        words_per_line=2,
+    ),
 
     # --- article fonts -------------------------------------------------------
     # The Piktochart/Streamlabs/Kapwing consensus: bold sans-serif faces with
@@ -475,6 +507,15 @@ def resolve(config) -> CaptionPreset:
     base = get_preset(config.caption_preset)
     box_theme = config.caption_box_theme
     boxed_base = base.border_style == 3
+    # Resolve vertical margin: config px > config ratio > preset ratio > preset px
+    if config.caption_margin_v is not None:
+        margin_v = config.caption_margin_v
+    elif config.caption_margin_v_ratio is not None:
+        margin_v = int(config.caption_margin_v_ratio * config.height)
+    elif base.margin_v_ratio is not None:
+        margin_v = int(base.margin_v_ratio * config.height)
+    else:
+        margin_v = base.margin_v
     return replace(
         base,
         font=config.font if config.font is not None else base.font,
@@ -496,9 +537,7 @@ def resolve(config) -> CaptionPreset:
             if box_theme is None
             else ("&HB3141417" if box_theme == "dark" else "&H00F2F2F2")
         ),
-        margin_v=config.caption_margin_v
-        if config.caption_margin_v is not None
-        else base.margin_v,
+        margin_v=margin_v,
         words_per_line=(
             config.caption_words_per_line
             if config.caption_words_per_line is not None

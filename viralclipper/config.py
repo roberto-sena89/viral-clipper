@@ -156,12 +156,18 @@ class ClipConfig:
     font: str | None = None
     font_size: int | None = None
     caption_margin_v: int | None = None
+    # Vertical margin as a fraction of canvas height (0.0-1.0).
+    # Takes precedence over caption_margin_v when set. Default ~0.33 (~634px @ 1920).
+    caption_margin_v_ratio: float | None = None
     uppercase_captions: bool | None = None
     highlight_color: str | None = None
     # Light/dark box theme for the burned captions. None keeps the preset's
     # own colors; "light"/"dark" force the classic light/dark box+text pair
     # (font, size and highlight still come from the preset).
     caption_box_theme: str | None = None
+    # Burned headline top margin as a fraction of canvas height (0.0-1.0).
+    # Keeps the hook clear of the notch/Dynamic Island. Default 0.06 (~115px @ 1920).
+    headline_margin_top_ratio: float | None = None
     # Burned headline at the top of the frame for the opening seconds of every
     # clip. Off by default: the shipped look is captions only. Turn it on when
     # the hook deserves on-screen text (a strong opening question, a leak, a
@@ -277,6 +283,8 @@ class ClipConfig:
             raise ValueError("caption_style must be karaoke, block or none")
         if self.caption_margin_v is not None and self.caption_margin_v < 0:
             raise ValueError("caption_margin_v must not be negative")
+        if self.caption_margin_v_ratio is not None and not 0.0 <= self.caption_margin_v_ratio <= 1.0:
+            raise ValueError("caption_margin_v_ratio must be between 0 and 1")
         if self.highlight_color is not None and not self.highlight_color.startswith("&H"):
             raise ValueError("highlight_color must use the ASS format &HAABBGGRR")
         if self.caption_box_theme is not None and self.caption_box_theme not in {"light", "dark"}:
@@ -287,6 +295,8 @@ class ClipConfig:
             raise ValueError("headline_font_size must be greater than zero")
         if self.headline_margin_side is not None and self.headline_margin_side < 0:
             raise ValueError("headline_margin_side must not be negative")
+        if self.headline_margin_top_ratio is not None and not 0.0 <= self.headline_margin_top_ratio <= 1.0:
+            raise ValueError("headline_margin_top_ratio must be between 0 and 1")
         if self.headline_align not in {"left", "center", "right"}:
             raise ValueError("headline_align must be left, center or right")
         if self.reframe_zoom is not None and self.reframe_zoom < 1:

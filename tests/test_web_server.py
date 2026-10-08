@@ -2977,118 +2977,127 @@ class AssetContentTypeTests(unittest.TestCase):
         self.assertIn("ctype = asset_content_type(asset)", source)
 
 
-class HeroPreviewTests(unittest.TestCase):
-    """The hero preview stack: every card plays its own clip.
+class HeroSectionTests(unittest.TestCase):
+    """O hero do Estudio: a porta de entrada do produto.
 
-    The page is the product demo, so each of the three cards plays an actual
-    9:16 video instead of the schematic. What can break silently is the
-    degradation path: the files sit in the repo's own ``web/`` folder and are
-    gitignored, so a fresh clone has none of them and a card has to look exactly
-    as it did before — not show a broken media icon.
+    Ele ja foi uma pilha de tres cards, cada um tocando um video 9:16, e os
+    testes daquela versao (`HeroPreviewTests`) mediam o caminho de degradacao:
+    os arquivos ficavam em `web/` e eram GITIGNORED, entao um clone novo nao
+    tinha nenhum deles e o card precisava parecer intacto em vez de mostrar um
+    icone quebrado. Essa pilha saiu do produto -- `preview-card`,
+    `preview-video` e `data-live` hoje tem ZERO ocorrencias em `index.html` --
+    e com ela os nove asserts que mediam aquele markup.
+
+    O que ficou no lugar e' copia, um botao e tres atalhos, e e' isso que os
+    testes abaixo travam. A cobertura nao foi apagada: foi TROCADA pela do hero
+    que existe. Os tres que mais valem medem o que quebra em silencio -- um
+    botao sem handler, um atalho para um `id` que nao existe, e o retorno da
+    dependencia de midia gitignored.
     """
 
-    #: Each card that plays a clip, and the file it plays.
-    LIVE_CARDS = {
-        "/1.mp4": "0:42 → 1:24",
-        "/2.mp4": "3:10 → 3:58",
-        "/3.mp4": "7:02 → 7:47",
-    }
+    #: O texto de cada passo do fluxo, na ordem em que o motor executa.
+    WORKFLOW = ("Fonte", "Seleção", "Renderização")
 
     def setUp(self):
         self.page = page_source("index.html")
         self.markup = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        inicio = self.markup.index('<section class="hero studio-welcome"')
+        self.hero = self.markup[inicio:self.markup.index("</section>", inicio)]
 
-    def test_every_live_card_loads_its_clip(self):
-        for src in self.LIVE_CARDS:
-            self.assertIn(f'src="{src}"', self.markup, f"falta o video {src}")
-        self.assertEqual(self.markup.count('class="preview-video"'), len(self.LIVE_CARDS))
+    def test_the_hero_labels_itself_with_the_page_h1(self):
+        """`aria-labelledby` aponta para o `id` do H1 -- e esse `id` existe.
 
-    def test_each_clip_is_a_silent_loopable_inline_preview(self):
-        """No audio, no controls: they are a background, not a player."""
-        chunks = self.markup.split("<video")[1:]
-        self.assertEqual(len(chunks), len(self.LIVE_CARDS))
-        for chunk in chunks:
-            video = chunk.split("</video>", 1)[0]
-            for attribute in ("muted", "playsinline", "loop", "autoplay"):
-                self.assertIn(attribute, video, f"falta {attribute} no preview do hero")
-            self.assertNotIn("controls", video)
-
-    def test_the_cards_start_as_placeholders(self):
-        """``data-live="0"`` is the start state; only the script lights it."""
-        self.assertEqual(self.markup.count('data-live="0"'), len(self.LIVE_CARDS))
-        self.assertNotIn('data-live="1"', self.markup)
-
-    def test_the_script_wires_every_live_card(self):
-        """One loop over the cards: a third card must not need new script."""
-        self.assertIn("$$('.preview-card[data-live]')", self.page)
-        self.assertIn("'loadeddata'", self.page)
-        self.assertIn("'data-live'", self.page)
-
-    def test_the_script_steps_back_when_the_file_fails(self):
-        self.assertIn("addEventListener('error'", self.page)
-
-    def test_the_clip_is_never_paused(self):
-        """The card is a campaign: a frozen frame reads as a broken image.
-
-        An earlier version paused the clip when the machine asked for reduced
-        motion, and on exactly those machines the card looked static. Playback
-        wins here: the element is decorative (``aria-hidden``) and muted, so a
-        still frame is the only outcome nobody asked for.
-
-        A second version paused whatever scrolled out of the viewport, to save
-        CPU. It failed the same way and for the same reason, which is why both
-        are forbidden by the same assertion: ``data-live="0"`` sets the video to
-        ``opacity: 0``, so "paused" does not leave a still frame on screen — it
-        leaves the SCHEMATIC. Anyone with Windows animations off
-        (``MinAnimate=0``, which Chromium reads as ``prefers-reduced-motion:
-        reduce``) saw three empty cards with a ▶ and no hint of why.
-
-        ``video.play()`` is asserted on the same breath so the check cannot pass
-        by the script being deleted: no pause AND a play, or the card is broken
-        either way.
+        Um `aria-labelledby` apontando para um `id` inexistente nao da erro: a
+        regiao simplesmente fica sem nome para o leitor de tela, em silencio.
         """
-        self.assertNotIn("video.pause()", self.page)
-        self.assertIn("video.play()", self.page)
-        # A terceira tentativa teria a mesma cara das duas primeiras: um
-        # observador que decide parar. Ele nao aparece em lugar nenhum da
-        # pagina, e voltar a aparecer e esta linha reprovando — o comentario
-        # acima cita o termo, o mecanismo nao existe.
-        self.assertNotIn("IntersectionObserver", self.page)
+        self.assertIn('aria-labelledby="studio-title"', self.hero)
+        self.assertIn('<h1 id="studio-title">', self.markup)
+        self.assertEqual(self.markup.count('id="studio-title"'), 1)
 
-    def test_playback_is_retried_after_a_refused_autoplay(self):
-        """Muted autoplay is allowed, not guaranteed; a gesture unlocks it.
+    def test_the_cta_is_a_button_that_has_a_handler(self):
+        """Botao sem handler e' promessa vazia: o HTML sozinho nao prova nada.
 
-        The hooks are the whole recovery path, so all four matter: ``canplay``
-        covers a late file, ``pause`` re-arms the gesture listeners after the
-        browser stops the clip on its own (power saving, background tab), and
-        the gesture plus ``visibilitychange`` are the two ways back in.
+        O `id` e' o contrato entre o markup e o JS, entao o teste exige os dois
+        lados. O `type="button"` entra junto porque, dentro de um `<form>`, o
+        default `submit` transformaria "colar link" em "enviar o formulario".
         """
-        for hook in ("'canplay'", "'pause'", "'pointerdown'", "'visibilitychange'"):
-            self.assertIn(hook, self.page, f"falta o gancho {hook} para o play")
+        self.assertIn('id="hero-cta"', self.hero)
+        self.assertEqual(self.markup.count('id="hero-cta"'), 1)
+        self.assertIn("type=\"button\" id=\"hero-cta\"", self.hero)
+        self.assertIn("$('#hero-cta').addEventListener", self.page)
 
-    def test_the_preload_is_eager_so_the_loop_starts_on_frames(self):
-        self.assertIn('preload="auto"', self.markup)
+    def test_the_cta_scrolls_to_a_form_that_exists(self):
+        """O CTA promete levar ao formulario; ele tem de levar a ALGUM lugar.
 
-    def test_the_css_only_reveals_the_clip_when_live(self):
-        self.assertIn('.preview-card[data-live="1"] .preview-video', self.page)
-        self.assertIn('.preview-card[data-live="1"]::after', self.page)
+        `scrollIntoView` num `id` que nao existe nao levanta: o botao fica
+        inerte e o usuario conclui que a pagina esta quebrada. Por isso o alvo
+        do scroll (`#config`) e o campo que recebe o foco (`#url`) sao
+        conferidos no markup, e nao so' no JS.
+        """
+        self.assertIn("getElementById('config')", self.page)
+        self.assertIn("$('#url').focus()", self.page)
+        for alvo in ("config", "url"):
+            with self.subTest(alvo=alvo):
+                self.assertEqual(
+                    self.markup.count(f'id="{alvo}"'), 1,
+                    f"o CTA aponta para #{alvo}, que nao existe no markup")
 
-    def test_every_card_in_the_stack_plays_a_clip(self):
-        """No card is left schematic: the stack is the product demo."""
-        self.assertEqual(self.markup.count('class="preview-card"'), len(self.LIVE_CARDS))
-        self.assertEqual(self.markup.count("<video"), len(self.LIVE_CARDS))
-        for tag in self.LIVE_CARDS.values():
-            self.assertIn(f'<span class="tag">{tag}</span>', self.markup)
+    def test_every_jump_link_points_at_an_id_that_exists(self):
+        """Atalho para `id` inexistente nao faz nada e nao avisa.
 
-    def test_the_stack_is_one_card_per_clip_in_order(self):
-        """The tags are the reading order; a clip swapped between cards would
-        put a 26 s cut under a 0:42 → 1:24 label."""
-        bodies = self.markup.split('class="preview-card"')[1:]
-        self.assertEqual(len(bodies), len(self.LIVE_CARDS))
-        for body, (src, tag) in zip(bodies, self.LIVE_CARDS.items()):
-            self.assertIn(f'src="{src}"', body, f"{src} fora de ordem no stack")
-            self.assertIn(tag, body, f"{src} com o rotulo de outro card")
+        O rotulo do atalho e' o MESMO texto do `<h2>` de destino -- quem clica
+        em "Fila de processamento" tem de chegar num titulo com essas palavras.
+        Um atalho morto quebra as duas pontas dessa promessa.
+        """
+        alvos = re.findall(r'href="#([^"]+)"', self.hero)
+        self.assertEqual(len(alvos), 3, "os atalhos do hero mudaram de numero")
+        for alvo in alvos:
+            with self.subTest(alvo=alvo):
+                self.assertEqual(
+                    self.markup.count(f'id="{alvo}"'), 1,
+                    f"atalho para #{alvo} sem destino na pagina")
 
+    def test_the_workflow_lists_the_pipeline_in_order(self):
+        """O fluxo do hero tem de descrever o pipeline REAL, na ordem real.
+
+        Um hero que promete a ordem errada ensina o usuario a esperar o
+        contrario do que o motor faz -- e o motor e' `download -> ... ->
+        render`, que e' exatamente a ordem abaixo.
+        """
+        passos = re.findall(r'studio-step-number">(\d+)<', self.hero)
+        self.assertEqual(passos, ["01", "02", "03"])
+        for indice, rotulo in enumerate(self.WORKFLOW, start=1):
+            with self.subTest(passo=rotulo):
+                self.assertIn(f"<strong>{rotulo}</strong>", self.hero)
+                # A ordem importa: o rotulo tem de vir DEPOIS do seu numero.
+                self.assertLess(
+                    self.hero.index(f'>{indice:02d}<'),
+                    self.hero.index(f"<strong>{rotulo}</strong>"),
+                    f"{rotulo} nao esta no passo {indice:02d}",
+                )
+
+    def test_the_output_spec_matches_the_project_constant(self):
+        """`9:16 1080x1920` e' constante do produto, entao virou rotulo.
+
+        O hero anuncia o formato; se o render mudasse de alvo, este rotulo
+        mentiria para o usuario antes de qualquer clique.
+        """
+        self.assertIn("9:16", self.hero)
+        self.assertIn("1080", self.hero)
+        self.assertIn("1920", self.hero)
+
+    def test_the_hero_does_not_depend_on_the_gitignored_previews(self):
+        """A dependencia que derrubou a versao anterior nao pode voltar.
+
+        `/1.mp4`, `/2.mp4` e `/3.mp4` viviam em `web/` e eram gitignored: um
+        clone novo nao tinha nenhum, e o hero so' nao quebrava porque havia um
+        caminho de degradacao escrito a mao, so' para isso. O hero atual e'
+        copia -- nao depende de arquivo que o repositorio nao carrega.
+        """
+        for asset in ("/1.mp4", "/2.mp4", "/3.mp4"):
+            with self.subTest(asset=asset):
+                self.assertNotIn(asset, self.hero)
+        self.assertNotIn("<video", self.hero)
 
 class IndexOverflowTests(unittest.TestCase):
     """A página inicial não tem rolagem horizontal: a trava é o contrato.
@@ -7527,6 +7536,7 @@ class SkipLinkAndDescriptionTests(unittest.TestCase):
                       "abaixo do rail (60) o salto apareceria por baixo do menu")
         self.assertIn(".skip-link:focus { top: 12px; }", css)
         self.assertIn("prefers-reduced-motion", css[ini - 400:ini + 600])
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

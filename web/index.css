@@ -153,50 +153,6 @@ body { padding-left: var(--rail-w); }
   padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; color: var(--text-secondary);
 }
 
-
-.hero-visual {
-  background: var(--bg-card); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg); padding: 28px; box-shadow: var(--shadow-card);
-  backdrop-filter: blur(8px);
-}
-.hero-visual .frame-label {
-  display: flex; justify-content: space-between; align-items: center;
-  font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;
-}
-.preview-stack { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.preview-card {
-  aspect-ratio: 9/16; border-radius: var(--radius-sm);
-  background: linear-gradient(160deg, #1b1f2b, #0b0d12);
-  border: 1px solid var(--border-subtle);
-  position: relative; overflow: hidden;
-  display: grid; place-items: center; color: var(--text-muted);
-  font-size: 0.72rem;
-}
-.preview-card::after {
-  content: "▶"; position: absolute; font-size: 1.4rem; opacity: 0.45;
-  top: 46%; left: 50%; transform: translate(-50%, -50%);
-}
-.preview-card .tag {
-  position: absolute; bottom: 8px; left: 8px; right: 8px;
-  text-align: center; font-size: 0.68rem; color: var(--text-secondary);
-}
-
-/* O card que toca video real. Opaco so com data-live="1": enquanto o arquivo
-   nao tiver frame decodificado (ausente, codec que o navegador nao abre, clone
-   sem ele) o gradiente e o ▶ continuam sendo o card — assim a falta do video
-   nunca vira icone de midia quebrada. */
-.preview-video {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  object-fit: cover; display: block; opacity: 0;
-  transition: opacity var(--motion-fast) ease;
-}
-.preview-card[data-live="1"] .preview-video { opacity: 1; }
-.preview-card[data-live="1"]::after { display: none; }
-/* Sobre o frame o rotulo precisa vencer a imagem, nao sumir nela. */
-.preview-card[data-live="1"] .tag {
-  color: var(--text-primary); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
-}
-
 /* ---------- LAYOUT PRINCIPAL ----------
    `minmax(0, …)` nas DUAS colunas, e nao `1fr 360px`: filho de grid tem
    `min-width: auto` por padrao, ou seja, nunca encolhe abaixo do seu conteudo.

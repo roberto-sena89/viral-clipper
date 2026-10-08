@@ -350,7 +350,13 @@
           </div>
         </div>
 
-        <div id="resultados" aria-live="polite"></div>
+        <!-- A lista NAO e' uma regiao viva. `aria-live` no container fazia o
+             leitor de tela anunciar os vinte cards inteiros de uma vez, cada
+             busca. O que precisa ser anunciado e' a CONTAGEM, entao ela mora
+             numa regiao viva propria e a lista fica silenciosa -- o mesmo
+             desenho que a galeria do Estudio usa em `#gallery-status`. -->
+        <p class="sr-only" id="resultados-status" role="status" aria-live="polite"></p>
+        <div id="resultados"></div>
       </section>
 
     <!-- ---------- FONTE SELECIONADA: terceiro painel do fluxo ---------- -->

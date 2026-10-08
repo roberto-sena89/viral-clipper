@@ -1,3 +1,14 @@
+/* Sem reset, `width: 100%` + `padding` soma em vez de incluir: o rail media
+   273px no navegador com token de 244px (medido via CDP). Fora de `@media`
+   e com seletor unico, para os testes de folha compartilhada nao verem
+   duplicata. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+
 
 
 
@@ -253,12 +264,22 @@ input::placeholder { color: var(--text-muted); }
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;
   padding: 4px; border-radius: 10px;
   background: rgba(0, 0, 0, 0.30); border: 1px solid var(--border-subtle);
+  min-width: 0;
 }
 .seg-btn {
   appearance: none; border: 1px solid transparent; background: transparent;
   color: var(--text-muted); font-family: inherit;
   border-radius: 7px; padding: 8px 4px; cursor: pointer;
   display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 44px;
+}
+/* Abaixo de ~110px de celula o icone de 24px nao tem para onde ir: a
+   track do grid encolhe ate 10px e o botao vira um fiapo sem area de
+   clique (medido navegando pelo CDP em 1024px e 1440px). Duas regras de
+   protecao: a barra nunca nasce com menos de 4x44px (o piso do alvo de
+   toque), e abaixo de 480px as celulas viram 2x2 em vez de esmagar. */
+.seg { min-width: 200px; }
+@media (max-width: 480px) {
+  .seg { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 /* Ícones oficiais dos navegadores (SVG inline, sem dependência externa).
    Apagado = dessaturado; selecionado ou hover = cor cheia. */
@@ -782,27 +803,6 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   font-size: var(--text-body); font-weight: 600; color: var(--text-primary);
   margin: 0 0 4px; overflow-wrap: anywhere;
 }
-.kv {
-  display: grid; grid-template-columns: 72px minmax(0, 1fr);
-  column-gap: 14px; margin: 10px 0 0; padding: 0;
-}
-.kv dt {
-  font-size: var(--text-2xs); font-weight: 600; letter-spacing: 0.04em;
-  text-transform: uppercase; color: var(--text-muted);
-  align-self: center; line-height: 1.5;
-  padding: 7px 0; margin: 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.kv dd {
-  margin: 0; font-size: var(--text-body-sm); color: var(--text-primary);
-  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
-  align-self: center; line-height: 1.5; text-align: left;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.kv dt:last-of-type, .kv dd:last-of-type { border-bottom: 0; }
-.pick-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
-.pick-actions .btn { justify-content: center; width: 100%; }
 
 /* A caixa de log e a mesma linguagem das outras paginas. */
 .log-box {
@@ -949,33 +949,156 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
 .pick-empty { padding: 14px; border: 1px dashed rgba(218,226,243,.16); border-radius: 10px; color: var(--text-muted); font-size: .78rem; line-height: 1.6; }
 
 /* Seleção da biblioteca: identificação da fonte, dados escaneáveis e CTA claro. */
-.pick #pick-body { display: grid; gap: 0; }
-.pick-eyebrow {
-  display: flex; align-items: center; gap: 8px; margin: 0 0 10px;
-  color: #8bd7f4; font-size: .61rem; font-weight: 750; letter-spacing: .12em;
+/* ============================ PAINEL "ESCOLHA" ============================
+   Componente da Biblioteca: identifica o video escolhido, mostra os dados
+   escaneaveis e oferece as tres acoes.
+
+   Tudo abaixo esta sob `.pick`, a classe raiz que o `scrap.html` ja punha no
+   `<aside>`. Nenhum seletor deste bloco e global, entao nada aqui muda um
+   botao, um link ou um titulo de fora do painel.
+
+   As custom properties vivem em `.pick` e sao consumidas por `var()` nos
+   seletores filhos. Mudar cor, raio ou sombra e' editar uma linha. */
+.pick {
+  /* Superficie: o painel nao cria fundo proprio, ele usa a do card em que
+     esta. "Superficie clara" aqui quer dizer superficie legivel, nao clara --
+     a aplicacao e' escura e um cartao branco nesse painel destoaria. */
+  --pick-gap: 16px;
+  --pick-gap-sm: 8px;
+  --pick-radius: 12px;
+  --pick-radius-sm: 9px;
+  --pick-line: rgba(218, 226, 243, .09);
+  --pick-line-soft: rgba(218, 226, 243, .06);
+  --pick-surface: rgba(255, 255, 255, .028);
+  --pick-surface-hi: rgba(255, 255, 255, .055);
+  --pick-ink: var(--text-primary);
+  --pick-ink-muted: var(--text-muted);
+  --pick-mark: var(--accent-soft);
+  --pick-shadow: 0 1px 2px rgba(0, 0, 0, .28);
+  --pick-h: 44px;                 /* alvo de toque, WCAG 2.5.8 */
+  --pick-h-sm: 38px;
+  --pick-ease: cubic-bezier(.2, .75, .25, 1);
+  --pick-t: 160ms;
 }
-.pick-eyebrow::before { width: 7px; height: 7px; border-radius: 50%; background: currentColor; content: ""; box-shadow: 0 0 12px rgba(139,215,244,.35); }
-.pick-title {
-  margin: 0; color: var(--text-primary); font-size: clamp(.98rem, 1.15vw, 1.13rem);
-  font-weight: 680; letter-spacing: -.025em; line-height: 1.42;
+
+.pick #pick-body { display: grid; gap: var(--pick-gap); }
+
+/* --- cabecalho --- */
+.pick-head { display: grid; gap: 6px; }
+.pick .pick-eyebrow {
+  display: flex; align-items: center; gap: 8px; margin: 0;
+  color: var(--pick-mark); font-size: .61rem; font-weight: 750;
+  letter-spacing: .12em; text-transform: uppercase;
 }
-.kv {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
-  margin: 18px 0 0; padding: 0;
+.pick .pick-eyebrow::before {
+  width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+  content: ""; box-shadow: 0 0 10px color-mix(in srgb, currentColor 40%, transparent);
 }
-.pick-meta-item {
-  display: flex; min-width: 0; min-height: 62px; flex-direction: column; justify-content: center; gap: 5px;
-  padding: 10px 11px; border: 1px solid rgba(218,226,243,.075); border-radius: 10px;
-  background: linear-gradient(145deg, rgba(255,255,255,.035), rgba(255,255,255,.012));
+.pick .pick-title {
+  margin: 0; color: var(--pick-ink);
+  font-size: clamp(.98rem, 1.15vw, 1.12rem); font-weight: 680;
+  letter-spacing: -.025em; line-height: 1.42;
+  /* Titulo de video pode ter qualquer tamanho. Quebra em palavra E no meio de
+     uma palavra longa, e nunca empurra a coluna. `min-height` em vez de
+     `height`: o bloco cresce com o texto em vez de cortar o titulo. */
+  overflow-wrap: anywhere; word-break: break-word; hyphens: none;
 }
-.pick-meta-item dt { margin: 0; color: var(--text-muted); font-size: .6rem; font-weight: 700; letter-spacing: .09em; line-height: 1.3; text-transform: uppercase; }
-.pick-meta-item dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--text-primary); font-size: .79rem; font-weight: 570; font-variant-numeric: tabular-nums; line-height: 1.4; }
-.pick-meta-item:nth-child(1) dd, .pick-meta-item:nth-child(3) dd { font-size: .92rem; font-weight: 650; }
-.pick-actions { display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; margin-top: 16px; }
-.pick-actions > .btn { width: 100%; min-height: 44px; justify-content: center; font-weight: 650; }
-.pick-secondary-actions { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
-.pick-secondary-actions .btn { width: 100%; min-width: 0; min-height: 39px; justify-content: center; padding-inline: 9px; font-size: .72rem; }
-.pick .pick-empty { margin: 0; }
+
+/* --- metadados: dl/dt/dd --- */
+.pick .kv {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--pick-gap-sm); margin: 0; padding: 0;
+}
+.pick .pick-meta-item {
+  display: flex; min-width: 0; flex-direction: column; justify-content: center;
+  gap: 5px; padding: 10px 11px;
+  border: 1px solid var(--pick-line-soft); border-radius: var(--pick-radius-sm);
+  background: var(--pick-surface); box-shadow: var(--pick-shadow);
+  transition: border-color var(--pick-t) var(--pick-ease), background-color var(--pick-t) var(--pick-ease);
+}
+.pick .pick-meta-item:hover {
+  border-color: var(--pick-line); background: var(--pick-surface-hi);
+}
+.pick .pick-meta-item dt {
+  margin: 0; color: var(--pick-ink-muted);
+  font-size: .6rem; font-weight: 700; letter-spacing: .09em;
+  line-height: 1.3; text-transform: uppercase;
+}
+.pick .pick-meta-item dd {
+  min-width: 0; margin: 0; color: var(--pick-ink);
+  font-size: .79rem; font-weight: 570; line-height: 1.4;
+  overflow-wrap: anywhere; font-variant-numeric: tabular-nums;
+}
+/* Duracao e Visualizacoes sao os numeros que a pessoa procura primeiro. */
+.pick .pick-meta-item:nth-child(1) dd,
+.pick .pick-meta-item:nth-child(3) dd { font-size: .92rem; font-weight: 650; }
+
+/* --- acoes --- */
+.pick .pick-actions { display: grid; gap: var(--pick-gap-sm); margin: 0; }
+.pick .pick-actions > .btn {
+  width: 100%; min-height: var(--pick-h);
+  justify-content: center; gap: 9px; font-weight: 650;
+}
+.pick .pick-secondary-actions {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--pick-gap-sm);
+}
+.pick .pick-secondary-actions .btn {
+  width: 100%; min-width: 0; min-height: var(--pick-h-sm);
+  justify-content: center; gap: 7px; padding-inline: 9px; font-size: .72rem;
+}
+.pick .pick-actions .btn svg { flex: 0 0 auto; }
+
+/* Foco visivel. O `:focus-visible` so aparece para quem navega por teclado,
+   entao o clique de mouse nao ganha anel. `:focus-visible` e o fallback; o
+   `:focus` abaixo e para browser antigo sem suporte. */
+.pick .pick-actions .btn:focus-visible {
+  outline: 2px solid var(--pick-mark); outline-offset: 2px;
+}
+@supports not selector(:focus-visible) {
+  .pick .pick-actions .btn:focus { outline: 2px solid var(--pick-mark); outline-offset: 2px; }
+}
+.pick .pick-actions .btn[disabled] { opacity: .55; cursor: not-allowed; }
+
+/* --- feedback da copia --- */
+/* A regiao viva fica dentro do componente, perto do botao. `min-height`
+   reserva a linha mesmo vazia: sem isso o painel inteiro pulava quando o
+   aviso aparecia -- e um aviso que move o layout e pior que nenhum aviso. */
+.pick .pick-feedback { display: grid; gap: var(--pick-gap-sm); min-height: 1.5em; }
+.pick .pick-status {
+  margin: 0; color: var(--pick-ink-muted); font-size: .72rem; line-height: 1.5;
+}
+.pick .pick-manual {
+  width: 100%; min-width: 0; min-height: var(--pick-h-sm); padding: 0 10px;
+  border: 1px solid var(--pick-line); border-radius: var(--pick-radius-sm);
+  background: var(--well-bg, rgba(0, 0, 0, .35)); color: var(--pick-ink);
+  font: inherit; font-size: .72rem;
+  overflow-wrap: anywhere;
+}
+.pick .pick-manual:focus-visible { outline: 2px solid var(--pick-mark); outline-offset: 2px; }
+
+/* --- estado vazio --- */
+.pick .pick-empty {
+  margin: 0; padding: 14px;
+  border: 1px dashed var(--pick-line); border-radius: var(--pick-radius-sm);
+  color: var(--pick-ink-muted); font-size: .78rem; line-height: 1.6;
+}
+
+/* --- 480px e abaixo: metadados em uma coluna e acoes empilhadas ---
+   Com duas colunas, "Visualizações" e o valor mais largo quebram antes de
+   320px. Uma coluna resolve, e o alvo de toque continua com folga. */
+@media (max-width: 480px) {
+  .pick .kv { grid-template-columns: minmax(0, 1fr); }
+  .pick .pick-actions > .btn { min-height: var(--pick-h); }
+  .pick .pick-secondary-actions { grid-template-columns: minmax(0, 1fr); }
+  .pick .pick-secondary-actions .btn { min-height: var(--pick-h); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pick .pick-meta-item,
+  .pick .pick-actions .btn,
+  .pick .pick-manual { transition: none; }
+  .pick .pick-meta-item:hover { transform: none; }
+}
 
 /* Biblioteca: busca guiada em três passos, com rótulos persistentes. */
 .search-card { position: relative; }
@@ -1020,6 +1143,9 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
 @media (max-width: 980px) {
   .scrap-welcome { grid-template-columns: minmax(0, 1fr) minmax(240px, .78fr); gap: 20px; }
   .scrap-grid { grid-template-columns: minmax(0, 1fr); }
+  /* O `.scrap-grid > .pick { position: static }` que existia aqui era o
+     DESLIGAMENTO do sticky em viewport estreita. Saiu com o sticky: sem fixo
+     para desligar, a regra nao tinha mais o que fazer. */
   .scrap-grid > .card[aria-labelledby="h-resultados"], .scrap-grid > .pick { grid-column: 1; grid-row: auto; }
   #resultados:empty { min-height: 160px; }
   .empty-state { min-height: 145px; }
@@ -1107,21 +1233,16 @@ header .nav-actions .btn { min-height: 42px; }
 .scrap-header-cta { gap: 8px; padding-inline: 14px; font-weight: 650; white-space: nowrap; }
 .scrap-header-cta svg { flex: 0 0 17px; width: 17px; height: 17px; }
 .scrap-cta-short { display: none; }
-.rail-dropdown .menu-btn { min-width: 42px; min-height: 42px; justify-content: center; padding: 0 10px; }
 .rail-dropdown .mb-bars { display: grid; width: 19px; height: 19px; place-items: center; }
 .rail-dropdown .mb-bars svg { display: block; width: 19px; height: 19px; }
 .rail-dropdown .mb-caret { display: grid; width: 13px; height: 13px; place-items: center; }
 .rail-dropdown .mb-caret svg { display: block; width: 13px; height: 13px; }
-.rail-dropdown .rail-menu { min-width: 280px; }
 @media (max-width: 640px) {
   header .header-inner { height: 60px; min-height: 60px; gap: 8px; }
   .scrap-header-context { gap: 9px; }
   .scrap-header-icon { flex-basis: 34px; width: 34px; height: 34px; border-radius: 10px; }
   .scrap-header-icon svg { width: 19px; height: 19px; }
   .scrap-header-eyebrow, .scrap-header-tag { display: none; }
-  /* O `.scrap-grid > .pick { position: static }` que existia aqui era o
-     DESLIGAMENTO do sticky em viewport estreita. Saiu com o sticky: sem fixo
-     para desligar, a regra nao tinha mais o que fazer. */
   .scrap-header-copy { gap: 0; }
   .scrap-header-copy strong { font-size: .8rem; }
   header .nav-actions { gap: 7px; }

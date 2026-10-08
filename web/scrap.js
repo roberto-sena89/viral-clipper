@@ -259,18 +259,32 @@
     const title = item.title || "(sem título)";
     const href = safeUrl(item.url);
 
+    // O nome do checkbox precisa dizer QUAL video. Com `aria-label` fixo, vinte
+    // resultados viravam vinte "Selecionar para baixar" indistinguiveis: o
+    // leitor de tela nao dava nenhuma pista de qual era qual. O titulo entra no
+    // nome, sem limite de tamanho -- quem le e' a pessoa, e cortar o nome
+    // accessivel deixaria o rotulo errado em vez de curto.
+    const nomeCheck = "Selecionar " + title + " para baixar";
+    // Aviso de nova aba no texto, e nao em `title`: `title` nao e' lido de
+    // forma confiavel por leitor de tela. O "(nova aba)" entra no nome do link
+    // e fica visivel para quem ve.
+    const avisoAba = " (abre em uma nova aba)";
+
     return '<article class="result" data-index="' + index + '"' +
         (selected.has(index) ? ' data-selected="1"' : "") + ">" +
       '<label class="result-check">' +
         '<input type="checkbox" data-act="check" data-index="' + index + '"' +
         (selected.has(index) ? " checked" : "") +
-        ' aria-label="Selecionar para baixar">' +
+        ' aria-label="' + esc(nomeCheck) + '">' +
       "</label>" +
       thumbMarkup() +
       '<div class="result-main">' +
         (href
           ? '<a class="result-title" href="' + esc(href) + '" target="_blank" ' +
-            'rel="noopener noreferrer" title="' + esc(title) + '">' + esc(title) + "</a>"
+            'rel="noopener noreferrer">' + esc(title) +
+            '<span class="sr-only">' + esc(avisoAba) + "</span></a>"
+          // Sem href vira <span>: um `a` sem destino e' link falso. O `title`
+          // aqui e' util porque o texto pode estar truncado por CSS.
           : '<span class="result-title" title="' + esc(title) + '">' + esc(title) + "</span>") +
         '<div class="result-meta">' +
           (meta ? meta + '<span class="dot">·</span>' : "") +
@@ -393,9 +407,14 @@
     const chosen = selected.size;
     const count = $("#select-count");
     if (count) {
-      count.textContent = chosen
-        ? chosen + " de " + total + " selecionado(s). O download pula o que já está em disco."
-        : "Nada selecionado. Marque os vídeos ou use Selecionar todos.";
+      // A dica acompanha o botao. Antes ela era fixa em "use Selecionar todos"
+      // enquanto o botao ja dizia "Limpar seleção" com tudo marcado: nos dois
+      // estados a dica mandava para a acao oposta a que o clique faria.
+      count.textContent = !chosen
+        ? "Nada selecionado. Marque os vídeos ou use Selecionar todos."
+        : chosen === total
+          ? "Todos os " + total + " marcados. O botão acima limpa a marcação. O download pula o que já está em disco."
+          : chosen + " de " + total + " selecionado(s). O download pula o que já está em disco.";
     }
     const all = $("#btn-select-all");
     if (all) {
@@ -640,6 +659,16 @@
       if (removed > 0) text += " · " + removed + " repetido(s) oculto(s)";
       sub.textContent = text;
     }
+
+    // A regiao viva anuncia a CONTAGEM, nao a lista. A lista saiu de dentro do
+    // `aria-live` justamente para nao virar vinte anuncios em uma busca; o que
+    // a pessoa precisa hearing e' quantos videos chegaram.
+    const status = $("#resultados-status");
+    if (status) {
+      status.textContent = results.length
+        ? results.length + (results.length === 1 ? " vídeo encontrado." : " vídeos encontrados.")
+        : (title ? "Nenhum vídeo encontrado." : "");
+    }
     const selectBox = $("#select-box");
     if (selectBox) selectBox.hidden = results.length === 0;
     renderSelection();
@@ -687,89 +716,231 @@
     if (picked) toast("Selecionado: " + (picked.title || "").slice(0, 40), "ok");
   }
 
+  /* ---------- painel "Escolha" ----------
+     Os dados do video ficam num objeto so, montado uma vez por renderPick.
+     A tela e as tres acoes leem dali; nenhuma delas le `picked` direto, entao
+     mudar a origem dos dados e mexer em um lugar -- e `detail` do evento
+     `video:selected` sai do mesmo objeto que a tela mostra, sem possibilidade
+     de divergirem. */
+  function dadosDoVideo(v) {
+    return {
+      id: v.id || "",
+      title: v.title || "(sem título)",
+      channel: v.uploader || "",
+      duration: fmtDuration(v.duration),
+      views: v.view_count != null ? fmtCount(v.view_count) : "",
+      url: v.url || "",
+    };
+  }
+
+  // Icones: SVG inline, traco em currentColor, sem biblioteca. Sao literais
+  // fixos -- nenhum dado do video passa por aqui, entao innerHTML e seguro.
+  const ICO_ESTUDIO =
+    '<svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true" focusable="false">' +
+      '<path d="M3.5 10h12m-4.5-4.5L15.5 10 11 14.5" fill="none" stroke="currentColor" ' +
+        'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const ICO_EXTERNO =
+    '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true" focusable="false">' +
+      '<path d="M11 3.5h5.5V9M16.5 3.5 9 11M14 11.5v3.5a2 2 0 0 1-2 2H4.5a2 2 0 0 1-2-2V7.5a2 2 0 0 1 2-2H8" ' +
+        'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" ' +
+        'stroke-linejoin="round"/></svg>';
+  const ICO_COPIAR =
+    '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true" focusable="false">' +
+      '<rect x="7" y="7" width="9.5" height="9.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/>' +
+      '<path d="M13 7V5.5a2 2 0 0 0-2-2H5.5a2 2 0 0 0-2 2V10a2 2 0 0 0 2 2H7" ' +
+        'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+
+  /* Copia o endereco e diz o que aconteceu.
+     A Clipboard API so existe em contexto seguro (https ou localhost) e ainda
+     assim o navegador pode negar a permissao. Nos dois casos o botao nao
+     morre: ele volta ao estado original e o campo de copia manual aparece
+     com o endereco selecionado. */
+  async function copiarEndereco(url, botao, status, manual) {
+    const alvo = url;
+    const semAcesso =
+      !window.isSecureContext || !navigator.clipboard || !navigator.clipboard.writeText;
+
+    if (semAcesso) {
+      mostrarCopiaManual(manual, alvo, status, "Cópia automática indisponível aqui. Selecione e copie:");
+      return;
+    }
+
+    // Durante a operacao o botao fica desabilitado: dois cliques disparariam
+    // duas escritas concorrentes no clipboard, cujo resultado e indefinido.
+    botao.disabled = true;
+    status.textContent = "Copiando…";
+    try {
+      await navigator.clipboard.writeText(alvo);
+      status.textContent = "Link copiado.";
+      manual.hidden = true;
+      botao.dataset.estado = "ok";
+    } catch (e) {
+      mostrarCopiaManual(manual, alvo, status, "Não foi possível copiar automaticamente:");
+    } finally {
+      botao.disabled = false;
+      delete botao.dataset.estado;
+    }
+  }
+
+  function mostrarCopiaManual(manual, url, status, mensagem) {
+    manual.hidden = false;
+    manual.value = url;
+    // `focus` + `select` deixa o endereco pronto para Ctrl+C: e o caminho que
+    // funciona quando a permissao foi negada.
+    manual.focus();
+    manual.select();
+    status.textContent = mensagem;
+  }
+
   function renderPick() {
     const box = $("#pick-body");
     if (!box) return;
+
     if (!picked) {
       box.innerHTML =
         '<p class="pick-empty">Escolha um item da lista. Ele vira o vídeo de ' +
         "origem dos cortes — transcrição, nota e render já existentes.</p>";
       return;
     }
+
+    const d = dadosDoVideo(picked);
     box.innerHTML = "";
+
+    // --- cabecalho: identificacao do que foi escolhido ---
+    const cabecalho = document.createElement("header");
+    cabecalho.className = "pick-head";
 
     const eyebrow = document.createElement("p");
     eyebrow.className = "pick-eyebrow";
     eyebrow.textContent = "VÍDEO SELECIONADO";
-    box.appendChild(eyebrow);
+    cabecalho.appendChild(eyebrow);
 
-    const h = document.createElement("p");
-    h.className = "pick-title";
-    h.textContent = picked.title || "(sem título)";
-    box.appendChild(h);
+    // O titulo do video e um <p>, nao um heading: o <h2> da section ja e' o
+    // titulo do painel, e um <h3> aqui competiria com ele no outline sem
+    // acrescentar informacao nova. Mantem `overflow-wrap` no CSS para o titulo
+    // mais longo quebrar em vez de estourar a coluna.
+    const titulo = document.createElement("p");
+    titulo.className = "pick-title";
+    titulo.textContent = d.title;
+    cabecalho.appendChild(titulo);
 
+    box.appendChild(cabecalho);
+
+    // --- metadados: dl/dt/dd, o par semantico correto para rotulo + valor ---
     const dl = document.createElement("dl");
     dl.className = "kv";
-    const rows = [
-      ["Duração", fmtDuration(picked.duration)],
-      ["Canal", picked.uploader || "—"],
-      ["Visualizações", picked.view_count != null ? fmtCount(picked.view_count) : "—"],
-      ["ID", picked.id || "—"],
+
+    const METAS = [
+      ["Duração", d.duration],
+      ["Canal", d.channel],
+      ["Visualizações", d.views],
+      ["ID", d.id],
     ];
-    rows.forEach(([k, v]) => {
+    METAS.forEach(function (par) {
       const item = document.createElement("div");
       item.className = "pick-meta-item";
       const dt = document.createElement("dt");
-      dt.textContent = k;
+      dt.textContent = par[0];
       const dd = document.createElement("dd");
-      dd.textContent = v;
+      dd.textContent = par[1] || "—";
       item.appendChild(dt);
       item.appendChild(dd);
       dl.appendChild(item);
     });
     box.appendChild(dl);
 
-    const actions = document.createElement("div");
-    actions.className = "pick-actions";
+    // --- acoes ---
+    const acoes = document.createElement("div");
+    acoes.className = "pick-actions";
 
-    const cortes = document.createElement("button");
-    cortes.type = "button";
-    cortes.className = "btn pressable btn-primary";
-    cortes.textContent = "Levar para o Estúdio";
-    // A pagina do Estudio le ?url= do endereco: e o unico canal de hand-off
-    // que existe hoje (nenhuma das paginas guarda estado entre navegacoes).
-    cortes.addEventListener("click", () => {
-      window.location.href = "/?url=" + encodeURIComponent(picked.url);
+    const levar = document.createElement("button");
+    levar.type = "button";
+    levar.className = "btn pressable btn-primary pick-btn-primario";
+    // O icone entra antes do texto; o texto segue sendo o nome acessivel.
+    levar.innerHTML = ICO_ESTUDIO;
+    levar.appendChild(document.createTextNode("Levar para o Estúdio"));
+    levar.addEventListener("click", function () {
+      // DOIS canais, de proposito, e nao um no lugar do outro:
+
+      // 1. `video:selected` -- o contrato novo, para qualquer consumidor que
+      //    prefira reagir no mesmo documento sem navegar. `bubbles: true`
+      //    deixa quem estiver num container acima receber tambem.
+      document.dispatchEvent(new CustomEvent("video:selected", {
+        bubbles: true,
+        detail: {
+          id: d.id,
+          title: d.title,
+          channel: d.channel,
+          duration: d.duration,
+          views: d.views,
+          url: d.url,
+        },
+      }));
+
+      // 2. A navegacao por `?url=`, que e o canal que EXISTE e funciona: o
+      //    Estúdio le o parametro em `acceptHandoff()` (index.js). Remover
+      //    esta linha deixaria o botao sem efeito ate o outro lado existir.
+      window.location.href = "/?url=" + encodeURIComponent(d.url);
     });
-    actions.appendChild(cortes);
+    acoes.appendChild(levar);
 
-    const secondary = document.createElement("div");
-    secondary.className = "pick-secondary-actions";
+    const secundarias = document.createElement("div");
+    secundarias.className = "pick-secondary-actions";
 
-    const open = document.createElement("a");
-    open.className = "btn pressable";
-    open.href = picked.url;
-    open.target = "_blank";
-    open.rel = "noopener noreferrer";
-    open.textContent = "Abrir no site";
-    secondary.appendChild(open);
+    // Link, e nao button: abre outro endereco. `target`/`rel` como antes.
+    const abrir = document.createElement("a");
+    abrir.className = "btn pressable";
+    abrir.href = d.url;
+    abrir.target = "_blank";
+    abrir.rel = "noopener noreferrer";
+    abrir.innerHTML = ICO_EXTERNO;
+    const abrirTexto = document.createElement("span");
+    abrirTexto.textContent = "Abrir no site";
+    abrir.appendChild(abrirTexto);
+    // O aviso de nova aba vai no texto, nao em `title`: `title` nao e' lido por
+    // leitor de tela de forma confiavel. O "(nova aba)" fica para todo mundo.
+    const aviso = document.createElement("span");
+    aviso.className = "sr-only";
+    aviso.textContent = " (abre em uma nova aba)";
+    abrir.appendChild(aviso);
+    secundarias.appendChild(abrir);
 
-    const copy = document.createElement("button");
-    copy.type = "button";
-    copy.className = "btn pressable";
-    copy.textContent = "Copiar link";
-    copy.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(picked.url);
-        toast("Link copiado.", "ok");
-      } catch (e) {
-        toast("Não foi possível copiar.", "bad");
-      }
+    // --- feedback da copia ---
+    // `role="status"` e' uma regiao viva: o leitor de tela anuncia a mudanca
+    // sem interromper. Fica dentro do componente, perto do botao, em vez de
+    // depender so do toast global.
+    const status = document.createElement("p");
+    status.className = "pick-status";
+    status.setAttribute("role", "status");
+
+    // Alternativa manual, escondida ate a copia automatica falhar.
+    const manual = document.createElement("input");
+    manual.type = "text";
+    manual.className = "pick-manual";
+    manual.readOnly = true;
+    manual.hidden = true;
+    manual.setAttribute("aria-label", "Endereço do vídeo, para copiar manualmente");
+
+    const copiar = document.createElement("button");
+    copiar.type = "button";
+    copiar.className = "btn pressable";
+    copiar.innerHTML = ICO_COPIAR;
+    const copiarTexto = document.createElement("span");
+    copiarTexto.textContent = "Copiar link";
+    copiar.appendChild(copiarTexto);
+    copiar.addEventListener("click", function () {
+      copiarEndereco(d.url, copiar, status, manual);
     });
-    secondary.appendChild(copy);
+    secundarias.appendChild(copiar);
 
-    actions.appendChild(secondary);
-    box.appendChild(actions);
+    acoes.appendChild(secundarias);
+    box.appendChild(acoes);
+
+    const feedback = document.createElement("div");
+    feedback.className = "pick-feedback";
+    feedback.appendChild(status);
+    feedback.appendChild(manual);
+    box.appendChild(feedback);
   }
 
   // ---------- busca ----------

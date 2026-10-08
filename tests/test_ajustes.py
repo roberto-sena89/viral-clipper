@@ -410,6 +410,102 @@ class AjustesPageTests(unittest.TestCase):
         self.assertIn("Curador com IA", cortes)
 
 
+class AjustesAtomicWriteTests(unittest.TestCase):
+    """O `ajustes.toml` era gravado com `write_text`, que trunca primeiro.
+
+    Duas consequencias, e as duas custam a configuracao inteira: um travamento
+    no meio da gravacao deixa um TOML invalido, e o leitor seguinte -- que
+    engolia o erro de proposito -- devolvia `{}`. A pagina dizia "nada salvo
+    ainda", o usuario entendia "primeira execucao", e o save seguinte reescrevia
+    o arquivo com os defaults. As outras 26 chaves sumiam em silencio.
+
+    Aqui ficam as duas metades da cura: a gravacao nao pode deixar arquivo
+    parcial, e a leitura tem de CONTAR por que falhou.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.path = self.tmp / "ajustes.toml"
+        self._patch = mock.patch.object(server, "AJUSTES_PATH", self.path)
+        self._patch.start()
+        self.addCleanup(self._patch.stop)
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    # ---------- a leitura conta o motivo ----------
+
+    def test_a_missing_file_has_no_reason_to_report(self):
+        self.assertEqual(server._load_ajustes(), ({}, ""))
+
+    def test_a_broken_file_reports_the_reason(self):
+        # A rota continua de pe (nao pode cair por um arquivo torto), mas o
+        # motivo viaja ate a pagina em vez de morrer aqui.
+        self.path.write_text("min_duration = = 30\n", encoding="utf-8")
+        settings, motivo = server._load_ajustes()
+        self.assertEqual(settings, {})
+        self.assertTrue(motivo, "o arquivo torto foi engolido sem motivo")
+        self.assertIn("Error", motivo)
+
+    def test_a_good_file_reports_no_reason(self):
+        self.path.write_text(server._dump_ajustes({"min_duration": 30}), encoding="utf-8")
+        settings, motivo = server._load_ajustes()
+        self.assertEqual(motivo, "")
+        self.assertEqual(settings["min_duration"], 30)
+
+    def test_read_ajustes_still_degrades_to_empty(self):
+        # O contrato antigo continua: quem so quer os valores nao ganha uma
+        # excecao nova na cara.
+        self.path.write_text("min_duration = = 30\n", encoding="utf-8")
+        self.assertEqual(server._read_ajustes(), {})
+
+    # ---------- a gravacao nao deixa arquivo parcial ----------
+
+    def test_a_failed_write_leaves_the_old_file_intact(self):
+        # O ponto inteiro da escrita atomica. Com `write_text` o arquivo era
+        # truncado ANTES da falha, entao o antigo nao sobrevivia.
+        self.path.write_text(server._dump_ajustes({"min_duration": 30}), encoding="utf-8")
+        antes = self.path.read_bytes()
+        # Um diretorio no lugar do `.part` faz a gravacao do temporario estourar.
+        (self.tmp / "ajustes.toml.part").mkdir()
+        with self.assertRaises(OSError):
+            server._write_atomically(self.path, b"min_duration = 99\n")
+        self.assertEqual(self.path.read_bytes(), antes, "a falha destruiu o arquivo bom")
+
+    def test_a_good_write_replaces_and_leaves_no_part(self):
+        self.path.write_text("min_duration = 30\n", encoding="utf-8")
+        server._write_atomically(self.path, b"min_duration = 99\n")
+        self.assertEqual(self.path.read_bytes(), b"min_duration = 99\n")
+        self.assertFalse(
+            (self.tmp / "ajustes.toml.part").exists(),
+            "sobrou o temporario ao lado do arquivo",
+        )
+
+    def test_the_save_route_leaves_no_part_behind(self):
+        h = _FakeHandler(server.Handler)
+        h._handle_save_ajustes({"settings": {"min_duration": 30}})
+        codigo, payload = h.sent
+        self.assertEqual(codigo, 200, payload)
+        self.assertEqual(
+            [p.name for p in self.tmp.iterdir()], ["ajustes.toml"],
+            "a rota de save deixou lixo no diretorio",
+        )
+        self.assertEqual(server._read_ajustes()["min_duration"], 30)
+
+    def test_the_prompt_route_leaves_no_part_behind(self):
+        prompt = self.tmp / "curador.txt"
+        p = mock.patch.object(server, "CURATOR_PROMPT_PATH", prompt)
+        p.start()
+        self.addCleanup(p.stop)
+        h = _FakeHandler(server.Handler)
+        h._handle_save_curator_prompt({"text": "regras do curador\n"})
+        codigo, payload = h.sent
+        self.assertEqual(codigo, 200, payload)
+        self.assertEqual(
+            [p_.name for p_ in self.tmp.iterdir()], ["curador.txt"],
+            "a rota do prompt deixou lixo no diretorio",
+        )
+        self.assertEqual(prompt.read_text(encoding="utf-8"), "regras do curador\n")
+
+
 class PromptCardParityTests(unittest.TestCase):
     """O card "Prompt do curador" existe nas DUAS paginas -- e tem de ser o mesmo.
 

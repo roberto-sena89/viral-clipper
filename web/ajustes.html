@@ -10,7 +10,7 @@
      essa requisição era bloqueada em producao e o navegador ainda pagava o
      preconnect na renderizacao. Mesmo host, zero dependencias externas. -->
 <link rel="stylesheet" href="/shared.css?v=rail-brand-20261001">
-<link rel="stylesheet" href="/index.css?v=abertura-ajustes-20261003">
+<link rel="stylesheet" href="/index.css?v=ajustes-abertura-20261007b">
 </head>
 <body data-page="ajustes">
 
@@ -68,42 +68,91 @@
 
 <main class="wrap">
 
-  <!-- O titulo da pagina e um H1, como em Estúdio e Biblioteca. Antes ele era um
-       H2, e a pagina ficava sem nenhum H1: o outline comecava no nivel 2, entao
-       leitor de tela e navegacao por landmarks nao tinham a que pagina pertenciam
-       os blocos abaixo. A classe .section-title e agnostica de nivel (nao ha
-       `.section-title h2` no CSS), logo o tamanho nao muda. -->
-  <section class="abertura-ajustes" aria-labelledby="ajustes">
-    <div class="studio-overline">
-      <span class="studio-online-dot" aria-hidden="true"></span>
-      <span>PREFERÊNCIAS LOCAIS</span>
-      <span class="studio-overline-divider" aria-hidden="true">/</span>
-      <span>VALEM PARA TODA EXECUÇÃO</span>
-    </div>
-    <h1 class="section-title" id="ajustes">Ajustes do projeto</h1>
-    <p class="section-sub">
-      Estes valores ficam salvos em <code>ajustes.toml</code>, no projeto — valem
-      para toda execução, no painel e na linha de comando, e não dependem do
-      navegador. Sem o servidor no ar, a página abre com os padrões e avisa
-      onde; nada disso é gravado até você clicar em <strong>Salvar ajustes</strong>.
-    </p>
-    <p class="section-sub section-sub-muted">
-      A URL do vídeo, a pasta de saída e a quantidade de clips ficam na
-      <a href="/">página Estúdio</a> — mudam a cada trabalho, então não teriam o
-      que fazer aqui.
-    </p>
+  <!-- ==================== ABERTURA ====================
+       Tres perguntas antes do primeiro campo: ONDE os valores ficam
+       gravados, VALE para quem (painel, CLI, navegador) e QUANDO passam a
+       valer. A resposta e' a ficha a direita; o texto a esquerda da o
+       contexto; a nota diz o que NAO e' assunto desta pagina (URL, pasta
+       e quantidade de clips ficam no Estudio, porque mudam a cada
+       trabalho).
 
-    <!-- Atalhos internos: quatro cards longos numa coluna (trio em telas
-         largas), sem nenhum salto. O id fica no CARD, e nao no <h2>, porque
-         o card e' a unidade -- com o id no titulo, a borda e o padding do
-         card ficariam acima do corte do cabecalho sticky. Os rotulos sao os
-         <h2> de destino, para o atalho nao ensinar vocabulario novo. -->
-    <nav class="jump-links" aria-label="Atalhos desta página">
-      <a href="#card-selecao">Seleção <span aria-hidden="true">↓</span></a>
-      <a href="#card-transcricao">Transcrição <span aria-hidden="true">↓</span></a>
-      <a href="#card-renderizacao">Renderização <span aria-hidden="true">↓</span></a>
-      <a href="#card-prompt">Prompt do curador <span aria-hidden="true">↓</span></a>
+       A secao mantem o contrato com os testes: e' o primeiro `<section>`
+       com `aria-labelledby`, o alvo e' o H1 (`AjustesHeadingTests` exige
+       H1 unico comecando por "Ajustes" e o rotulo resolvendo), e os
+       atalhos continuam sendo o `<nav class="jump-links">` -- classe do
+       shared.css, porque o componente e' das quatro paginas e
+       `test_the_component_lives_in_the_shared_sheet` recusa uma segunda
+       declaracao em css de pagina.
+
+       Os ids dos atalhos ficam nos CARDS, e nao no titulo do card: o card
+       e' a unidade -- com o id no titulo, a borda e o padding do card
+       ficariam acima do corte do cabecalho sticky. Os rotulos sao os
+       H2 de destino, para o atalho nao ensinar vocabulario novo.
+
+       `tabindex="-1"` nos quatro cards: o scroll-spy do ajustes.js le
+       `data-section-nav`, marca a secao visivel com `aria-current` e, no
+       clique, leva o foco para o card -- foco so' acompanha a rolagem se
+       o alvo for focavel, e um `<div>` sem tabindex nao e'. -->
+  <section class="ajustes-abertura" aria-labelledby="ajustes">
+    <div class="ajustes-abertura__texto">
+      <div class="studio-overline">
+        <span class="studio-online-dot" aria-hidden="true"></span>
+        <span>PREFERÊNCIAS LOCAIS</span>
+        <span class="studio-overline-divider" aria-hidden="true">/</span>
+        <span>VALEM PARA TODA EXECUÇÃO</span>
+      </div>
+      <h1 class="section-title" id="ajustes">Ajustes do projeto</h1>
+      <p class="section-sub">
+        Estes valores ficam salvos em <code>ajustes.toml</code>, no projeto — valem
+        para toda execução, no painel e na linha de comando, e não dependem do
+        navegador. Sem o servidor no ar, a página abre com os padrões e avisa
+        onde; nada disso é gravado até você clicar em <strong>Salvar ajustes</strong>.
+      </p>
+
+      <p class="ajustes-nota">
+        A URL do vídeo, a pasta de saída e a quantidade de clips ficam na
+        <a href="/">página Estúdio</a> — mudam a cada trabalho, então não teriam o
+        que fazer aqui.
+      </p>
+    </div>
+
+    <!-- A ficha: legenda + `<dl>` de tres pares rotulo/valor. A legenda
+         fica FORA do `<dl>` porque filho de `<dl>` so' pode ser dt/dd (ou
+         um `<div>` que agrupe os dois) -- um `<p>` ali dentro invalidaria
+         a lista de definicoes. O valor do arquivo e' o unico que precisa
+         de monoespacada: e' o nome que a pessoa digita no terminal quando
+         algo nao bater. -->
+    <div class="ajustes-ficha">
+      <p class="ajustes-ficha__cap">Onde estes valores moram</p>
+      <dl class="ajustes-fatos">
+        <div class="ajustes-fatos__linha">
+          <dt>Arquivo</dt>
+          <dd><code>ajustes.toml</code></dd>
+        </div>
+        <div class="ajustes-fatos__linha">
+          <dt>Valem para</dt>
+          <dd>Painel e linha de comando</dd>
+        </div>
+        <div class="ajustes-fatos__linha">
+          <dt>Gravação</dt>
+          <dd>Só ao salvar</dd>
+        </div>
+      </dl>
+    </div>
+
+    <!-- Atalhos internos: quatro cards longos, com um salto entre cada um.
+         A classe e' a do shared.css, sem nome novo; o que diferencia esta
+         instancia e' o `data-section-nav` -- o gancho que o scroll-spy do
+         ajustes.js le, e que troca os botoes por botoes com ordem de
+         leitura (01-04) e estado da secao visivel. -->
+    <nav class="jump-links" aria-label="Atalhos desta página" data-section-nav>
+      <a href="#card-selecao" aria-current="location"><span class="jump-num" aria-hidden="true">01</span> Seleção</a>
+      <a href="#card-transcricao"><span class="jump-num" aria-hidden="true">02</span> Transcrição</a>
+      <a href="#card-renderizacao"><span class="jump-num" aria-hidden="true">03</span> Renderização</a>
+      <a href="#card-prompt"><span class="jump-num" aria-hidden="true">04</span> Prompt do curador</a>
     </nav>
+
+  </section>
 
   <div class="main-grid">
 
@@ -112,8 +161,12 @@
          UM item so e tudo empilha dentro dele — o grid nao veria card nenhum. -->
     <form id="ajustes-form" novalidate>
 
-        <div id="card-selecao" class="card card-selecao">
-          <h2><span class="ico" aria-hidden="true">◎</span> Seleção</h2>
+        <div id="card-selecao" class="card card-selecao" tabindex="-1">
+          <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7.25" stroke="currentColor" stroke-width="1.6"/><path d="M12 2.5v3.5M12 18v3.5M2.5 12H6M18 12h3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span> Seleção</h2>
+          <!-- Uma linha por card dizendo o que o bloco DECIDE. O titulo nomeia a
+               secao; esta diz para que serve -- que e' a duvida que faz a pessoa
+               abrir um card so para descobrir que era o card errado. -->
+          <p class="card-lede">Quanto tempo cada corte tem, e quando ele vale a pena.</p>
 
           <div class="form-section">
             <div class="field-row triple">
@@ -188,8 +241,9 @@
              do breakpoint ela empilha e cada card recupera a largura cheia. -->
         <div class="trio">
 
-        <div id="card-transcricao" class="card card-transcricao">
-          <h2><span class="ico" aria-hidden="true">♪</span> Transcrição</h2>
+        <div id="card-transcricao" class="card card-transcricao" tabindex="-1">
+          <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 11v2M8 7.5v9M12 4.5v15M16 8.5v7M20 10.5v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span> Transcrição</h2>
+          <p class="card-lede">De onde vem o texto que entra no corte — o Whisper ou um texto pronto.</p>
 
           <div class="form-section">
             <div class="field-row triple">
@@ -239,7 +293,7 @@
                  porque e o caso raro -- e porque substitui os de cima, entao
                  ler os dois em ordem explica a relacao sozinho. -->
             <h3 class="sub-heading">Ou cole uma transcrição pronta</h3>
-            <p class="hint" style="margin-bottom:10px;">Em branco = o próprio site transcreve
+            <p class="hint hint-spaced">Em branco = o próprio site transcreve
               com Whisper, com os ajustes acima. Só cole aqui se você já tem o texto pronto —
               ele substitui a transcrição automática.</p>
             <div class="field-row single">
@@ -283,8 +337,9 @@
           </div>
         </div>
 
-        <div id="card-renderizacao" class="card card-renderizacao">
-          <h2><span class="ico" aria-hidden="true">▣</span> Renderização</h2>
+        <div id="card-renderizacao" class="card card-renderizacao" tabindex="-1">
+          <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="3.5" stroke="currentColor" stroke-width="1.6"/><path d="M4.5 15.5 8.75 11l3.5 3.5L15.5 11l4 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Renderização</h2>
+          <p class="card-lede">Como o corte sai: enquadramento, legendas, título no topo e áudio.</p>
 
           <div class="form-section">
             <div class="field-row triple">
@@ -402,8 +457,9 @@
           </div>
         </div>
 
-        <div id="card-prompt" class="card prompt-card">
-          <h2><span class="ico" aria-hidden="true">✎</span> Prompt do curador</h2>
+        <div id="card-prompt" class="card prompt-card" tabindex="-1">
+          <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 19.2 6 15l9.6-9.6a1.85 1.85 0 0 1 2.6 0l.4.4a1.85 1.85 0 0 1 0 2.6L9 18l-4 .2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14.4 6.6l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span> Prompt do curador</h2>
+          <p class="card-lede">As regras em prosa que escolhem os melhores trechos do vídeo.</p>
 
           <div class="form-section">
             <div class="field">
@@ -437,8 +493,7 @@
                    e um leitor de tela anunciar "Salvo em..." como descricao de
                    um campo seria errado. O role=status e o que faz o leitor
                    anunciar a mudanca sozinho. -->
-              <span role="status" id="curator-prompt-status"
-                    style="font-size: var(--text-caption); color: var(--text-muted);"></span>
+              <span role="status" id="curator-prompt-status" class="prompt-status"></span>
             </div>
           </div>
         </div>
@@ -448,37 +503,50 @@
       </form>
 
     <!-- COLUNA LATERAL: o Resumo e a QUARTA coluna do grid (ao lado do trio),
-         nao mais um aside de metade da pagina. O sticky continua. -->
+         nao mais um aside de metade da pagina. O sticky vive no CSS
+         (`[data-page="ajustes"] .card-resumo .card`), e nao num `style=`: uma
+         regra de layout escrita no atributo nao sobrevive a media query que a
+         desliga nas telas estreitas. Nenhum `style=` sobrevive nesta pagina --
+         o que se ajusta e CSS, e a folha tem de ser o unico lugar disso. -->
     <aside class="card-resumo">
-      <div class="card" style="position: sticky; top: 92px;">
-        <h2><span class="ico" aria-hidden="true">▦</span> Resumo</h2>
+      <div class="card resumo-card">
+        <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 7h14M5 12h14M5 17h9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span> Resumo</h2>
 
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 10px;">
-          <span class="status-pill" id="save-pill"><span class="dot"></span><span id="save-text">Carregando</span></span>
-          <span style="font-size:0.8rem; color:var(--text-muted);" id="save-when">—</span>
+        <!-- `role="status"`: o estado do save vivia so na cor da pilula, e quem
+             nao distingue o verde do vermelho so descobria o resultado quando a
+             gravacao terminava -- ou nunca. A pilula e' a regiao curta e
+             variavel, entao e ela que carrega o anuncio; a nota logo abaixo e'
+             contexto (caminho do arquivo, motivo da falha) e continua visivel
+             sem entrar na fila do leitor de tela. -->
+        <div class="resumo-status">
+          <span class="status-pill" id="save-pill" role="status"><span class="dot"></span><span id="save-text">Carregando</span></span>
+          <span class="resumo-when" id="save-when">—</span>
         </div>
 
-        <p style="font-size:0.78rem; color:var(--text-muted); margin: 0 0 12px;" id="save-note">
+        <p class="resumo-note" id="save-note">
           Lendo os ajustes do servidor…
         </p>
 
         <div class="summary-list" id="summary-list"></div>
 
-        <button class="btn pressable btn-primary" type="button" id="btn-save-side" style="width:100%; justify-content:center; margin-top:14px;">Salvar ajustes</button>
+        <button class="btn pressable btn-primary resumo-save" type="button" id="btn-save-side">Salvar ajustes</button>
       </div>
     </aside>
 
   </div>
-  </section>
 
 </main>
 
 <footer class="site-footer" aria-label="Rodapé do Viral Clipper" data-footer></footer>
 
-<div class="toast-zone" id="toast-zone" aria-live="polite"></div>
+<!-- `role="status"` alem do `aria-live`: a Biblioteca ja usava os dois, e so
+     esta e a EstUDIO anunciavam a regiao viva sem o papel que diz o que ela e.
+     O atributo nao faz nada sozinho -- sem `role`, o leitor de tela trata o
+     `aria-live` como polite genérico e pode ignorar a região. -->
+<div class="toast-zone" id="toast-zone" role="status" aria-live="polite"></div>
 
 <script src="/comum.js?v=studio-20261001"></script>
-<script src="/ajustes.js"></script>
+<script src="/ajustes.js?v=ajustes-abertura-20261007b"></script>
 
 </body>
 </html>

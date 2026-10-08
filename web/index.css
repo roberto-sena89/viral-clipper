@@ -1617,6 +1617,15 @@ main > section > .card { padding: 17px; }
    criaria mais uma coisa a manter sincronizada entre as duas paginas. */
 [data-page="ajustes"] .prompt-card    { grid-area: prompt; }
 [data-page="ajustes"] .card-resumo    { grid-area: resumo; }
+/* O Resumo gruda no topo enquanto a pagina rola: e' onde mora o estado do
+   save, e o estado que se procura no meio da rolagem e' o da ultima gravacao.
+   Fica AQUI, junto das areas, e nao no bloco de estilo do card — a
+   `@media (max-width: 1280px)` abaixo desliga o sticky e, com a regra escrita
+   depois dela, quem venceria a cascata seria o sticky (mesma especificidade,
+   ultimo vence) e a coluna continuaria grudada no celular.
+
+   O `top: 92px` e' a barra de 68px mais 24px de folga. */
+[data-page="ajustes"] .card-resumo .card { position: sticky; top: 92px; }
 
 /* ---------- TRIO dentro de uma coluna ----------
    Os tres cards andam juntos. Em Ajustes cada um ocupa UMA celula do grid (o
@@ -1902,17 +1911,324 @@ header .nav-actions .btn { min-height: 42px; }
 @media (prefers-reduced-motion: reduce) {
   .execution-card .step-list li[data-state="agora"]::before { animation: none; }
 }
-/* ---------- ABERTURA DA PAGINA AJUSTES ----------
-   A pagina abre com overline + H1 + DOIS paragrafos, no mesmo desenho do
-   `.studio-overline` das outras duas paginas (ponto verde, rotulo em caixa
-   alta, divisor). O H1 e o subtitulo nao podem ser cortados por um container
-   comum: `.section-sub` ja e usado por cada secao interna, entao o par da
-   abertura leva uma classe propria. */
-.abertura-ajustes > .section-sub { max-width: 68ch; }
-.abertura-ajustes h1.section-title { margin-bottom: 8px; }
-/* O segundo paragrafo e o recado de rodape: mesma tipografia, um degrau abaixo
-   no tom. Sem a reducao de opacidade os dois competem pela atencao e o leitor
-   nao sabe qual e a regra e qual e a nota. */
+/* ---------- AJUSTES: ABERTURA, FICHA E ATALHOS ----------
+   A abertura continua sem imagem (cabecalho de ferramenta, nao hero de
+   landing), mas a ficha virou CARD -- legenda, tres pares rotulo/valor e
+   hairline separando a abertura do form. A logica em tres coisas da
+   versao anterior se mantem, com a estrutura nova:
+
+   1. o H1 continua com escala de titulo de pagina. `main > section
+      .section-title` limita a 1.25rem porque ali a regra serve o titulo de
+      um bloco qualquer; num H1 isso ficava MENOR que o `h2` dos cards,
+      que e hierarquia ao contrario. Duas classes no seletor continuam
+      obrigatorias para vencer a cascata por tag;
+   2. a prosa continua sendo dado: `<dl>` com um `<div>` por par (unico
+      agrupamento valido para dt/dd). A legenda do card mora FORA do dl,
+      como `<p class="ajustes-ficha__cap">` -- filho de `<dl>` so' pode
+      ser dt/dd;
+   3. a nota de escopo (`.ajustes-nota`) anda junto com o texto, nao em
+      linha propria da grade: ela e' pos-piede do paragrafo acima, e a
+      barra de acento a esquerda diz "isto e' uma ressalva" antes do
+      texto ser lido.
+
+   O `minmax(0, 1fr)` no eixo da esquerda continua obrigatorio: sem ele o
+   `<code>` e o paragrafo longo empurram a track alem da tela. Os atalhos
+   continuam sendo a INSTANCIA do `.jump-links` do shared.css, marcada pelo
+   `data-section-nav` -- o gancho que o scroll-spy do ajustes.js le. */
+.ajustes-abertura {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(268px, 0.42fr);
+  align-items: end;
+  column-gap: clamp(24px, 3.5vw, 56px);
+  row-gap: 16px;
+  padding: clamp(26px, 3.6vw, 42px) 0 clamp(18px, 2.2vw, 26px);
+  border-bottom: 1px solid var(--border-subtle);
+}
+/* A pastilha do overline: a base (`.studio-overline`) e' uma linha de
+   texto com ponto verde, usada tambem pelo Estudio, Biblioteca e
+   Publicar; aqui ela ganha corpo de chip -- borda, fundo e cantos de
+   pilula -- so' dentro da abertura, sem mexer na base. */
+.ajustes-abertura .studio-overline {
+  width: fit-content;
+  margin-bottom: 14px;
+  padding: 5px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+}
+/* O titulo da pagina. Duas classes no seletor de proposito: `main > section
+   .section-title` e' mais especifico em tag do que em classe, entao uma
+   classe so perderia a cascata. */
+.ajustes-abertura h1.section-title {
+  margin: 0 0 10px;
+  color: #f5f7fb;
+  font-size: clamp(1.85rem, 3.4vw, 2.55rem);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+.ajustes-abertura .section-sub { max-width: 62ch; margin: 0; font-size: 0.9rem; line-height: 1.62; }
+.ajustes-abertura .section-sub code {
+  padding: 1px 5px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 5px;
+  background: rgba(255,255,255,.04);
+  color: #d7deea;
+  font-size: 0.92em;
+}
+.ajustes-abertura .section-sub strong { color: #e8ecf4; font-weight: 600; }
+/* A nota de escopo: barra de acento a esquerda em vez de mais um
+   paragrafo cinza -- a forma diz "ressalva" antes do texto ser lido. */
+.ajustes-nota {
+  max-width: 74ch;
+  margin: 15px 0 0;
+  padding-left: 13px;
+  border-left: 2px solid rgba(255, 79, 174, 0.55);
+  color: #8d97a8;
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+.ajustes-nota a { color: var(--accent-soft); text-underline-offset: 3px; }
+
+/* ---------- A FICHA ----------
+   Card de especificacao: legenda em versalete, tres pares rotulo/valor e
+   hairlines entre elas. O alinhamento continua na LINHA DE BASE do rotulo,
+   e nao no centro da caixa -- com dois digitos e uma palavra curta lado a
+   lado, centralizar faz o parecer desalinhado. */
+.ajustes-ficha {
+  align-self: end;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(158deg, rgba(255, 255, 255, 0.05), transparent 58%),
+    rgba(255, 255, 255, 0.014);
+  box-shadow: 0 20px 44px -30px rgba(0, 0, 0, 0.9);
+}
+.ajustes-ficha__cap {
+  margin: 0;
+  padding: 10px 15px;
+  border-bottom: 1px solid rgba(218, 226, 243, 0.07);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+.ajustes-fatos {
+  display: grid;
+  margin: 0;
+  padding: 3px 0;
+}
+.ajustes-fatos__linha {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 9px 15px;
+  border-top: 1px solid rgba(218, 226, 243, 0.07);
+}
+.ajustes-fatos__linha:first-child { border-top: 0; }
+.ajustes-fatos dt {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ajustes-fatos dd {
+  min-width: 0;
+  margin: 0;
+  color: #dde3ee;
+  font-size: var(--text-caption);
+  font-weight: 550;
+  text-align: right;
+}
+.ajustes-fatos code {
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 79, 174, 0.24);
+  border-radius: 7px;
+  background: rgba(255, 79, 174, 0.09);
+  color: var(--accent-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- ATALHOS: A INSTANCIA DESTA PAGINA ----------
+   O componente (`.jump-links`) e' das quatro paginas e mora no shared.css,
+   e nenhuma regra aqui o redefine -- `test_the_component_lives_in_the_shared_sheet`
+   recusa `.jump-links {` em css de pagina, e ele esta certo. O que muda e' a
+   INSTANCIA, marcada pelo `data-section-nav`: o mesmo gancho que o scroll-spy
+   do ajustes.js le. Aqui a barra e' uma faixa segmentada de quatro botoes de
+   mesma largura (a ordem dos botoes e a ordem da pagina, que o grid de quatro
+   colunas faz ser verdade), cada um com numero de leitura 01-04.
+
+   Os estados sao todos ARIA, nao CSS decorativo: `aria-current` e' o que o
+   scroll-spy escreve e o que pinta a secao visivel -- a barra sem JS continua
+   com o mesmo desenho, so que sem destaque. `location` (nao `true`) diz que o
+   estado e' aposicao na pagina, que e' o que este e'. */
+[data-section-nav] {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+[data-section-nav] a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    border-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease;
+}
+[data-section-nav] a:hover {
+  border-color: rgba(255, 79, 174, 0.4);
+  background: rgba(255, 79, 174, 0.07);
+  color: var(--accent-soft);
+}
+.jump-num {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #97a2b4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease;
+}
+[data-section-nav] a[aria-current] {
+  border-color: rgba(255, 79, 174, 0.42);
+  background: var(--active-tint);
+  color: var(--accent-soft);
+}
+[data-section-nav] a[aria-current] .jump-num {
+  background: var(--accent-primary);
+  color: var(--grad-ink);
+}
+
+/* Abaixo de ~980px a ficha perde o sentido de coluna: sao tres pares
+   curtos e a leitura vira tres linhas na largura toda, que e' o mesmo
+   texto com menos cola. A esquerda encolhe depois, porque quem decide o
+   breakpoint e' o `code` do paragrafo, e nao a ficha. Os atalhos saem do
+   grid de quatro e viram fila quebravel -- quatro colunas de ~180px ainda
+   cabem, mas nao em telas de 768px. */
+@media (max-width: 980px) {
+  .ajustes-abertura { grid-template-columns: minmax(0, 1fr); row-gap: 18px; }
+  .ajustes-ficha { align-self: stretch; }
+  .ajustes-fatos__linha { padding: 7px 15px; }
+}
+@media (max-width: 768px) {
+  [data-section-nav] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .ajustes-abertura .section-sub { font-size: 0.85rem; }
+  .ajustes-nota { font-size: 0.78rem; }
+  [data-section-nav] { grid-template-columns: minmax(0, 1fr); }
+  [data-section-nav] a { justify-content: flex-start; padding: 0 14px; }
+}
+/* O movimento reduzido precisa do seletor do ELEMENTO, nao de um curinga:
+   `[data-section-nav] *` tem especificidade menor que `[data-section-nav] a`
+   e perderia na cascata, deixando a transicao de 200ms rodando com o sistema
+   pedindo movimento reduzido. Foi o defeito medido no rodape. E o
+   `html { scroll-behavior: smooth }` do shared.css tambem e movimento: quem
+   pediu menos nao quer a rolagem longa dos atalhos suavizando -- o salto
+   vira imediato, que e' o comportamento nativo. */
+@media (prefers-reduced-motion: reduce) {
+  [data-section-nav] a,
+  .jump-num { transition: none; }
+  html { scroll-behavior: auto; }
+}
+
+/* ---------- O TITULO DE CADA CARD GANHA UMA FRASE ----------
+   O `h2` nomeia o bloco; a frase diz o que o bloco DECIDE. Sem ela a pessoa
+   abre o card so para descobrir se era o card que precisava — e um card de
+   Ajustes e' alto (o de Renderizacao tem 11 campos), entao a ida e cara.
+   Fica colada no `h2` (`margin-top: -8px` cola no rodape dele) e limitada a
+   ~42ch para nao virar um paragrafo dentro de uma coluna de ~272px. */
+.card-lede {
+  max-width: 42ch;
+  margin: -8px 0 15px;
+  color: var(--text-muted);
+  font-size: 0.77rem;
+  line-height: 1.5;
+}
+/* O icone do `h2` virou SVG (a regra do cabecalho ja usava SVG desde 2026-10);
+   antes era um glifo tipografico — `◎`, `♪`, `▣`, `✎` — que dependia da fonte
+   instalada, ocupava a caixa por acidente e nao herdava `currentColor`. */
+.card h2 .ico svg { display: block; width: 15px; height: 15px; }
+
+/* ---------- RESUMO: O PAINEL DE ESTADO ----------
+   Era uma coluna como as outras tres, com o mesmo card e a mesma hierarquia do
+   resto — entao nao dizia "isto aqui e' o estado da pagina", que e' a unica
+   coisa que a coluna precisa dizer. O `position: sticky` dele mora com as
+   areas do grid, la em cima, porque e' a media query das 1280px que desliga
+   o sticky — e uma regra escrita depois dela venceria a media query. O que
+   muda aqui: as tres linhas de estado viraram classes em vez de `style=` no
+   markup, e a pilula ganhou o papel de `role="status"`. */
+.resumo-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.resumo-when { flex: none; color: var(--text-muted); font-size: 0.72rem; }
+.resumo-note {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+/* As linhas do resumo sao rotulo/valor: o valor e' o que muda, o rotulo nao.
+   O rotulo em `flex: none` impede que um nome longo ("Fechar contexto") coma a
+   coluna e empurre o valor para fora do card. */
+.summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid rgba(218, 226, 243, 0.07);
+}
+.summary-row__label { flex: none; color: var(--text-muted); font-size: 0.75rem; }
+.summary-row__value {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.resumo-save { display: flex; width: 100%; justify-content: center; margin-top: 14px; }
+
+/* Duas classes que antes eram `style=` no markup. */
+.prompt-status { color: var(--text-muted); font-size: var(--text-caption); }
+.hint-spaced { margin: 0 0 10px; }
+
+/* O par `.section-sub-muted` e `.section-sub code` fica como estava: as DUAS
+   outras paginas (Estúdio e Publicar) usam essas classes, e a abertura de
+   Ajustes saiu delas de proposito. */
 .section-sub-muted { color: #8d97a8; font-size: 0.8rem; margin-top: -12px; }
 .section-sub code {
   padding: 1px 5px;
@@ -1923,12 +2239,6 @@ header .nav-actions .btn { min-height: 42px; }
   font-size: 0.92em;
 }
 .section-sub a { color: var(--accent-soft); text-underline-offset: 3px; }
-@media (max-width: 640px) {
-  .abertura-ajustes > .section-sub { font-size: 0.82rem; }
-  /* Precisa da mesma especificidade da regra acima (`> .section-sub`), senao
-     ela vence e a nota deixa de ficar um degrau abaixo do texto principal. */
-  .abertura-ajustes > .section-sub-muted { font-size: 0.76rem; }
-}
 
 /* ---------- CAMPOS DO CURADOR SEGUEM O INTERRUPTOR ----------
    O bloco inteiro nasce `disabled` (o toggle comeca desligado) e o JS liga

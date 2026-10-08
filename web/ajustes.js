@@ -208,16 +208,19 @@
   }
 
   // ---------- resumo lateral ----------
+  // As linhas sao rotulo/valor: o rotulo nunca muda e o valor muda a cada tecla.
+  // As duas pontas eram `style=` inline montado no JS, o que tirava a linha do
+  // controle por CSS — mudar a cor do valor passava por editar uma string. Sao
+  // classes agora, e o `flex: none` do rotulo e' o que impede um nome longo
+  // ("Fechar contexto") de empurrar o valor para fora do card.
   function summaryRow(label, value) {
     const row = document.createElement('div');
-    row.style.cssText =
-      'display:flex; justify-content:space-between; gap:10px; padding:7px 0;' +
-      ' border-top:0.5px solid var(--border-subtle);';
+    row.className = 'summary-row';
     const left = document.createElement('span');
-    left.style.cssText = 'font-size:0.75rem; color:var(--text-muted); flex:none;';
+    left.className = 'summary-row__label';
     left.textContent = label;
     const right = document.createElement('span');
-    right.style.cssText = 'font-size:0.78rem; text-align:right; min-width:0;';
+    right.className = 'summary-row__value';
     right.textContent = value;
     row.append(left, right);
     return row;
@@ -360,22 +363,36 @@
     state.canSave = true;
     applySettings(r.settings || {});
     renderSummary();
+    if (r.malformed) {
+      // O arquivo existe e NAO foi possivel ler. Antes disto a pagina dizia
+      // "Padroes", que se le como "primeira execucao" -- e o save seguinte,
+      // fazendo merge a partir de um dicionario vazio, reescrevia o arquivo so
+      // com o campo tocado. As outras chaves sumiam sem uma linha de aviso.
+      // O aviso nomeia o arquivo e manda olhar ANTES de salvar.
+      setSaveState('error', 'Arquivo ilegível',
+        'O ' + (r.path || 'ajustes.toml') + ' existe mas não pôde ser lido (' +
+        r.malformed + '). Os valores abaixo são os padrões e salvar vai ' +
+        'sobrescrever o arquivo — corrija-o à mão antes de salvar.');
+      return;
+    }
     setSaveState('done', r.exists === false ? 'Padrões' : 'Carregado',
       r.path ? 'Gravado em ' + r.path : 'Ajustes vindos do servidor.');
   }
 
-  // ---------- prompt do curador ----------
+  // ---------- o prompt ----------
   // O texto, os rotulos e os estados desta secao sao os MESMOS da pagina
   // Estúdio: o card existe nas duas e um usuario que alterna entre elas nao
   // pode ver dois textos diferentes para o mesmo botao. A Ajustes e a via
   // canonica (e onde se salva em disco pelo botao); o Estúdio le o mesmo
   // arquivo e mostra as mesmas frases.
+  //
+  // A cor do estado vem de `data-kind` e nao de `style.color`: o aviso de erro
+  // e' o mesmo padrao do resto do painel, e um `style` escrito aqui e' uma
+  // terceira copia da paleta (o token, a folha e a string).
   function setPromptStatus(message, kind) {
     const el = $('#curator-prompt-status');
     el.textContent = message || '';
-    el.style.color = kind === 'erro' ? 'var(--danger, #ff6b6b)'
-      : kind === 'ok' ? 'var(--success, #4ade80)'
-      : 'var(--text-muted)';
+    el.dataset.kind = kind || '';
   }
 
   async function loadCuratorPrompt() {
@@ -533,8 +550,77 @@
     toast('Campo limpo. Salve para gravar a remoção.', 'ok');
   });
 
+  // ---------- atalhos: a secao que se esta lendo ----------
+  // Quatro cards altos numa coluna larga e nenhum sinal de onde se esta: depois
+  // do clique, so se descobre no fim da rolagem que a secao procurada passou
+  // faz tempo. O observer marca em `aria-current` o atalho da secao visivel, e
+  // o CSS pinta esse estado.
+
+  // Tres condicoes para nao rodar, e nenhuma delas pode ser erro: nav sem
+  // `data-section-nav`, `IntersectionObserver` ausente (navegador antigo) ou
+  // nenhum alvo encontrado. O atalho ja era um link puro e continua sendo —
+  // o que se perde sem o observer e' o estado, nao a funcao.
+  function marcarSecaoAtual() {
+    const nav = document.querySelector('[data-section-nav]');
+    if (!nav || typeof IntersectionObserver !== 'function') return;
+
+    const pares = Array.prototype.map.call(
+      nav.querySelectorAll('a[href^="#"]'),
+      (a) => ({ link: a, alvo: document.getElementById(decodeURIComponent(a.hash.slice(1))) }),
+    ).filter((p) => p.alvo);
+    if (!pares.length) return;
+
+    const marcar = (id) => {
+      pares.forEach((p) => {
+        // `location`, nao `true`: o estado e' a POSICAO na pagina, que e'
+        // o que aria-current descreve -- `true` so' diz "isto aqui", sem
+        // dizer onde. O CSS pinta pelos dois (`[aria-current]`).
+        if (p.alvo.id === id) p.link.setAttribute('aria-current', 'location');
+        else p.link.removeAttribute('aria-current');
+      });
+    };
+
+    const visiveis = new Set();
+
+    const observer = new IntersectionObserver((entradas) => {
+      entradas.forEach((e) => {
+        if (e.isIntersecting) visiveis.add(e.target);
+        else visiveis.delete(e.target);
+      });
+      // O primeiro visivel NA ORDEM DO DOCUMENTO, e nao o ultimo a cruzar: dois
+      // cards cabem na tela ao mesmo tempo (eles sao altos) e o evento chega na
+      // ordem em que o navegador mediu, nao na ordem em que se le.
+      const atual = pares.find((p) => visiveis.has(p.alvo));
+      if (!atual) return;
+      marcar(atual.alvo.id);
+    }, {
+      // A faixa e' o que diz "aqui". Sem ela o card que a pessoa esta lendo
+      // pode nunca virar o alvo visivel: o topo comeca abaixo da barra sticky
+      // de 68px, e a faixa termina na metade da viewport para o card que esta
+      // saindo pelo alto nao ganhar a disputa com o que esta entrando.
+      rootMargin: '-84px 0px -50% 0px',
+      threshold: 0,
+    });
+
+    pares.forEach((p) => {
+      observer.observe(p.alvo);
+      // O clique marca na hora. O `scrollIntoView` do navegador e suave, e
+      // durante a rolagem o callback pode repassar por duas secoes — sem isto
+      // o botao piscaria por dois rotulos antes de assentar no certo.
+      // E leva o FOCO para o card: sem `tabindex="-1"` no alvo o foco fica no
+      // link, e quem navega por teclado continua a leitura de onde partiu,
+      // nao de onde chegou. O `preventScroll` e porque o navegador ja rolou
+      // (ou vai rolar) ate a ancora -- focar de novo puxaria duas vezes.
+      p.link.addEventListener('click', () => {
+        marcar(p.alvo.id);
+        p.alvo.focus({ preventScroll: true });
+      });
+    });
+  }
+
   // ---------- partida ----------
   renderSummary();
   loadSettings();
   loadCuratorPrompt();
+  marcarSecaoAtual();
 })();

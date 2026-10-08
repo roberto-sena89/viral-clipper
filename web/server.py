@@ -600,24 +600,50 @@ def _mark_stage(index: int, *, skipped: bool = False) -> None:
 # ``--config`` can read and vice versa -- there is no second dialect.
 
 
-def _read_ajustes() -> dict:
-    """The saved settings, filtered to the keys the page owns.
+def _load_ajustes() -> "tuple[dict, str]":
+    """The saved settings, and WHY they could not be read (``""`` when fine).
 
     A missing file is not an error: it is the first run, and the caller falls
     back to the ClipConfig defaults, which are the same numbers the form ships
-    with. A malformed file is not an error either -- the panel reports "nothing
-    saved yet" instead of the endpoint going down, because the user can always
-    fix it from the page.
+    with. A malformed file is not an error *for the endpoint* either -- it must
+    not go down because of a bad file -- but the reason travels back so the page
+    can SAY so.
+
+    Swallowing it in silence cost real data: the page reported "nothing saved
+    yet", which reads as "this is the first run", and the next save merged the
+    one edited key into an empty dict and rewrote the file with defaults. The
+    other 26 keys were gone without a single line of warning. The error is
+    therefore preserved here and reported by ``GET /api/ajustes``.
     """
     if not AJUSTES_PATH.is_file():
-        return {}
+        return {}, ""
     try:
         loaded = config_file_mod.load_config_file(AJUSTES_PATH, CollectingLogger())
-    except Exception:
-        return {}
+    except Exception as exc:  # noqa: BLE001 - um arquivo torto nao derruba a rota
+        return {}, f"{type(exc).__name__}: {exc}"
     if not isinstance(loaded, dict):
-        return {}
-    return {key: loaded[key] for key in AJUSTES_KEYS if key in loaded}
+        return {}, "o arquivo nao descreve uma tabela"
+    return {key: loaded[key] for key in AJUSTES_KEYS if key in loaded}, ""
+
+
+def _read_ajustes() -> dict:
+    """Just the settings. Callers that can warn should use ``_load_ajustes``."""
+    return _load_ajustes()[0]
+
+
+def _write_atomically(path: Path, data: bytes) -> None:
+    """Grava ``data`` em ``path`` sem deixar o arquivo pela metade.
+
+    ``Path.write_text`` trunca e depois escreve, entao um travamento no meio --
+    ou o servidor morto por um Ctrl-C, ou o disco cheio -- deixa um arquivo
+    parcial. O leitor seguinte ve um TOML invalido e, ate agora, perdia tudo em
+    silencio. O ``.part`` no MESMO diretorio mais o ``replace`` (atomico no mesmo
+    sistema de arquivos) faz o leitor ver a versao antiga ou a nova, nunca um
+    pedaco. E o mesmo padrao que o cache de thumbnails ja usava.
+    """
+    tmp = path.with_name(path.name + ".part")
+    tmp.write_bytes(data)
+    tmp.replace(path)
 
 
 def _toml_scalar(value) -> "str | None":
@@ -710,7 +736,7 @@ def _write_transcript_source(url: str) -> None:
         pass
 
 
-def _ajustes_payload() -> dict:
+def _ajustes_payload(settings: "dict | None" = None) -> dict:
     """What ``GET /api/ajustes`` returns.
 
     ``curator_prompt_file`` rides along without being an AJUSTES_KEYS entry: the
@@ -723,8 +749,13 @@ def _ajustes_payload() -> dict:
     ``transcript_source_url`` rides along for the same reason: the Cortes page
     needs it to decide whether the persisted transcript still matches the URL
     about to be run, and it is not a setting either.
+
+    ``settings`` lets the caller hand over a read it already did. The handler
+    needs the settings AND the parse error, and reading the file twice could in
+    principle report one and describe the other; here both come from the same
+    read. A copy is taken because the two extra keys below are added in place.
     """
-    settings = _read_ajustes()
+    settings = dict(_read_ajustes() if settings is None else settings)
     if CURATOR_PROMPT_PATH.is_file():
         settings["curator_prompt_file"] = str(CURATOR_PROMPT_PATH)
     settings["transcript_source_url"] = _read_transcript_source()
@@ -2666,10 +2697,15 @@ class Handler(http_server.BaseHTTPRequestHandler):
             self._send_json(record)
             return
         if path == "/api/ajustes":
+            settings, malformed = _load_ajustes()
             self._send_json({
-                "settings": _ajustes_payload(),
+                "settings": _ajustes_payload(settings),
                 "path": _relative_to_repo(AJUSTES_PATH),
                 "exists": AJUSTES_PATH.is_file(),
+                # Nao-vazio = o arquivo existe e nao foi possivel ler. A pagina
+                # AVISA em vez de dizer "nada salvo ainda", que era o que fazia
+                # o usuario concluir que era a primeira execucao.
+                "malformed": malformed,
             })
             return
         if path == "/api/scrap/download/progress":
@@ -2853,7 +2889,7 @@ class Handler(http_server.BaseHTTPRequestHandler):
                 merged[key] = incoming[key]
 
         try:
-            AJUSTES_PATH.write_text(_dump_ajustes(merged), encoding="utf-8")
+            _write_atomically(AJUSTES_PATH, _dump_ajustes(merged).encode("utf-8"))
         except OSError as exc:
             self._send_json({"error": f"cannot write {AJUSTES_PATH}: {exc}"}, 500)
             return
@@ -3146,7 +3182,11 @@ class Handler(http_server.BaseHTTPRequestHandler):
         path = CURATOR_PROMPT_PATH
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(encoded)
+            # Atomico pelo mesmo motivo do ajustes.toml, e aqui pesa mais: um
+            # arquivo truncado nao e "um prompt ruim", e um run que falha duro
+            # mais tarde apontando para um arquivo que o usuario acha que
+            # preencheu (``load_curator_prompt`` trata vazio como fatal).
+            _write_atomically(path, encoded)
         except OSError as exc:
             self._send_json({"error": f"nao consegui gravar {path}: {exc}"}, 500)
             return

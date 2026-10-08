@@ -38,6 +38,13 @@ cookies.txt
 .openclaw-probe-out/
 .workbuddy-ai/
 
+# Os ajustes salvos pelo painel (AJUSTES_PATH em web/server.py). O comentario
+# abaixo sempre disse que ele "carrega caminhos locais" -- mas o arquivo NAO
+# estava nesta lista, entao aparecia como untracked em todo `git status` e um
+# unico `git add -A` o commitava: caminhos de pasta de saida e o modelo de
+# curador de quem rodou o painel, que nao e estado do projeto.
+ajustes.toml
+
 # The transcript's "which video is this" stamp, kept by the Ajustes page
 # (TRANSCRIPT_SOURCE_PATH in web/server.py). It is per-machine bookkeeping
 # about a local run, not project state: the same reason ajustes.toml itself

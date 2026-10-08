@@ -14,7 +14,7 @@ from . import template as template_mod
 from . import transcript_import, viral_report
 from . import config as config_mod
 from .config import ClipConfig
-from .render_task import _RenderTask, _render_task
+from .render_task import _RenderTask, _record, _render_task
 from .util import ClipperError, Logger
 
 
@@ -537,26 +537,3 @@ def render_windows(
             logger.ok(f"{task.rendered.path.name} ({task.rendered.duration:.1f}s, "
                       f"{task.rendered.width}x{task.rendered.height})")
     return records
-
-
-def _record(
-    position: int,
-    window: score.Window,
-    finish: float,
-    rendered,
-    config: ClipConfig,
-) -> report.ClipRecord:
-    return report.ClipRecord(
-        index=position,
-        start=round(window.start, 3),
-        end=round(finish, 3),
-        duration=round(rendered.duration, 2) if rendered else round(finish - window.start, 2),
-        score=window.score,
-        meets_minimum=bool(rendered and rendered.duration >= config.min_duration - 0.05),
-        file=str(rendered.path) if rendered else "",
-        hook_terms=window.hook_terms,
-        text=window.text,
-        components=window.components,
-        width=rendered.width if rendered else 0,
-        height=rendered.height if rendered else 0,
-    )

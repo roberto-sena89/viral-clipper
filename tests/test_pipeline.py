@@ -20,7 +20,7 @@ from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
 from tests._fixtures import make_analysis, make_config, make_transcript, make_word
-from viralclipper import pipeline, report, transcribe, transcript_cache
+from viralclipper import pipeline, render_task, report, transcribe, transcript_cache
 from viralclipper.config import ClipConfig
 from viralclipper.render_task import _clip_filename
 from viralclipper.score import Window
@@ -88,7 +88,15 @@ class _OutOfProcessExecutor(_InlineExecutor):
         return future
 
 
-def _window(start: float, end: float, *, text: str = "hello", score: float = 50.0) -> Window:
+def _window(
+    start: float,
+    end: float,
+    *,
+    text: str = "hello",
+    score: float = 50.0,
+    headline: str = "",
+    hashtags: str = "",
+) -> Window:
     return Window(
         start=start,
         end=end,
@@ -98,6 +106,8 @@ def _window(start: float, end: float, *, text: str = "hello", score: float = 50.
         score=score,
         components={"hook": 0.4},
         hook_terms=["segredo"],
+        headline=headline,
+        hashtags=hashtags,
     )
 
 
@@ -213,6 +223,53 @@ class SequentialRenderTests(PipelineTestCase):
         download_section.assert_not_called()
         download_full.assert_not_called()
         render_clip.assert_not_called()
+
+
+class ClipRecordParityTests(PipelineTestCase):
+    """Um so ``_record``, para o modo plano nao perder o que o render grava.
+
+    Havia DUAS copias: a do ``render_task`` (que roda no worker e gravava
+    ``headline``/``hashtags``) e a do ``pipeline`` (que nao gravava). O caminho
+    de dry-run usa a do pipeline, entao o ``clips.json`` de um run de
+    planejamento saia sem o titulo e sem as hashtags que o curador ja tinha
+    produzido -- e a aba de publicacao le exatamente esse arquivo.
+
+    O teste trava a IGUALDADE entre os dois caminhos, nao a string.
+    """
+
+    def test_there_is_only_one_record_builder(self):
+        # A divergencia nao voltar e o que este teste protege. Duas copias
+        # significam que a proxima mudanca de campo entra numa e nao na outra --
+        # foi assim que o dry-run ficou sem headline.
+        self.assertIs(
+            pipeline._record, render_task._record,
+            "o pipeline voltou a ter o seu proprio _record",
+        )
+
+    def test_dry_run_keeps_the_headline_and_the_hashtags(self):
+        janelas = [
+            _window(0.0, 10.0, headline="O gancho do primeiro",
+                    hashtags="#viral #fyp"),
+            _window(20.0, 30.0, headline="O gancho do segundo", hashtags="#cortes"),
+        ]
+        records, _, _, _, _ = self.render(
+            janelas, self.config(parallel=False, dry_run=True)
+        )
+        self.assertEqual(
+            [record.headline for record in records],
+            ["O gancho do primeiro", "O gancho do segundo"],
+        )
+        self.assertEqual(
+            [record.hashtags for record in records], ["#viral #fyp", "#cortes"]
+        )
+
+    def test_the_two_paths_agree_on_a_window_with_no_model_text(self):
+        # Sem headline do modelo, o record cai no ``headline_text`` do config --
+        # nos dois caminhos. Era aqui que as duas copias divergiam em silencio.
+        config = self.config(parallel=False, dry_run=True, headline_text="Titulo a mao")
+        records, _, _, _, _ = self.render(self.windows, config)
+        self.assertTrue(all(record.headline == "Titulo a mao" for record in records))
+        self.assertTrue(all(record.hashtags == "" for record in records))
 
 
 class FullDownloadModeTests(PipelineTestCase):

@@ -1012,6 +1012,10 @@ body { padding-left: var(--rail-w); }
 .cookies-box > summary {
   cursor: pointer; font-size: 0.8rem; font-weight: 600;
   color: var(--text-primary); margin-bottom: 6px;
+  /* Media 19px: abaixo do minimo WCAG de 24. Padding em vez de so' `min-height`
+     porque o marker do disclosure ocupa fluxo de bloco — com o box-sizing em
+     border-box a linha inteira fica clicavel e o total nao passa de 24px. */
+  box-sizing: border-box; min-height: 24px; padding: 4px 0;
 }
 .cookies-box > summary:focus-visible {
   outline: 2px solid var(--accent-soft); outline-offset: 2px;
@@ -1922,7 +1926,11 @@ header .nav-actions .btn { min-height: 42px; }
 }
 .execution-selection-label { color: #737f91; font-size: .52rem; font-weight: 700; letter-spacing: .11em; }
 .execution-selection-value { color: #c5ceda; font-size: .7rem; font-variant-numeric: tabular-nums; }
-.execution-selection-edit { color: #ff4fae; font-size: .62rem; font-weight: 600; text-decoration: none; white-space: nowrap; }
+/* Alvo de 24px: era um <a> solto de 15px na linha da selecao — abaixo do
+   minimo WCAG 2.2 (2.5.8, 24px) para alvo que nao e' texto corrido. O
+   inline-flex centraliza o rotulo dentro da altura nova sem mudar a linha. */
+.execution-selection-edit { color: #ff4fae; font-size: .62rem; font-weight: 600; text-decoration: none; white-space: nowrap; display: inline-flex; align-items: center; min-height: 24px; }
+
 .execution-selection-edit:hover, .execution-selection-edit:focus-visible { text-decoration: underline; }
 .execution-actions .btn { display: flex; width: 100%; min-height: 43px; align-items: center; justify-content: center; gap: 8px; margin: 0 !important; font-size: .78rem; }
 .execution-actions .btn-primary { min-height: 46px; }
@@ -2483,4 +2491,21 @@ header .nav-actions .btn { min-height: 42px; }
 
 @media (prefers-reduced-motion: reduce) {
   .clips-search-clear, .clip-play-btn { transition: none; }
+}
+/* ---------- ALVO DE TOQUE (ponteiro grosso) ----------
+   O minimo WCAG 2.2 (2.5.8) e' 24px; isto vai alem, no guia de conforto de
+   44px, e so quando o aparelho e' de toque. Medido antes, com sonda de
+   retangulos no navegador: Editar/Excluir 30px, resumo de cookies 19px.
+   No mouse nada muda — inflar alvo de mouse nao ajuda ninguem e quebra o
+   ritmo da linha. O `.toggle` nao entra: ele ja' tem o `::before { inset:
+   -8px 0 }` que estica a area clicavel ate' 40px.
+
+   Bloco no FIM do arquivo de proposito: as regras de pagina (`1508 .btn
+   { min-height: 40px }`, `.prov-item-actions .btn { 30px }`) tem a mesma
+   especificidade das daqui, e quem vem depois vence — se isto subisse para
+   o meio do arquivo, elas voltariam a valer e o alvo voltaria a 30px. */
+@media (pointer: coarse) {
+  .btn { min-height: 44px; }
+  .prov-item-actions .btn { min-height: 44px; padding: 8px 12px; }
+  .cookies-box > summary { min-height: 44px; }
 }

@@ -383,6 +383,37 @@
   .jump-links a { transition: none; }
 }
 
+/* Alvo de toque: o chip mede 36px — passa no minimo WCAG (24) e ainda e'
+   apertado no polegar. So em ponteiro grosso: no mouse a alavanca e' fina e
+   inflar os chips enfeia a linha sem trazer ninguem. */
+@media (pointer: coarse) {
+  .jump-links a { min-height: 44px; }
+}
+
+
+
+/* ---------- PULAR PARA O CONTEUDO ----------
+   Primeiro elemento focavel da pagina, antes do rail fixo (z-index 60) e do
+   header sticky (50): sem ele, quem navega pelo teclado visita a navegacao
+   das quatro paginas antes de chegar no conteudo. Fora do foco mora acima
+   da viewport (top negativo); no foco desce para a tela.
+
+   `:focus` comum, e nao `:focus-visible`, de proposito: o link so aparece
+   quando realmente recebe foco, que e' exatamente quando precisa ser lido —
+   e ele nunca recebe foco por clique, por ficar fora da tela. O z-index
+   passa do rail: salto que aparece por baixo do menu nao e' salto. */
+.skip-link {
+  position: absolute; left: 12px; top: -60px; z-index: 80;
+  padding: 10px 14px; border-radius: var(--radius-sm);
+  background: var(--bg-surface); color: var(--text-primary);
+  border: 1px solid var(--accent-primary);
+  font-size: var(--text-cta); font-weight: 600; text-decoration: none;
+  transition: top var(--motion-fast) ease;
+}
+.skip-link:focus { top: 12px; }
+@media (prefers-reduced-motion: reduce) { .skip-link { transition: none; } }
+
+
 /* ---------- FOOTER ----------
    Vive no shared.css, e nao no css de uma pagina, porque o rodape esta nas
    TRES paginas. Enquanto ele so existia no index, o css dele morava no

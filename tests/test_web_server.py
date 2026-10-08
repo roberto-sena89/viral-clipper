@@ -7358,5 +7358,175 @@ class ApiNamespaceTests(unittest.TestCase):
             linhas.append(linha)
         return "\n".join(linhas)
 
+class TouchTargetTests(unittest.TestCase):
+    """Alvo de toque: 24px e' o minimo da norma, 44px e' o conforto.
+
+    Medido com sonda de retangulos no navegador servido pela 7755, antes do
+    conserto: o link "Ajustar" tinha 15px de altura e o resumo de cookies
+    19px — os dois abaixo do minimo WCAG 2.2 (2.5.8) como alvos solteiros.
+    Editar/Excluir (30px) e as abas do Scrap (37-38px) passavam na norma e
+    ficavam apertados no polegar.
+
+    As regras de conforto vivem em `pointer: coarse`, que e' onde o idiomade
+    pagina ja' existia (`.queue-filter` ja' fazia isto): inflar alvo de mouse
+    nao e' conforto, e' ruido visual. O minimo de 24px, ao contrario, vale
+    SEMPRE — inclusive no desktop, porque alvo pequeno e' alvo pequeno.
+    """
+
+    def css(self, nome: str) -> str:
+        return (server.WEB_DIR / nome).read_text(encoding="utf-8")
+
+    def test_the_selection_edit_link_is_never_below_24px(self):
+        """O "Ajustar" da Execucao: 15px no desktop, em QUALQUER ponteiro."""
+        linhas = [l for l in self.css("index.css").splitlines()
+                  if l.strip().startswith(".execution-selection-edit {")]
+        self.assertEqual(len(linhas), 1, "a regra do Ajustar sumiu ou duplicou")
+        self.assertIn("min-height: 24px", linhas[0],
+                      "alvo solteiro de 15px: reprova no 2.5.8")
+
+    def test_the_cookies_summary_is_never_below_24px(self):
+        """O disclosure "Acessar video restrito": media 19px no desktop."""
+        css = self.css("index.css")
+        ini = css.index(".cookies-box > summary {")
+        bloco = css[ini:css.index("}", ini)]
+        self.assertIn("min-height: 24px", bloco)
+        self.assertIn("box-sizing: border-box", bloco,
+                      "sem border-box o marker do disclosure engole a altura")
+
+    def test_the_touch_block_sits_after_the_page_rules(self):
+        """O bloco coarse do index precisa ser o ULTIMO do arquivo.
+
+        `.btn { min-height: 40px }` e `.prov-item-actions .btn { 30px }`
+        tem a mesma especificidade das regras daqui: se este bloco subisse
+        para o meio do arquivo, a pagina voltaria a valer e o alvo de
+        Editar/Excluir voltaria a 30px no celular — e o teste de texto
+        continuaria achando "min-height: 44px" no arquivo. Por isso o
+        corte e' de POSICAO, nao de presenca.
+        """
+        css = self.css("index.css")
+        ini = css.rindex("@media (pointer: coarse) {")
+        self.assertGreater(ini, css.index(".prov-item-actions .btn {"),
+                           "o bloco coarse veio antes das regras de pagina")
+        ramo = css[ini:]
+        self.assertIn(".btn { min-height: 44px; }", ramo)
+        self.assertIn(".prov-item-actions .btn { min-height: 44px;", ramo)
+        self.assertIn(".cookies-box > summary { min-height: 44px; }", ramo)
+
+    def test_the_queue_filter_keeps_the_coarse_rule_it_already_had(self):
+        """Regressao do idiomade: o `.queue-filter` coarse de 44px ja' existia.
+
+        Este teste nao conserta nada — ele fixa o padrao que os outros
+        seguem, para que um refactor de responsivo nao apague a regra que
+        ninguem lembra estar la'.
+        """
+        self.assertIn(
+            "@media (pointer: coarse) { .queue-filter { min-height: 44px; padding: 10px 14px; } }",
+            self.css("index.css"))
+
+    def test_the_jump_links_stay_compact_on_mouse(self):
+        """O conforto e' do toque: no mouse o chip continua 36px.
+
+        Sem esta trava o teste de cima poderia ser "cumprido" subindo o
+        valor base — e a linha de atalhos do desktop incharia sem motivo.
+        """
+        css = self.css("shared.css")
+        bloco = css[css.index(".jump-links a {"):css.index("}", css.index(".jump-links a {"))]
+        self.assertIn("min-height: 36px", bloco)
+        self.assertIn(".jump-links a { min-height: 44px; }", css)
+
+    def test_the_scrap_tabs_win_the_cascade_on_touch(self):
+        """As abas do Scrap: 44px no toque, mesmo contra as regras de cima.
+
+        `.tab` sozinho perde para `.scrap-grid .tab` (mais especificidade),
+        entao o seletor coarse tem que repetir o peso das regras que ele
+        sobrescreve. Se alguem simplificar para `.tab { min-height: 44px }`
+        o teste reprova — e o defect voltaria em silencio.
+        """
+        css = self.css("scrap.css")
+        ini = css.rindex("@media (pointer: coarse) {")
+        ramo = css[ini:]
+        self.assertIn("min-height: 44px", ramo)
+        self.assertIn(".scrap-grid .tab", ramo)
+        self.assertIn(".search-mode-group .tab", ramo)
+        self.assertIn('.search-card .tabs[aria-label="Plataforma"] .tab', ramo)
+
+
+
+
+class SkipLinkAndDescriptionTests(unittest.TestCase):
+    """Duas entradas de P3: uma descricao por pagina e um primeiro alvo focavel.
+
+    As duas custam uma linha e so existem se alguem cobrar: `meta
+    description` ausente nao quebra nada em app local, e o skip link nao faz
+    falta para quem usa mouse. Quem paga a conta e' o outro usuario — o que
+    chega pelo buscador, e o que navega por teclado visitando os itens do
+    rail (z-index 60) e do header sticky (50) antes de chegar no trabalho.
+    """
+
+    PAGINAS = ("index.html", "scrap.html", "ajustes.html", "publicar.html")
+
+    def fonte(self, nome: str) -> str:
+        return (server.WEB_DIR / nome).read_text(encoding="utf-8")
+
+    def test_every_page_declares_a_description(self):
+        """Uma descricao por pagina, com conteudo de verdade.
+
+        `content` vazio ou curto derruba o teste: um meta que o buscador
+        ignora e' o mesmo que nao ter meta, e a linha so vale pela frase que
+        ela carrega.
+        """
+        for nome in self.PAGINAS:
+            with self.subTest(pagina=nome):
+                t = self.fonte(nome)
+                achou = re.search(r'<meta name="description" content="([^"]+)">', t)
+                self.assertIsNotNone(achou, "meta description ausente")
+                texto = achou.group(1).strip()
+                self.assertGreaterEqual(len(texto), 60, "descricao curta demais")
+                self.assertRegex(texto, r"[.!?]$")
+
+    def test_the_skip_link_is_the_first_focusable_thing_on_every_page(self):
+        """Nada focavel antes do salto — nem o rail, nem o menu do header.
+
+        A comparacao e' contra o PRIMEIRO focavel do documento inteiro
+        (comentarios de HTML tirados: um `<a>` de exemplo dentro de
+        `<!-- -->` reprovaria o teste sem existir na pagina).
+        """
+        for nome in self.PAGINAS:
+            with self.subTest(pagina=nome):
+                t = re.sub(r"<!--.*?-->", "", self.fonte(nome), flags=re.S)
+                i_salto = t.index('<a class="skip-link"')
+                primeiro = re.search(r"<(a|button|input|select|textarea|summary)\b", t)
+                self.assertIsNotNone(primeiro)
+                self.assertEqual(primeiro.start(), i_salto,
+                                 "algo focavel veio antes do skip link")
+                # E o alvo do salto existe na mesma pagina.
+                self.assertIn('id="conteudo"', t)
+                self.assertIn('href="#conteudo"', t)
+
+    def test_main_accepts_the_focus_the_skip_link_hands_over(self):
+        """`tabindex="-1"`: sem ele o salto rolava a pagina e deixava o
+        foco no link, e o proximo Tab voltava para o rail de onde saiu."""
+        for nome in self.PAGINAS:
+            with self.subTest(pagina=nome):
+                self.assertIn('<main class="wrap" id="conteudo" tabindex="-1">',
+                              self.fonte(nome))
+
+    def test_the_skip_link_is_invisible_until_it_is_focused(self):
+        """Fora do foco: fora da viewport. No foco: na tela, acima do rail.
+
+        O `:focus` (e nao `:focus-visible`) e' a chave: o link so recebe
+        foco de tabulacao, nunca de clique, entao nao ha risco de ele
+        aparecer para o usuario de mouse — e quando aparece, e' porque
+        precisa ser lido.
+        """
+        css = (server.WEB_DIR / "shared.css").read_text(encoding="utf-8")
+        ini = css.index(".skip-link {")
+        bloco = css[ini:css.index("}", ini)]
+        self.assertIn("top: -60px", bloco)
+        self.assertIn("z-index: 80", bloco,
+                      "abaixo do rail (60) o salto apareceria por baixo do menu")
+        self.assertIn(".skip-link:focus { top: 12px; }", css)
+        self.assertIn("prefers-reduced-motion", css[ini - 400:ini + 600])
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

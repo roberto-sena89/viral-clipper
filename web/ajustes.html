@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Preferências do Viral Clipper: seleção, transcrição, renderização e prompt do curador, gravadas em ajustes.toml para valer no painel e na linha de comando.">
 <title>Ajustes — Viral Clipper</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- A fonte vem de /shared.css (@font-face, auto-hospedada). Nao ha
@@ -13,6 +14,11 @@
 <link rel="stylesheet" href="/index.css?v=ajustes-abertura-20261007b">
 </head>
 <body data-page="ajustes">
+
+<!-- Pular para o conteúdo: o rail fixo e o header vem antes do conteúdo na
+     ordem de tabulação; sem este salto, quem usa teclado visita a navegação
+     inteira (e o menu) antes de chegar no trabalho. -->
+<a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
 
 <!-- ==================== RAIL LATERAL ====================
      A lista de destinos NAO mora aqui. Ela vive em /comum.js (RAIL_PAGES) e o
@@ -66,7 +72,7 @@
   </div>
 </header>
 
-<main class="wrap">
+<main class="wrap" id="conteudo" tabindex="-1">
 
   <!-- ==================== ABERTURA ====================
        Tres perguntas antes do primeiro campo: ONDE os valores ficam

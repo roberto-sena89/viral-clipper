@@ -3,12 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Biblioteca de mídia do Viral Clipper: baixe um vídeo por link ou explore um perfil inteiro, revise os itens e envie a mídia ao Estúdio.">
 <title>Biblioteca · Viral Clipper</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/shared.css?v=rail-brand-20261001">
 <link rel="stylesheet" href="/scrap.css?v=library-three-panel-layout-20261001-r3">
 </head>
 <body>
+
+<!-- Pular para o conteúdo: o rail fixo e o header vem antes do conteúdo na
+     ordem de tabulação; sem este salto, quem usa teclado visita a navegação
+     inteira (e o menu) antes de chegar no trabalho. -->
+<a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
 
 <!-- ==================== RAIL LATERAL ====================
      Menu principal: uma linha por pagina, sempre visivel. O item com
@@ -60,7 +66,7 @@
   </div>
 </header>
 
-<main class="wrap">
+<main class="wrap" id="conteudo" tabindex="-1">
 
   <section class="hero scrap-welcome" aria-labelledby="scrap-title">
     <div class="scrap-welcome-copy">

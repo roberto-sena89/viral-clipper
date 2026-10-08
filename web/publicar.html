@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Legenda e hashtags de cada clip gerados na última execução do Viral Clipper, prontas para colar no TikTok, Reels ou Shorts.">
 <title>Publicar — Viral Clipper</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- As MESMAS duas folhas de Ajustes: /shared.css traz os tokens, o rail e o
@@ -14,6 +15,11 @@
 <link rel="stylesheet" href="/publicar.css?v=publicar-20261007">
 </head>
 <body data-page="publicar">
+
+<!-- Pular para o conteúdo: o rail fixo e o header vem antes do conteúdo na
+     ordem de tabulação; sem este salto, quem usa teclado visita a navegação
+     inteira (e o menu) antes de chegar no trabalho. -->
+<a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
 
 <!-- ==================== RAIL LATERAL ====================
      A lista de destinos mora em /comum.js (RAIL_PAGES); o `renderRail`
@@ -66,7 +72,7 @@
   </div>
 </header>
 
-<main class="wrap">
+<main class="wrap" id="conteudo" tabindex="-1">
 
   <section class="publicar-abertura" aria-labelledby="publicar-titulo">
     <div class="studio-overline">

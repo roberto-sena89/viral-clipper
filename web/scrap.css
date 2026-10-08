@@ -1256,3 +1256,18 @@ header .nav-actions .btn { min-height: 42px; }
   .scrap-cta-long { display: none; }
   .scrap-cta-short { display: inline; }
 }
+/* ---------- ALVO DE TOQUE DAS ABAS (ponteiro grosso) ----------
+   No mouse as abas medem 37-42px, o certo para uma linha de ferramentas.
+   No polegar faltam ate' 7px para o guia de conforto de 44px.
+
+   Os seletores repetem as especificidades das regras de cima de proposito:
+   `.tab` sozinho nao venceria `.scrap-grid .tab` nem
+   `.search-card .tabs[aria-label="Plataforma"] .tab` — perderia na
+   cascata, e a ordem no arquivo nao resolve especificidade. Escrito com o
+   mesmo peso e posicionado no fim, e' a cascata que decide a nosso favor. */
+@media (pointer: coarse) {
+  .tab,
+  .scrap-grid .tab,
+  .search-mode-group .tab,
+  .search-card .tabs[aria-label="Plataforma"] .tab { min-height: 44px; }
+}

@@ -1,4 +1,0 @@
-{
-  "buildCommand": "python build.py",
-  "outputDirectory": "dist"
-}

@@ -6,8 +6,8 @@
 <meta name="description" content="Biblioteca de mídia do Viral Clipper: baixe um vídeo por link ou explore um perfil inteiro, revise os itens e envie a mídia ao Estúdio.">
 <title>Biblioteca · Viral Clipper</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/shared.css?v=rail-brand-20261001">
-<link rel="stylesheet" href="/scrap.css?v=library-three-panel-layout-20261001-r3">
+<link rel="stylesheet" href="/shared.css?v=20261008">
+<link rel="stylesheet" href="/scrap.css?v=20261008">
 </head>
 <body>
 
@@ -383,10 +383,15 @@
 
 <footer class="site-footer" aria-label="Rodapé do Viral Clipper" data-footer></footer>
 
-<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<!-- A zona vazia onde os toasts se empilham, igual as outras tres paginas.
+     Antes daqui era um `<div class="toast" id="toast" hidden>` unico que o
+     scrap.js reaproveitava: os toasts nao empilhavam (um substituia o outro),
+     o realce de tipo saia nos QUATRO lados (`.toast.ok` mexia em
+     `border-color`) e as cores eram as do scrap.css, nao as do index.css. -->
+<div class="toast-zone" id="toast-zone" role="status" aria-live="polite"></div>
 
-<script src="/comum.js?v=workspace-20261001-r2"></script>
-<script src="/scrap.js?v=pick-card-20261001-r1"></script>
+<script src="/comum.js?v=20261008"></script>
+<script src="/scrap.js?v=20261008"></script>
 
 </body>
 </html>

@@ -14,15 +14,24 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-  let toastTimer = null;
-  function toast(message, kind) {
-    const el = $("#toast");
-    if (!el) return;
-    el.textContent = message;
-    el.className = "toast " + (kind || "");
-    el.hidden = false;
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { el.hidden = true; }, 2600);
+  // Um div NOVO por toast, dentro da zona fixa -- o mesmo contrato de
+  // index.js/ajustes.js/publicar.js. Antes daqui era um `#toast` unico que
+  // levava `textContent` por cima: dois avisos seguidos apagavam o primeiro, e
+  // nao havia empilhamento. O `kind` vira classe (`.toast.ok`/`.toast.err`) e o
+  // realce colorido e' o `border-left` de 3px do index.css, nao mais a
+  // `border-color` de 40% que vazava para os quatro lados.
+  function toast(msg, kind) {
+    const zone = $("#toast-zone");
+    if (!zone) return;
+    const el = document.createElement("div");
+    el.className = "toast" + (kind ? " " + kind : "");
+    el.textContent = msg;
+    zone.appendChild(el);
+    setTimeout(() => {
+      el.style.opacity = "0";
+      el.style.transition = "opacity 300ms";
+      setTimeout(() => el.remove(), 320);
+    }, 4200);
   }
 
   function fmtDuration(seconds) {
@@ -567,7 +576,7 @@
       // O servidor caiu no meio: para de perguntar e devolve o controle.
       stopPolling();
       setBusy(false);
-      toast(String(record.error).slice(0, 120), "bad");
+      toast(String(record.error).slice(0, 120), "err");
       return;
     }
     paintDownload(record);
@@ -576,7 +585,7 @@
     stopPolling();
     setBusy(false);
     if (record.state === "erro") {
-      toast(("Falhou: " + (record.error || "")).slice(0, 120), "bad");
+      toast(("Falhou: " + (record.error || "")).slice(0, 120), "err");
       return;
     }
     const summary = record.downloaded + " baixado(s), " + record.skipped +
@@ -608,7 +617,7 @@
       .filter(Boolean)
       .map((item) => ({ url: item.url, id: item.id, title: item.title }));
     if (!items.length) {
-      toast("Nada selecionado.", "bad");
+      toast("Nada selecionado.", "err");
       return;
     }
 
@@ -628,7 +637,7 @@
         await resumeDownload();
         return;
       }
-      toast(String(r.error).slice(0, 120), "bad");
+      toast(String(r.error).slice(0, 120), "err");
       return;
     }
 
@@ -972,12 +981,12 @@
     const input = $("#scrap-url");
     const url = (input && input.value || "").trim();
     if (!url) {
-      toast("Informe o endereço.", "bad");
+      toast("Informe o endereço.", "err");
       if (input) input.focus();
       return;
     }
     if (!/^https?:\/\//i.test(url)) {
-      toast("O endereço precisa começar com http:// ou https://", "bad");
+      toast("O endereço precisa começar com http:// ou https://", "err");
       if (input) input.focus();
       return;
     }
@@ -1026,7 +1035,7 @@
       const box = $("#resultados");
       if (box) box.innerHTML = '<p class="empty"><strong>A busca falhou.</strong></p>';
       renderPick();
-      toast(r.error.slice(0, 120), "bad");
+      toast(r.error.slice(0, 120), "err");
       const errBox = document.createElement("p");
       errBox.className = "empty";
       errBox.textContent = r.error;
@@ -1047,7 +1056,7 @@
     // lista: oferecer "baixar tudo" sem nada na tela é um botão que não faz
     // nada — e fora do Instagram é um botão que só falharia.
     updateArchiveVisibility();
-    toast(results.length + " item(ns) encontrado(s).", results.length ? "ok" : "bad");
+    toast(results.length + " item(ns) encontrado(s).", results.length ? "ok" : "err");
   }
 
   // ---------- progresso do arquivamento ----------
@@ -1400,7 +1409,7 @@
       stopArchivePolling();
       setArchBusy(false);
       restoreArchiveButton();
-      toast(String(record.error).slice(0, 120), "bad");
+      toast(String(record.error).slice(0, 120), "err");
       return;
     }
     paintArchive(record);
@@ -1413,7 +1422,7 @@
     if (record.state === "erro") {
       if (sub) sub.textContent = "O download do perfil falhou.";
       renderArchive(null, record.error || "erro");
-      toast(String(record.error || "falhou").slice(0, 120), "bad");
+      toast(String(record.error || "falhou").slice(0, 120), "err");
       return;
     }
     if (sub && record.username) {
@@ -1461,13 +1470,13 @@
     if (archBusy) return;
     const url = ($("#scrap-url") && $("#scrap-url").value || "").trim();
     if (!url) {
-      toast("Faça uma busca de perfil primeiro.", "bad");
+      toast("Faça uma busca de perfil primeiro.", "err");
       return;
     }
     const cookiesFile = $("#scrap-cookies-file");
     const cookiesPath = cookiesFile ? cookiesFile.value.trim() : "";
     if (!cookiesPath) {
-      toast("Informe o arquivo cookies.txt — o Instagram exige sessão.", "bad");
+      toast("Informe o arquivo cookies.txt — o Instagram exige sessão.", "err");
       if (cookiesFile) cookiesFile.focus();
       return;
     }
@@ -1501,7 +1510,7 @@
       }
       if (sub) sub.textContent = "O download do perfil falhou.";
       renderArchive(null, String(r.error));
-      toast(String(r.error).slice(0, 120), "bad");
+      toast(String(r.error).slice(0, 120), "err");
       return;
     }
 

@@ -936,7 +936,11 @@ body { padding-left: var(--rail-w); }
   background: var(--bg-surface); border: 1px solid var(--border-strong);
   border-left: 3px solid var(--accent-primary);
   border-radius: var(--radius-sm); padding: 12px 16px;
-  font-size: 0.86rem; box-shadow: var(--shadow-card);
+  /* O token, e nao o `0.86rem` literal que estava aqui: 0.86rem = 13.76px e
+     --text-body-sm = 0.84375rem = 13.5px sao tamanhos DIFERENTES para o mesmo
+     componente. O scrap.css sempre usou o token; alinhar as quatro paginas
+     nele e' o que faz o toast ter o mesmo corpo onde quer que apareca. */
+  font-size: var(--text-body-sm); box-shadow: var(--shadow-card);
   animation: toastIn 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .toast.ok { border-left-color: var(--success); }

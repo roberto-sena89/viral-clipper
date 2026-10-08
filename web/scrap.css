@@ -818,16 +818,30 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
 .log-box .ln-sys { color: var(--accent-soft); }
 .log-box p { margin: 0; }
 
+/* O toast. Espelha o bloco do `index.css` porque esta pagina NAO carrega
+   aquele arquivo (so' shared.css + scrap.css): sem a `.toast-zone` aqui, a zona
+   seria uma div estatica no fluxo e os toasts apareceriam soltos no fim do
+   documento. O `border-left` de 3px e' o realce de tipo -- antes o `.toast.ok`
+   pintava a `border-color` inteira de 40% de opacidade, o que deixava os quatro
+   lados verdes e apagados em vez de uma barra solida na esquerda. */
+.toast-zone {
+  position: fixed; bottom: 20px; right: 20px; z-index: 100;
+  display: flex; flex-direction: column; gap: 10px;
+  max-width: 340px; max-width: min(340px, calc(100vw - 40px));
+}
 .toast {
-  position: fixed; right: 18px; bottom: 18px; z-index: 90;
   background: var(--bg-surface); border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm); padding: 11px 15px;
+  border-left: 3px solid var(--accent-primary);
+  border-radius: var(--radius-sm); padding: 12px 16px;
   font-size: var(--text-body-sm); box-shadow: var(--shadow-card);
   animation: toast-in var(--motion-base) var(--ease-out-expo);
-  max-width: 340px;
 }
-.toast.ok { border-color: rgba(52,211,153,0.4); }
-.toast.bad { border-color: rgba(248,113,113,0.4); }
+.toast.ok { border-left-color: var(--success); }
+/* `.err`, nao `.bad`: as tres paginas que carregam o index.css escrevem `err`
+   (8 no index.js, 6 no ajustes.js, 4 no publicar.js). O `bad` era exclusivo
+   desta pagina e sumiria do realce assim que a zona unificasse. Fica um alias
+   para nao quebrar chamada antiga que ainda escreva `bad`. */
+.toast.err, .toast.bad { border-left-color: var(--danger); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 

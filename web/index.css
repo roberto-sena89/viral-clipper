@@ -1096,7 +1096,12 @@ body {
   background: var(--success);
   box-shadow: 0 0 0 4px rgba(84, 214, 166, 0.1);
 }
-.studio-overline-divider { color: #596274; }
+/* O divisor e' o unico pedaco do overline abaixo de 4.5:1. O `#596274` dava
+   3.21:1 sobre o fundo do body (#090b10) — o overline inteiro fica na mesma
+   faixa de 11px/700, entao o degrau escuro nao lia como hierarquia, lia como
+   texto sumido. `#9ba6b5` fecha 6.24:1 e ainda fica ACIMA do vizinho #c2cad7
+   por 0.5 de luminancia, que e' o que mantem o "/" parecendo separador. */
+.studio-overline-divider { color: #9ba6b5; }
 .studio-welcome h1 {
   max-width: 19ch;
   margin-bottom: 10px;
@@ -1758,7 +1763,12 @@ main > section > .card { padding: 17px; }
 .header-context-copy { display: grid; min-width: 0; gap: 2px; }
 .header-context-eyebrow { color: var(--text-muted); font-size: .58rem; font-weight: 700; letter-spacing: .12em; line-height: 1.2; }
 .header-context-copy strong { overflow: hidden; color: var(--text-primary); font-size: .85rem; font-weight: 600; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-.header-context-copy strong span { padding: 0 4px; color: #687386; font-weight: 400; }
+/* A cauda do contexto do header e' o unico texto solto abaixo de 4.5:1 no
+   cromo. `#687386` dava 4.11:1 sobre o body — passava por "sutil" e reprovava
+   por leitura. O #737f91 era o mesmo tom um degrau acima e tambem reprovava
+   (4.47:1 dentro do card); os dois convergem aqui, num valor so', em vez de
+   dois tons quase iguais que ninguem distingue. */
+.header-context-copy strong span { padding: 0 4px; color: #9ba6b5; font-weight: 400; }
 .header-context-short { display: none; }
 .header-context-status {
   display: inline-flex; align-items: center; gap: 7px; margin-left: 7px; padding: 7px 10px;
@@ -1880,7 +1890,11 @@ header .nav-actions .btn { min-height: 42px; }
   border-radius: 8px;
   background: rgba(255,255,255,.022);
 }
-.execution-selection-label { color: #737f91; font-size: .52rem; font-weight: 700; letter-spacing: .11em; }
+/* O rotulo de 8.32px e' o texto MENOR do painel, e era o pior caso de
+   contraste: `#737f91` sobre o card (#11161f) reprovava por 0.03 — o tipo de
+   falha que passa despercebida no olho e trava na auditoria. Mesmo valor da
+   cauda do header: um tom para "texto secundario pequeno", nao dois. */
+.execution-selection-label { color: #9ba6b5; font-size: .52rem; font-weight: 700; letter-spacing: .11em; }
 .execution-selection-value { color: #c5ceda; font-size: .7rem; font-variant-numeric: tabular-nums; }
 /* Alvo de 24px: era um <a> solto de 15px na linha da selecao — abaixo do
    minimo WCAG 2.2 (2.5.8, 24px) para alvo que nao e' texto corrido. O
@@ -1892,7 +1906,10 @@ header .nav-actions .btn { min-height: 42px; }
 .execution-actions .btn svg { flex: 0 0 16px; width: 16px; height: 16px; }
 .execution-actions #btn-plan { color: #c5ceda; background: rgba(255,255,255,.025); }
 .execution-log-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 17px; color: #aab3c1; font-size: .63rem; font-weight: 650; }
-.execution-log-heading span:last-child { color: #737f91; font-size: .52rem; letter-spacing: .11em; }
+/* Mesmo par do `.execution-selection-label`: 8.32px, agora legivel. Este so'
+   aparece com execucao ativa, entao nao entrava na varredura estatica do
+   painel parado — foi achado cando o `#737f91` ficou sem nenhum uso. */
+.execution-log-heading span:last-child { color: #9ba6b5; font-size: .52rem; letter-spacing: .11em; }
 .execution-card .log-box { min-height: 47px; max-height: 155px; margin-top: 7px; padding: 9px 10px; border-color: rgba(218,226,243,.075); border-radius: 8px; background: #0a0e14; color: #d1d9e6; /* era #b9c4d2, agora 7.1:1 */ font-size: .66rem; line-height: 1.55; }
 .execution-log-empty { color: var(--text-muted); font-family: 'Inter', system-ui, sans-serif; font-size: .68rem; font-style: normal; }
 

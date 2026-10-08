@@ -865,7 +865,10 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%;
   background: #53d9af; box-shadow: 0 0 11px rgba(83,217,175,.48);
 }
-.scrap-welcome .studio-overline-divider { color: #596274; }
+/* Mesmo valor de `index.css`: o divisor e' um so' componente nas quatro
+   paginas. O `#596274` daqui era a SEGUNDA declaracao da mesma cor com o mesmo
+   defeito (3.21:1) — e o comentario do index.css explica a escolha. */
+.scrap-welcome .studio-overline-divider { color: #9ba6b5; }
 .scrap-welcome h1 {
   max-width: 17ch;
   margin: 12px 0 10px;

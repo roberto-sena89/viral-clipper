@@ -452,7 +452,14 @@
 
     const body = $('#cue-body');
     body.innerHTML = '';
-    (data.cues || []).forEach((cue) => {
+    const cues = data.cues || [];
+    // Anunciar o RESULTADO, e nao as 40 linhas: `aria-live` num container que
+    // ganha N filhos dispara uma enxurrada de anuncios. O `#cue-stats` ja' mostra
+    // o resumo na tela, entao a regiao viva repete ELE em vez de montar um
+    // segundo (foi o que evitou o "3 falas alinhadas — 3 falas, ...").
+    const resumo = parts.join(', ') + '.';
+    body.setAttribute('aria-label', cues.length ? 'Conferência: ' + resumo : 'Nenhuma fala na transcrição.');
+    cues.forEach((cue) => {
       const row = document.createElement('tr');
       const time = document.createElement('td');
       time.className = 'cue-time';

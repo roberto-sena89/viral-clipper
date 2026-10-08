@@ -332,11 +332,24 @@
             <div class="cue-preview" id="cue-preview" hidden>
               <div class="cue-stats" id="cue-stats"></div>
               <div class="cue-table-wrap">
+                <!-- A tabela e' uma CONFERENCIA: a pessoa cola 40 min de fala e
+                     varre a lista para ver se os minutos ficaram em ordem antes
+                     de gastar um render. Sem nome ela e' "uma tabela" no leitor
+                     de tela; o `<caption>` e' o nome. O `.sr-only` o esconde do
+                     olho sem tira'-lo da arvore de acessibilidade. -->
                 <table class="cue-table">
+                  <caption class="sr-only">Conferência da transcrição — minuto, duração e fala de cada trecho</caption>
                   <thead>
-                    <tr><th>Minuto</th><th>Dur.</th><th>Fala</th></tr>
+                    <!-- `scope="col"`: sem ele o leitor de tela nao associa
+                         "0:03" a coluna "Minuto" -- anuncia so' as celulas, e a
+                         tabela deixa de ser uma tabela. -->
+                    <tr><th scope="col">Minuto</th><th scope="col">Dur.</th><th scope="col">Fala</th></tr>
                   </thead>
-                  <tbody id="cue-body"></tbody>
+                  <!-- O corpo e' preenchido pelo `renderCueTable` a cada
+                       organizacao. `aria-live="polite"`: sem ele, quem usa
+                       leitor de tela aperta "Organizar transcrição", ouve o
+                       toast e nao fica sabendo quantas linhas entraram. -->
+                  <tbody id="cue-body" aria-live="polite"></tbody>
                 </table>
               </div>
             </div>

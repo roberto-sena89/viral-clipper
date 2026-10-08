@@ -55,6 +55,7 @@ ranker_base_url: "https://api.openai.com/v1"  # any OpenAI-compatible endpoint
 ranker_api_key_env: "OPENAI_API_KEY"
 ranker_requires_key: true   # set false for a local Ollama/LM Studio
 ranker_top_n: 24        # cost dial: one model call per candidate per video
+ranker_concurrency: 6   # model calls in flight at once; 1 = strictly serial
 ranker_weight: 0.6      # 0 = pure heuristic, 1 = pure model
 # Reasoning models pass 60 s routinely; the named providers raise this to 180.
 ranker_timeout: 60.0

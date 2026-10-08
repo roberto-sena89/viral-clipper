@@ -101,6 +101,7 @@ Um prompt bem escrito não salva uma execução sem transcrição.
 | `MAX_HEADLINE_CHARS` | 90 | acima disso a faixa precisa de uma terceira linha e come o vídeo |
 | `MAX_HASHTAGS` | 10 | o TikTok para de pesar tags depois de um punhado |
 | `ranker_top_n` | 24 | o custo é uma chamada por candidato por vídeo |
+| `ranker_concurrency` | 6 | as chamadas são independentes; em série a espera é a soma das latências |
 | `MAX_CURATOR_PROMPT_BYTES` | 64 KB | generoso para um prompt, pequeno para encher o disco |
 
 A headline só é **queimada** com `headline_seconds > 0` (o toggle do painel).

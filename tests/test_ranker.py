@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -370,6 +372,195 @@ class BlendTests(unittest.TestCase):
         verdict = ranker.Verdict(scores={"gancho": 10.0})
         self.assertEqual(ranker._blend(50.0, verdict, 5.0), 100.0)
         self.assertEqual(ranker._blend(50.0, verdict, -1.0), 50.0)
+
+
+class _CapturingLogger(Logger):
+    """Logger que guarda TODAS as linhas, inclusive as que ``quiet`` suprimiria.
+
+    ``Logger._emit`` devolve cedo quando ``quiet`` e o prefixo nao e ``!``, entao
+    um teste de progresso com ``Logger(quiet=True)`` nao veria nada. Gravar antes
+    do ``super()`` e o que torna a linha observavel sem tornar o teste barulhento.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(quiet=True)
+        self.lines: list[str] = []
+
+    def _emit(self, prefix: str, message: str) -> None:
+        self.lines.append(f"{prefix} {message}")
+        super()._emit(prefix, message)
+
+
+class _TimedProvider:
+    """Provider que registra o intervalo de cada chamada e pode falhar numa delas.
+
+    O ``delay`` existe para que a sobreposicao seja observavel: sem ele a
+    chamada termina antes de a proxima comecar e o pico medido seria 1 mesmo
+    com o pool funcionando.
+    """
+
+    name = "timed"
+
+    def __init__(self, delay: float = 0.05, fail_when_text_contains: str = "") -> None:
+        self.delay = delay
+        self.fail_when_text_contains = fail_when_text_contains
+        self.calls = 0
+        self.spans: list[tuple[float, float]] = []
+        self._guard = threading.Lock()
+
+    def complete(self, system: str, user: str) -> str:
+        with self._guard:
+            self.calls += 1
+        started = time.perf_counter()
+        time.sleep(self.delay)
+        finished = time.perf_counter()
+        with self._guard:
+            self.spans.append((started, finished))
+        if self.fail_when_text_contains and self.fail_when_text_contains in user:
+            raise ClipperError("falha simulada no provedor")
+        return FULL_JSON
+
+
+def _peak_concurrency(spans: list[tuple[float, float]]) -> int:
+    """Maior numero de chamadas simultaneas, por varredura de eventos.
+
+    Desempate por delta: ``-1`` antes de ``+1`` no mesmo instante, porque uma
+    chamada que termina quando outra comeca nao se sobrepoe a ela.
+    """
+    events: list[tuple[float, int]] = []
+    for started, finished in spans:
+        events.append((started, 1))
+        events.append((finished, -1))
+    events.sort()
+    current = peak = 0
+    for _, delta in events:
+        current += delta
+        peak = max(peak, current)
+    return peak
+
+
+class RankerConcurrencyTests(RankerTestCase):
+    """O laco do curador era serial: 24 chamadas eram 24 latencias somadas.
+
+    Estes testes travam a CONCORRENCIA, nao o tempo: um teste de relogio seria
+    flaky numa maquina carregada. O que importa e que as chamadas se sobreponham
+    e que o resultado nao mude por causa disso.
+    """
+
+    def test_the_calls_overlap_instead_of_queueing(self):
+        provider = _TimedProvider(delay=0.05)
+        windows = [_window(f"w{index}", float(index)) for index in range(24)]
+        ranker.apply(
+            windows, self.config(ranker_concurrency=6), self.log, provider=provider
+        )
+        self.assertEqual(provider.calls, 24)
+        self.assertGreater(
+            _peak_concurrency(provider.spans), 1,
+            "as chamadas continuam uma atras da outra: o laco voltou a ser serial",
+        )
+
+    def test_concurrency_one_reproduces_the_serial_behaviour(self):
+        provider = _TimedProvider(delay=0.02)
+        windows = [_window(f"w{index}", float(index)) for index in range(6)]
+        ranker.apply(
+            windows, self.config(ranker_concurrency=1), self.log, provider=provider
+        )
+        self.assertEqual(provider.calls, 6)
+        self.assertEqual(_peak_concurrency(provider.spans), 1)
+
+    def test_the_ceiling_is_respected(self):
+        provider = _TimedProvider(delay=0.05)
+        windows = [_window(f"w{index}", float(index)) for index in range(24)]
+        ranker.apply(
+            windows, self.config(ranker_concurrency=3), self.log, provider=provider
+        )
+        pico = _peak_concurrency(provider.spans)
+        # Duas direcoes no mesmo teste: acima de 1 prova que o pool esta em uso
+        # (com o laco serial o pico e 1), e ate 3 prova que o teto nao foi furado.
+        self.assertGreater(pico, 1, "o pool nao esta sendo usado")
+        self.assertLessEqual(pico, 3, "o teto de concorrencia foi furado")
+
+    def test_the_result_does_not_depend_on_the_concurrency(self):
+        def run(concurrency: int) -> list[float]:
+            windows = [_window(f"w{index}", float(index)) for index in range(8)]
+            ranker.apply(
+                windows,
+                self.config(ranker_concurrency=concurrency),
+                self.log,
+                provider=FakeProvider(),
+            )
+            return [window.score for window in windows]
+
+        self.assertEqual(run(1), run(6))
+
+    def test_every_shortlisted_window_is_still_judged(self):
+        provider = _TimedProvider(delay=0.01)
+        windows = [_window(f"w{index}", float(index)) for index in range(24)]
+        judged = ranker.apply(
+            windows, self.config(ranker_concurrency=6), self.log, provider=provider
+        )
+        self.assertEqual(judged, 24)
+        self.assertEqual(provider.calls, 24)
+        self.assertTrue(all("llm_overall" in window.components for window in windows))
+
+    def test_one_failing_window_does_not_cost_the_others(self):
+        provider = _TimedProvider(delay=0.01, fail_when_text_contains="w3")
+        windows = [_window(f"w{index}", float(index)) for index in range(8)]
+        judged = ranker.apply(
+            windows, self.config(ranker_concurrency=4), self.log, provider=provider
+        )
+        self.assertEqual(judged, 7)
+        perdida = next(window for window in windows if window.text == "w3")
+        self.assertNotIn("llm_overall", perdida.components)
+        # A janela que falhou mantem o score heuristico: a rede nao e culpa dela.
+        self.assertAlmostEqual(perdida.score, 3.0, places=2)
+
+    def test_a_cached_window_never_reaches_the_pool(self):
+        provider = FakeProvider()
+        config = self.config(ranker_concurrency=6)
+        ranker.apply([_window("texto cacheado", 50.0)], config, self.log, provider=provider)
+        segundo = _TimedProvider(delay=0.01)
+        ranker.apply([_window("texto cacheado", 50.0)], config, self.log, provider=segundo)
+        self.assertEqual(segundo.calls, 0)
+        self.assertEqual(segundo.spans, [])
+
+
+class RankerProgressTests(RankerTestCase):
+    """A espera era longa E opaca: o laco nao dizia nada ate o fim."""
+
+    def test_the_stage_reports_one_line_per_window(self):
+        log = _CapturingLogger()
+        windows = [_window(f"w{index}", float(index)) for index in range(8)]
+        ranker.apply(
+            windows,
+            self.config(ranker_concurrency=4),
+            log,
+            provider=_TimedProvider(delay=0.01),
+        )
+        progresso = [line for line in log.lines if "/8" in line]
+        self.assertTrue(progresso, f"nenhuma linha de progresso; log={log.lines}")
+        # A ultima linha tem de fechar a contagem, senao o usuario fica sem saber
+        # se terminou.
+        self.assertTrue(any("8/8" in line for line in progresso), progresso)
+
+    def test_a_single_window_does_not_print_a_progress_bar(self):
+        log = _CapturingLogger()
+        ranker.apply(
+            [_window("so uma", 50.0)],
+            self.config(ranker_concurrency=6),
+            log,
+            provider=_TimedProvider(delay=0.01),
+        )
+        self.assertFalse([line for line in log.lines if "/1" in line], log.lines)
+
+
+class RankerConcurrencyConfigTests(unittest.TestCase):
+    def test_zero_is_rejected(self):
+        with self.assertRaises(ValueError):
+            ClipConfig(url="u", ranker_concurrency=0).validate()
+
+    def test_the_default_is_above_one(self):
+        self.assertGreater(ClipConfig(url="u").ranker_concurrency, 1)
 
 
 if __name__ == "__main__":  # pragma: no cover

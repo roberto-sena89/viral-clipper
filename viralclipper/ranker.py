@@ -17,6 +17,12 @@ Three properties keep it safe to run in a pipeline:
 * **Bounded cost.** Only ``top_n`` windows are sent, and every verdict is
   cached on disk keyed by the window text, the model and the prompt version,
   so re-running the same video while tuning options is free.
+* **Concurrent, and therefore bounded in *time* too.** The shortlist is judged
+  ``ranker_concurrency`` windows at a time. The calls share nothing -- separate
+  cache keys, separate verdicts -- so the parallelism changes the duration of
+  the stage and not its result. Without it the stage is the sum of every
+  latency: medido com um provedor de teste a 0,5 s por chamada, 24 chamadas
+  seriais deram 12,44 s de relogio para 12,00 s de espera pura.
 * **Never fatal.** Any transport, parsing or quota error leaves the heuristic
   scores untouched and logs a warning. A dead ranker degrades the selection; it
   does not fail the run.
@@ -30,6 +36,7 @@ import os
 import re
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -603,6 +610,34 @@ def _blend(heuristic: float, verdict: Verdict, weight: float) -> float:
     return round(heuristic * (1.0 - weight) + verdict.overall * 10.0 * weight, 2)
 
 
+def _judge(
+    provider: RankProvider,
+    config: ClipConfig,
+    window: Window,
+    key: str,
+    cache_dir: Path,
+) -> tuple[Verdict | None, str]:
+    """One model call, off the main thread.
+
+    Returns ``(verdict, "")`` on success and ``(None, reason)`` on failure. The
+    reason is *formatted* here but *logged* by the caller: a worker that printed
+    would interleave with its siblings and with the progress counter, and the
+    log box is the only place the user can see this stage at all.
+
+    Nothing here touches ``window``. The verdict travels back as a value and the
+    caller applies it, so no two threads ever write to the same object -- which
+    is also why this can be threads and not processes.
+    """
+    try:
+        system, user = build_messages(config, window)
+        response = provider.complete(system, user)
+        verdict = parse_verdict(response)
+        _save_cached(cache_dir, key, verdict)
+        return verdict, ""
+    except Exception as exc:  # noqa: BLE001 - a dead ranker must not be fatal
+        return None, f"{type(exc).__name__}: {exc}"
+
+
 def apply(
     candidates: list[Window],
     config: ClipConfig,
@@ -639,20 +674,58 @@ def apply(
     judged = 0
     failures = 0
 
-    for window in top:
+    # Pass 1 -- cache, one window at a time. A hit costs a file read and never
+    # reaches the pool, which is what keeps a re-run of the same video cheap.
+    verdicts: dict[int, Verdict] = {}
+    pending: list[tuple[int, Window, str]] = []
+    for position, window in enumerate(top):
         key = cache_key(window, config.ranker_model, salt)
-        verdict = _load_cached(cache_dir, key, logger)
+        cached = _load_cached(cache_dir, key, logger)
+        if cached is None:
+            pending.append((position, window, key))
+        else:
+            verdicts[position] = cached
+
+    # Pass 2 -- the misses, concurrently. The calls share nothing: a separate
+    # cache key and a separate verdict each. So this changes how long the stage
+    # takes and not what it decides.
+    if pending:
+        workers = max(1, min(config.ranker_concurrency, len(pending)))
+        if logger and len(pending) > 1:
+            logger.info(
+                f"Curador: {len(pending)} janelas a julgar, {workers} em paralelo"
+            )
+        done = 0
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(_judge, provider, config, window, key, cache_dir): position
+                for position, window, key in pending
+            }
+            for future in as_completed(futures):
+                position = futures[future]
+                done += 1
+                try:
+                    verdict, error = future.result()
+                except Exception as exc:  # pragma: no cover - _judge does not raise
+                    verdict, error = None, f"{type(exc).__name__}: {exc}"
+                if verdict is None:
+                    failures += 1
+                    if logger:
+                        logger.warn(f"Ranker skipped one window ({error})")
+                else:
+                    verdicts[position] = verdict
+                # Progress is published from THIS thread, never from a worker:
+                # the run record is shared, and lines printed in parallel
+                # interleave into unreadable soup.
+                if logger and len(pending) > 1:
+                    logger.info(f"Curador: {done}/{len(pending)} janelas julgadas")
+
+    # Pass 3 -- apply in the shortlist's own order, so the result never depends
+    # on which call happened to answer first.
+    for position, window in enumerate(top):
+        verdict = verdicts.get(position)
         if verdict is None:
-            try:
-                system, user = build_messages(config, window)
-                response = provider.complete(system, user)
-                verdict = parse_verdict(response)
-                _save_cached(cache_dir, key, verdict)
-            except Exception as exc:  # noqa: BLE001 - a dead ranker must not be fatal
-                failures += 1
-                if logger:
-                    logger.warn(f"Ranker skipped one window ({type(exc).__name__}: {exc})")
-                continue
+            continue
 
         heuristic = window.score
         window.score = _blend(heuristic, verdict, config.ranker_weight)

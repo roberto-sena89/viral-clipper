@@ -587,6 +587,17 @@ warning. Verdicts are cached under `<cache-dir>/rank`, keyed by the window
 text, the model and the prompt version, so re-running the same video while
 tuning options costs nothing.
 
+The shortlist is judged `--ranker-concurrency` windows at a time (6 by default).
+The calls are independent of each other and each keeps its own cache key, so
+running them at once changes only how long the stage takes, not what it
+decides. This is the dial that matters for wall-clock time: with 24 windows and
+one call per window, a serial loop pays 24 network latencies back to back.
+Measured with a stub provider at 0.5 s per call, 24 serial calls cost 12.44 s of
+clock for 12.00 s of pure waiting — the stage is essentially all latency, so it
+scales linearly with whatever the model costs. `--ranker-concurrency 1`
+restores the old strictly serial behaviour, and it is the setting to reach for
+if your provider answers 429 under a burst.
+
 ## One run per output directory
 
 Two processes writing to the same `output/` **cannot** coexist, and the failure

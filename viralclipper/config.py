@@ -100,6 +100,20 @@ class ClipConfig:
     # How many of the heuristic's best candidates get a model call. This is the
     # cost dial: one call per candidate per video.
     ranker_top_n: int = 24
+    # How many model calls are in flight at once.
+    #
+    # The loop used to be serial, and that dominated the whole run: 24 calls
+    # meant 24 latencies added together. Medido com 0,5 s por chamada: 12,44 s
+    # de relogio para 12,00 s de espera pura -- ou seja, o bloco era 100%
+    # latencia de rede e ~0,4 s de trabalho. Com as latencias reais que
+    # `docs/modelos-nvidia.md` mede (4,5 s a 73,0 s), isso era de 108 s a
+    # 1.752 s por video.
+    #
+    # 6 e um teto conservador de proposito: provedor gratuito limita requisicoes
+    # por minuto (Groq 1.000/dia, OpenRouter 50/dia) e uma rajada de 24 pode
+    # virar 429 -- que nao e fatal, mas degrada a selecao em silencio. 1
+    # reproduz o comportamento antigo.
+    ranker_concurrency: int = 6
     # 0 = pure heuristic, 1 = pure model. The middle keeps the cheap signals
     # (loudness, boundary, length) as a tie-breaker.
     ranker_weight: float = 0.6
@@ -296,6 +310,8 @@ class ClipConfig:
             raise ValueError("ranker_weight must be between 0 and 1")
         if self.ranker_top_n < 0:
             raise ValueError("ranker_top_n must not be negative")
+        if self.ranker_concurrency < 1:
+            raise ValueError("ranker_concurrency must be at least 1")
         if self.ranker_timeout <= 0:
             raise ValueError("ranker_timeout must be greater than zero")
         if self.ranker_provider:

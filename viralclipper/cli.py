@@ -441,6 +441,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Quantos candidatos enviar ao modelo (o custo cresce com este numero)",
     )
     semantic.add_argument(
+        "--ranker-concurrency",
+        dest="ranker_concurrency",
+        type=int,
+        default=6,
+        help="Chamadas simultaneas ao modelo (1 = uma por vez, o comportamento antigo)",
+    )
+    semantic.add_argument(
         "--ranker-weight",
         dest="ranker_weight",
         type=float,

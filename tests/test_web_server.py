@@ -26,6 +26,15 @@ from viralclipper.util import ClipperError
 from web import server
 from web.server import resolve_within
 
+# O MESMO modulo que ``server.py`` importa. Ele faz ``import routes_providers``
+# com ``WEB_DIR`` no path, entao a instancia viva e' ``sys.modules[
+# "routes_providers"]``. Um ``from web import routes_providers`` criaria uma
+# SEGUNDA instancia (``web.routes_providers``) e todo ``patch.object`` cairia no
+# modulo errado -- o teste passaria sem testar. A armadilha e' a mesma que a
+# extracao de ``state.py`` ja' documentou: um nome, um dono, um alvo de patch.
+routes_providers = server.routes_providers
+routes_scrap = server.routes_scrap
+
 
 def _jpeg(width: int, height: int) -> bytes:
     """Um JPEG com SOI, um segmento COMPRIMENTO antes do SOF, e o SOF.
@@ -527,7 +536,7 @@ class ScrapResultsTests(unittest.TestCase):
         from unittest import mock
 
         with mock.patch.object(server.download_mod, "fetch_metadata", fake):
-            results, title, removed = server._scrap_results(options)
+            results, title, removed = routes_scrap._scrap_results(options)
         seen["removed"] = removed
         return results, title, seen
 
@@ -589,7 +598,7 @@ class ScrapResultsTests(unittest.TestCase):
 
     def test_a_missing_url_is_rejected(self):
         with self.assertRaises(ClipperError):
-            server._scrap_results({"url": "  ", "mode": "link"})
+            routes_scrap._scrap_results({"url": "  ", "mode": "link"})
 
     def test_viral_lists_up_to_100_and_sorts_by_views(self):
         """viral=true fetches the ceiling and ranks before cutting to limit."""
@@ -1554,11 +1563,11 @@ class IgProfileRoutingTests(unittest.TestCase):
             payload["extra_ytdlp_args"] = extra_ytdlp_args
         if ig_session is not None:
             payload["ig_session"] = ig_session
-        with mock.patch.object(server, "_ig_profile_results", side_effect=fake_ig), \
+        with mock.patch.object(routes_scrap, "_ig_profile_results", side_effect=fake_ig), \
              mock.patch.object(server.download_mod, "fetch_metadata", side_effect=fake_meta), \
              mock.patch.object(server.download_mod, "repair_view_counts",
                                side_effect=lambda *a, **k: None):
-            results, _title, _removed = server._scrap_results(payload)
+            results, _title, _removed = routes_scrap._scrap_results(payload)
         return calls, results
 
     def test_a_profile_url_goes_to_the_graphql_lister(self):
@@ -1643,13 +1652,13 @@ class IgProfileListingTests(unittest.TestCase):
         with mock.patch.object(
             server.ig_profile_mod, "list_profile", return_value=self._listing(items)
         ):
-            return server._ig_profile_results(
+            return routes_scrap._ig_profile_results(
                 "alvo", payload, "cookies.txt", ["--cookies", "cookies.txt"]
             )
 
     def test_a_missing_cookies_file_is_named(self):
         with self.assertRaises(ClipperError) as ctx:
-            server._ig_profile_results("alvo", {}, "", [])
+            routes_scrap._ig_profile_results("alvo", {}, "", [])
         self.assertIn("cookies.txt", str(ctx.exception))
 
     def test_a_caption_becomes_a_single_capped_line(self):
@@ -4822,7 +4831,7 @@ class UserProviderCardTests(unittest.TestCase):
         de sanidade no topo, entao um `assertIn` solto ficava verde mesmo com o
         guarda removido.
         """
-        fonte = (server.REPO_ROOT / "web" / "server.py").read_text(encoding="utf-8")
+        fonte = (server.REPO_ROOT / "web" / "routes_providers.py").read_text(encoding="utf-8")
         corpo = fonte.split("def _handle_save_provider", 1)[1].split("\n    def ", 1)[0]
         self.assertIn("if name in providers.PROVIDERS:", corpo,
                       "o save nao recusa sobrescrever um provedor de fabrica")
@@ -4834,7 +4843,7 @@ class UserProviderCardTests(unittest.TestCase):
         Mandar a chamada sem chave daria um 401 que o usuario teria de decodificar,
         quando a causa (a variavel nao esta exportada) e conhecida aqui.
         """
-        fonte = (server.REPO_ROOT / "web" / "server.py").read_text(encoding="utf-8")
+        fonte = (server.REPO_ROOT / "web" / "routes_providers.py").read_text(encoding="utf-8")
         corpo = fonte.split("def _handle_test_provider", 1)[1].split("\n    def ", 1)[0]
         self.assertIn("no-key", corpo)
 
@@ -5265,7 +5274,7 @@ class UserProviderStoreTests(unittest.TestCase):
         from viralclipper import user_providers
 
         self.assertEqual(
-            server.USER_PROVIDERS_PATH,
+            routes_providers.USER_PROVIDERS_PATH,
             (server.REPO_ROOT / user_providers.USERS_PATH).resolve()
             if not Path(user_providers.USERS_PATH).is_absolute()
             else Path(user_providers.USERS_PATH).resolve(),
@@ -5276,7 +5285,7 @@ class UserProviderStoreTests(unittest.TestCase):
         from viralclipper import user_providers
 
         self.assertEqual(Path(user_providers.USERS_PATH).resolve(),
-                         server.USER_PROVIDERS_PATH)
+                         routes_providers.USER_PROVIDERS_PATH)
 
     def test_the_store_file_is_not_committed(self):
         """É dado do usuario, nao config do projeto: nao pode aparecer no git."""
@@ -5308,17 +5317,17 @@ class ManualApiKeyTests(unittest.TestCase):
 
         self.user_providers = user_providers
         self.tmp = Path(tempfile.mkdtemp()) / "provedores-usuario.toml"
-        # Redireciona o arquivo do modulo E a constante do servidor: duas
-        # constantes para o mesmo arquivo e a armadilha que a
-        # UserProviderStoreTests ja documenta.
+        # Redireciona o arquivo do modulo E a constante do modulo de rotas (o
+        # dono do nome desde a extracao): duas constantes para o mesmo arquivo e
+        # a armadilha que a UserProviderStoreTests ja documenta.
         self._mod_path = user_providers.USERS_PATH
-        self._srv_path = server.USER_PROVIDERS_PATH
+        self._srv_path = routes_providers.USER_PROVIDERS_PATH
         user_providers.USERS_PATH = self.tmp
-        server.USER_PROVIDERS_PATH = self.tmp
+        routes_providers.USER_PROVIDERS_PATH = self.tmp
 
     def tearDown(self):
         self.user_providers.USERS_PATH = self._mod_path
-        server.USER_PROVIDERS_PATH = self._srv_path
+        routes_providers.USER_PROVIDERS_PATH = self._srv_path
 
     def _entrada(self, **over):
         base = {
@@ -5390,7 +5399,7 @@ class ManualApiKeyTests(unittest.TestCase):
         """
         prov, _ = self.user_providers.validate(self._entrada(api_key="sk-secreta"))
         self.user_providers.save([prov], self.tmp)
-        payload = server._providers_payload()
+        payload = routes_providers._providers_payload()
         meu = next(p for p in payload["providers"] if p["name"] == "meu-endpoint")
         self.assertNotIn("api_key", meu, "a chave vazou para o navegador")
         self.assertTrue(meu["has_key"])
@@ -7584,14 +7593,14 @@ class RemoveProviderRouteTests(unittest.TestCase):
         from viralclipper import user_providers
 
         with mock.patch.object(user_providers, "remove", return_value=[]) as removed, \
-                mock.patch.object(server, "_providers_payload",
+                mock.patch.object(routes_providers, "_providers_payload",
                                   return_value={"providers": [], "active": "x"}):
             sent = self._call({"name": "  meu-provedor  "})
         removed.assert_called_once()
         # O nome vai SEM espaco e a gravacao vai para o arquivo do USUARIO --
         # nunca para o de fabrica.
         self.assertEqual(removed.call_args[0][0], "meu-provedor")
-        self.assertEqual(removed.call_args[0][1], server.USER_PROVIDERS_PATH)
+        self.assertEqual(removed.call_args[0][1], routes_providers.USER_PROVIDERS_PATH)
         self.assertEqual(sent.get("_code"), 200)
         self.assertTrue(sent.get("ok"))
         self.assertEqual(sent.get("removed"), "meu-provedor")

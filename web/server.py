@@ -119,11 +119,10 @@ MAX_CURATOR_PROMPT_BYTES = 64 * 1024
 
 AJUSTES_PATH = REPO_ROOT / "ajustes.toml"
 
-#: The path of the file the "Meus provedores" card writes. Filled in below,
-#: once ``sys.path`` includes the repo and ``user_providers`` can be imported.
-#: Declared here so the layout of the constants block still reads as the list
-#: of files this server touches.
-USER_PROVIDERS_PATH = REPO_ROOT / "provedores-usuario.toml"
+#: O caminho do arquivo que o cartao "Meus provedores" escreve NAO mora aqui:
+#: e' de ``routes_providers``, que e' quem escreve e quem le. Uma copia neste
+#: modulo seria uma segunda fonte de verdade -- e foi exatamente esse o defeito
+#: que o comentario da definicao, la', registra.
 
 #: Which video the saved transcript belongs to. Lives beside ``ajustes.toml``
 #: rather than inside it, and deliberately so: every key in ``AJUSTES_KEYS``
@@ -159,7 +158,6 @@ from viralclipper import config_file as config_file_mod  # noqa: E402
 from viralclipper import download as download_mod  # noqa: E402
 from viralclipper import ig_profile as ig_profile_mod  # noqa: E402
 from viralclipper import pipeline, quality, report, transcript_import, util, viral_report  # noqa: E402
-from viralclipper import user_providers as _user_providers_mod  # noqa: E402
 from viralclipper.util import ClipperError  # noqa: E402
 
 #: Funcoes puras e estado compartilhado: ver ``web/state.py``. Re-exportados
@@ -221,14 +219,15 @@ from state import (  # noqa: E402,F401
     _BROWSEINFOW,
 )
 
-#: The store the card writes, resolved from the module that owns the format.
-#: One path, one owner: when this file was a second constant, the save route
-#: wrote one path and the merge read the other -- so every save answered 200
-#: with a list that had not changed.
-USER_PROVIDERS_PATH = (REPO_ROOT / _user_providers_mod.USERS_PATH).resolve()
-# Point the module's own default at the same file: ``providers._table`` calls
-# ``user_providers.load()`` with no argument, so it reads that global.
-_user_providers_mod.USERS_PATH = USER_PROVIDERS_PATH
+#: As rotas de /api/providers/*. O modulo e' o dono de ``USER_PROVIDERS_PATH``
+#: (e aponta ``user_providers.USERS_PATH`` para ele no proprio import) e de
+#: ``_providers_payload``. Aqui so' se importa: re-exportar os nomes criaria uma
+#: SEGUNDA binding, e o ``mock.patch.object`` da suite alcancaria uma so' --
+#: a outra seguiria lendo o valor real. Por isso ``do_GET`` chama
+#: ``routes_providers._providers_payload()`` em vez de um nome local.
+import routes_providers  # noqa: E402
+import routes_scrap  # noqa: E402
+import routes_transcript  # noqa: E402
 
 HOST = "127.0.0.1"
 PORT = 7755
@@ -429,51 +428,6 @@ def _curator_prompt_payload() -> dict:
     except OSError:
         text = ""
     return {"path": str(path), "text": text, "exists": path.is_file()}
-
-
-def _providers_payload() -> dict:
-    """The named LLM providers the panel offers in its dropdown.
-
-    ``user`` marks the entries that came from the panel's own file rather than
-    from ``viralclipper/providers.py``. Two things depend on it: the card shows
-    a Remove button only for those, and the save route refuses to overwrite a
-    built-in name. Compare by name against ``providers.PROVIDERS`` -- the merged
-    table is available through ``list_providers`` but does not say which side an
-    entry came from.
-    """
-    from viralclipper import providers
-
-    builtin = set(providers.PROVIDERS)
-    return {
-        "default": providers.DEFAULT_PROVIDER,
-        "providers": [
-            {
-                "name": provider.name,
-                "label": provider.label,
-                "base_url": provider.base_url,
-                "model": provider.model,
-                "api_key_env": provider.api_key_env,
-                # Whether a key is already saved, never the key itself. The
-                # browser needs to say "there is one" so the edit form does not
-                # look empty; a reload that echoed the secret back into an
-                # <input> would put it in the DOM and the devtools history for
-                # no gain. A pasted key is write-only from the panel's side.
-                "has_key": bool(provider.api_key),
-                "requires_key": provider.requires_key,
-                "note": provider.note,
-                "timeout": provider.timeout,
-                "user": provider.name not in builtin,
-            }
-            for provider in providers.list_providers()
-        ],
-    }
-
-
-
-
-
-
-
 
 def _mark_stage(index: int, *, skipped: bool = False) -> None:
     """Publish ``index`` as the running stage, the earlier ones as done.
@@ -808,236 +762,6 @@ def asset_content_type(path: Path) -> str:
 
 # Video containers the library view lists. Anything else in the output folder
 # (json/md/srt reports, work directories) is not a preview candidate.
-
-
-
-
-
-
-
-
-
-
-def _ig_profile_results(
-    username: str, payload: dict, cookies_file: str, argv: list[str], session: str = ""
-) -> tuple[list[dict], str, int]:
-    """List an Instagram account through the same call the site itself makes.
-
-    Deliberately NOT through yt-dlp: ``InstagramUserIE`` is disabled upstream
-    and its ``_parse_graphql`` looks for a ``sharedData`` blob Instagram stopped
-    emitting, so the flat playlist answers "Unable to extract data" for an
-    account that is perfectly reachable in a browser. ``ig_profile`` reproduces
-    the ``POST /graphql/query`` the React app issues instead.
-
-    Keeping this beside the yt-dlp branch — rather than replacing it — is what
-    leaves the YouTube path untouched: only an Instagram profile URL is
-    diverted here.
-
-    ``session`` is the sessionid the page pasted; it is already in the jar, and
-    travels in memory too so a jar that could not be written still lists.
-    """
-    if not cookies_file:
-        raise ClipperError(
-            "Listar um perfil do Instagram exige um cookies.txt: o catálogo só é "
-            "devolvido para uma sessão autenticada. Escolha os cookies por "
-            "arquivo — a opção do navegador não serve para este caminho."
-        )
-
-    limit = payload.get("limit")
-    try:
-        limit = max(1, min(int(limit), 100)) if limit is not None else 20
-    except (TypeError, ValueError):
-        limit = 20
-    viral = bool(payload.get("viral"))
-    # "Mais viralizados": lista até o teto e ordena por views ANTES de cortar.
-    # Sem isso o corte traria os N primeiros do feed, não os N maiores.
-    fetch_end = 100 if viral else limit
-
-    listing = ig_profile_mod.list_profile(
-        username, cookies_file, limit=fetch_end, session=session
-    )
-    items = list(listing.items)
-    if viral:
-        items.sort(
-            key=lambda item: item.play_count or item.like_count or 0, reverse=True
-        )
-    items = items[:limit]
-
-    results = []
-    for index, item in enumerate(items, start=1):
-        results.append(
-            {
-                "index": index,
-                "id": item.code or item.pk,
-                "title": _ig_title(item),
-                "url": item.url,
-                "duration": item.duration,
-                "uploader": listing.username,
-                # Reels carry play_count, photo posts only like_count. Sending
-                # whichever exists keeps the row informative instead of blank.
-                "view_count": (
-                    item.play_count if item.play_count is not None else item.like_count
-                ),
-                # The CDN URL from the GraphQL payload. The row never uses it as
-                # a src (CSP forbids a foreign origin); it is what lets
-                # /scrap/thumb skip a per-item yt-dlp round trip.
-                "thumb": item.thumbnail,
-                # Same classification the archiver uses, so the chip on the row
-                # and the folder a download lands in cannot disagree.
-                "folder": item.folder,
-                "kind": item.kind,
-                # False for a photo or a photo-only carousel: the row can say so
-                # instead of letting the download fail with "no video in this
-                # post" after a network round trip.
-                "has_video": item.has_video,
-                "_ytdlp_args": list(argv),
-            }
-        )
-    return results, listing.username, 0
-
-
-def _scrap_results(payload: dict) -> tuple[list[dict], str, int]:
-    """Expand a link or a profile into a list of downloadable videos.
-
-    Returns (results, title, removed): ``removed`` counts the repeated videos
-    dropped from a profile listing (same id, or same title + duration).
-
-    Two modes, and the difference is one yt-dlp flag:
-
-    - ``link``  -> a single post/reel/video. Answered by ``fetch_metadata``,
-      which already exists and is already what the CLI uses.
-    - ``profile`` -> the whole feed of an account. Here the flat playlist is
-      read instead: one entry per item, no per-video extraction, which is the
-      only shape that stays fast when the account has hundreds of posts.
-      An Instagram profile never takes that route — see ``_ig_profile_results``.
-
-    ``--playlist-end`` is appended through ``extra_ytdlp_args``, which
-    ``download._base_args`` appends LAST — that is what lifts the
-    ``--no-playlist`` hardcoded at the top of the same list. So profile
-    expansion needs no change to ``download.py`` at all.
-    """
-    url = str(payload.get("url") or "").strip()
-    mode = str(payload.get("mode") or "link").strip()
-    if not url:
-        raise ClipperError("Informe o link do vídeo ou o perfil.")
-
-    config = _options_to_config({"url": url, "output": payload.get("output") or "output"})
-    # ``extra_ytdlp_args`` is a list of argv words, one flag per element. A bare
-    # string is accepted as a convenience and split on whitespace, because
-    # ``list("--cookies x.txt")`` silently becomes 21 one-character arguments
-    # and yt-dlp then fails with a baffling "unrecognized arguments" list.
-    # A whole command line as one element (``["--cookies x.txt"]``) is split
-    # too, for the same reason.
-    config.extra_ytdlp_args = _ytdlp_argv(payload.get("extra_ytdlp_args"))
-
-    if mode == "link":
-        # A single item: reuse the metadata path verbatim, so the answer the
-        # panel shows is the same one a run would act on.
-        meta = download_mod.fetch_metadata(url, config)
-        entries = [meta]
-        title = str(meta.get("title") or "")
-        removed = 0
-    else:
-        # Instagram first, and only Instagram: its profile extractor is disabled
-        # upstream, so the flat-playlist route below cannot answer for an
-        # account. Diverting here — instead of inside download.py — is what
-        # leaves the YouTube branch exactly as it was.
-        ig_user = ig_profile_mod.profile_username(url)
-        if ig_user:
-            return _ig_profile_results(
-                ig_user,
-                payload,
-                _cookies_file_from_args(config.extra_ytdlp_args),
-                config.extra_ytdlp_args,
-                _ig_session_from_payload(payload),
-            )
-        # Only reach here for a profile-shaped URL. A bare profile name is
-        # accepted too, but a full URL is what yt-dlp can resolve without
-        # guessing the site.
-        limit = payload.get("limit")
-        try:
-            limit = max(1, min(int(limit), 100)) if limit is not None else 20
-        except (TypeError, ValueError):
-            limit = 20
-        # "Mais viralizados": lista até o teto (100) e ordena por views antes
-        # de cortar no limite pedido — sem isso o corte traria os N primeiros
-        # do feed, não os N maiores. Sem a flag o custo é o de sempre.
-        viral = bool(payload.get("viral"))
-        fetch_end = 100 if viral else limit
-        config.extra_ytdlp_args += ["--flat-playlist", "--playlist-end", str(fetch_end)]
-        tab_url = _with_videos_tab(url)
-        info = download_mod.fetch_metadata(tab_url, config)
-        entries = list(info.get("entries") or [])
-        title = str(info.get("title") or info.get("uploader") or "")
-        # One more level: a tab that itself holds playlists. Flatten it, or the
-        # list would offer "Videos" as if it were a video.
-        flattened: list[dict] = []
-        for entry in entries:
-            if isinstance(entry, dict) and entry.get("_type") == "playlist":
-                flattened.extend(e for e in (entry.get("entries") or []) if isinstance(e, dict))
-            elif isinstance(entry, dict):
-                flattened.append(entry)
-        entries = flattened[:fetch_end]
-        # Repetidos fora antes de qualquer corte: o extrator repete o mesmo
-        # id entre páginas e reposts dividem título + duração. Sem isso o
-        # limite de N itens vinha com furos e a ordem viral ranqueava cópias.
-        entries, removed = _dedupe_entries(entries)
-        # The request language that keeps the titles readable also localizes the
-        # counts, and yt-dlp reads "57 mi de visualizações" as 57. The repair is
-        # one extra listing in English, merged by id; when it fails the list
-        # still works, just with the numbers YouTube wrote in words. Repair
-        # runs BEFORE the viral sort, or the ranking would use broken numbers.
-        download_mod.repair_view_counts(entries, tab_url, config)
-        if viral:
-            entries.sort(key=_viral_rank)
-        entries = entries[:limit]
-
-    results = []
-    for index, entry in enumerate(entries, start=1):
-        if not isinstance(entry, dict):
-            continue
-        # ``image`` is the largest still the extractor exposes. Instagram flat
-        # entries have no ``thumbnail`` key; YouTube shorts do. Accept both
-        # rather than picking one site's spelling.
-        thumb = str(entry.get("thumbnail") or entry.get("image") or "").strip()
-        results.append(
-            {
-                "index": index,
-                "id": str(entry.get("id") or ""),
-                "title": str(entry.get("title") or entry.get("id") or "(sem título)"),
-                "url": str(entry.get("webpage_url") or entry.get("url") or ""),
-                "duration": _as_float(entry.get("duration")),
-                "uploader": str(entry.get("uploader") or entry.get("channel") or ""),
-                # Flat extraction may not carry a duration (live, some
-                # Instagram shapes). The UI shows what it has rather than a 0.
-                "view_count": _as_int(entry.get("view_count")),
-                "thumb": thumb,
-                # The cookie flags that made THIS search work, carried per item
-                # so the thumbnail fetch can repeat the same authenticated
-                # request. Without them a private feed lists fine and every
-                # image comes back empty.
-                "_ytdlp_args": list(config.extra_ytdlp_args),
-            }
-        )
-    return results, title, removed
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 #: Thumbnail bytes are proxied, not hot-linked: Instagram and YouTube serve
@@ -1589,7 +1313,7 @@ class UiServer(http_server.ThreadingHTTPServer):
 
 
 
-class Handler(http_server.BaseHTTPRequestHandler):
+class Handler(routes_providers.ProviderRoutes, routes_scrap.ScrapRoutes, routes_transcript.TranscriptRoutes, http_server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "ViralClipper/1.0"
 
@@ -1858,13 +1582,13 @@ class Handler(http_server.BaseHTTPRequestHandler):
                 self._send_json({"error": "not found"}, 404)
             return
         if path == "/api/providers":
-            self._send_json(_providers_payload())
+            self._send_json(routes_providers._providers_payload())
             return
         if path == "/api/providers/user":
             # The card's own listing. Same payload as /providers because the
             # dropdown and the card must never disagree about what exists; the
             # ``user`` flag is what the card filters on.
-            self._send_json(_providers_payload())
+            self._send_json(routes_providers._providers_payload())
             return
         if path == "/api/prompts/curador":
             self._send_json(_curator_prompt_payload())
@@ -2196,34 +1920,6 @@ class Handler(http_server.BaseHTTPRequestHandler):
         self._send_file(candidate.read_bytes(), "image/jpeg",
                         cache=self._CACHE_ASSET, etag=self._etag_for(candidate))
 
-    def _handle_scrap(self, payload: dict) -> None:
-        """Answer the ViceScrap search box.
-
-        Read-only: it enumerates what a URL yields and hands the list back. It
-        runs on the request thread and is a metadata fetch, not a download, so
-        there is no job to queue — the pick from the list is what feeds /run.
-
-        Failures go back as the same one-line cause the CLI prints, so an
-        expired cookie or a private post reads the same in both places.
-        """
-        try:
-            results, title, removed = _scrap_results(payload)
-        except ClipperError as exc:
-            self._send_json({"error": str(exc)}, 400)
-            return
-        except Exception as exc:  # noqa: BLE001 - surface anything to the UI
-            self._send_json({"error": f"{exc!r}"}, 400)
-            return
-        self._send_json({"title": title, "count": len(results), "results": results,
-                         "removed": removed})
-        # Kept so /scrap/thumb can serve the k-th row by index. The page holds
-        # the same list, but re-deriving it there means sending every item back
-        # through the API, and the URL has to be buildable from the row alone.
-        # ``_ytdlp_args`` travels with it because the thumbnail fetch has to
-        # repeat the same authenticated request the search made.
-        with _lock:
-            _state["scrap"] = results
-
     def _handle_archive(self, payload: dict) -> None:
         """Baixa o catalogo de um perfil para ``reels/`` e ``posts/``.
 
@@ -2433,167 +2129,6 @@ class Handler(http_server.BaseHTTPRequestHandler):
             self._send_json({"error": f"nao consegui gravar {path}: {exc}"}, 500)
             return
         self._send_json({"ok": True, "path": str(path), "bytes": len(encoded)})
-
-    def _handle_save_provider(self, payload: dict) -> None:
-        """Add or replace one entry in the panel's provider file.
-
-        The name is not allowed to shadow a built-in. ``providers._table``
-        resolves a collision in favour of the built-in, so accepting the save
-        would produce an entry the panel lists, lets the user edit, and that
-        silently does nothing at run time -- the worst of the three possible
-        behaviours. Refusing here is what makes that rule visible instead of
-        mysterious.
-        """
-        from viralclipper import providers, user_providers
-
-        if "openai" not in providers.PROVIDERS:  # pragma: no cover - sanity only
-            self._send_json({"error": "tabela de provedores ausente"}, 500)
-            return
-
-        entry = payload.get("provider")
-        if not isinstance(entry, dict):
-            self._send_json({"error": "provider must be an object"}, 400)
-            return
-
-        name = str(entry.get("name") or "").strip()
-        if name in providers.PROVIDERS:
-            self._send_json(
-                {"error": f"'{name}' e um provedor de fabrica e nao pode ser sobrescrito. "
-                          f"Use outro nome."},
-                400,
-            )
-            return
-
-        # The panel never receives the saved key back (only `has_key`), so an
-        # edit that does not retype it sends an empty ``api_key``. Empty means
-        # "leave it alone", not "delete it": without this, correcting a typo in
-        # the note of a provider would wipe the secret and the next run would
-        # fail with a 401 the form gives no clue about. Removing the key is
-        # turning "Exige chave" off, which is a different, visible action.
-        #
-        # Folded into the ENTRY, before ``validate``: validate is what enforces
-        # "a provider that requires a key must have one", so a preservation done
-        # after it would arrive too late and the edit would be refused with the
-        # very message the merge exists to prevent.
-        entry = dict(entry)
-        if not str(entry.get("api_key") or "").strip():
-            anterior = next(
-                (p for p in user_providers.load(USER_PROVIDERS_PATH)
-                 if p.name == name),
-                None,
-            )
-            if anterior is not None and anterior.api_key:
-                entry["api_key"] = anterior.api_key
-
-        provider, reason = user_providers.validate(entry)
-        if provider is None:
-            self._send_json({"error": reason}, 400)
-            return
-
-        try:
-            user_providers.save(
-                [p for p in user_providers.load(USER_PROVIDERS_PATH)
-                 if p.name != provider.name] + [provider],
-                USER_PROVIDERS_PATH,
-            )
-        except ClipperError as exc:
-            self._send_json({"error": str(exc)}, 500)
-            return
-
-        # The full merged list goes back, not just the saved entry: the panel
-        # re-renders both the card and the Curador dropdown from one response,
-        # so a page that was open while another tab added a provider converges.
-        self._send_json({"ok": True, "saved": provider.name,
-                         **_providers_payload()})
-
-    def _handle_remove_provider(self, payload: dict) -> None:
-        """Drop one user provider. Removing a built-in is refused, not ignored."""
-        from viralclipper import providers, user_providers
-
-        name = str(payload.get("name") or "").strip()
-        if not name:
-            self._send_json({"error": "name is required"}, 400)
-            return
-        if name in providers.PROVIDERS:
-            self._send_json(
-                {"error": f"'{name}' e um provedor de fabrica e nao pode ser removido."},
-                400,
-            )
-            return
-        try:
-            user_providers.remove(name, USER_PROVIDERS_PATH)
-        except ClipperError as exc:
-            self._send_json({"error": str(exc)}, 500)
-            return
-        self._send_json({"ok": True, "removed": name, **_providers_payload()})
-
-    def _handle_test_provider(self, payload: dict) -> None:
-        """Fire one real request at the endpoint and report what came back.
-
-        Takes the entry from the body rather than a name, and that is
-        deliberate: the user has to be able to test a provider **before** saving
-        it, otherwise the only way to find out a URL is wrong is to write it to
-        a file first. The same endpoint then serves "test what I typed".
-
-        This does mean the server will open a connection to a URL the request
-        names. That is what the feature *is* -- it is a probe the user asked
-        for, on a server bound to 127.0.0.1 and already behind
-        ``_guard_origin``. The scheme is restricted to http(s) by
-        ``user_providers.validate``, so no ``file://`` read is reachable.
-        """
-        import os as os_mod
-
-        from viralclipper import provider_probe, user_providers
-
-        entry = payload.get("provider")
-        if not isinstance(entry, dict):
-            self._send_json({"error": "provider must be an object"}, 400)
-            return
-        provider, reason = user_providers.validate(entry)
-        if provider is None:
-            self._send_json({"error": reason}, 400)
-            return
-
-        api_key = None
-        if provider.api_key:
-            # The key pasted into the panel wins only over *absence*: an
-            # exported variable still overrides it below, so a machine that has
-            # the real secret in the environment is not shadowed by a key saved
-            # from a browser on the same machine.
-            api_key = provider.api_key
-        if provider.api_key_env:
-            api_key = os_mod.environ.get(provider.api_key_env) or api_key
-        if not api_key and provider.requires_key:
-            # A missing key is a result the user needs, not a server error: the
-            # probe cannot get past it, and saying so now is faster than a 401
-            # the user has to decode.
-            alvo = (
-                f"${provider.api_key_env}" if provider.api_key_env
-                else "a chave colada no painel"
-            )
-            self._send_json({
-                "ok": False, "kind": "OK", "verdict": "no-key", "status": 0,
-                "seconds": 0.0, "answer": "",
-                "reason": f"nao ha chave em {alvo} neste servidor. "
-                          f"Exporte a variavel (e reinicie o painel) ou cole a chave "
-                          f"no campo \"Chave de API\" e salve.",
-            })
-            return
-
-        self._send_json(provider_probe.test_provider(provider, api_key=api_key))
-
-    def _handle_normalize(self, payload: dict) -> None:
-        """Clean a pasted transcript and return it minute-aligned."""
-        raw = payload.get("transcript")
-        if not isinstance(raw, str) or not raw.strip():
-            self._send_json({"error": "transcript is required"}, 400)
-            return
-        try:
-            result = transcript_import.normalize_transcript(raw)
-        except ClipperError as exc:
-            self._send_json({"error": str(exc)}, 400)
-            return
-        self._send_json(result.to_dict())
 
     def log_message(self, *args) -> None:  # keep the console quiet
         return

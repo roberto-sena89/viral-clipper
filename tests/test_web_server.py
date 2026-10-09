@@ -33,6 +33,7 @@ from web.server import resolve_within
 # pasta nao esta' no sys.path do pacote.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 import normalizar_fontes as fontes  # noqa: E402
+import breakpoints as bp  # noqa: E402
 
 # A medicao do DOM de verdade. Os testes de markup que dependem do JS rodar
 # (rail, rodape, marca) chamam `pagina_montada`, que executa o /comum.js com os
@@ -2707,6 +2708,60 @@ class FontScaleTests(unittest.TestCase):
             "estes literais nao estao no MAPA nem em SEM_DEGRAU -- ninguem "
             "decidiu se eles tem degrau. Ou mapeie, ou registre por que' "
             "ficam: %r" % orfaos)
+
+
+class BreakpointInventoryTests(unittest.TestCase):
+    """A contagem de breakpoints ignora comentario, inclusive o de varias linhas.
+
+    ``tools/breakpoints.py`` conta `@media (max-width: Npx)` nas folhas de
+    estilo. A primeira versao filtrava linha a linha por ``"@media" in linha``,
+    e este repo escreve comentario longo: quase todo ``/*`` abre numa linha e
+    continua nas seguintes, levando ``@media (max-width: 1280px)`` em prosa para
+    dentro da contagem. Dava 43 achados onde havia 41 -- e o numero errado ia
+    para dentro da documentacao como se fosse medicao.
+    """
+
+    def test_a_media_query_in_prose_is_not_counted(self):
+        achados = list(bp.ocorrencias())
+        fontes_achadas = {nome for _, nome, _, _ in achados}
+        for _, nome, numero, texto in achados:
+            with self.subTest(arquivo=nome, linha=numero):
+                self.assertIn("@media", texto,
+                              "linha contada como breakpoint nao tem @media: %r"
+                              % texto)
+                self.assertNotIn("/*", texto,
+                                 "a linha contada ainda tem comentario: %r"
+                                 % texto)
+        self.assertTrue(fontes_achadas,
+                        "nenhum breakpoint encontrado -- o padrao quebrou")
+
+    def test_the_1280_in_prose_is_not_a_breakpoint(self):
+        # O comentario do `index.css` cita `@media (max-width: 1280px)` ao
+        # explicar uma armadilha de cascata. A `@media` de verdade do 1280 esta'
+        # no `scrap.css`; o `index.css` tem uma so', e ela nao e' esta.
+        do_1280 = [
+            (nome, numero)
+            for valor, nome, numero, _ in bp.ocorrencias()
+            if valor == 1280
+        ]
+        self.assertNotIn(("index.css", 1633), do_1280,
+                         "o 1280 citado em prosa voltou para a contagem")
+        self.assertIn(("scrap.css", 1205), do_1280,
+                      "o 1280 de verdade saiu da contagem")
+
+    def test_the_state_survives_a_comment_that_opens_and_closes_on_one_line(self):
+        aberto, dentro = bp._fora_do_comentario("a { color: red } /* nota */", False)
+        self.assertFalse(dentro, "comentario fechado na mesma linha deixou o estado aberto")
+        self.assertNotIn("nota", aberto, "o texto do comentario vazou para o codigo")
+
+        _, dentro = bp._fora_do_comentario("/* abre", False)
+        self.assertTrue(dentro, "comentario aberto nao marcou o estado")
+        fora, dentro = bp._fora_do_comentario("   ainda dentro", dentro)
+        self.assertTrue(dentro, "o estado nao sobreviveu a' linha seguinte")
+        self.assertEqual(fora.strip(), "", "prosa dentro do bloco nao foi removida")
+        fora, dentro = bp._fora_do_comentario("fecha */ .x {}", dentro)
+        self.assertFalse(dentro, "o bloco nao fechou")
+        self.assertIn(".x", fora, "o codigo depois do fecho sumiu")
 
 
 class FieldDescriptionTests(unittest.TestCase):

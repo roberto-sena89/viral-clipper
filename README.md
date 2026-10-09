@@ -30,10 +30,10 @@ Face, so it needs network access once.
 
 Two features are optional and degrade cleanly when absent:
 
-| Feature | Install | Without it |
-| --- | --- | --- |
-| `--layout focus` (face-guided crop) | `pip install "opencv-python-headless<5"` | falls back to a center crop |
-| `--ranker llm` (semantic re-ranking) | nothing, it speaks HTTP | ranking stays heuristic |
+| Feature                              | Install                                  | Without it                  |
+| ------------------------------------ | ---------------------------------------- | --------------------------- |
+| `--layout focus` (face-guided crop)  | `pip install "opencv-python-headless<5"` | falls back to a center crop |
+| `--ranker llm` (semantic re-ranking) | nothing, it speaks HTTP                  | ranking stays heuristic     |
 
 The `<5` pin on OpenCV is deliberate: version 5 removed `CascadeClassifier` and
 stopped shipping the Haar XMLs, leaving only `FaceDetectorYN`, which needs an
@@ -130,11 +130,6 @@ python -m viralclipper "URL" --ranker llm --ranker-model gpt-4o-mini
 
 Any OpenAI-compatible endpoint works, including a local one:
 
-```powershell
-python -m viralclipper "URL" --ranker llm `
-  --ranker-base-url http://localhost:11434/v1 --ranker-model llama3.1 --ranker-no-key
-```
-
 ## How it works
 
 1. `download.py` reads the metadata with `yt-dlp` and pulls only the audio
@@ -176,41 +171,41 @@ in: a window's score must not change when its neighbours do.
 
 ## Main options
 
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `-n`, `--count` | auto | `auto` lets the video decide how many clips it yields; a number is a fixed ceiling |
-| `--min` / `--max` / `--target` | 30 / 60 / 42 | duration limits in seconds |
-| `--auto-margin` | 15 | auto mode: how many points below the video's best clip still counts as worth cutting |
-| `--auto-ceiling` | 200 | auto mode: safety cap, not a target |
-| `--max-grace` | 30 | seconds a clip may exceed `--max` to close its reasoning |
-| `--min-score` | 0 | absolute 0-100 gate; clips below it are dropped (0 = off) |
-| `--min-gap` | 6 | silence kept between two accepted clips |
-| `--engine` | hybrid | `hybrid`, `audio` or `transcript` |
-| `--model` | small | faster-whisper checkpoint; steps down if it will not load |
-| `--language` | auto | force a language, e.g. `pt` |
-| `--download-mode` | sections | `sections` downloads only the chosen ranges |
-| `--metadata-language` | `pt` | language yt-dlp asks the site for; this is what keeps titles in pt-BR. Empty leaves the site's default |
-| `--layout` | focus | `focus`, `center`, `blur` or `fit` |
-| `--caption-style` | karaoke | `karaoke`, `block` or `none` |
-| `--caption-preset` | karaoke | one of the 21 presets below; `--caption-preset X` overrides `--caption-style` |
-| `--font-size` | preset | empty means "use the preset's size"; a value overrides only that |
-| `--caption-margin` | 640 | caption bottom margin in px; 640 clears the TikTok UI zone |
-| `--highlight-color` | `&H0000FFFF` | karaoke/headline color, ASS format `&HAABBGGRR` |
-| `--headline` | auto | burned opening headline; defaults to the clip's first words |
-| `--headline-seconds` | 0 (off) | how long the hook title stays at the top; 0 = captions only |
-| `--progress-bar` | off | draw the watched-progress bar at the top of the frame |
-| `--sidecar-captions` | off | write an `.srt` instead of burning captions |
-| `--jump-cut` | off | remove silences inside the clip |
-| `--threads` | 2 | ffmpeg thread limit per encode |
-| `--workers` | 2 | clips rendered in parallel |
-| `--cache-dir` | auto | transcript and rank cache directory |
-| `--plan-only` | off | score and report without rendering |
-| `--template` | off | a composition name (`split-card`) or a path to a `.toml`/`.yaml` |
-| `--variant-presets` | off | comma-separated presets; re-renders each clip once per preset |
-| `--variant-layouts` | off | comma-separated layouts; re-renders each clip once per layout |
-| `--list-templates` | — | print the built-in templates and exit |
-| `--describe-template` | — | print a template's resolved pixel bands and exit |
-| `--keep-temp` | off | keep the intermediate files |
+| Option                         | Default      | Meaning                                                                                                |
+| ------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------ |
+| `-n`, `--count`                | auto         | `auto` lets the video decide how many clips it yields; a number is a fixed ceiling                     |
+| `--min` / `--max` / `--target` | 30 / 60 / 42 | duration limits in seconds                                                                             |
+| `--auto-margin`                | 15           | auto mode: how many points below the video's best clip still counts as worth cutting                   |
+| `--auto-ceiling`               | 200          | auto mode: safety cap, not a target                                                                    |
+| `--max-grace`                  | 30           | seconds a clip may exceed `--max` to close its reasoning                                               |
+| `--min-score`                  | 0            | absolute 0-100 gate; clips below it are dropped (0 = off)                                              |
+| `--min-gap`                    | 6            | silence kept between two accepted clips                                                                |
+| `--engine`                     | hybrid       | `hybrid`, `audio` or `transcript`                                                                      |
+| `--model`                      | small        | faster-whisper checkpoint; steps down if it will not load                                              |
+| `--language`                   | auto         | force a language, e.g. `pt`                                                                            |
+| `--download-mode`              | sections     | `sections` downloads only the chosen ranges                                                            |
+| `--metadata-language`          | `pt`         | language yt-dlp asks the site for; this is what keeps titles in pt-BR. Empty leaves the site's default |
+| `--layout`                     | focus        | `focus`, `center`, `blur` or `fit`                                                                     |
+| `--caption-style`              | karaoke      | `karaoke`, `block` or `none`                                                                           |
+| `--caption-preset`             | karaoke      | one of the 21 presets below; `--caption-preset X` overrides `--caption-style`                          |
+| `--font-size`                  | preset       | empty means "use the preset's size"; a value overrides only that                                       |
+| `--caption-margin`             | 640          | caption bottom margin in px; 640 clears the TikTok UI zone                                             |
+| `--highlight-color`            | `&H0000FFFF` | karaoke/headline color, ASS format `&HAABBGGRR`                                                        |
+| `--headline`                   | auto         | burned opening headline; defaults to the clip's first words                                            |
+| `--headline-seconds`           | 0 (off)      | how long the hook title stays at the top; 0 = captions only                                            |
+| `--progress-bar`               | off          | draw the watched-progress bar at the top of the frame                                                  |
+| `--sidecar-captions`           | off          | write an `.srt` instead of burning captions                                                            |
+| `--jump-cut`                   | off          | remove silences inside the clip                                                                        |
+| `--threads`                    | 2            | ffmpeg thread limit per encode                                                                         |
+| `--workers`                    | 2            | clips rendered in parallel                                                                             |
+| `--cache-dir`                  | auto         | transcript and rank cache directory                                                                    |
+| `--plan-only`                  | off          | score and report without rendering                                                                     |
+| `--template`                   | off          | a composition name (`split-card`) or a path to a `.toml`/`.yaml`                                       |
+| `--variant-presets`            | off          | comma-separated presets; re-renders each clip once per preset                                          |
+| `--variant-layouts`            | off          | comma-separated layouts; re-renders each clip once per layout                                          |
+| `--list-templates`             | —            | print the built-in templates and exit                                                                  |
+| `--describe-template`          | —            | print a template's resolved pixel bands and exit                                                       |
+| `--keep-temp`                  | off          | keep the intermediate files                                                                            |
 
 ### Títulos em pt-BR
 
@@ -221,6 +216,7 @@ OF THE GOVERNMENT and MESSIAS and RODRIGUES ARE IN AN OPEN WAR` quando não é �
 e um vídeo de origem inglesa (`I Built A City To Save Kids From Illegal Labor`)
 volta já traduzido (`Eu Construí Uma Cidade Pra Salvar Crianças do Trabalho
 Infantil Ilegal`).
+
 
 Como o título é o que o relatório, a listagem de arquivos e a página de scrap
 mostram, o idioma é fixado uma vez e vale para toda chamada ao yt-dlp:
@@ -257,45 +253,45 @@ color, box and karaoke highlight together; any manual flag (`--font-size`,
 37 presets ship. `--caption-preset` validates against the real list, so a typo
 prints the choices instead of rendering something unexpected.
 
-| Preset | Look | When it wins |
-| --- | --- | --- |
-| `karaoke` | white bold, thin dark outline, yellow word highlight | the proven default for every channel |
-| `social` | Arial Black, yellow pop, two words per line, safe zone | the TikTok/Reels default out of the box |
-| `bold-box` | white text on a semi-opaque dark box | light or busy footage |
-| `minimal` | sentence case, thin outline, no box | quiet, elegant channels |
-| `neon` | green neon highlight, deep shadow | dark, cinematic footage |
-| `block-dark` | opaque dark bar | bright highlights right under the text |
-| `mono` | monospaced, green highlight | tech and developer channels |
-| `fire` | orange highlight | energy and urgency |
-| `magenta-pop` | magenta highlight | pop and irreverent |
-| `cyan-pop` | electric cyan highlight | modern and cool |
-| `lime-hit` | acid-lime highlight | young, high-contrast |
-| `blood` | blood-red highlight, thick outline | drama and shock |
-| `gold-box` | gold highlight on dark box | authority and premium |
-| `candy` | white box, dark text, pink highlight | sweet and bright |
-| `violet-vibe` | violet highlight, deep shadow | creative and nocturnal |
-| `ice-blue` | ice-blue highlight on thin dark box | clean and technical |
-| `sunset` | warm orange highlight | heat without shouting |
-| `bubble` | night-blue box, yellow highlight | talk and podcast |
-| `ultra-impact` | giant Impact, thick outline | maximum impact |
-| `slim` | narrow face, cyan highlight | compact and informative |
-| `cobalt` | dark box, cyan highlight | sharp corporate |
-| `pop-box` | yellow box, dark text, red highlight | maximally loud |
-| `roboto-bold` | Roboto, cyan highlight | the YouTube/shorts standard |
-| `inter-bold` | Inter, lime highlight | top readability on small screens |
-| `poppins-bold` | geometric Poppins, magenta highlight | friendly and round |
-| `montserrat-bold` | Montserrat, gold highlight | the TikTok look |
-| `dm-sans` | DM Sans, orange highlight | Swiss minimalism |
-| `cabin-bold` | open Cabin, light cyan highlight | friendly explainers |
-| `verdana-bold` | giant x-height Verdana, yellow highlight | tiny screens and accessibility |
-| `trebuchet-bold` | clean humanist Trebuchet, red highlight | warm readability |
-| `tahoma-bold` | narrow Tahoma, cyan highlight | maximum words per line |
-| `calibri-bold` | modern Calibri, lime highlight | office and tutorials |
-| `franklin-bold` | condensed Franklin Gothic, fire highlight | classic news density |
-| `segoe-black` | native Segoe UI, violet highlight | modern Windows feel |
-| `helvetica-classic` | the cinema yellow | the classic film look |
-| `merriweather-black` | editorial screen serif, gold highlight | slow-paced documentaries |
-| `arvo-bold` | slab serif for the big screen, yellow highlight | interviews and keynotes |
+| Preset               | Look                                                   | When it wins                            |
+| -------------------- | ------------------------------------------------------ | --------------------------------------- |
+| `karaoke`            | white bold, thin dark outline, yellow word highlight   | the proven default for every channel    |
+| `social`             | Arial Black, yellow pop, two words per line, safe zone | the TikTok/Reels default out of the box |
+| `bold-box`           | white text on a semi-opaque dark box                   | light or busy footage                   |
+| `minimal`            | sentence case, thin outline, no box                    | quiet, elegant channels                 |
+| `neon`               | green neon highlight, deep shadow                      | dark, cinematic footage                 |
+| `block-dark`         | opaque dark bar                                        | bright highlights right under the text  |
+| `mono`               | monospaced, green highlight                            | tech and developer channels             |
+| `fire`               | orange highlight                                       | energy and urgency                      |
+| `magenta-pop`        | magenta highlight                                      | pop and irreverent                      |
+| `cyan-pop`           | electric cyan highlight                                | modern and cool                         |
+| `lime-hit`           | acid-lime highlight                                    | young, high-contrast                    |
+| `blood`              | blood-red highlight, thick outline                     | drama and shock                         |
+| `gold-box`           | gold highlight on dark box                             | authority and premium                   |
+| `candy`              | white box, dark text, pink highlight                   | sweet and bright                        |
+| `violet-vibe`        | violet highlight, deep shadow                          | creative and nocturnal                  |
+| `ice-blue`           | ice-blue highlight on thin dark box                    | clean and technical                     |
+| `sunset`             | warm orange highlight                                  | heat without shouting                   |
+| `bubble`             | night-blue box, yellow highlight                       | talk and podcast                        |
+| `ultra-impact`       | giant Impact, thick outline                            | maximum impact                          |
+| `slim`               | narrow face, cyan highlight                            | compact and informative                 |
+| `cobalt`             | dark box, cyan highlight                               | sharp corporate                         |
+| `pop-box`            | yellow box, dark text, red highlight                   | maximally loud                          |
+| `roboto-bold`        | Roboto, cyan highlight                                 | the YouTube/shorts standard             |
+| `inter-bold`         | Inter, lime highlight                                  | top readability on small screens        |
+| `poppins-bold`       | geometric Poppins, magenta highlight                   | friendly and round                      |
+| `montserrat-bold`    | Montserrat, gold highlight                             | the TikTok look                         |
+| `dm-sans`            | DM Sans, orange highlight                              | Swiss minimalism                        |
+| `cabin-bold`         | open Cabin, light cyan highlight                       | friendly explainers                     |
+| `verdana-bold`       | giant x-height Verdana, yellow highlight               | tiny screens and accessibility          |
+| `trebuchet-bold`     | clean humanist Trebuchet, red highlight                | warm readability                        |
+| `tahoma-bold`        | narrow Tahoma, cyan highlight                          | maximum words per line                  |
+| `calibri-bold`       | modern Calibri, lime highlight                         | office and tutorials                    |
+| `franklin-bold`      | condensed Franklin Gothic, fire highlight              | classic news density                    |
+| `segoe-black`        | native Segoe UI, violet highlight                      | modern Windows feel                     |
+| `helvetica-classic`  | the cinema yellow                                      | the classic film look                   |
+| `merriweather-black` | editorial screen serif, gold highlight                 | slow-paced documentaries                |
+| `arvo-bold`          | slab serif for the big screen, yellow highlight        | interviews and keynotes                 |
 
 Windows system faces render out of the box; Roboto, Inter, Poppins,
 Montserrat, DM Sans, Cabin, Helvetica, Merriweather and Arvo are free on
@@ -311,14 +307,14 @@ A preset answers "how do the captions look". A **template** answers "what does
 the whole frame look like". A template is a stack of horizontal **zones** whose
 height fractions sum to 1.0:
 
-| Zone kind | Draws |
-| --- | --- |
-| `video` | the clip itself, cropped or fitted into its band |
-| `frame` | a still **extracted from the clip** (`frame_at` seconds in) |
-| `image` | a still from your own file (`source`), for a logo or channel card |
-| `solid` | a flat colour band |
-| `text` | a flat colour band with **words burned into it** |
-| `captions` | the caption band (positioned by libass; carries fraction 0) |
+| Zone kind  | Draws                                                             |
+| ---------- | ----------------------------------------------------------------- |
+| `video`    | the clip itself, cropped or fitted into its band                  |
+| `frame`    | a still **extracted from the clip** (`frame_at` seconds in)       |
+| `image`    | a still from your own file (`source`), for a logo or channel card |
+| `solid`    | a flat colour band                                                |
+| `text`     | a flat colour band with **words burned into it**                  |
+| `captions` | the caption band (positioned by libass; carries fraction 0)       |
 
 `image` is the one zone that may be left **unset**. A gallery template opens
 before you have the asset (the Meme's identity bar, the X card's tweet print),
@@ -429,6 +425,7 @@ python -m viralclipper "URL" --template split-card \
   --variant-presets neon,fire,minimal --variant-layouts focus,blur
 ```
 
+
 That is 3 x 2 = **6 renders per clip**, each named
 `..._<stem>__neon-focus_000010.mp4`. Nothing is re-downloaded and nothing is
 re-scored: the section download happens once per window and only the encode
@@ -487,15 +484,15 @@ A degraded run is not a silent one. Two things happen:
    precisely the transient failure. Batch mode already treats `code != 0` as a
    failed, retryable job, so the 4 gets a retry for free.
 
-| Exit code | Meaning |
-|---|---|
-| 0 | Success. |
-| 1 | Runtime error (`ClipperError`); the message is in the log. |
-| 2 | Usage/argument error. |
-| 3 | A clip came out below the configured minimum duration. |
-| **4** | **Degraded run: clips rendered with no burned captions, selection on audio energy alone.** |
-| **5** | **Output directory busy: another run holds it. Nothing broke — wait, then run again.** |
-| 130 | Interrupted by the user (`Ctrl-C`). |
+| Exit code | Meaning                                                                                    |
+| --------- | ------------------------------------------------------------------------------------------ |
+| 0         | Success.                                                                                   |
+| 1         | Runtime error (`ClipperError`); the message is in the log.                                 |
+| 2         | Usage/argument error.                                                                      |
+| 3         | A clip came out below the configured minimum duration.                                     |
+| **4**     | **Degraded run: clips rendered with no burned captions, selection on audio energy alone.** |
+| **5**     | **Output directory busy: another run holds it. Nothing broke — wait, then run again.**     |
+| 130       | Interrupted by the user (`Ctrl-C`).                                                        |
 
 Exit 4 is checked **before** exit 3: both can be true at once, and "degraded" is
 the more actionable of the two — the short duration is a consequence of the
@@ -528,10 +525,10 @@ second. RTF below 1 means the machine cannot transcribe faster than playback, so
 a batch will not fit in a day. Measured on this 8-core CPU with `int8`, on two
 minutes of real speech:
 
-| checkpoint | load | 120 s of audio | RTF | peak RSS |
-| --- | --- | --- | --- | --- |
-| `base` | 2.2 s | 226.2 s | 0.53 | 467 MB |
-| `tiny` | 2.0 s | 126.4 s | 0.95 | 321 MB |
+| checkpoint | load  | 120 s of audio | RTF  | peak RSS |
+| ---------- | ----- | -------------- | ---- | -------- |
+| `base`     | 2.2 s | 226.2 s        | 0.53 | 467 MB   |
+| `tiny`     | 2.0 s | 126.4 s        | 0.95 | 321 MB   |
 
 So `base` turns one hour of video into roughly 1 h 53 min of CPU, and a batch of
 twenty 20-minute videos into about twelve hours. `tiny` is roughly twice as fast
@@ -618,6 +615,7 @@ So each `output_dir` is guarded by an exclusive OS lock, held from before the
 first byte is written until the run ends. A second run **refuses** (exit 5)
 instead of waiting: whoever called knows what to do with the message, while a
 `sleep` until release is a hang with no explanation.
+
 
 ```
 $ python -m viralclipper https://youtu.be/...
@@ -808,7 +806,6 @@ Two notes on the scrap page, both learned the hard way:
     possibilities rather than reporting an empty feed. `doc_id` is re-read from
     the bundle (the `PolarisProfilePostsQuery_instagramRelayOperation` module
     exports it) and `fb_dtsg` comes from the profile page itself.
-
   The media itself is still downloaded by yt-dlp from the single post/reel URL,
   which works. Profile mode also works for YouTube and TikTok.
 
@@ -817,6 +814,7 @@ Two notes on the scrap page, both learned the hard way:
 `sessionid` is `HttpOnly`, so every exporter that reads cookies through the
 page's JavaScript — extensions included — omits it, and the jar arrives
 "complete" but unauthenticated. Get the value by hand once:
+
 
 DevTools (`F12`) → *Application* → *Cookies* → `https://www.instagram.com` →
 the `sessionid` row → copy the **Value** column.

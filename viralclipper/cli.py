@@ -50,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--count",
         type=_count_argument,
         default=0,
-        help="Quantidade de clips, ou 'auto' (padrao) para o video decidir",
+        help="Quantidade de clips, ou 'auto' para o video decidir. Padrão: 'auto'",
     )
     parser.add_argument(
         "--batch",
@@ -60,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--manifest",
         default=None,
-        help="Banco SQLite do lote (padrao: <output>/batch.sqlite3)",
+        help="Banco SQLite do lote. Padrão: <output>/batch.sqlite3",
     )
     parser.add_argument(
         "--retry-failed",
@@ -113,6 +113,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Arquivo de configuracao YAML/TOML (lido antes dos flags CLI; flags vencem)",
     )
 
+    # Grupo de argumentos relacionados aos critérios de seleção de trechos
+    # Agrupa parâmetros que definem o que constitui um "bom" corte para o algoritmo
     selection = parser.add_argument_group("selecao")
     selection.add_argument("--min", dest="min_duration", type=float, default=30.0)
     selection.add_argument("--max", dest="max_duration", type=float, default=60.0)
@@ -155,8 +157,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="hybrid usa transcricao + energia; audio pula a transcricao",
     )
 
+    # Grupo de argumentos relacionados à configuração do Whisper e processamento de áudio
+    # Contém parâmetros para escolha do modelo, dispositivo, idioma e outras opções de transcrição
     whisper = parser.add_argument_group("transcricao")
-    whisper.add_argument("--model", dest="whisper_model", default="small", help="Modelo Whisper: tiny (mais rápido, menos preciso), base, small (padrão), medium, large (mais preciso, mais lento)")
+    whisper.add_argument("--model", dest="whisper_model", default="small", help="Modelo Whisper: tiny (mais rápido, menos preciso), base, small (padrão), medium, large (mais preciso, mais lento). Padrão: small")
     whisper.add_argument("--device", dest="whisper_device", default="auto", help="Dispositivo para o Whisper: auto (detecta automaticamente), cuda (GPU), cpu (apenas CPU). Use 'cuda' para aceleração por GPU se disponível.")
     whisper.add_argument("--compute-type", dest="whisper_compute_type", default="int8")
     whisper.add_argument("--language", default=None, help="Ex.: pt para forcar portugues")
@@ -167,10 +171,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--cache-dir",
         dest="cache_dir",
         default=None,
-        help="Pasta do cache de transcricao (padrao: output/cache/transcripts, "
-             "fora do diretorio temporario do trabalho para ser reaproveitado "
-             "entre execucoes do mesmo video). Habilitado por padrão para melhor "
-             "performance em múltiplas execuções do mesmo vídeo.",
+        help="Pasta do cache de transcrição. Padrão: output/cache/transcripts (fora do diretório temporário do trabalho para ser reaproveitado entre execuções do mesmo vídeo). Habilitado por padrão para melhor performance em múltiplas execuções do mesmo vídeo.",
     )
     whisper.add_argument(
         "--no-transcript-cache",
@@ -193,6 +194,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Transcricao passada direto na linha (mesma finalidade de --transcript)",
     )
 
+    # Grupo de argumentos relacionados ao processamento de áudio
+    # Contém parâmetros para detecção de silêncio, análise de energia e outras características do áudio
     audio_group = parser.add_argument_group("audio")
     audio_group.add_argument("--silence-db", dest="silence_db", type=float, default=None)
     audio_group.add_argument("--min-silence", dest="min_silence", type=float, default=0.32)
@@ -247,20 +250,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     video.add_argument("--font", default=None, help="Fonte das legendas (padrao: herda do preset)")
     video.add_argument("--font-size", dest="font_size", type=int, default=None,
-                       help="Tamanho da fonte (padrao: herda do preset)")
+                       help="Tamanho da fonte. Padrão: herda do preset")
     video.add_argument(
         "--caption-margin",
         dest="caption_margin_v",
         type=int,
         default=None,
-        help="Margem inferior da legenda em px (padrao: herda do preset; 640 mantem o texto fora da zona de botoes do TikTok)",
+        help="Margem inferior da legenda em px. Padrão: herda do preset (640 mantem o texto fora da zona de botoes do TikTok)",
     )
     video.add_argument(
         "--caption-margin-ratio",
         dest="caption_margin_v_ratio",
         type=float,
         default=None,
-        help="Margem inferior da legenda como fracao da altura do quadro (0.0-1.0). Precedencia sobre --caption-margin. Padrao ~0.33 (~634px @ 1920)",
+        help="Margem inferior da legenda como fração da altura do quadro (0.0-1.0). Tem precedência sobre --caption-margin. Padrão: ~0.33 (~634px @ 1920)",
     )
     video.add_argument(
         "--highlight-color",

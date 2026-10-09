@@ -31,6 +31,42 @@
    `.site-footer`.
    ------------------------------------------------------------------------ */
 
+/* ---------- ESCALA DE LARGURA (breakpoints) ----------
+   Ha' 19 valores distintos de largura no painel, em 43 `@media` com `width`.
+   Eles NAO sao uma escala unica e nao podem virar uma: cada valor e' o ponto
+   em que UM componente especifico precisa mudar de forma, e os valores caem
+   perto uns dos outros porque as paginas tem a mesma largura de conteudo —
+   nao porque alguem escolheu "os mesmos numeros".
+
+   Foi tentado reduzir a um punhado de degraus nomeados (sm/md/lg/xl/2xl). A
+   medicao no navegador (`sticky-probe/breakpoint_peso.js`, comparando o MODO
+   de layout em larguras vizinhas) mostra por que nao da': as bandas guardam
+   componentes DIFERENTES na mesma faixa. Unificar 760 e 768 mudaria o
+   `job-card` E o `[data-section-nav]` no mesmo ponto; unificar 380 e 420
+   empilharia o `.kv` da Biblioteca antes de o texto do cabecalho caber.
+
+   O mapa real, por assunto:
+
+     420px   texto de marca/cabecalho encolhe (`job-card`, `studio-overline`,
+             os dois `*-header-context`). 4 usos, um so' momento.
+     640px   o cabecalho empilha e as linhas de campo viram uma coluna.
+             9 usos — o valor mais carregado, e o unico que se aproxima de
+             uma "banda de produto".
+     920px   o rail fixo vira gaveta (`body`). Este e' o corte estrutural: a
+             ordem das folhas no <head> existe para ele vencer (ver o topo).
+     960px   o par `.studio-pair` / `.card-fonte` volta a caber lado a lado.
+     980/981/1279/1280  o `.scrap-grid` em TRES faixas (>=1280 larga,
+             981-1279 media, <=980 uma coluna). Os quatro valores sao um so'
+             desenho; mexer em um desalinha os outros.
+     1100/1150/1160/1180  grids de card que ganham/perdem coluna.
+     380/480/520/620/720/760/768  ajustes pontuais de um componente.
+
+   Regra ao acrescentar uma banda: MEÇA o ponto em que aquele componente
+   quebra (as sondas em sticky-probe medem no navegador) e use o valor MEDIDO,
+   nao o degrau mais proximo da lista. Trocar um valor medido por um "redondo"
+   e' a forma mais facil de quebrar uma largura que ninguem testou.
+   ------------------------------------------------------------------------ */
+
 /* ---------- FONTE (self-hosted) ----------
    Inter vinha do Google Fonts num <link> render-blocking: offline ou com a
    rede lenta, a pagina inteira segurava no DNS do Google para DEPOIS cair no
@@ -108,8 +144,8 @@
   font-weight: 600; font-size: 1rem; letter-spacing: -0.02em;
   padding: 0 6px 16px; border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 14px;
-}.rail-brand .brand-mark { width: 30px; height: 30px; border-radius: 9px; font-size: 0.9rem; flex: none; }.rail-brand small { display: block; color: var(--text-muted); font-weight: 400; font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; }.rail-label {
-  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+}.rail-brand .brand-mark { width: 30px; height: 30px; border-radius: 9px; font-size: var(--text-cta); flex: none; }.rail-brand small { display: block; color: var(--text-muted); font-weight: 400; font-size: var(--text-2xs); letter-spacing: 0.04em; text-transform: uppercase; }.rail-label {
+  font-size: var(--text-2xs); font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
   color: var(--text-muted); padding: 0 10px; margin: 4px 0 8px;
 }.rail-menu {
   display: flex; flex-direction: column; gap: 2px;
@@ -128,7 +164,7 @@
   text-align: left; cursor: pointer; text-decoration: none;
 }.rail-item:hover { background: rgba(255, 255, 255, 0.04); border-color: var(--border-subtle); }.rail-item[aria-current="page"] {
   background: var(--active-tint); border-color: var(--accent-primary); color: var(--accent-soft);
-}.rail-item[aria-current="page"] .ri-desc { color: var(--text-secondary); }.rail-item .ri-ico { font-size: 1.05rem; line-height: 1.3; width: 20px; text-align: center; flex: none; }.rail-item .ri-title { display: block; font-weight: 600; }.rail-item .ri-desc { display: block; font-size: 0.73rem; color: var(--text-muted); line-height: 1.4; }.rail-foot { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--border-subtle); }.rail-foot span { display: block; font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; }.rail-dropdown { position: relative; display: none; }.menu-btn {
+}.rail-item[aria-current="page"] .ri-desc { color: var(--text-secondary); }.rail-item .ri-ico { font-size: var(--text-title); line-height: 1.3; width: 20px; text-align: center; flex: none; }.rail-item .ri-title { display: block; font-weight: 600; }.rail-item .ri-desc { display: block; font-size: 0.73rem; color: var(--text-muted); line-height: 1.4; }.rail-foot { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--border-subtle); }.rail-foot span { display: block; font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; }.rail-dropdown { position: relative; display: none; }.menu-btn {
   display: inline-flex; align-items: center; gap: 8px;
   font-family: inherit; font-size: var(--text-cta); font-weight: 600;
   border: 1px solid var(--border-strong); background: var(--bg-surface);
@@ -321,7 +357,7 @@
 .rail-brand-copy { display: grid; min-width: 0; gap: 2px; }
 .rail-brand-copy strong {
   overflow: hidden;
-  font-size: .84rem;
+  font-size: var(--text-body-sm);
   font-weight: 650;
   letter-spacing: -.025em;
   line-height: 1.25;
@@ -370,7 +406,7 @@
 .jump-links a {
   display: inline-flex; align-items: center; gap: 8px;
   min-height: 36px; padding: 0 12px; border: 1px solid var(--border-subtle);
-  border-radius: 999px; color: var(--text-primary); font-size: .78rem;
+  border-radius: 999px; color: var(--text-primary); font-size: var(--text-caption);
   font-weight: 600; text-decoration: none; background: rgba(255,255,255,.025);
   transition: border-color var(--motion-fast) ease, color var(--motion-fast) ease;
 }
@@ -517,7 +553,7 @@
 
 .site-footer .footer-brand__content { display: grid; gap: 0.3rem; }
 .site-footer .footer-brand__name {
-  font-size: 1.125rem;
+  font-size: var(--text-title);
   font-weight: 750;
   letter-spacing: -0.035em;
 }
@@ -547,7 +583,7 @@
   border: 1px solid transparent;
   border-radius: 0.75rem;
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--text-body);
   font-weight: 550;
   cursor: pointer;
   transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease;

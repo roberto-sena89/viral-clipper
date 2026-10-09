@@ -72,7 +72,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
 }
 
 .brand small {
-  color: var(--text-secondary); font-weight: 400; font-size: 0.85rem;
+  color: var(--text-secondary); font-weight: 400; font-size: var(--text-body-sm);
   margin-left: 6px;
 }
 
@@ -144,13 +144,13 @@ body { padding-left: var(--rail-w); }
   margin-bottom: 18px;
 }
 .hero p.lead {
-  font-size: 1.08rem; color: var(--text-secondary);
+  font-size: var(--text-title); color: var(--text-secondary);
   max-width: 52ch; margin-bottom: 28px;
 }
 .hero .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 26px; }
 .chip {
   background: var(--bg-card); border: 1px solid var(--border-subtle);
-  padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; color: var(--text-secondary);
+  padding: 6px 12px; border-radius: 999px; font-size: var(--text-caption); color: var(--text-secondary);
 }
 
 /* ---------- LAYOUT PRINCIPAL ----------
@@ -226,10 +226,10 @@ body { padding-left: var(--rail-w); }
 .card h2 .ico {
   width: 26px; height: 26px; border-radius: 6px;
   background: rgba(255, 79, 174, 0.14); color: var(--accent-soft);
-  display: grid; place-items: center; font-size: 0.9rem;
+  display: grid; place-items: center; font-size: var(--text-cta);
 }
 .section-title {
-  font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em;
+  font-size: var(--text-heading); font-weight: 700; letter-spacing: -0.02em;
   margin-bottom: 10px;
 }
 .section-head {
@@ -247,17 +247,17 @@ body { padding-left: var(--rail-w); }
 }
 /* item vindo da pasta de saida: nome de arquivo no lugar do score */
 .clip-item.library .clip-meta .file-name {
-  color: var(--text-primary); font-weight: 600; font-size: 0.66rem;
+  color: var(--text-primary); font-weight: 600; font-size: var(--text-2xs);
   display: block; word-break: break-all; line-height: 1.25;
 }
 .clip-item.library .clip-meta .time { color: var(--text-secondary); }
-.section-sub { color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 22px; }
+.section-sub { color: var(--text-secondary); font-size: var(--text-subtitle); margin-bottom: 22px; }
 
 /* ---------- FORMULÁRIO ---------- */
 .form-section { margin-bottom: 26px; }
 .form-section:last-child { margin-bottom: 0; }
 .form-section h3 {
-  font-size: 0.95rem; font-weight: 600; color: var(--text-secondary);
+  font-size: var(--text-subtitle); font-weight: 600; color: var(--text-secondary);
   text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 14px;
 }
 .field-row {
@@ -267,7 +267,7 @@ body { padding-left: var(--rail-w); }
 .field-row.single { grid-template-columns: 1fr; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label {
-  font-size: 0.85rem; font-weight: 500; color: var(--text-secondary);
+  font-size: var(--text-body-sm); font-weight: 500; color: var(--text-secondary);
 }
 .field input, .field select {
   background: rgba(0, 0, 0, 0.35); border: 1px solid var(--border-subtle);
@@ -287,7 +287,7 @@ body { padding-left: var(--rail-w); }
   .field .hint { font-size: var(--text-caption); color: var(--text-muted); }
 .field textarea {
   background: rgba(0, 0, 0, 0.35); border: 1px solid var(--border-subtle);
-  color: var(--text-primary); font-family: inherit; font-size: 0.88rem;
+  color: var(--text-primary); font-family: inherit; font-size: var(--text-body);
   line-height: 1.5; padding: 10px 12px; border-radius: var(--radius-sm);
   width: 100%; resize: vertical; min-height: 120px; transition: var(--transition);
 }
@@ -304,11 +304,11 @@ body { padding-left: var(--rail-w); }
   border-radius: var(--radius-sm); background: rgba(0, 0, 0, 0.25); overflow: hidden;
 }
 .cue-stats {
-  padding: 10px 14px; font-size: 0.78rem; color: var(--text-secondary);
+  padding: 10px 14px; font-size: var(--text-caption); color: var(--text-secondary);
   border-bottom: 1px solid var(--border-subtle); background: rgba(255, 79, 174, 0.06);
 }
 .cue-table-wrap { max-height: 320px; overflow-y: auto; overflow-x: auto; }
-.cue-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.cue-table { width: 100%; border-collapse: collapse; font-size: var(--text-body-sm); }
 .cue-table thead th {
   position: sticky; top: 0; z-index: 1; text-align: left;
   font-size: 0.72rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
@@ -338,7 +338,7 @@ body { padding-left: var(--rail-w); }
 }
 .viral-head h3 { font-size: 1rem; font-weight: 700; letter-spacing: 0.01em; }
 .viral-head h3 .vn { color: var(--accent-soft); }
-.viral-head .viral-time { font-size: 0.78rem; color: var(--text-muted); }
+.viral-head .viral-time { font-size: var(--text-caption); color: var(--text-muted); }
 .viral-potential {
   display: inline-flex; align-items: center; gap: 8px;
   border-radius: 999px; padding: 5px 14px; font-weight: 700; font-size: 0.82rem;
@@ -397,7 +397,7 @@ body { padding-left: var(--rail-w); }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .select-trigger .sel-arrow {
-  flex-shrink: 0; color: var(--text-secondary); font-size: 0.8rem;
+  flex-shrink: 0; color: var(--text-secondary); font-size: var(--text-caption);
   transition: transform var(--transition);
 }
 .select-rich.open .sel-arrow { transform: rotate(180deg); }
@@ -425,14 +425,14 @@ body { padding-left: var(--rail-w); }
   transition: background 120ms ease;
 }
 .select-option:hover, .select-option:focus-visible { background: rgba(255, 255, 255, 0.06); outline: none; }
-.select-option .opt-title { font-size: 0.88rem; font-weight: 600; }
+.select-option .opt-title { font-size: var(--text-body); font-weight: 600; }
 .select-option .opt-desc { font-size: 0.75rem; color: var(--text-secondary); }
 .select-option.selected { background: rgba(255, 79, 174, 0.14); }
 .select-option.selected .opt-title { color: var(--accent-soft); }
 .select-option.selected::after {
   content: "✓"; position: absolute; right: 12px; top: 50%;
   transform: translateY(-50%); color: var(--accent-soft);
-  font-size: 0.85rem; font-weight: 700;
+  font-size: var(--text-body-sm); font-weight: 700;
 }
 
 /* ---------- PREVIA DOS MODELOS DE LEGENDA ---------- */
@@ -456,7 +456,7 @@ body { padding-left: var(--rail-w); }
   padding: 11px 0; border-bottom: 1px solid var(--border-subtle);
 }
 .toggle-wrap:last-child { border-bottom: none; }
-.toggle-wrap .tw-label { font-size: 0.88rem; }
+.toggle-wrap .tw-label { font-size: var(--text-body); }
 .toggle {
   position: relative; width: 44px; height: 24px; background: rgba(255,255,255,0.08);
   border-radius: 999px; cursor: pointer; transition: var(--transition);
@@ -479,7 +479,7 @@ body { padding-left: var(--rail-w); }
 /* ---------- ESTADO / QUEUE ---------- */
 .status-pill {
   display: inline-flex; align-items: center; gap: 8px;
-  font-size: 0.8rem; font-weight: 600;
+  font-size: var(--text-caption); font-weight: 600;
   padding: 6px 12px; border-radius: 999px;
   background: rgba(255,255,255,0.05); border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
@@ -495,7 +495,7 @@ body { padding-left: var(--rail-w); }
    `.hint`: essa classe e o registro das descricoes ligadas por
    `aria-describedby`, e dali uma nota de estado seria apagada como orfa. */
 .backend-note {
-  font-size: 0.78rem; line-height: 1.5;
+  font-size: var(--text-caption); line-height: 1.5;
   color: var(--text-secondary);
   background: rgba(255,255,255,0.04);
   border-left: 2px solid var(--danger);
@@ -519,7 +519,7 @@ body { padding-left: var(--rail-w); }
   background: rgba(0,0,0,0.4); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm); padding: 12px;
   font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
-  font-size: 0.78rem; color: #d1d9e6; /* era var(--text-secondary), agora 7.1:1 contra fundo escuro */
+  font-size: var(--text-caption); color: #d1d9e6; /* era var(--text-secondary), agora 7.1:1 contra fundo escuro */
   max-height: 180px; overflow-y: auto; margin-top: 12px;
   white-space: pre-wrap; word-break: break-word;
 }
@@ -552,7 +552,7 @@ body { padding-left: var(--rail-w); }
   border: 1px solid var(--border-subtle); background: rgba(255, 255, 255, 0.025);
 }
 .queue-stat-num {
-  color: var(--text-primary); font-size: 1.5rem; font-weight: 700;
+  color: var(--text-primary); font-size: var(--text-heading); font-weight: 700;
   font-variant-numeric: tabular-nums; line-height: 1.1;
 }
 .queue-stat-label {
@@ -594,7 +594,7 @@ body { padding-left: var(--rail-w); }
 .queue-filter-count {
   display: inline-grid; place-items: center; min-width: 20px; height: 20px;
   padding: 0 6px; border-radius: 999px;
-  font-size: 0.65rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  font-size: var(--text-2xs); font-weight: 700; font-variant-numeric: tabular-nums;
   background: rgba(255, 255, 255, 0.09); color: var(--text-secondary);
 }
 .queue-filter[aria-pressed="true"] .queue-filter-count { background: rgba(255, 79, 174, 0.28); color: #ffd6ec; }
@@ -646,8 +646,8 @@ body { padding-left: var(--rail-w); }
   animation: poster-scan 2.8s ease-in-out infinite;
 }
 @keyframes poster-scan { 0% { background-position: 0 -45%; } 100% { background-position: 0 145%; } }
-.job-poster-mark { font-size: 1.35rem; font-weight: 850; letter-spacing: -0.08em; }
-.job-poster-caption { font-size: 0.65rem; line-height: 1.3; color: rgba(255,255,255,0.78); }
+.job-poster-mark { font-size: var(--text-heading-sm); font-weight: 850; letter-spacing: -0.08em; }
+.job-poster-caption { font-size: var(--text-2xs); line-height: 1.3; color: rgba(255,255,255,0.78); }
 .job-content { min-width: 0; }
 .job-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .job-info { min-width: 0; }
@@ -656,7 +656,7 @@ body { padding-left: var(--rail-w); }
 .job-badge {
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
   padding: 5px 10px; border-radius: 999px; border: 1px solid transparent;
-  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.01em;
+  font-size: var(--text-2xs); font-weight: 700; letter-spacing: 0.01em;
   color: var(--text-secondary); background: rgba(255,255,255,0.07);
 }
 /* O ponto do badge: so o `running` pulsa. E o mesmo vocabulario do
@@ -694,7 +694,7 @@ body { padding-left: var(--rail-w); }
 .job-preview video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .job-preview figcaption { position: absolute; inset: auto 0 0; padding: 15px 5px 5px; color: #fff; font-size: 0.58rem; font-weight: 650; background: linear-gradient(transparent, rgba(0,0,0,0.78)); }
 .job-preview:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 3px; }
-.job-preview-placeholder { max-width: 200px; color: var(--text-muted); text-align: center; font-size: 0.7rem; line-height: 1.5; }
+.job-preview-placeholder { max-width: 200px; color: var(--text-muted); text-align: center; font-size: var(--text-2xs); line-height: 1.5; }
 .job-card.running .job-previews { align-items: center; }
 .job-card.running .job-preview.is-live-preview {
   flex-basis: 94px; width: 94px; border-color: rgba(174, 142, 255, 0.7);
@@ -719,10 +719,10 @@ body { padding-left: var(--rail-w); }
 .job-render-frame::before { left: 5px; }
 .job-render-frame::after { right: 5px; }
 .job-render-scan { position: absolute; z-index: 2; top: 10px; left: 0; right: 0; height: 1px; background: #c9b5ff; box-shadow: 0 0 12px 2px rgba(167, 139, 250, 0.75); animation: render-scan 2.6s ease-in-out infinite; }
-.job-render-core { position: relative; z-index: 1; display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid rgba(255,255,255,0.32); border-radius: 50%; color: #f4efff; font-size: 0.65rem; font-weight: 800; letter-spacing: -0.04em; background: rgba(15, 17, 29, 0.66); box-shadow: 0 0 22px rgba(167, 139, 250, 0.3); animation: render-core 2.4s ease-in-out infinite; }
+.job-render-core { position: relative; z-index: 1; display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid rgba(255,255,255,0.32); border-radius: 50%; color: #f4efff; font-size: var(--text-2xs); font-weight: 800; letter-spacing: -0.04em; background: rgba(15, 17, 29, 0.66); box-shadow: 0 0 22px rgba(167, 139, 250, 0.3); animation: render-core 2.4s ease-in-out infinite; }
 .job-render-corner { position: absolute; right: 4px; bottom: 4px; color: rgba(255,255,255,0.58); font-size: 0.42rem; font-weight: 750; letter-spacing: 0.12em; }
 .job-render-copy { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
-.job-render-copy strong { color: var(--text-primary); font-size: 0.78rem; line-height: 1.3; }
+.job-render-copy strong { color: var(--text-primary); font-size: var(--text-caption); line-height: 1.3; }
 .job-render-copy > span:last-child { color: var(--text-muted); font-size: 0.62rem; line-height: 1.45; }
 .job-render-live { display: inline-flex; align-items: center; gap: 5px; color: #d9caff; font-size: 0.52rem; font-weight: 800; letter-spacing: 0.09em; }
 .job-render-live i { width: 6px; height: 6px; border-radius: 50%; background: #a78bfa; box-shadow: 0 0 8px rgba(167,139,250,0.75); animation: render-live 1.6s ease-in-out infinite; }
@@ -771,7 +771,7 @@ body { padding-left: var(--rail-w); }
   .queue-filter { flex: 1 1 auto; justify-content: center; }
 }
 .empty-state {
-  text-align: center; padding: 28px 12px; color: var(--text-muted); font-size: 0.88rem;
+  text-align: center; padding: 28px 12px; color: var(--text-muted); font-size: var(--text-body);
 }
 
 /* ---------- OUTPUT GALLERY ---------- */
@@ -798,7 +798,7 @@ body { padding-left: var(--rail-w); }
 .clip-meta { position: relative; z-index: 1; padding: 10px; font-size: 0.72rem; color: white; }
 .clip-meta .score {
   display: inline-block; background: var(--accent-primary); color: white;
-  border-radius: 999px; padding: 2px 8px; font-weight: 700; font-size: 0.68rem;
+  border-radius: 999px; padding: 2px 8px; font-weight: 700; font-size: var(--text-2xs);
   margin-bottom: 4px;
 }
 .clip-meta .time { color: rgba(255,255,255,0.75); }
@@ -812,7 +812,7 @@ body { padding-left: var(--rail-w); }
 .clip-item.analysis-only .overlay {
   background: linear-gradient(180deg, rgba(255, 79, 174, 0.12), rgba(0, 0, 0, 0.6));
 }
-.clip-item.analysis-only .play-hint { opacity: 0.5; font-size: 1.35rem; }
+.clip-item.analysis-only .play-hint { opacity: 0.5; font-size: var(--text-heading-sm); }
 .clip-meta .pending {
   color: var(--warn); font-size: 0.62rem; letter-spacing: 0.02em;
 }
@@ -902,7 +902,7 @@ body { padding-left: var(--rail-w); }
 .clip-play-btn {
   position: absolute; z-index: 2; bottom: 10px; right: 10px;
   width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
-  font-family: inherit; font-size: 0.95rem; line-height: 1; color: #fff;
+  font-family: inherit; font-size: var(--text-subtitle); line-height: 1; color: #fff;
   background: rgba(0, 0, 0, 0.55); border: 1px solid var(--border-strong);
   border-radius: 50%; cursor: pointer; transition: var(--transition);
 }
@@ -962,7 +962,7 @@ body { padding-left: var(--rail-w); }
   .hero { padding: 40px 0 32px; }
   .gallery { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
   .wrap { padding: 0 16px; }
-  .nav-actions .btn, .menu-btn { padding: 9px 11px; font-size: 0.84rem; }
+  .nav-actions .btn, .menu-btn { padding: 9px 11px; font-size: var(--text-body-sm); }
 }
 
 /* A caixa de cookies atras do disclosure: curto, escaneavel, e aberto. O
@@ -970,7 +970,7 @@ body { padding-left: var(--rail-w); }
    e o conteudo respira embaixo dele. */
 .cookies-box { margin-top: 2px; }
 .cookies-box > summary {
-  cursor: pointer; font-size: 0.8rem; font-weight: 600;
+  cursor: pointer; font-size: var(--text-caption); font-weight: 600;
   color: var(--text-primary); margin-bottom: 6px;
   /* Media 19px: abaixo do minimo WCAG de 24. Padding em vez de so' `min-height`
      porque o marker do disclosure ocupa fluxo de bloco — com o box-sizing em
@@ -997,7 +997,7 @@ body { padding-left: var(--rail-w); }
 .step-list {
   list-style: none; margin: 0 0 10px; padding: 0;
   display: flex; flex-direction: column; gap: 5px;
-  font-size: 0.78rem; color: var(--text-muted);
+  font-size: var(--text-caption); color: var(--text-muted);
 }
 .step-list:empty { display: none; }
 .step-list li {
@@ -1027,7 +1027,7 @@ body { padding-left: var(--rail-w); }
    interrompida — e o usuario nao saberia em que fase olhar o log. */
 .step-list li[data-state="erro"] { color: var(--danger); font-weight: 600; }
 .step-list li[data-state="erro"]::before {
-  content: "×"; border: none; width: auto; height: auto; font-size: 0.85rem;
+  content: "×"; border: none; width: auto; height: auto; font-size: var(--text-body-sm);
   color: var(--danger); background: none; opacity: 1;
 }
 @keyframes stepPulse {
@@ -1080,7 +1080,7 @@ body {
 .studio-overline,
 .studio-card-label {
   color: #c2cad7;
-  font-size: 0.7rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.12em;
   line-height: 1.3;
@@ -1201,7 +1201,7 @@ body {
   gap: 12px;
 }
 .studio-workflow-head { padding-bottom: 13px; border-bottom: 1px solid var(--border-subtle); }
-.studio-card-label { color: #939daf; font-size: 0.66rem; letter-spacing: 0.1em; }
+.studio-card-label { color: #939daf; font-size: var(--text-2xs); letter-spacing: 0.1em; }
 .local-indicator {
   display: inline-flex;
   align-items: center;
@@ -1241,18 +1241,18 @@ body {
   border-radius: 8px;
   background: rgba(255, 79, 174, 0.08);
   color: #ff9bd1;
-  font-size: 0.64rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 .studio-steps strong,
 .studio-steps small { display: block; }
 .studio-steps strong { font-size: 0.82rem; font-weight: 650; line-height: 1.3; }
-.studio-steps small { margin-top: 2px; color: #9da7b7; font-size: 0.7rem; line-height: 1.35; }
+.studio-steps small { margin-top: 2px; color: #9da7b7; font-size: var(--text-2xs); line-height: 1.35; }
 .studio-output-spec { padding-top: 12px; border-top: 1px solid var(--border-subtle); }
-.studio-output-spec > span { color: #9ba5b5; font-size: 0.64rem; font-weight: 650; letter-spacing: 0.08em; }
+.studio-output-spec > span { color: #9ba5b5; font-size: var(--text-2xs); font-weight: 650; letter-spacing: 0.08em; }
 .studio-output-spec strong { color: #f4f6fa; font-size: 0.83rem; font-variant-numeric: tabular-nums; }
-.studio-output-spec small { margin-left: 5px; color: #9ba5b5; font-size: 0.71rem; font-weight: 500; }
+.studio-output-spec small { margin-left: 5px; color: #9ba5b5; font-size: var(--text-2xs); font-weight: 500; }
 
 /* A regra EFETIVA do grid. A de cima (.main-grid, ~linha 217) so define
    `display: grid` e o gap; esta, por vir depois, sobrescreve as colunas —
@@ -1364,7 +1364,7 @@ body {
   font-size: 1.42rem;
   letter-spacing: -0.035em;
 }
-.section-sub { margin: 0 0 17px; color: #aeb8c8; font-size: 0.84rem; line-height: 1.55; }
+.section-sub { margin: 0 0 17px; color: #aeb8c8; font-size: var(--text-body-sm); line-height: 1.55; }
 .defaults-badge {
   display: inline-flex;
   align-items: center;
@@ -1374,11 +1374,11 @@ body {
   border-radius: 8px;
   background: rgba(84, 214, 166, 0.06);
   color: #a7e7cc;
-  font-size: 0.68rem;
+  font-size: var(--text-2xs);
   font-weight: 600;
   white-space: nowrap;
 }
-.defaults-badge > span { font-size: 0.78rem; }
+.defaults-badge > span { font-size: var(--text-caption); }
 
 .card {
   margin-bottom: 14px;
@@ -1408,7 +1408,7 @@ body {
   border-radius: 8px;
   background: rgba(255, 79, 174, 0.08);
   color: #ff97ce;
-  font-size: 0.84rem;
+  font-size: var(--text-body-sm);
 }
 .form-section { margin-bottom: 18px; }
 .form-section:last-child { margin-bottom: 0; }
@@ -1425,13 +1425,13 @@ body {
   border-radius: 8px;
   background: #0b0f16;
   color: #f2f4f8;
-  font-size: 0.84rem;
+  font-size: var(--text-body-sm);
 }
 #url {
   min-height: 48px;
   border-color: rgba(255, 79, 174, 0.32);
   background: #0b0f16;
-  font-size: 0.9rem;
+  font-size: var(--text-cta);
 }
 #url::placeholder { color: #7f8999; }
 .field input,
@@ -1463,7 +1463,7 @@ body {
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.018);
 }
-.cookies-box > summary { color: #edf0f6; font-size: 0.78rem; }
+.cookies-box > summary { color: #edf0f6; font-size: var(--text-caption); }
 .toggle-wrap {
   min-height: 42px;
   margin-top: 6px;
@@ -1481,7 +1481,7 @@ body {
   border-radius: 8px;
   background: #151b25;
   color: #edf0f6;
-  font-size: 0.8rem;
+  font-size: var(--text-caption);
   font-weight: 600;
 }
 .btn-primary { background: var(--accent-primary); color: #1c1024; }
@@ -1732,13 +1732,13 @@ main > section > .card { padding: 17px; }
   .header-inner > .brand small { display: none; }
   .studio-welcome { grid-template-columns: minmax(0, 1fr); gap: 17px; padding: 24px 0 21px; }
   .studio-welcome h1 { max-width: 18ch; font-size: clamp(1.8rem, 8vw, 2.25rem); }
-  .studio-welcome p.lead { font-size: 0.88rem; }
+  .studio-welcome p.lead { font-size: var(--text-body); }
   .studio-workflow { padding: 14px; }
   .main-grid { padding-top: 20px; }
   .config-heading { align-items: flex-start; flex-direction: column; gap: 9px; }
   .defaults-badge { white-space: normal; }
   .card { padding: 16px 14px; }
-  .section-sub { font-size: 0.8rem; }
+  .section-sub { font-size: var(--text-caption); }
   .nav-actions { gap: 6px; }
   .nav-actions #btn-batch { display: none; }
 }
@@ -1766,7 +1766,7 @@ main > section > .card { padding: 17px; }
 .header-context-icon svg { display: block; width: 21px; height: 21px; }
 .header-context-copy { display: grid; min-width: 0; gap: 2px; }
 .header-context-eyebrow { color: var(--text-muted); font-size: .58rem; font-weight: 700; letter-spacing: .12em; line-height: 1.2; }
-.header-context-copy strong { overflow: hidden; color: var(--text-primary); font-size: .85rem; font-weight: 600; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.header-context-copy strong { overflow: hidden; color: var(--text-primary); font-size: var(--text-body-sm); font-weight: 600; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 /* A cauda do contexto do header e' o unico texto solto abaixo de 4.5:1 no
    cromo. `#687386` dava 4.11:1 sobre o body — passava por "sutil" e reprovava
    por leitura. O #737f91 era o mesmo tom um degrau acima e tambem reprovava
@@ -1777,7 +1777,7 @@ main > section > .card { padding: 17px; }
 .header-context-status {
   display: inline-flex; align-items: center; gap: 7px; margin-left: 7px; padding: 7px 10px;
   border: 1px solid rgba(255,255,255,.08); border-radius: 999px;
-  color: #aab3c1; background: rgba(255,255,255,.025); font-size: .66rem; font-weight: 550; white-space: nowrap;
+  color: #aab3c1; background: rgba(255,255,255,.025); font-size: var(--text-2xs); font-weight: 550; white-space: nowrap;
 }
 .header-context-status > span { width: 6px; height: 6px; border-radius: 50%; background: #55d6ae; box-shadow: 0 0 9px rgba(85,214,174,.42); }
 header .nav-actions .btn { min-height: 42px; }
@@ -1798,7 +1798,7 @@ header .nav-actions .btn { min-height: 42px; }
   .header-context-icon { flex-basis: 34px; width: 34px; height: 34px; border-radius: 10px; }
   .header-context-icon svg { width: 19px; height: 19px; }
   .header-context-eyebrow { display: none; }
-  .header-context-copy strong { font-size: .8rem; }
+  .header-context-copy strong { font-size: var(--text-caption); }
   header .nav-actions { gap: 7px; }
   header .nav-actions #btn-batch { display: none; }
   header .nav-actions .btn { min-height: 42px; }
@@ -1870,8 +1870,8 @@ header .nav-actions .btn { min-height: 42px; }
 .execution-card #status-pill { min-height: 34px; padding: 6px 10px; font-size: .75rem; }
 .execution-card #status-pill .dot { flex: 0 0 7px; width: 7px; height: 7px; }
 .execution-elapsed { display: flex; align-items: center; gap: 7px; color: #d3dae5; font-size: .75rem; font-variant-numeric: tabular-nums; }
-.execution-elapsed > span:first-child { color: var(--text-muted); font-size: .65rem; }
-.execution-progress-label { margin-top: 18px; color: #aab3c1; font-size: .65rem; font-weight: 650; letter-spacing: .05em; }
+.execution-elapsed > span:first-child { color: var(--text-muted); font-size: var(--text-2xs); }
+.execution-progress-label { margin-top: 18px; color: #aab3c1; font-size: var(--text-2xs); font-weight: 650; letter-spacing: .05em; }
 .execution-card #progress-track { height: 6px; margin: 8px 0 9px; background: rgba(255,255,255,.075); }
 .execution-card #progress-label { min-height: 36px; margin: 0 0 12px; color: #d8dee8 !important; font-size: .76rem !important; line-height: 1.5; }
 .execution-card .step-list { display: flex; flex-direction: column; gap: 5px; margin: 5px 0 12px; }
@@ -1899,13 +1899,13 @@ header .nav-actions .btn { min-height: 42px; }
    falha que passa despercebida no olho e trava na auditoria. Mesmo valor da
    cauda do header: um tom para "texto secundario pequeno", nao dois. */
 .execution-selection-label { color: #9ba6b5; font-size: .52rem; font-weight: 700; letter-spacing: .11em; }
-.execution-selection-value { color: #c5ceda; font-size: .7rem; font-variant-numeric: tabular-nums; }
+.execution-selection-value { color: #c5ceda; font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
 /* Alvo de 24px: era um <a> solto de 15px na linha da selecao — abaixo do
    minimo WCAG 2.2 (2.5.8, 24px) para alvo que nao e' texto corrido. O
    inline-flex centraliza o rotulo dentro da altura nova sem mudar a linha. */
 .execution-selection-edit { color: #ff4fae; font-size: .62rem; font-weight: 600; text-decoration: none; white-space: nowrap; display: inline-flex; align-items: center; min-height: 24px; }
 .execution-selection-edit:hover, .execution-selection-edit:focus-visible { text-decoration: underline; }
-.execution-actions .btn { display: flex; width: 100%; min-height: 43px; align-items: center; justify-content: center; gap: 8px; margin: 0 !important; font-size: .78rem; }
+.execution-actions .btn { display: flex; width: 100%; min-height: 43px; align-items: center; justify-content: center; gap: 8px; margin: 0 !important; font-size: var(--text-caption); }
 .execution-actions .btn-primary { min-height: 46px; }
 .execution-actions .btn svg { flex: 0 0 16px; width: 16px; height: 16px; }
 .execution-actions #btn-plan { color: #c5ceda; background: rgba(255,255,255,.025); }
@@ -1914,8 +1914,8 @@ header .nav-actions .btn { min-height: 42px; }
    aparece com execucao ativa, entao nao entrava na varredura estatica do
    painel parado — foi achado cando o `#737f91` ficou sem nenhum uso. */
 .execution-log-heading span:last-child { color: #9ba6b5; font-size: .52rem; letter-spacing: .11em; }
-.execution-card .log-box { min-height: 47px; max-height: 155px; margin-top: 7px; padding: 9px 10px; border-color: rgba(218,226,243,.075); border-radius: 8px; background: #0a0e14; color: #d1d9e6; /* era #b9c4d2, agora 7.1:1 */ font-size: .66rem; line-height: 1.55; }
-.execution-log-empty { color: var(--text-muted); font-family: 'Inter', system-ui, sans-serif; font-size: .68rem; font-style: normal; }
+.execution-card .log-box { min-height: 47px; max-height: 155px; margin-top: 7px; padding: 9px 10px; border-color: rgba(218,226,243,.075); border-radius: 8px; background: #0a0e14; color: #d1d9e6; /* era #b9c4d2, agora 7.1:1 */ font-size: var(--text-2xs); line-height: 1.55; }
+.execution-log-empty { color: var(--text-muted); font-family: 'Inter', system-ui, sans-serif; font-size: var(--text-2xs); font-style: normal; }
 
 /* ---------- O CARD NAO CARREGA PESO MORTO EM REPOUSO ----------
    O `#log-box` e o cabecalho dele somam 63px de caixa vazia antes do
@@ -2006,7 +2006,7 @@ header .nav-actions .btn { min-height: 42px; }
   line-height: 1.08;
   text-wrap: balance;
 }
-.ajustes-abertura .section-sub { max-width: 62ch; margin: 0; font-size: 0.9rem; line-height: 1.62; }
+.ajustes-abertura .section-sub { max-width: 62ch; margin: 0; font-size: var(--text-cta); line-height: 1.62; }
 .ajustes-abertura .section-sub code {
   padding: 1px 5px;
   border: 1px solid rgba(255,255,255,.1);
@@ -2024,7 +2024,7 @@ header .nav-actions .btn { min-height: 42px; }
   padding-left: 13px;
   border-left: 2px solid rgba(255, 79, 174, 0.55);
   color: #8d97a8;
-  font-size: 0.8rem;
+  font-size: var(--text-caption);
   line-height: 1.55;
 }
 .ajustes-nota a { color: var(--accent-soft); text-underline-offset: 3px; }
@@ -2128,7 +2128,7 @@ header .nav-actions .btn { min-height: 42px; }
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.02);
   color: var(--text-secondary);
-  font-size: 0.78rem;
+  font-size: var(--text-caption);
   font-weight: 600;
   text-decoration: none;
   transition:
@@ -2151,7 +2151,7 @@ header .nav-actions .btn { min-height: 42px; }
   background: rgba(255, 255, 255, 0.06);
   color: #97a2b4;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.66rem;
+  font-size: var(--text-2xs);
   font-weight: 600;
   letter-spacing: 0.02em;
   transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease;
@@ -2181,8 +2181,8 @@ header .nav-actions .btn { min-height: 42px; }
   [data-section-nav] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
-  .ajustes-abertura .section-sub { font-size: 0.85rem; }
-  .ajustes-nota { font-size: 0.78rem; }
+  .ajustes-abertura .section-sub { font-size: var(--text-body-sm); }
+  .ajustes-nota { font-size: var(--text-caption); }
   [data-section-nav] { grid-template-columns: minmax(0, 1fr); }
   [data-section-nav] a { justify-content: flex-start; padding: 0 14px; }
 }
@@ -2254,7 +2254,7 @@ header .nav-actions .btn { min-height: 42px; }
 .summary-row__value {
   min-width: 0;
   color: var(--text-primary);
-  font-size: 0.78rem;
+  font-size: var(--text-caption);
   text-align: right;
   overflow-wrap: anywhere;
 }
@@ -2267,7 +2267,7 @@ header .nav-actions .btn { min-height: 42px; }
 /* O par `.section-sub-muted` e `.section-sub code` fica como estava: as DUAS
    outras paginas (Estúdio e Publicar) usam essas classes, e a abertura de
    Ajustes saiu delas de proposito. */
-.section-sub-muted { color: #8d97a8; font-size: 0.8rem; margin-top: -12px; }
+.section-sub-muted { color: #8d97a8; font-size: var(--text-caption); margin-top: -12px; }
 .section-sub code {
   padding: 1px 5px;
   border: 1px solid rgba(255,255,255,.1);
@@ -2330,7 +2330,7 @@ header .nav-actions .btn { min-height: 42px; }
 .prov-item-name {
   display: block;
   color: #edf0f6;
-  font-size: 0.8rem;
+  font-size: var(--text-caption);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -2344,7 +2344,7 @@ header .nav-actions .btn { min-height: 42px; }
 }
 .prov-item-meta code {
   color: #b9c3d3;
-  font-size: 0.7rem;
+  font-size: var(--text-2xs);
 }
 
 /* Os botoes da linha nao encolhem: num nome longo quem cede e o texto, que
@@ -2393,7 +2393,7 @@ header .nav-actions .btn { min-height: 42px; }
   border: 1px solid rgba(218, 226, 243, 0.12);
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.018);
-  font-size: 0.78rem;
+  font-size: var(--text-caption);
   line-height: 1.55;
   color: #cdd5e1;
 }
@@ -2432,7 +2432,7 @@ header .nav-actions .btn { min-height: 42px; }
   background: rgba(0, 0, 0, 0.28);
   color: #d1d9e6; /* era #a9b2c0, agora 7.1:1 contra fundo escuro */
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.71rem;
+  font-size: var(--text-2xs);
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

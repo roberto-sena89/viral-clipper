@@ -103,7 +103,7 @@ body { padding-left: var(--rail-w); }
 /* ---------- CHIPS ---------- */
 .chip {
   background: var(--bg-card); border: 1px solid var(--border-subtle);
-  padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; color: var(--text-secondary);
+  padding: 6px 12px; border-radius: 999px; font-size: var(--text-caption); color: var(--text-secondary);
   display: inline-block;
 }
 
@@ -571,7 +571,7 @@ input::placeholder { color: var(--text-muted); }
 }
 .arq-card-foot { padding: 5px 7px 6px; display: flex; flex-direction: column; gap: 2px; }
 .arq-card-code {
-  font-size: 0.68rem; font-weight: 600; color: var(--text-primary);
+  font-size: var(--text-2xs); font-weight: 600; color: var(--text-primary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .arq-card-st {
@@ -667,7 +667,7 @@ input::placeholder { color: var(--text-muted); }
 }
 .result-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .result-thumb .thumb-fallback {
-  font-size: 1.4rem; color: var(--text-muted); line-height: 1;
+  font-size: var(--text-heading-sm); color: var(--text-muted); line-height: 1;
 }
 .result-thumb[data-state="loading"] .thumb-fallback { opacity: 0.45; }
 .result-play {
@@ -872,7 +872,7 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
 .scrap-welcome .studio-overline,
 .scrap-welcome .studio-card-label {
   display: flex; align-items: center; gap: 9px;
-  color: #939daf; font-size: .65rem; font-weight: 700; letter-spacing: .11em;
+  color: #939daf; font-size: var(--text-2xs); font-weight: 700; letter-spacing: .11em;
 }
 .scrap-welcome .studio-online-dot,
 .scrap-flow-card > p span {
@@ -898,13 +898,13 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   background: linear-gradient(145deg, rgba(24,29,40,.96), rgba(15,18,25,.96));
   box-shadow: var(--shadow-card);
 }
-.scrap-flow-card > .studio-card-label { color: var(--text-muted); font-size: .65rem; font-weight: 700; letter-spacing: .12em; }
+.scrap-flow-card > .studio-card-label { color: var(--text-muted); font-size: var(--text-2xs); font-weight: 700; letter-spacing: .12em; }
 .scrap-flow-card ol { list-style: none; margin: 14px 0 13px; padding: 0; }
 .scrap-flow-card li { display: flex; align-items: center; gap: 12px; min-height: 38px; border-bottom: 1px solid rgba(255,255,255,.055); }
 .scrap-flow-card li:last-child { border-bottom: 0; }
 .scrap-flow-card li span { color: var(--accent-soft); font: 600 .7rem/1 ui-monospace, monospace; }
-.scrap-flow-card li strong { font-size: .84rem; font-weight: 600; }
-.scrap-flow-card > p { display: flex; align-items: center; gap: 8px; margin: 0; padding-top: 11px; border-top: 1px solid var(--border-subtle); color: var(--text-muted); font-size: .7rem; }
+.scrap-flow-card li strong { font-size: var(--text-body-sm); font-weight: 600; }
+.scrap-flow-card > p { display: flex; align-items: center; gap: 8px; margin: 0; padding-top: 11px; border-top: 1px solid var(--border-subtle); color: var(--text-muted); font-size: var(--text-2xs); }
 .scrap-flow-card > p span { width: 7px; height: 7px; border-radius: 50%; background: #55d6ae; box-shadow: 0 0 10px rgba(85,214,174,.45); }
 
 .scrap-grid {
@@ -945,8 +945,8 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   background: #0e121a;
 }
 .auth-head { align-items: flex-start; gap: 12px; }
-.auth-title { font-size: .8rem; font-weight: 650; }
-.auth-sub { margin-top: 3px; font-size: .69rem; line-height: 1.45; }
+.auth-title { font-size: var(--text-caption); font-weight: 650; }
+.auth-sub { margin-top: 3px; font-size: var(--text-2xs); line-height: 1.45; }
 .auth-grid { gap: 12px; margin-top: 13px; }
 .auth-block { padding: 11px; border-radius: 9px; background: rgba(255,255,255,.025); }
 .auth-note { line-height: 1.5; }
@@ -961,9 +961,9 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   text-align: center; background: rgba(255,255,255,.012);
 }
 .empty-state-mark { display: grid; width: 38px; height: 38px; place-items: center; margin-bottom: 3px; border-radius: 12px; background: rgba(236,72,153,.1); color: var(--accent-soft); font-size: 1.25rem; }
-.empty-state strong { color: var(--text-primary); font-size: .84rem; font-weight: 600; }
+.empty-state strong { color: var(--text-primary); font-size: var(--text-body-sm); font-weight: 600; }
 .empty-state > span:last-child { max-width: 37ch; color: var(--text-muted); font-size: .75rem; line-height: 1.6; }
-.pick-empty { padding: 14px; border: 1px dashed rgba(218,226,243,.16); border-radius: 10px; color: var(--text-muted); font-size: .78rem; line-height: 1.6; }
+.pick-empty { padding: 14px; border: 1px dashed rgba(218,226,243,.16); border-radius: 10px; color: var(--text-muted); font-size: var(--text-caption); line-height: 1.6; }
 
 /* Seleção da biblioteca: identificação da fonte, dados escaneáveis e CTA claro. */
 /* ============================ PAINEL "ESCOLHA" ============================
@@ -1043,7 +1043,7 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
 }
 .pick .pick-meta-item dd {
   min-width: 0; margin: 0; color: var(--pick-ink);
-  font-size: .79rem; font-weight: 570; line-height: 1.4;
+  font-size: var(--text-caption); font-weight: 570; line-height: 1.4;
   overflow-wrap: anywhere; font-variant-numeric: tabular-nums;
 }
 /* Duracao e Visualizacoes sao os numeros que a pessoa procura primeiro. */
@@ -1097,7 +1097,7 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
 .pick .pick-empty {
   margin: 0; padding: 14px;
   border: 1px dashed var(--pick-line); border-radius: var(--pick-radius-sm);
-  color: var(--pick-ink-muted); font-size: .78rem; line-height: 1.6;
+  color: var(--pick-ink-muted); font-size: var(--text-caption); line-height: 1.6;
 }
 
 /* --- 480px e abaixo: metadados em uma coluna e acoes empilhadas ---
@@ -1126,7 +1126,7 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
 .search-step { display: grid; flex: 0 0 38px; width: 38px; height: 38px; place-items: center; border: 1px solid rgba(139,215,244,.2); border-radius: 11px; color: #8bd7f4; background: rgba(112,201,238,.055); font: 650 .72rem/1 ui-monospace, monospace; }
 .search-card > .card-sub { margin-top: 8px; margin-bottom: 18px; }
 .search-control-group { margin-top: 16px; }
-.search-control-label { margin: 0 0 8px; color: var(--text-secondary); font-size: .71rem; font-weight: 650; }
+.search-control-label { margin: 0 0 8px; color: var(--text-secondary); font-size: var(--text-2xs); font-weight: 650; }
 .search-card .tabs[aria-label="Plataforma"] { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 7px; width: 100%; margin: 0; }
 .search-card .tabs[aria-label="Plataforma"] .tab { min-width: 0; min-height: 42px; gap: 8px; justify-content: center; padding: 6px 9px; border-radius: 10px; font-size: .75rem; }
 .search-card .platform-monogram { flex: 0 0 20px; }
@@ -1135,22 +1135,22 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
 .search-mode-group .tab { min-width: 0; min-height: 38px; justify-content: center; gap: 8px; padding: 7px 10px; border: 1px solid transparent; border-radius: 8px; font-size: .74rem; }
 .search-mode-group .tab[aria-selected="true"] { border-color: rgba(218,226,243,.1); background: #1b2230; box-shadow: 0 2px 8px rgba(0,0,0,.16); }
 .search-mode-symbol { display: grid; width: 18px; height: 18px; place-items: center; color: var(--accent-soft); font-size: .86rem; font-weight: 700; }
-.search-url-label { display: block; margin: 17px 0 7px; color: var(--text-secondary); font-size: .71rem; font-weight: 650; }
+.search-url-label { display: block; margin: 17px 0 7px; color: var(--text-secondary); font-size: var(--text-2xs); font-weight: 650; }
 .search-card .scrap-form { grid-template-columns: minmax(0,1fr) auto; gap: 8px; margin: 0; }
 .search-card .scrap-form input { min-height: 48px; border-color: rgba(218,226,243,.14); border-radius: 10px; background: #0d1118; }
 .search-card .scrap-form input:focus { border-color: rgba(139,215,244,.55); box-shadow: 0 0 0 3px rgba(112,201,238,.1); }
 .search-card .scrap-form .btn { min-height: 48px; padding-inline: 17px; border-radius: 10px; font-weight: 650; }
-.search-card #scrap-hint { margin: 9px 0 0; padding-left: 10px; border-left: 2px solid rgba(139,215,244,.38); color: var(--text-muted); font-size: .69rem; line-height: 1.55; }
+.search-card #scrap-hint { margin: 9px 0 0; padding-left: 10px; border-left: 2px solid rgba(139,215,244,.38); color: var(--text-muted); font-size: var(--text-2xs); line-height: 1.55; }
 .search-card #perfil-opts:not([hidden]) { display: grid; grid-template-columns: minmax(0,1fr) minmax(105px,.6fr); gap: 12px; align-items: end; margin-top: 14px; padding: 12px; border: 1px solid rgba(218,226,243,.08); border-radius: 11px; background: rgba(255,255,255,.018); }
 .search-card #perfil-opts .form-field { min-width: 0; margin: 0; }
 .search-card #perfil-opts .form-field--grow { align-self: center; }
 .search-card #btn-viral { min-height: 40px; }
 .search-card #scrap-limit { min-height: 40px; }
-.search-card #viral-hint { margin: 7px 0 0; font-size: .68rem; line-height: 1.55; }
+.search-card #viral-hint { margin: 7px 0 0; font-size: var(--text-2xs); line-height: 1.55; }
 .search-card .auth-card { margin-top: 18px; padding: 14px; border-color: rgba(218,226,243,.075); border-radius: 12px; background: #0e121a; }
 .search-card .auth-head { align-items: center; gap: 10px; }
-.search-card .auth-title { margin: 0; font-size: .78rem; }
-.search-card .auth-sub { max-width: 34ch; margin: 4px 0 0; font-size: .67rem; line-height: 1.5; }
+.search-card .auth-title { margin: 0; font-size: var(--text-caption); }
+.search-card .auth-sub { max-width: 34ch; margin: 4px 0 0; font-size: var(--text-2xs); line-height: 1.5; }
 .search-card .auth-grid { gap: 9px; margin-top: 12px; }
 .search-card .auth-block { padding: 10px; }
 
@@ -1189,7 +1189,7 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
 @media (max-width: 640px) {
   .search-card .scrap-form { grid-template-columns: minmax(0,1fr); }
   .search-card .scrap-form .btn { width: 100%; justify-content: center; }
-  .search-card .tabs[aria-label="Plataforma"] .tab { gap: 5px; padding-inline: 5px; font-size: .69rem; }
+  .search-card .tabs[aria-label="Plataforma"] .tab { gap: 5px; padding-inline: 5px; font-size: var(--text-2xs); }
   .search-card .platform-monogram { width: 18px; height: 18px; flex-basis: 18px; font-size: .48rem; }
   .search-card #perfil-opts:not([hidden]) { grid-template-columns: minmax(0,1fr); gap: 8px; }
 }
@@ -1237,12 +1237,12 @@ header .header-inner { height: 66px; min-height: 66px; gap: 16px; }
 .scrap-header-icon svg { display: block; width: 21px; height: 21px; }
 .scrap-header-copy { display: grid; min-width: 0; gap: 2px; }
 .scrap-header-eyebrow { color: var(--text-muted); font-size: .58rem; font-weight: 700; letter-spacing: .12em; line-height: 1.2; }
-.scrap-header-copy strong { overflow: hidden; color: var(--text-primary); font-size: .85rem; font-weight: 600; letter-spacing: -.02em; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.scrap-header-copy strong { overflow: hidden; color: var(--text-primary); font-size: var(--text-body-sm); font-weight: 600; letter-spacing: -.02em; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .scrap-header-short { display: none; }
 .scrap-header-tag {
   display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; margin-left: 7px; padding: 7px 10px;
   border: 1px solid rgba(112,201,238,.12); border-radius: 999px;
-  color: #aab9c7; background: rgba(112,201,238,.035); font-size: .64rem; font-weight: 550; white-space: nowrap;
+  color: #aab9c7; background: rgba(112,201,238,.035); font-size: var(--text-2xs); font-weight: 550; white-space: nowrap;
 }
 .scrap-header-tag svg { flex: 0 0 15px; width: 15px; height: 15px; color: #8bd7f4; }
 header .nav-actions { flex: 0 0 auto; gap: 9px; }
@@ -1261,7 +1261,7 @@ header .nav-actions .btn { min-height: 42px; }
   .scrap-header-icon svg { width: 19px; height: 19px; }
   .scrap-header-eyebrow, .scrap-header-tag { display: none; }
   .scrap-header-copy { gap: 0; }
-  .scrap-header-copy strong { font-size: .8rem; }
+  .scrap-header-copy strong { font-size: var(--text-caption); }
   header .nav-actions { gap: 7px; }
   .scrap-header-cta { min-height: 42px; padding-inline: 11px; }
 }

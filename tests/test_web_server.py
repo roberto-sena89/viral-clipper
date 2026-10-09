@@ -4963,6 +4963,54 @@ class BackendReadinessTests(unittest.TestCase):
         self.assertIn("prontidao(r);", branch)
         self.assertNotIn("setStatus('error', 'Offline')", branch)
 
+    def test_run_probes_the_server_before_giving_up_on_a_lost_post(self):
+        """POST /run que nao volta NAO e' desistencia: o probe vem primeiro.
+
+        O /run e uma requisicao que dura o job inteiro — minutos de conexao
+        aberta. Se ela cair com o servidor de pe (queda de conexao, restart
+        do meio), encerrar a execucao ali jogaria fora um trabalho que ainda
+        roda; o /status de 4s ja tem o resultado quando ele terminar. O probe
+        e' o que separa "servidor morreu" de "so a conexao morreu".
+        """
+        js = self.js()
+        bloco = fn_body(js, "run")
+        self.assertIn("if (r.offline && r.sem_conexao)", bloco)
+        self.assertIn("await api('/run/progress')", bloco)
+        self.assertIn("runProgress.orphan = job;", bloco)
+        # O caso vivo volta a acompanhar pelo poll em vez de encerrar.
+        self.assertIn("startFollowingRun(comando);", bloco)
+        # E o poll e quem finaliza o orfao nos dois destinos possiveis.
+        follow = fn_body(js, "followRun")
+        self.assertIn("finalizaOrfaoConcluido();", follow)
+        self.assertIn("finalizaOrfaoInterrompido();", follow)
+        self.assertIn("runProgress.orphan && !r.active", follow)
+
+    def test_a_dead_post_never_reports_success(self):
+        """POST perdido nao pode virar card "concluido" com a barra cheia.
+
+        O que a tela mostrava quando o servidor morria no meio do job: pill
+        de sucesso no card da fila ("done · 0 clips"), barra em 100% "done" e
+        rotulo "Comando pronto — execute no terminal" — tres mentiras no
+        mesmo instante, por cima de uma escada de etapas congelada em "agora".
+        O que muda e' o ROTULO de cada caso real; o conselho de rodar o
+        comando so continua de pé quando nunca houve servidor.
+        """
+        js = self.js()
+        # A fila: offline e' falha, e o meta diz o caso — nunca "0 clips".
+        self.assertIn("job.status = (r.error || r.offline) ? 'fail' : 'done';", js)
+        self.assertIn("'interrompido: o servidor caiu'", js)
+        self.assertIn("'não executado: sem servidor'", js)
+        # O log: a cauda do poll nao e' apagada quando o POST nao volta.
+        self.assertIn("if (!r.offline) renderLog(", js)
+        # Os rotulos: interrompido onde o job morreu; "Comando pronto" so
+        # no caso em que nunca houve servidor.
+        self.assertIn("'Execução interrompida — o servidor parou no meio.'", js)
+        queda = fn_body(js, "finalizaQueda")
+        self.assertIn("runProgress.sawLive", queda)
+        self.assertIn("setProgress(100, 'Comando pronto — execute no terminal.');", queda)
+        # O erro HTTP (disco cheido, url invalida) mostra o erro, nao "offline".
+        self.assertIn("setProgress(atual, 'Falha: ' + r.error);", queda)
+
 
 class HostHeaderGuardTests(unittest.TestCase):
     """O painel recusa requisicao cujo Host nao e esta maquina.

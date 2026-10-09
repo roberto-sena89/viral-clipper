@@ -186,7 +186,12 @@
     box.scrollTop = box.scrollHeight;
   }
 
-  const runProgress = { timer: null, header: '' };
+  // `sawLive` guarda se o poll de progresso ja respondeu UMA vez no run atual:
+  // e o que separa "nunca houve servidor" de "caiu no meio da execucao" quando
+  // o POST /run nao volta. `orphan` e o job cujo POST morreu com a conexao —
+  // dele o poll assume o encerramento (sucesso ou queda), porque a resposta
+  // original se perdeu e nunca vai chegar.
+  const runProgress = { timer: null, header: '', sawLive: false, orphan: null };
 
   function stopFollowingRun() {
     if (runProgress.timer) { clearInterval(runProgress.timer); runProgress.timer = null; }
@@ -201,12 +206,30 @@
 
   async function followRun() {
     const r = await api('/run/progress');
-    if (r.offline || r.error) return;
+    if (r.offline || r.error) {
+      // So um job orfao (POST morreu, poll assumiu) encerra aqui: o servidor
+      // sumiu DEPOIS, e o trabalho foi junto. Num run normal o return de antes
+      // segue valendo — quem encerra o run e o proprio POST quando voltar.
+      finalizaOrfaoInterrompido();
+      return;
+    }
+    // Resposta viva: registra que houve servidor neste run. O run() usa para
+    // distinguir "sem servidor desde o inicio" de "caiu no meio do trabalho".
+    runProgress.sawLive = true;
     renderSteps(r.stages);
     // `stage_label` cobre a janela entre o POST e a primeira fase: o servidor
     // publica "Preparando…" antes de anunciar qualquer etapa.
     if (r.stage_label) setProgress(0, r.stage_label);
     if (Array.isArray(r.lines)) renderLog([runProgress.header, ...r.lines]);
+
+    // O POST deste run se perdeu e o servidor acabou de marcar o job como
+    // inativo: o resultado chega pelo /status de 4s (a galeria ja nasce
+    // dele), e a tela encerra aqui — botao, pill, esqueleto, timer — senao
+    // ela ficaria "em execucao" para sempre com o job morto.
+    if (runProgress.orphan && !r.active) {
+      finalizaOrfaoConcluido();
+      return;
+    }
 
     let jobIndex = -1;
     for (let index = state.jobs.length - 1; index >= 0; index--) {
@@ -261,6 +284,9 @@
 
   function startFollowingRun(header) {
     runProgress.header = header;
+    // Run novo, contagem nova: sem este reset, o "ja teve servidor" de um run
+    // anterior diria que um servidor nunca visto estava no ar.
+    runProgress.sawLive = false;
     stopFollowingRun();
     followRun();
     runProgress.timer = setInterval(followRun, 1000);
@@ -1891,23 +1917,50 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
 
     const body = JSON.stringify({ options: o, plan_only: !!planOnly });
     const r = await api('/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+
+    // O POST /run dura o job inteiro: uma requisicao aberta por minutos, e
+    // qualquer queda de conexao a mata sem dizer se o servidor morreu junto.
+    // O probe resolve — /run/progress respondendo e servidor vivo: a perda foi
+    // da conexao, o trabalho segue, e esta tela NAO desiste. Volta a acompanhar
+    // pelo poll e deixa o /status entregar o resultado quando o job terminar.
+    if (r.offline && r.sem_conexao) {
+      const probe = await api('/run/progress');
+      if (probe && !probe.offline && !probe.error) {
+        startFollowingRun(comando);
+        runProgress.orphan = job;
+        // O servidor conhece o job (o record de progresso existe): a marca de
+        // "so local" sai, senao o merge do poll podaria o card como fantasma.
+        delete job.localOnly;
+        log('A conexão com o servidor caiu no envio; o trabalho segue no servidor.', 'ln-warn');
+        toast('Conexão caiu durante o envio — o servidor continua trabalhando.', 'err');
+        return;
+      }
+    }
+
     // O job acabou: para o poll e passa a caixa para a lista COMPLETA que a
     // resposta traz. O poll so tinha a cauda, e a ultima leitura pode ter
     // acontecido antes da ultima linha ser emitida.
     stopFollowingRun();
-    renderLog([comando, ...((r.log_lines) || [])]);
+    // No offline a caixa NAO e trocada: renderLog([comando]) apagaria a cauda
+    // que o poll coleto ate a queda — a prova do que o job chegou a fazer. Os
+    // avisos dos ramos de erro entram por log(), que acrescenta em vez de trocar.
+    if (!r.offline) renderLog([comando, ...((r.log_lines) || [])]);
     // O resultado chegou (ou falhou): os esqueletos saem antes de qualquer
     // ramo de erro, senao uma falha deixaria a galeria shimmerando para sempre.
     hideSkeletons();
 
-    job.status = r.error ? 'fail' : 'done';
+    // `done` so quando algo terminou de fato. Um POST que nao voltou e `fail`:
+    // card "concluido · 0 clips" para um job que morreu e mentira na fila.
+    job.status = (r.error || r.offline) ? 'fail' : 'done';
     // O servidor ja conhece este job (o POST voltou): a marca de "so local"
     // cumpriu o papel e sai, senao o merge seguinte trataria um job terminal
     // como se ainda estivesse em transito.
     delete job.localOnly;
     job.title = r.title || '';
     job.clips = Array.isArray(r.clips) ? r.clips : [];
-    job.meta = r.error ? ('erro: ' + r.error) : (job.clips.length + ' clips');
+    job.meta = r.offline
+      ? (runProgress.sawLive ? 'interrompido: o servidor caiu' : 'não executado: sem servidor')
+      : (r.error ? ('erro: ' + r.error) : (job.clips.length + ' clips'));
     if (!r.error && job.clips.length) {
       const completedPreviews = job.clips
         .filter((clip) => clip.video && clip.rendered !== false)
@@ -1915,20 +1968,22 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
         .map((clip) => ({ rel: clip.video, name: clip.title || 'Corte', size: 0 }));
       if (completedPreviews.length) job.previewFiles = completedPreviews;
     }
-    job.progress = r.error ? 'Renderização interrompida' : (job.meta || 'Renderização concluída');
+    job.progress = r.error ? 'Renderização interrompida'
+      : r.offline ? (runProgress.sawLive ? 'Interrompido' : 'Não iniciado')
+      : (job.meta || 'Renderização concluída');
     job.elapsed = Number(r.elapsed) || job.elapsed || 0;
     renderQueue();
 
+    // O ramo de offline so constata e delega: a nota de prontidao e quem
+    // diagnostica (a MESMA que o poll usa — uma fonte so de veredito), e
+    // `finalizaQueda` e quem decide o que a tela mostra, porque um POST que
+    // nao voltou significa duas coisas diferentes — nunca houve servidor, ou
+    // ele caiu no meio da execucao.
     if (r.offline) {
-      // sem backend: mostra o comando equivalente e simula progresso
       log('Servidor local não encontrado em ' + API, 'ln-warn');
       log('Rode o comando acima no terminal, ou inicie web/server.py');
-      setProgress(100, 'Comando pronto — execute no terminal.');
-      // A nota de prontidao fala o mesmo que aqui, e ela sabe se o problema
-      // e o arquivo aberto direto (nesse caso mandar subir o servidor e
-      // matar o servidor, que pode estar no ar).
       prontidao(r);
-      toast('Backend offline. Comando CLI copiado para o log.', 'err');
+      finalizaQueda(r);
     } else if (r.error) {
       log('Erro: ' + r.error, 'ln-err');
       setStatus('error', 'Falhou');
@@ -1962,6 +2017,81 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     stopTimer();
     state.running = false;
     $$('#btn-run-side, #btn-plan, #btn-render').forEach((b) => b.disabled = false);
+  }
+
+  // ---------- queda do POST /run ----------
+  // O /run e uma requisicao que dura o job inteiro: minutos com a conexao
+  // aberta, e quando ela nao volta a tela tem tres casos diferentes na mao —
+  // que antes diziam todos o mesmo (feito, 100%, "Comando pronto"):
+  //
+  //   * nunca houve servidor -> o comando no log e o conselho certo;
+  //   * o servidor caiu no meio -> o job morreu: dizer "pronto" mente;
+  //   * o servidor segue de pe -> nem era para desistir: o probe do run()
+  //     re-enquadra pelo poll, e este caminho nao e' para ele.
+  function finalizaQueda(r) {
+    const track = $('#progress-track');
+    const atual = Number(track && track.getAttribute('aria-valuenow')) || 0;
+    if (r && r.sem_conexao && runProgress.sawLive) {
+      // O poll ja teve respostas vivas neste run: o servidor existiu e morreu
+      // com o trabalho. A barra fica onde a ultima fase a deixou (as fases sao
+      // publicadas sem percentual, entao na pratica e 0) e o rotulo diz a
+      // verdade — sem a fingir que o job chegou ao fim.
+      setProgress(atual, 'Execução interrompida — o servidor parou no meio.');
+      toast('O servidor caiu durante a execução. O comando acima repete o trabalho.', 'err');
+      return;
+    }
+    if (r && !r.sem_conexao && r.error) {
+      // Resposta com erro HTTP (disco cheio, url invalida): o servidor estava
+      // de pe e recusou — nao e' falta de servidor, e a nota ja carrega o erro.
+      setProgress(atual, 'Falha: ' + r.error);
+      toast(r.error, 'err');
+      return;
+    }
+    // Sem servidor desde o inicio: mostra o comando equivalente e simula o
+    // progresso — o unico caso em que "execute no terminal" e' conselho bom.
+    setProgress(100, 'Comando pronto — execute no terminal.');
+    toast('Backend offline. Comando CLI copiado para o log.', 'err');
+  }
+
+  // O POST morreu mas o /run/progresso respondeu: o trabalho continua no
+  // servidor. A tela voltou a acompanhar pelo poll (startFollowingRun do
+  // run()) e estes dois encerramentos sao os unicos destinos possiveis dele.
+  function finalizaOrfaoConcluido() {
+    stopFollowingRun();
+    runProgress.orphan = null;
+    stopTimer();
+    state.running = false;
+    $$('#btn-run-side, #btn-plan, #btn-render').forEach((b) => b.disabled = false);
+    hideSkeletons();
+    setStatus('done', 'Concluído');
+    setProgress(100, 'Concluído no servidor — resultados chegam pela galeria.');
+    toast('Execução concluída no servidor.', 'ok');
+    // Puxa o /status agora: ele e quem traz os clips e o card terminal da
+    // fila; sem isto a galeria esperaria o proximo tique de 4s.
+    poll();
+  }
+
+  function finalizaOrfaoInterrompido() {
+    const job = runProgress.orphan;
+    if (!job) return; // run normal: quem encerra e o POST, nao o poll
+    stopFollowingRun();
+    runProgress.orphan = null;
+    stopTimer();
+    state.running = false;
+    $$('#btn-run-side, #btn-plan, #btn-render').forEach((b) => b.disabled = false);
+    hideSkeletons();
+    job.status = 'fail';
+    job.meta = 'interrompido: o servidor caiu';
+    job.progress = 'Interrompido';
+    delete job.localOnly;
+    renderQueue();
+    log('A conexão se perdeu e o servidor não responde mais — trabalho parado.', 'ln-warn');
+    // A nota e a MESMA do botao: um unico veredito para "sem servidor".
+    prontidao({ offline: true, sem_conexao: true });
+    const track = $('#progress-track');
+    const atual = Number(track && track.getAttribute('aria-valuenow')) || 0;
+    setProgress(atual, 'Execução interrompida — o servidor parou no meio.');
+    toast('O servidor caiu durante a execução.', 'err');
   }
 
   // ---------- seletor de pasta de saída ----------

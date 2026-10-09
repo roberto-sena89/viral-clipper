@@ -739,7 +739,12 @@ def _run_job(options: dict, plan_only: bool) -> dict:
         with _lock:
             _state["clips"] = clips
             job["title"] = run_report.title
-            job["clips"] = clips[:3]
+            # A lista COMPLETA, e nao um recorte. Este campo e' o que o card
+            # le' para escrever "N cortes" e o que monta a tira de previas; um
+            # `[:3]` aqui fazia o resumo dizer 3 enquanto a tira mostrava 6.
+            # Nao ha custo de payload: `_state["clips"]` ja' viaja inteiro na
+            # MESMA resposta de `/api/status`, com os mesmos dicionarios.
+            job["clips"] = clips
             job["status"] = "done"
             job["meta"] = (
                 f"{len(clips)} cortes analisados (sem render)"

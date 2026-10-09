@@ -1332,11 +1332,52 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     return /^[^_]+_\d{2}_/.test(name);
   }
 
+  // O que ESTA execucao produziu, na ordem dela. A tira de previas e o resumo
+  // do card saem os dois daqui, e por isso os dois numeram "Corte NN" pela
+  // mesma regra — a posicao na lista de clipes do job.
+  //
+  // `index` e' a posicao na lista COMPLETA, nao na tira: um corte que nao
+  // virou arquivo sai da tira sem renumerar os que ficaram, senao o "Corte 04"
+  // da tira passaria a apontar para o quinto clipe do resumo.
+  function previewsFromClips(clips) {
+    return (Array.isArray(clips) ? clips : [])
+      .map((clip, index) => ({ clip, index }))
+      .filter(({ clip }) => clip && clip.video && clip.rendered !== false)
+      .map(({ clip, index }) => ({
+        rel: clip.video,
+        name: clip.title || 'Corte',
+        size: 0,
+        index,
+      }));
+  }
+
+  // A tira de previas DO CARD. A lista de clipes da execucao manda; a varredura
+  // da pasta (`previewFiles`) responde so' pelo job que ainda roda, quando nao
+  // existe clipe nenhum para descrever.
+  //
+  // Derivar aqui, e nao guardar em `previewFiles`, e' o que impede a
+  // divergencia de voltar por um caminho novo: o resumo ja' le' `job.clips`, e
+  // a tira passa a ler a MESMA lista no unico ponto em que ela e' pintada --
+  // inclusive para o job que o navegador nao criou (a pagina acabou de
+  // carregar e a fila veio inteira do servidor), que nunca passa pelo
+  // `hydrateQueuePreviews`.
+  function previewFilesDoJob(job) {
+    const daExecucao = previewsFromClips(job && job.clips);
+    return daExecucao.length ? daExecucao : ((job && job.previewFiles) || []);
+  }
+
   async function hydrateQueuePreviews() {
     const now = Date.now();
     const pending = state.jobs.filter((job) => {
       if (job.status !== 'done' || job.previewLookupDone) return false;
       if (/(sem render|plan[- ]only)/i.test(String(job.meta || ''))) return false;
+      // A lista de clipes da execucao responde a MESMA pergunta com mais
+      // precisao. A varredura responde "o que existe em output/", e por isso
+      // arrastava o corte orfao de uma execucao ANTERIOR do mesmo video que
+      // ficou na pasta — e' ele que fazia a tira mostrar 6 onde o resumo
+      // dizia 3. Ela fica como reserva do job que o servidor nao sabe mais
+      // descrever (um `clips` vazio).
+      if (previewsFromClips(job.clips).length) return false;
       if (!youtubeVideoId(job.url) || now - Number(job.previewLookupAt || 0) < 15000) return false;
       job.previewLookupAt = now;
       return true;
@@ -1450,12 +1491,15 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
       const posterMark = document.createElement('span');
       posterMark.className = 'job-poster-mark';
       posterMark.textContent = 'VC';
+      // Uma vez por card: a tira e o resumo tem de sair da MESMA lista, e o
+      // contador do poster e' o terceiro lugar que a mostra.
+      const tira = previewFilesDoJob(job);
       const posterCaption = document.createElement('span');
       posterCaption.className = 'job-poster-caption';
       posterCaption.textContent = job.status === 'running'
         ? 'Em produção · ' + runningPreviewSpeed + '×'
-        : job.previewFiles && job.previewFiles.length
-          ? (job.previewFiles.length + ' prévia' + (job.previewFiles.length > 1 ? 's' : '') + ' pronta' + (job.previewFiles.length > 1 ? 's' : ''))
+        : tira.length
+          ? (tira.length + ' prévia' + (tira.length > 1 ? 's' : '') + ' pronta' + (tira.length > 1 ? 's' : ''))
           : 'Video clipper';
       poster.append(posterMark, posterCaption);
 
@@ -1520,10 +1564,12 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
       fill.className = 'job-progress-fill';
       track.appendChild(fill);
 
-      // Um job concluido carrega `clips` (ate 3, gravados por `finish` no
-      // servidor). Sao dados reais: cada um traz a duracao que o renderizador
-      // mediu. Nao ha nada disso enquanto o job roda — por isso a linha so
-      // existe quando ha o que mostrar, em vez de um bloco com tracejados.
+      // Um job concluido carrega `clips` — a lista COMPLETA da execucao,
+      // gravada por `finish` no servidor. Sao dados reais: cada um traz a
+      // duracao que o renderizador mediu. Nao ha nada disso enquanto o job
+      // roda — por isso a linha so existe quando ha o que mostrar, em vez de
+      // um bloco com tracejados. A tira de previas le' a MESMA lista (por
+      // `previewsFromClips`), entao a contagem daqui e a tira nunca discordam.
       const resumo = document.createElement('div');
       resumo.className = 'job-clips';
       const clipsDoJob = Array.isArray(job.clips) ? job.clips : [];
@@ -1550,13 +1596,18 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
       const previews = document.createElement('div');
       previews.className = 'job-previews';
       previews.setAttribute('aria-label', 'Pré-visualização dos cortes');
-      (job.previewFiles || []).forEach((file, clipIndex) => {
+      tira.forEach((file, clipIndex) => {
         const figure = document.createElement('figure');
         const livePreview = job.status === 'running' && clipIndex === 0;
+        // `file.index` e' a posicao REAL do corte na execucao — o mesmo numero
+        // que o chip do resumo mostra. A posicao na tira so' serve de reserva:
+        // na fase de producao a lista vem da varredura da pasta e nao tem
+        // indice nenhum para oferecer.
+        const numero = Number.isInteger(file.index) ? file.index : clipIndex;
         figure.className = 'job-preview' + (livePreview ? ' is-live-preview' : '');
         figure.tabIndex = 0;
         figure.setAttribute('role', 'button');
-        figure.setAttribute('aria-label', (livePreview ? 'Prévia acelerada em produção' : 'Reproduzir ou pausar corte ' + (clipIndex + 1)));
+        figure.setAttribute('aria-label', (livePreview ? 'Prévia acelerada em produção' : 'Reproduzir ou pausar corte ' + (numero + 1)));
         const video = document.createElement('video');
         video.muted = true;
         video.loop = true;
@@ -1577,7 +1628,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
         const caption = document.createElement('figcaption');
         caption.textContent = livePreview
           ? 'AO VIVO · ' + runningPreviewSpeed + '×'
-          : 'Corte ' + String(clipIndex + 1).padStart(2, '0');
+          : 'Corte ' + String(numero + 1).padStart(2, '0');
         figure.append(video, caption);
         figure.addEventListener('click', () => {
           if (video.paused) video.play().catch(() => {});
@@ -1591,7 +1642,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
         });
         previews.appendChild(figure);
       });
-      if (!(job.previewFiles || []).length && job.status === 'running') {
+      if (!tira.length && job.status === 'running') {
         const stage = document.createElement('div');
         stage.className = 'job-render-stage';
         stage.setAttribute('role', 'status');
@@ -1962,10 +2013,11 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
       ? (runProgress.sawLive ? 'interrompido: o servidor caiu' : 'não executado: sem servidor')
       : (r.error ? ('erro: ' + r.error) : (job.clips.length + ' clips'));
     if (!r.error && job.clips.length) {
-      const completedPreviews = job.clips
-        .filter((clip) => clip.video && clip.rendered !== false)
-        .slice(0, 3)
-        .map((clip) => ({ rel: clip.video, name: clip.title || 'Corte', size: 0 }));
+      // A resposta do POST traz a lista COMPLETA da execucao, entao a tira
+      // nasce dela inteira. O `slice(0, 3)` que ficava aqui era o espelho do
+      // `clips[:3]` do servidor: era ele que fazia a tira ter menos figuras
+      // do que numeros o resumo mostrava.
+      const completedPreviews = previewsFromClips(job.clips);
       if (completedPreviews.length) job.previewFiles = completedPreviews;
     }
     job.progress = r.error ? 'Renderização interrompida'
@@ -2320,10 +2372,14 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
           if (baselineFiles) localJob.baselineFiles = baselineFiles;
           if (observedFiles) localJob.observedFiles = observedFiles;
           if (previewFiles && previewFiles.length) localJob.previewFiles = previewFiles;
-          else if (Array.isArray(remoteJob.clips)) {
-            localJob.previewFiles = remoteJob.clips
-              .filter((clip) => clip.video && clip.rendered !== false)
-              .map((clip) => ({ rel: clip.video, name: clip.title || 'Corte', size: 0 }));
+          if (Array.isArray(remoteJob.clips)) {
+            // A lista de clipes do servidor e' a fonte de verdade de um job
+            // terminado: onde ela existe, ela REDESENHA a tira. A varredura da
+            // pasta (`previewFiles` local) so' sobrevive para o job que ainda
+            // roda — nele o servidor nao tem clipes para descrever, e a pasta
+            // e' a unica testemunha do que ja' saiu.
+            const doJob = previewsFromClips(remoteJob.clips);
+            if (doJob.length) localJob.previewFiles = doJob;
           }
           return localJob;
         });

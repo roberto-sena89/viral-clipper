@@ -2096,47 +2096,42 @@ class SharedStyleSheetTests(unittest.TestCase):
         self.assertIn("rx=", formas, "o clipe nao tem cantos suaves")
         self.assertIn("<path", svg, "o play sumiu do favicon")
 
-    def test_every_brand_mark_shows_the_icon_not_the_letters(self):
-        """Todo `.brand-mark` carrega o SVG, e o texto `VC` sumiu das paginas.
+    def test_the_brand_icon_is_svg_in_rail_and_footer_and_never_letters(self):
+        """A marca e' o MESMO componente no rail e no rodape, e e' SVG.
 
-        Medido no DOM RENDERIZADO, e nao no HTML-fonte: desde que a marca saiu
-        dos quatro HTMLs e passou a vir de `renderChrome()`, procurar
-        `class="brand-mark"` no texto do arquivo encontra ZERO ocorrencias -- o
-        elemento so' existe depois que o `comum.js` roda. Um teste que lesse o
-        arquivo passaria a nao testar nada (ou a falhar por ausencia), sem que
-        a marca tivesse piorado. O que importa nao e' quantas marcas sao, e'
-        que nenhuma voltou a ser texto.
+        A marca do rail era `.brand-mark` com o favicon em `<img>`; ela passou
+        a ser o componente `footer-brand` (icone SVG inline + nome + slogan) nos
+        DOIS lugares -- uma marca por produto, nao duas. O que o teste garante e'
+        o resultado visivel do contrato: o icone existe nas duas instancias, o
+        SVG esta' la' dentro (nunca texto), o icone e' decorativo (`aria-hidden`,
+        o nome ao lado e' quem fala), o `.brand-mark` nao sobrou em parte nenhuma
+        e o `VC` continua proibido no DOM inteiro.
 
-        A marca e' uma so' por pagina agora (o cabecalho tem o proprio icone,
-        `.header-context-icon` / `.scrap-header-icon`), mas o teste CONTA em vez
-        de fixar o numero: a contagem fixa de 4 envelheceu em silencio no
-        passado, quando o cabecalho mudou de marca.
+        Medido no DOM RENDERIZADO: desde que a marca saiu dos quatro HTMLs,
+        procurar `class="brand-mark"` no arquivo encontra ZERO -- o elemento
+        so' existe depois que o `comum.js` roda. O teste CONTA em vez de fixar
+        o numero: hoje sao dois por pagina (rail + rodape), e um numero fixo
+        envelhece em silencio quando um terceiro lugar ganha a marca.
         """
         for pagina in sorted(RenderedMarkupTests.PAGES):
             dados = pagina_montada(
                 pagina,
-                seletores=(".brand-mark", ".brand-mark img"),
+                seletores=(".footer-brand__icon", ".footer-brand__icon svg",
+                           ".brand-mark"),
                 incluir_html=True)
             with self.subTest(pagina=pagina):
-                marcas = dados["achados"][".brand-mark"]
-                self.assertTrue(marcas, f"{pagina}: nenhuma marca renderizada")
-                for marca in marcas:
-                    self.assertIn("<img", marca["innerHTML"],
-                                  f"{pagina}: uma marca nao tem imagem")
-                #: O atributo e' lido no ELEMENTO, e nao procurado na string
-                #: re-serializada: `alt=""` sai impresso como `alt` puro (o
-                #: navegador trata os dois igual), entao um `assertIn` de
-                #: string media o serializador em vez do HTML da pagina.
-                imagens = dados["achados"][".brand-mark img"]
-                self.assertTrue(imagens, f"{pagina}: nenhuma <img> na marca")
-                for img in imagens:
-                    self.assertEqual(img["attrs"].get("src"), "/favicon.svg",
-                                     f"{pagina}: a marca aponta para outro arquivo")
-                    self.assertEqual(img["attrs"].get("alt"), "",
-                                     "a imagem decorativa ganhou nome: o produto "
-                                     "ja esta escrito no elemento vizinho")
-                    self.assertNotEqual(img["attrs"].get("alt"), None,
-                                        f"{pagina}: a imagem nao tem alt")
+                icones = dados["achados"][".footer-brand__icon"]
+                self.assertTrue(icones, f"{pagina}: nenhum icone de marca renderizado")
+                for icone in icones:
+                    self.assertEqual(icone["attrs"].get("aria-hidden"), "true",
+                                     f"{pagina}: o icone da marca nao e' decorativo")
+                    self.assertIn("<svg", icone["innerHTML"],
+                                  f"{pagina}: o icone nao e' SVG")
+                svgs = dados["achados"][".footer-brand__icon svg"]
+                self.assertTrue(svgs, f"{pagina}: o SVG da marca nao existe")
+                self.assertFalse(
+                    dados["achados"].get(".brand-mark"),
+                    f"{pagina}: o `.brand-mark` antigo sobrou no DOM")
                 #: E o texto `VC` nao pode reaparecer em lugar nenhum.
                 self.assertNotIn(
                     ">VC<", dados["html"],
@@ -6469,9 +6464,12 @@ class QueueCardTests(unittest.TestCase):
         """A faixa "EM PRODUCAO" e do vazio: com previa pronta ela nao entra."""
         self.assertIn("job-render-stage", self.js)
         self.assertIn("EM PRODUÇÃO", self.js)
+        # `tira` e' a tira derivada por `previewFilesDoJob` (a lista de clipes da
+        # execucao, com `previewFiles` como reserva): a condicao passou a ler a
+        # MESMA lista que pinta as figuras, e nao o campo guardado.
         self.assertRegex(
             self.js,
-            r"if\s*\(!\(job\.previewFiles \|\| \[\]\)\.length && job\.status === 'running'\)",
+            r"if\s*\(!tira\.length && job\.status === 'running'\)",
             "a faixa de producao deixou de ser condicional a ausencia de previa",
         )
 
@@ -6710,9 +6708,10 @@ class QueueChromeTests(unittest.TestCase):
 class JobResultSummaryTests(unittest.TestCase):
     """O que um card CONCLUIDO mostra — e so quando ha dado real.
 
-    `finish()` grava `title`, `clips` (ate 3) e `meta` no job. Nada disso existe
-    enquanto ele roda. O contrato aqui e: o resumo dos cortes nasce do `job.clips`
-    que o servidor mandou, nunca de um numero que o front inventa.
+    `finish()` grava `title`, `clips` (a lista COMPLETA da execucao) e `meta` no
+    job. Nada disso existe enquanto ele roda. O contrato aqui e: o resumo dos
+    cortes nasce do `job.clips` que o servidor mandou, nunca de um numero que o
+    front inventa.
     """
 
     @classmethod
@@ -6770,6 +6769,210 @@ class JobResultSummaryTests(unittest.TestCase):
         # Um chip que quebra no meio da duracao fica ilegivel: cada chip e uma
         # unidade. `nowrap` mantem o par "Corte 02 · 00:47" inteiro.
         self.assertRegex(bloco, r"\.job-clip\s*\{[^}]*white-space:\s*nowrap")
+
+
+class JobPreviewConsistencyTests(unittest.TestCase):
+    """A tira de previas e o resumo do card saem da MESMA lista.
+
+    Medido ao vivo: o resumo escrevia "3 cortes" enquanto a tira mostrava 6
+    figuras, no mesmo card. Eram duas fontes independentes — o resumo lia
+    `job.clips`, que o servidor truncava em 3, e a tira vinha da varredura de
+    `output/`, que devolve tudo o que existe na pasta, inclusive o corte orfao
+    de uma execucao ANTERIOR do mesmo video.
+
+    A funcao que unifica as duas e' extraida do `index.js` de verdade e chamada
+    no node. Uma copia da logica aqui dentro passaria com a copia certa e o
+    produto errado — que e' exatamente o defeito que este teste existe para
+    pegar.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+        cls.server_src = (server.WEB_DIR / "server.py").read_text(encoding="utf-8")
+        m = re.search(r"function previewsFromClips\(clips\) \{[\s\S]*?\n  \}", cls.js)
+        if m is None:
+            raise AssertionError(
+                "previewsFromClips() sumiu do index.js. Se a funcao foi "
+                "renomeada, renomeie esta ancora junto — um match que devolve "
+                "None e' um teste que nao testa nada."
+            )
+        cls.corpo = m.group(0)
+        m2 = re.search(r"function previewFilesDoJob\(job\) \{[\s\S]*?\n  \}", cls.js)
+        if m2 is None:
+            raise AssertionError(
+                "previewFilesDoJob() sumiu do index.js: e' o ponto unico onde a "
+                "tira de previas do card e' decidida."
+            )
+        cls.corpo_tira = m2.group(0)
+
+    def tira(self, clips):
+        """Roda a funcao REAL do `index.js` sobre `clips` e devolve a tira."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node nao esta' no PATH")
+        import subprocess
+
+        script = (
+            "const fn = new Function('clips', %s + "
+            "'\\nreturn previewsFromClips(clips);');" % json.dumps(self.corpo)
+            + "\nconst clips = %s;" % json.dumps(clips)
+            + "\nconsole.log(JSON.stringify(fn(clips)));"
+        )
+        # `encoding` explicito: o default no Windows e' cp1252 e a fonte tem
+        # acento — o mesmo trava que ja' derrubou a ponte DOM.
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, encoding="utf-8", timeout=30)
+        if proc.returncode != 0:
+            raise AssertionError(
+                "previewsFromClips estourou: " + proc.stderr.strip()[:400])
+        return json.loads(proc.stdout.strip())
+
+    def test_the_server_sends_every_clip_it_rendered(self):
+        """`job.clips` e' a lista inteira — o recorte era metade do defeito."""
+        self.assertRegex(
+            self.server_src, re.compile(r'^ +job\["clips"\] = clips$', re.M),
+            "o servidor deixou de mandar a lista completa de clipes no job",
+        )
+        self.assertNotIn(
+            "clips[:3]", self.server_src,
+            "o `[:3]` voltou: com ele o resumo conta 3 e a tira mostra o resto",
+        )
+
+    def test_the_strip_is_not_capped_in_the_front(self):
+        """O `slice(0, 3)` do front espelhava o corte do servidor."""
+        self.assertNotIn(
+            ".slice(0, 3)", self.js,
+            "a tira de previas voltou a truncar: ela tem de sair inteira da "
+            "lista de clipes, senao discorda do resumo do proprio card",
+        )
+
+    def test_every_clip_that_rendered_becomes_one_figure(self):
+        """Seis cortes renderizados = seis figuras. O caso da reclamacao."""
+        clips = [
+            {"video": "v_01_a.mp4", "rendered": True},
+            {"video": "v_02_b.mp4", "rendered": True},
+            {"video": "v_03_c.mp4", "rendered": True},
+            {"video": "v_04_d.mp4", "rendered": True},
+            {"video": "v_05_e.mp4", "rendered": True},
+            {"video": "v_06_f.mp4", "rendered": True},
+        ]
+        tira = self.tira(clips)
+        self.assertEqual([f["rel"] for f in tira], [c["video"] for c in clips])
+        self.assertEqual([f["index"] for f in tira], [0, 1, 2, 3, 4, 5])
+
+    def test_a_cut_without_a_file_leaves_without_renumbering_the_rest(self):
+        """O corte que nao virou arquivo sai da tira e nao renumera os outros.
+
+        Sem guardar o indice, a tira mostraria quatro figuras numeradas 01..04
+        enquanto o resumo tem cinco chips — e o "Corte 04" da tira apontaria
+        para o quinto clipe.
+        """
+        clips = [
+            {"video": "v_01_a.mp4", "rendered": True},
+            {"video": "v_02_b.mp4", "rendered": True},
+            {"video": "v_03_c.mp4", "rendered": True},
+            {"video": None, "rendered": False},
+            {"video": "v_05_e.mp4", "rendered": True},
+        ]
+        tira = self.tira(clips)
+        self.assertEqual(
+            [f["rel"] for f in tira],
+            ["v_01_a.mp4", "v_02_b.mp4", "v_03_c.mp4", "v_05_e.mp4"],
+        )
+        self.assertEqual([f["index"] for f in tira], [0, 1, 2, 4])
+
+    def test_an_empty_or_missing_list_yields_no_figures(self):
+        """A tira nao pode inventar figura a partir de lixo."""
+        for entrada in (None, [], "texto", 7, [None, {"video": None}]):
+            with self.subTest(entrada=entrada):
+                self.assertEqual(self.tira(entrada), [])
+
+    def test_both_origins_of_the_strip_go_through_the_helper(self):
+        """O POST e o poll pintam a tira pelo mesmo caminho."""
+        self.assertIn("const completedPreviews = previewsFromClips(job.clips);", self.js)
+        self.assertIn("const doJob = previewsFromClips(remoteJob.clips);", self.js)
+
+    def test_the_folder_scan_is_only_a_fallback(self):
+        """A varredura so' pinta o job que nao tem lista de clipes."""
+        self.assertIn("if (previewsFromClips(job.clips).length) return false;", self.js)
+
+    def test_the_caption_numbers_the_clip_and_not_the_position(self):
+        """O numero do chip do resumo e o da legenda sao o mesmo numero."""
+        self.assertIn(
+            "const numero = Number.isInteger(file.index) ? file.index : clipIndex",
+            self.js,
+        )
+        self.assertIn("'Corte ' + String(numero + 1).padStart(2, '0')", self.js)
+
+    def tira_do_job(self, job):
+        """Roda `previewFilesDoJob` do `index.js` sobre um job e devolve a tira."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node nao esta' no PATH")
+        import subprocess
+
+        # As DUAS funcoes: `previewFilesDoJob` chama `previewsFromClips`, e uma
+        # sozinha estoura com ReferenceError. Declaracao de funcao sofre hoist,
+        # entao a ordem no corpo nao importa.
+        script = (
+            "const fn = new Function('job', %s + '\\n' + %s + "
+            "'\\nreturn previewFilesDoJob(job);');"
+            % (json.dumps(self.corpo), json.dumps(self.corpo_tira))
+            + "\nconst job = %s;" % json.dumps(job)
+            + "\nconsole.log(JSON.stringify(fn(job)));"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, encoding="utf-8", timeout=30)
+        if proc.returncode != 0:
+            raise AssertionError(
+                "previewFilesDoJob estourou: " + proc.stderr.strip()[:400])
+        return json.loads(proc.stdout.strip())
+
+    def test_the_clip_list_wins_over_a_stale_folder_scan(self):
+        """O defeito que a sonda no navegador pegou.
+
+        Numa pagina recem-carregada o job vem inteiro do servidor e nunca passa
+        pelo caminho que guardava `previewFiles`. Se a tira saisse do campo
+        guardado, ela nasceria VAZIA -- e era o `hydrateQueuePreviews` que a
+        preenchia, arrastando o orfao junto.
+        """
+        job = {
+            "clips": [
+                {"video": "v_01.mp4", "rendered": True},
+                {"video": "v_02.mp4", "rendered": True},
+            ],
+            # A varredura de uma execucao antiga do mesmo video: sobra um orfao.
+            "previewFiles": [
+                {"rel": "v_01.mp4", "index": 0},
+                {"rel": "v_99_orfao.mp4", "index": 8},
+            ],
+        }
+        self.assertEqual([f["rel"] for f in self.tira_do_job(job)],
+                         ["v_01.mp4", "v_02.mp4"])
+
+    def test_a_job_without_clips_still_uses_the_folder_scan(self):
+        """Na fase de producao nao ha clipe nenhum: a pasta e' a testemunha."""
+        varredura = [{"rel": "v_01.mp4", "name": "v_01.mp4", "size": 10}]
+        for clips in (None, [], "texto"):
+            with self.subTest(clips=clips):
+                self.assertEqual(
+                    self.tira_do_job({"clips": clips, "previewFiles": varredura}),
+                    varredura,
+                )
+        self.assertEqual(
+            self.tira_do_job({"clips": [{"video": None, "rendered": False}],
+                              "previewFiles": varredura}),
+            varredura,
+        )
+
+    def test_the_card_paints_the_strip_from_the_one_place(self):
+        """A tira do card e' decidida uma vez, e nao em cada leitura."""
+        self.assertIn("const tira = previewFilesDoJob(job);", self.js)
+        self.assertIn("tira.forEach((file, clipIndex) => {", self.js)
+        # O contador do poster e' o terceiro lugar que mostra a tira: se ele
+        # lesse o campo guardado, diria um numero diferente do resumo.
+        self.assertIn(": tira.length", self.js)
 
 
 class GallerySearchTests(unittest.TestCase):

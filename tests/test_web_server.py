@@ -4135,6 +4135,59 @@ class PublicarPageTests(unittest.TestCase):
         self.assertIn("readonly", js)
         self.assertIn("<textarea", js)
 
+    def test_the_copy_buttons_each_send_their_own_text_to_the_clipboard(self):
+        """`Copiar legenda` manda SO a headline; `Copiar hashtags`, so as tags.
+
+        Os dois partiam do mesmo `legendaDe` no botao de legenda -- colar a
+        legenda trazia as hashtags junto, e o botao de hashtags (que existe
+        justamente para colar so elas) nao servia para nada nesse caminho. O
+        campo de texto continua com o texto do post inteiro: o preview nao e'
+        o clipboard.
+
+        O teste roda o LISTENER de verdade, extraido do arquivo, com um
+        `copiar` de mentira que registra os argumentos: ler o codigo nao
+        provaria o que chega na chamada, e e' exatamente la que o defeito
+        morava.
+        """
+        import subprocess
+
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node nao esta no PATH")
+
+        achado = re.search(
+            r"document\.addEventListener\('click', \(ev\) => \{[\s\S]*?\n  \}\);",
+            self.fonte(self.JS))
+        self.assertIsNotNone(achado, "o listener de copia sumiu do publicar.js")
+
+        script = (
+            "const chamadas = [];\n"
+            "let clipsLidos = [];\n"
+            "const copiar = (texto, tipo, botao) => chamadas.push({ texto, tipo });\n"
+            "const document = {\n"
+            "  addEventListener: (tipo, fn) => { if (tipo === 'click') globalThis.__clique = fn; },\n"
+            "};\n"
+            + achado.group(0) + "\n"
+            "clipsLidos = [{ headline: 'So a legenda', hashtags: '#tag1 #tag2' }];\n"
+            "const botao = (indice, acao) => ({\n"
+            "  getAttribute: (k) => (k === 'data-indice' ? indice : acao),\n"
+            "});\n"
+            "__clique({ target: { closest: () => botao('0', 'legenda') } });\n"
+            "__clique({ target: { closest: () => botao('0', 'hashtags') } });\n"
+            "console.log(JSON.stringify(chamadas));\n"
+        )
+        # encoding explicito: o default no Windows e' cp1252, e a fonte tem
+        # acento -- o mesmo trava que ja' derrubou a ponte DOM.
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(proc.returncode, 0,
+                         "o listener de copia estourou: " + proc.stderr[:400])
+        chamadas = json.loads(proc.stdout.strip())
+        self.assertEqual(chamadas, [
+            {"texto": "So a legenda", "tipo": "legenda"},
+            {"texto": "#tag1 #tag2", "tipo": "hashtags"},
+        ])
+
     def test_the_page_has_its_own_sheet_and_only_its_own_selectors(self):
         """O css proprio so' declara o que e' proprio.
 

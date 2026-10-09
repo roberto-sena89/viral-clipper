@@ -168,7 +168,11 @@
         + 'texto — veja o <a href="/ajustes">Prompt do curador</a>.</p>';
 
     const acoes = [];
-    if (legenda) {
+    // O botao de legenda nasce da HEADLINE e nao do `legendaDe`: o campo
+    // mostra o texto do post inteiro (legenda, linha vazia, hashtags), mas o
+    // botao promete copiar a legenda. Um clip sem headline e com tags ganhava
+    // um "Copiar legenda" que so copiava tags -- e o texto errado no clipboard.
+    if (String(clip.headline || '').trim()) {
       acoes.push('<button class="btn btn-primary pressable" type="button"'
         + ' data-copiar="legenda" data-indice="' + esc(indice) + '">Copiar legenda</button>');
     }
@@ -346,8 +350,15 @@
     const clip = clipsLidos[Number(botao.getAttribute('data-indice'))];
     if (!clip) return;
     const tipo = botao.getAttribute('data-copiar') === 'hashtags' ? 'hashtags' : 'legenda';
-    copiar(tipo === 'hashtags' ? String(clip.hashtags || '').trim() : legendaDe(clip),
-      tipo, botao);
+    // Legenda copiada e' SO a headline. O `legendaDe` (headline + linha
+    // vazia + hashtags) e' o texto do CAMPO -- o preview do post inteiro --
+    // e nao o clipboard: quem aperta "Copiar legenda" quer colar o texto sem
+    // as tags, que tem botao proprio. Vieram juntas, o segundo botao nao
+    // servia para nada nesse caminho e a pessoa tinha que apagar a cola.
+    const texto = tipo === 'hashtags'
+      ? String(clip.hashtags || '').trim()
+      : String(clip.headline || '').trim();
+    copiar(texto, tipo, botao);
   });
 
   const recarregar = $('#btn-recarregar');

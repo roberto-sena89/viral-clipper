@@ -19,6 +19,13 @@ Measured on the master checkout (LF unless noted): ``web/*.html|js|css`` LF,
 ``scrap.js``, ``tests/test_web_server.py``. A quick proof that no line changed
 only by separator: ``git diff --numstat`` must equal
 ``git diff --ignore-cr-at-eol --numstat``.
+
+The suite's own Python files are covered too. They were not, and that was the
+gap: an edit script rewrote ``tests/test_web_server.py`` with
+``Path.write_text()`` on Windows, turning all 7,974 lines CRLF. The
+``web/``-only tests stayed green -- they never look at ``tests/`` -- and the
+damage surfaced as a 15,677-line diff on a 333-line change. The review cost is
+the whole point of this module, so the guard now reaches the file that got hit.
 """
 
 from __future__ import annotations
@@ -29,6 +36,8 @@ from pathlib import Path
 from web import server
 
 WEB_DIR = server.WEB_DIR
+TESTS_DIR = Path(__file__).resolve().parent
+ROOT = WEB_DIR.parent
 BROWSER_SUFFIXES = {".html", ".js", ".css"}
 SERVER = WEB_DIR / "server.py"
 
@@ -60,6 +69,15 @@ def browser_assets() -> list[Path]:
     )
 
 
+def suite_files() -> list[Path]:
+    """Every Python file of the suite itself.
+
+    E' o conjunto que faltava: o arquivo que sofreu a conversao foi
+    ``tests/test_web_server.py``, e nenhum teste olhava para ``tests/``.
+    """
+    return sorted(path for path in TESTS_DIR.glob("*.py") if path.is_file())
+
+
 def fix_hint(path: Path, found: str) -> str:
     return (
         f"{path.relative_to(WEB_DIR.parent)} esta {found}, esperado LF. "
@@ -80,6 +98,65 @@ class WebLineEndingTests(unittest.TestCase):
             with self.subTest(asset=path.name):
                 found = separator(data)
                 self.assertEqual(found, "LF", fix_hint(path, found))
+
+    def test_no_test_file_mixes_separators(self) -> None:
+        """Os testes nao podem ficar com separadores MISTURADOS.
+
+        Nao se exige LF aqui: cinco arquivos de teste ja' sao CRLF no
+        repositorio (``test_archive``, ``test_pipeline``, ``test_render``,
+        ``test_transcript_import``, ``test_viral_report``), e normaliza-los
+        so' para satisfazer um teste produziria o diff gigante que este modulo
+        existe para evitar. O que se exige e' COERENCIA: um arquivo LF ou um
+        arquivo CRLF, nunca os dois.
+
+        Existe por um caso real: um script de edicao regravou
+        ``tests/test_web_server.py`` com ``Path.write_text()`` no Windows e as
+        7.974 linhas viraram CRLF -- um diff de 15.677 linhas numa mudanca de
+        333. Um arquivo MISTO (parte CRLF, parte LF) e' o sinal mais claro de
+        que uma escrita parcial aconteceu no meio.
+        """
+        arquivos = suite_files()
+        self.assertTrue(arquivos, f"nenhum teste encontrado em {TESTS_DIR}")
+        for path in arquivos:
+            data = path.read_bytes()
+            if not data:
+                continue
+            with self.subTest(teste=path.name):
+                found = separator(data)
+                self.assertNotEqual(
+                    found, "MIXED",
+                    f"tests/{path.name} tem separadores misturados (CRLF e LF "
+                    "no mesmo arquivo). Uma escrita parcial no Windows faz "
+                    "isso: reescreva com Path.write_bytes() e rode de novo.")
+
+    def test_the_files_edited_by_the_common_chrome_work_are_lf(self) -> None:
+        """CONGELA o separador dos arquivos que esta migracao tocou.
+
+        Estes estavam LF em HEAD e tem de continuar LF -- inclusive
+        ``tests/test_web_server.py``, que foi convertido para CRLF por um
+        ``Path.write_text()`` no meio do trabalho e so' apareceu como um diff
+        de 15.677 linhas. Uma regra geral ("todo teste e' LF") nao serve porque
+        cinco arquivos do repositorio ja' sao CRLF; o que faz sentido e' fixar
+        o estado dos que tem de permanecer LF, um a um.
+        """
+        alvos = {
+            "tests/test_web_server.py": "LF",
+            "tests/test_line_endings.py": "LF",
+            "tests/_dom_bridge.py": "LF",
+            "tests/_dom.js": "LF",
+        }
+        for relativo, esperado in sorted(alvos.items()):
+            path = ROOT / relativo
+            with self.subTest(arquivo=relativo):
+                self.assertTrue(path.is_file(), f"{relativo} nao existe")
+                found = separator(path.read_bytes())
+                self.assertEqual(
+                    found, esperado,
+                    f"{relativo} esta {found}, esperado {esperado}. Se o "
+                    "arquivo foi gravado com Path.write_text() no Windows, o "
+                    "\\n virou \\r\\n: reescreva com Path.write_bytes() e rode "
+                    "de novo. Um diff de arquivo inteiro esconde a mudanca "
+                    "real de quem revisa.")
 
     def test_no_browser_asset_mixes_separators(self) -> None:
         for path in browser_assets():

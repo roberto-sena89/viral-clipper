@@ -21,13 +21,12 @@
      aria-current="page" e a pagina atual, derivado de location.pathname pelo
      JS abaixo — nunca escrito a mao, senao a pagina errada se declara atual. -->
 <nav class="rail" aria-label="Navegação principal">
-  <div class="rail-brand">
-    <a class="rail-brand-link" href="/" aria-label="Viral Clipper — abrir o Estúdio">
-      <span class="brand-mark" aria-hidden="true"><img src="/favicon.svg" alt="" width="36" height="36"></span>
-      <span class="rail-brand-copy"><strong>Viral Clipper</strong><small>Editor de vídeos curtos</small></span>
-    </a>
-    <span class="rail-brand-badge" aria-label="Aplicativo local">LOCAL</span>
-  </div>
+  <!-- A marca, o cabecalho de contexto e o menu de tela pequena vem do
+       /comum.js (BRAND + HEADER_CONTEXT + renderChrome). Aqui fica so o
+       hospedeiro: o mesmo bloco era escrito a mao nas quatro paginas e
+       divergiu -- a descricao da marca virava o nome da pagina em duas delas,
+       e o botao do menu era SVG em duas e `☰` nas outras. -->
+  <div class="rail-brand" data-brand></div>
 
   <div class="rail-label" id="rail-label-paginas">Páginas</div>
 
@@ -40,26 +39,11 @@
 
 <header>
   <div class="wrap header-inner">
-    <div class="header-context" aria-label="Estúdio de cortes verticais">
-      <span class="header-context-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="4.5" width="17" height="15" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="m10 8.5 5 3.5-5 3.5v-7Z" fill="currentColor"/><path d="M7 2.75v3M17 2.75v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-      </span>
-      <span class="header-context-copy">
-        <span class="header-context-eyebrow">ESPAÇO DE TRABALHO</span>
-        <strong>Estúdio <span class="header-context-long"><span aria-hidden="true">/</span> edição de cortes verticais</span><span class="header-context-short">Editor</span></strong>
-      </span>
-      <span class="header-context-status"><span aria-hidden="true"></span>Processamento local</span>
-    </div>
+    <div data-header-context></div>
     <div class="nav-actions">
       <!-- Fallback do rail abaixo de 920px: mesmos destinos, em menu. -->
       <div class="rail-dropdown" data-rail-picker>
-        <button class="menu-btn pressable" type="button" id="rail-menu-btn"
-                aria-haspopup="true" aria-expanded="false" aria-controls="rail-menu-sm">
-          <span class="mb-bars" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6.5h16M4 12h16M4 17.5h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
-          <span class="sr-only">Abrir navegação</span>
-          <span class="mb-caret" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-        </button>
-        <ul class="rail-menu" id="rail-menu-sm" data-rail-menu data-rail-list hidden></ul>
+        <div data-menu-picker></div>
       </div>
       <button class="btn pressable header-batch" type="button" id="btn-batch" title="Processa uma lista de URLs pela linha de comando"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M7 7h10v10H7" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><span>Lote via CLI</span></button>
       <!-- O header NAO tem "Gerar cortes". Havia, e era o mesmo botao do card

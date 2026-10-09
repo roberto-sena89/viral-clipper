@@ -291,6 +291,200 @@
     { path: '/biblioteca', ico: '⤓', title: 'Biblioteca', desc: 'Buscar, revisar e importar vídeos.' },
   ];
 
+  /* ---------- A MARCA E O CABECALHO DE CONTEXTO ----------
+
+     Os dois moravam escritos a mao em cada um dos quatro HTML, e divergiram --
+     nao por decisao, por copia:
+
+       - a descricao da marca (`.rail-brand-copy small`) dizia "Editor de
+         videos curtos" no index e no scrap, e o NOME DA PAGINA nas outras
+         duas ("Ajustes", "Publicar"). E' o subtitulo do PRODUTO, entao nao
+         pode mudar de pagina para pagina;
+       - o botao do menu em tela pequena era um SVG no index/scrap e os
+         caracteres `☰` / `▾` no ajustes/publicar, com dois rotulos
+         diferentes ("Abrir navegacao" / "Menu de paginas"). O glifo depende
+         da fonte instalada; o SVG, nao.
+
+     Aqui a marca e' CONSTANTE e o cabecalho vem de uma tabela por pagina. Um
+     `title`/`long`/`short` novo entra na tabela e o HTML nao muda. */
+
+  //: O subtitulo do produto. Um so' para as quatro paginas, de proposito.
+  const BRAND = {
+    nome: 'Viral Clipper',
+    desc: 'Editor de vídeos curtos',
+    badge: 'LOCAL',
+    badgeTitulo: 'Aplicativo local',
+  };
+
+  //: O icone da marca. O MESMO do favicon: um clipe com um play dentro.
+  const BRAND_ICONE = '<img src="/favicon.svg" alt="" width="36" height="36">';
+
+  /* O cabecalho de contexto de cada pagina, chaveado pela rota canonica.
+
+     `raiz` e' a classe do elemento de FORA e `pre` o prefixo das de dentro.
+     Sao dois campos, e nao um, porque a raiz NAO segue a regra das filhas: o
+     cabecalho comum chama-se `.header-context` (a raiz) e suas filhas
+     `.header-context-icon`, `.header-context-eyebrow`, ... -- ou seja, o
+     prefixo das filhas E' o nome da raiz. Derivar a raiz de `pre + '-context'`
+     produzia `header-context-context`, uma classe que nenhum CSS define: o
+     wrapper perdia o `display:flex` e a altura ia de 38px para 102px. O bug
+     so' nao apareceu na Biblioteca porque la' o prefixo (`scrap-header`) nao
+     contem a palavra `context`, entao `scrap-header-context` saiu certo por
+     sorte. Com dois campos explicitos nao ha' o que derivar.
+
+     Nao da' para usar um prefixo so' nas quatro: a pagina da Biblioteca nao
+     carrega o `index.css` (que define `.header-context-*`) e traz as proprias
+     regras `.scrap-header-*` no `scrap.css`. As duas familias medem IDENTICO --
+     icone 38x38, raio 11px, eyebrow mesma cor e tamanho, mesma altura --, mas o
+     `scrap.css` tambem sobrescreve `.card` e `.btn` de proposito, entao trocar
+     a folha que a Biblioteca carrega mexeria na cascata da pagina inteira por um
+     ganho que e' so' de nomenclatura. Unificar o MARKUP (uma fonte, um render)
+     e' o que tira a copia; unificar o nome da classe e' outra conversa.
+
+     `eyebrow` e' o kicker em maiusculas; `long` e' o complemento depois da
+     barra (o que sobra na tela larga) e `short` o rotulo que o substitui
+     abaixo de 920px. O `<span aria-hidden="true">/</span>` que separa os dois
+     vai no template, nao aqui: e' apresentacao, nao conteudo. */
+  const HC = {
+    '/': {
+      raiz: 'header-context',
+      pre: 'header-context',
+      aria: 'Estúdio de cortes verticais',
+      eyebrow: 'ESPAÇO DE TRABALHO',
+      title: 'Estúdio',
+      long: 'edição de cortes verticais',
+      short: 'Editor',
+      //: O ponto verde de "Processamento local". So' a raiz o exibe.
+      status: 'Processamento local',
+      icone: '<svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="4.5" width="17" height="15" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="m10 8.5 5 3.5-5 3.5v-7Z" fill="currentColor"/><path d="M7 2.75v3M17 2.75v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+    },
+    '/publicar': {
+      raiz: 'header-context',
+      pre: 'header-context',
+      aria: 'Publicação dos clips gerados',
+      eyebrow: 'PÓS-RENDER',
+      title: 'Publicar',
+      long: 'Legenda e tags',
+      short: 'Publicar',
+      icone: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 15.5V4m0 0L7.75 8.25M12 4l4.25 4.25" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.75 14.5v3.75A1.75 1.75 0 0 0 6.5 20h11a1.75 1.75 0 0 0 1.75-1.75V14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    },
+    '/ajustes': {
+      raiz: 'header-context',
+      pre: 'header-context',
+      aria: 'Ajustes do aplicativo',
+      eyebrow: 'CONFIGURAÇÕES',
+      title: 'Ajustes',
+      long: 'Preferências de edição',
+      short: 'Ajustes',
+      icone: '<svg viewBox="0 0 24 24" fill="none"><path d="M5 8.25h5m4 0h5M5 15.75h9m4 0h1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="8.25" r="2" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="15.75" r="2" stroke="currentColor" stroke-width="1.6"/></svg>',
+    },
+    '/biblioteca': {
+      raiz: 'scrap-header-context',
+      pre: 'scrap-header',
+      aria: 'Biblioteca de vídeos',
+      eyebrow: 'BIBLIOTECA DE MÍDIA',
+      title: '',
+      long: 'Importação de vídeos',
+      short: 'Biblioteca',
+      //: O selo do cabeçalho. So' a Biblioteca o tem.
+      tag: 'Downloads neste PC',
+      tagIcone: '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.8 16.5 5v4.6c0 3.5-2.7 6.2-6.5 7.7-3.8-1.5-6.5-4.2-6.5-7.7V5L10 2.8Z" stroke="currentColor" stroke-width="1.35"/><path d="m7.3 9.8 1.8 1.8 3.7-3.8" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      icone: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3.5v10m0 0 3.7-3.7M12 13.5l-3.7-3.7M5 15.5v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    },
+  };
+
+  //: O menu em tela pequena. SVG de proposito: o glifo `☰` depende da fonte
+  //: instalada e some onde ela nao existe; a pagina ficaria sem o icone. Duas
+  //: das quatro paginas usavam o caractere, duas usavam o SVG, e o rotulo
+  //: tambem divergia ("Abrir navegacao" / "Menu de paginas").
+  const MENU_BTN = {
+    rotulo: 'Abrir navegação',
+    barras: '<svg viewBox="0 0 24 24" fill="none"><path d="M4 6.5h16M4 12h16M4 17.5h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    seta: '<svg viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  };
+
+  function brandHtml() {
+    return '<a class="rail-brand-link" href="/" aria-label="' +
+        esc(BRAND.nome) + ' — abrir o Estúdio">' +
+        '<span class="brand-mark" aria-hidden="true">' + BRAND_ICONE + '</span>' +
+        '<span class="rail-brand-copy"><strong>' + esc(BRAND.nome) +
+          '</strong><small>' + esc(BRAND.desc) + '</small></span>' +
+      '</a>' +
+      '<span class="rail-brand-badge" aria-label="' + esc(BRAND.badgeTitulo) +
+        '">' + esc(BRAND.badge) + '</span>';
+  }
+
+  function headerContextHtml(ctx) {
+    const p = ctx.pre;
+    //: `ctx.raiz` e' o nome EXATO da classe de fora; `p` so' prefixa as filhas.
+    //: Sao diferentes: a raiz comum chama-se `.header-context` e as filhas
+    //: `.header-context-icon` -- ou seja, o prefixo das filhas E' o nome da
+    //: raiz. Montar a raiz como `p + '-context'` dava `header-context-context`,
+    //: que nenhum CSS define, e o wrapper perdia o `display:flex` (altura
+    //: 38px -> 102px). Ver o comentario da tabela HC.
+    const status = ctx.status
+      ? '<span class="' + p + '-status"><span aria-hidden="true"></span>' +
+        esc(ctx.status) + '</span>'
+      : '';
+    const tag = ctx.tag
+      ? '<span class="' + p + '-tag">' + ctx.tagIcone + esc(ctx.tag) + '</span>'
+      : '';
+    // A raiz escreve "Estúdio / edicao..."; a Biblioteca nao tem o rotulo
+    // antes da barra (o eyebrow ja' diz "BIBLIOTECA DE MIDIA" e o strong e' o
+    // proprio `long`). Por isso `title` vazio nao deixa espaco solto.
+    const antes = ctx.title ? esc(ctx.title) + ' ' : '';
+    return '<div class="' + ctx.raiz + '" aria-label="' + esc(ctx.aria) + '">' +
+      '<span class="' + p + '-icon" aria-hidden="true">' + ctx.icone + '</span>' +
+      '<span class="' + p + '-copy">' +
+        '<span class="' + p + '-eyebrow">' + esc(ctx.eyebrow) + '</span>' +
+        '<strong>' + antes +
+          '<span class="' + p + '-long">' +
+            (ctx.title ? '<span aria-hidden="true">/</span> ' : '') +
+            esc(ctx.long) + '</span>' +
+          '<span class="' + p + '-short">' + esc(ctx.short) + '</span>' +
+        '</strong>' +
+      '</span>' + status + tag +
+    '</div>';
+  }
+
+  function menuBtnHtml() {
+    return '<button class="menu-btn pressable" type="button" id="rail-menu-btn"' +
+        ' aria-haspopup="true" aria-expanded="false" aria-controls="rail-menu-sm">' +
+        '<span class="mb-bars" aria-hidden="true">' + MENU_BTN.barras + '</span>' +
+        '<span class="sr-only">' + esc(MENU_BTN.rotulo) + '</span>' +
+        '<span class="mb-caret" aria-hidden="true">' + MENU_BTN.seta + '</span>' +
+      '</button>' +
+      '<ul class="rail-menu" id="rail-menu-sm" data-rail-menu data-rail-list hidden></ul>';
+  }
+
+  /* Preenche a marca, o cabecalho e o menu em tela pequena.
+
+     Cada hospedeiro e' procurado por um `data-` proprio, entao uma pagina pode
+     ter so' um dos tres sem quebrar -- e uma pagina que nao tenha nenhum
+     simplesmente nao recebe nada. */
+  function renderChrome() {
+    const current = railKey(window.location.pathname);
+    const ctx = HC[current] || HC['/'];
+
+    const brandHosts = Array.prototype.slice.call(document.querySelectorAll('[data-brand]'));
+    if (brandHosts.length) {
+      const html = brandHtml();
+      brandHosts.forEach((host) => { host.innerHTML = html; });
+    }
+
+    const ctxHosts = Array.prototype.slice.call(document.querySelectorAll('[data-header-context]'));
+    if (ctxHosts.length) {
+      const html = headerContextHtml(ctx);
+      ctxHosts.forEach((host) => { host.innerHTML = html; });
+    }
+
+    const menuHosts = Array.prototype.slice.call(document.querySelectorAll('[data-menu-picker]'));
+    if (menuHosts.length) {
+      const html = menuBtnHtml();
+      menuHosts.forEach((host) => { host.innerHTML = html; });
+    }
+  }
+
   // '/', '/index.html', '/biblioteca', '/ajustes/', '/qualquer' ->
   // a chave canonica da RAIL_PAGES. Desconhecido cai em '/'.
   function railKey(pathname) {
@@ -527,9 +721,15 @@
     });
   }
 
-  // Cada pagina so precisa incluir /comum.js: o rail e o rodape se montam
-  // sozinhos. O readyState cobre o caso de o script ser movido para o <head>.
-  const monta = () => { renderRail(); renderFooter(); };
+  // Cada pagina so precisa incluir /comum.js: o rail, a marca, o cabecalho de
+  // contexto e o rodape se montam sozinhos. O readyState cobre o caso de o
+  // script ser movido para o <head>.
+  //
+  // A ORDEM importa: `renderChrome` escreve o botao do menu em tela pequena, e
+  // o `renderRail` e' quem liga o listener nele. Ao contrario, o
+  // `renderRail` procuraria um botao que ainda nao existe e a guarda
+  // `if (!menu || !btn) return` sairia calada -- o menu nunca abriria.
+  const monta = () => { renderChrome(); renderRail(); renderFooter(); };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', monta);
   } else {
@@ -540,5 +740,8 @@
   global.enhanceSelect = enhanceSelect;
   global.renderRail = renderRail;
   global.renderFooter = renderFooter;
+  global.renderChrome = renderChrome;
   global.RAIL_PAGES = RAIL_PAGES;
+  global.BRAND = BRAND;
+  global.HC = HC;
 })(window);

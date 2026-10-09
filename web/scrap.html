@@ -21,13 +21,9 @@
      aria-current="page" e a pagina atual, derivado de location.pathname pelo
      JS abaixo — nunca escrito a mao, senao a pagina errada se declara atual. -->
 <nav class="rail" aria-label="Navegação principal">
-  <div class="rail-brand">
-    <a class="rail-brand-link" href="/" aria-label="Viral Clipper — abrir o Estúdio">
-      <span class="brand-mark" aria-hidden="true"><img src="/favicon.svg" alt="" width="36" height="36"></span>
-      <span class="rail-brand-copy"><strong>Viral Clipper</strong><small>Editor de vídeos curtos</small></span>
-    </a>
-    <span class="rail-brand-badge" aria-label="Aplicativo local">LOCAL</span>
-  </div>
+  <!-- A marca, o cabecalho e o menu vem do /comum.js (renderChrome). Aqui fica
+       so o hospedeiro. -->
+  <div class="rail-brand" data-brand></div>
 
   <div class="rail-label" id="rail-label-paginas">Páginas</div>
 
@@ -40,27 +36,11 @@
 
 <header>
   <div class="wrap header-inner">
-    <div class="scrap-header-context" aria-label="Biblioteca de vídeos">
-      <span class="scrap-header-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3.5v10m0 0 3.7-3.7M12 13.5l-3.7-3.7M5 15.5v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </span>
-      <span class="scrap-header-copy">
-        <span class="scrap-header-eyebrow">BIBLIOTECA DE MÍDIA</span>
-        <strong><span class="scrap-header-long">Importação de vídeos</span><span class="scrap-header-short">Biblioteca</span></strong>
-      </span>
-      <span class="scrap-header-tag"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.8 16.5 5v4.6c0 3.5-2.7 6.2-6.5 7.7-3.8-1.5-6.5-4.2-6.5-7.7V5L10 2.8Z" stroke="currentColor" stroke-width="1.35"/><path d="m7.3 9.8 1.8 1.8 3.7-3.8" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>Downloads neste PC</span>
-    </div>
+    <div data-header-context></div>
     <div class="nav-actions">
       <!-- Fallback do rail abaixo de 920px: mesmos destinos, em menu. -->
       <div class="rail-dropdown" data-rail-picker>
-        <button class="menu-btn pressable" type="button" id="rail-menu-btn"
-                aria-haspopup="true" aria-expanded="false" aria-controls="rail-menu-sm">
-          <span class="mb-bars" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6.5h16M4 12h16M4 17.5h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
-          <span class="sr-only">Abrir navegação</span>
-          <span class="mb-caret" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-        </button>
-        <ul class="rail-menu" id="rail-menu-sm" data-rail-menu data-rail-list hidden></ul>
-      </div>
+        <div data-menu-picker></div>
       <button class="btn pressable btn-primary scrap-header-cta" type="button" id="btn-open-cortes"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="scrap-cta-long">Abrir Estúdio</span><span class="scrap-cta-short">Estúdio</span></button>
     </div>
   </div>

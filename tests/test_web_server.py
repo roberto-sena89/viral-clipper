@@ -26,6 +26,11 @@ from viralclipper.util import ClipperError
 from web import server
 from web.server import resolve_within
 
+# A medicao do DOM de verdade. Os testes de markup que dependem do JS rodar
+# (rail, rodape, marca) chamam `pagina_montada`, que executa o /comum.js com os
+# scripts da pagina e devolve o DOM resultante. Ver tests/_dom.js.
+from tests._dom_bridge import pagina_montada
+
 # O MESMO modulo que ``server.py`` importa. Ele faz ``import routes_providers``
 # com ``WEB_DIR`` no path, entao a instancia viva e' ``sys.modules[
 # "routes_providers"]``. Um ``from web import routes_providers`` criaria uma
@@ -2085,35 +2090,48 @@ class SharedStyleSheetTests(unittest.TestCase):
     def test_every_brand_mark_shows_the_icon_not_the_letters(self):
         """Todo `.brand-mark` carrega o SVG, e o texto `VC` sumiu das paginas.
 
-        Sao DUAS marcas por pagina — a do rail e a do rail-brand ja e a mesma
-        agora, mas o cabecalho de `index.html`/`scrap.html` NAO usa
-        `.brand-mark`: ele tem o proprio icone (`.header-context-icon` /
-        `.scrap-header-icon`). Por isso o total aqui e' o numero de
-        `.brand-mark`, e o teste o CONTA em vez de fixar 2 — a contagem fixa
-        de 4 envelheceu em silencio: o cabecalho mudou de marca e a assercao
-        continuou exigindo a forma antiga. O que importa nao e' quantos sao,
-        e' que nenhum voltou a ser texto.
+        Medido no DOM RENDERIZADO, e nao no HTML-fonte: desde que a marca saiu
+        dos quatro HTMLs e passou a vir de `renderChrome()`, procurar
+        `class="brand-mark"` no texto do arquivo encontra ZERO ocorrencias -- o
+        elemento so' existe depois que o `comum.js` roda. Um teste que lesse o
+        arquivo passaria a nao testar nada (ou a falhar por ausencia), sem que
+        a marca tivesse piorado. O que importa nao e' quantas marcas sao, e'
+        que nenhuma voltou a ser texto.
 
-        `ajustes.html` esteve FORA desta lista e da de favicon ate 2026-10-02,
-        e era exatamente por isso que ela ainda mostrava `VC`: as outras duas
-        foram migradas e a terceira ficou para tras sem nenhum teste notar.
-        A lista agora cobre as tres paginas.
+        A marca e' uma so' por pagina agora (o cabecalho tem o proprio icone,
+        `.header-context-icon` / `.scrap-header-icon`), mas o teste CONTA em vez
+        de fixar o numero: a contagem fixa de 4 envelheceu em silencio no
+        passado, quando o cabecalho mudou de marca.
         """
-        for pagina in ("index.html", "ajustes.html", "scrap.html"):
+        for pagina in sorted(RenderedMarkupTests.PAGES):
+            dados = pagina_montada(
+                pagina,
+                seletores=(".brand-mark", ".brand-mark img"),
+                incluir_html=True)
             with self.subTest(pagina=pagina):
-                html = (server.WEB_DIR / pagina).read_text(encoding="utf-8")
-                self.assertNotIn(">VC<", html, f"{pagina} traz o VC em texto")
-                marks = re.findall(r'class="brand-mark"[^>]*>(.*?)</span>', html,
-                                   re.S)
-                self.assertTrue(marks, f"{pagina}: nenhuma marca encontrada")
-                for mark in marks:
-                    self.assertIn("<img", mark,
+                marcas = dados["achados"][".brand-mark"]
+                self.assertTrue(marcas, f"{pagina}: nenhuma marca renderizada")
+                for marca in marcas:
+                    self.assertIn("<img", marca["innerHTML"],
                                   f"{pagina}: uma marca nao tem imagem")
-                    self.assertIn("/favicon.svg", mark,
-                                  "a marca aponta para outro arquivo")
-                    self.assertIn('alt=""', mark,
-                                  "a imagem decorativa ganhou nome: o produto "
-                                  "ja esta escrito no elemento vizinho")
+                #: O atributo e' lido no ELEMENTO, e nao procurado na string
+                #: re-serializada: `alt=""` sai impresso como `alt` puro (o
+                #: navegador trata os dois igual), entao um `assertIn` de
+                #: string media o serializador em vez do HTML da pagina.
+                imagens = dados["achados"][".brand-mark img"]
+                self.assertTrue(imagens, f"{pagina}: nenhuma <img> na marca")
+                for img in imagens:
+                    self.assertEqual(img["attrs"].get("src"), "/favicon.svg",
+                                     f"{pagina}: a marca aponta para outro arquivo")
+                    self.assertEqual(img["attrs"].get("alt"), "",
+                                     "a imagem decorativa ganhou nome: o produto "
+                                     "ja esta escrito no elemento vizinho")
+                    self.assertNotEqual(img["attrs"].get("alt"), None,
+                                        f"{pagina}: a imagem nao tem alt")
+                #: E o texto `VC` nao pode reaparecer em lugar nenhum.
+                self.assertNotIn(
+                    ">VC<", dados["html"],
+                    f"{pagina} traz o VC em texto em algum ponto do DOM")
 
     def test_the_shared_sheet_is_linked_first_by_both_pages(self):
         """As duas paginas carregam o compartilhado, e ele PRIMEIRO.
@@ -2600,7 +2618,202 @@ class FieldDescriptionTests(unittest.TestCase):
                         "elemento de dica")
 
 
-class RailNavigationTests(unittest.TestCase):
+class RenderedMarkupTests(unittest.TestCase):
+    """O markup que o JS monta, medido DEPOIS dele rodar.
+
+    Os testes de `RailNavigationTests` leem o HTML da fonte. Isso bastava
+    enquanto a lista de destinos morava no HTML; hoje ela mora em `RAIL_PAGES` e
+    e' escrita pelo `renderRail`, entao "esta no HTML?" mede a coisa errada --
+    passa vazio e nao prova nada. Pior: no dia em que alguem tirar o
+    `<script src="/comum.js">`, todas as paginas ficam sem rail e nenhum teste
+    daquela classe acusa.
+
+    Aqui a pagina e' montada com o /comum.js de verdade rodando e o DOM e'
+    inspecionado. O `/comum.js` e' o unico script executado: os scripts de
+    pagina fazem fetch no load (o `poll` do index.js) e o objetivo e' o markup
+    do cromo comum, nao o app inteiro.
+
+    Este nao substitui o probe de browser. O DOM de teste nao tem CSS, entao
+    ele nao sabe que `.rail-dropdown { display: none }` esconde o menu do header
+    no desktop -- por isso "quantos itens existem" se mede aqui, e "quantos
+    estao VISIVEIS" continua sendo medido no navegador, com o
+    `sticky-probe/aria_current_probe.js`.
+    """
+
+    PAGES = ("index.html", "publicar.html", "ajustes.html", "scrap.html")
+    DESTINATIONS = ("/", "/publicar", "/ajustes", "/biblioteca")
+    #: Arquivo -> a rota em que ele e' servido. Nao da' para derivar do nome:
+    #: `scrap.html` atende em `/biblioteca`, e inferir "/scrap" fazia este
+    #: teste reprovar por um destino que nao existe.
+    ROTA = {
+        "index.html": "/",
+        "publicar.html": "/publicar",
+        "ajustes.html": "/ajustes",
+        "scrap.html": "/biblioteca",
+    }
+
+    def monta(self, name: str, **kw) -> dict:
+        return pagina_montada(name, **kw)
+
+    def test_every_page_renders_the_rail(self):
+        """O rail existe no DOM depois do JS, nas quatro paginas."""
+        for name in self.PAGES:
+            with self.subTest(page=name):
+                r = self.monta(name, seletores_um=(".rail",))
+                self.assertIsNotNone(r["achadoUm"][".rail"],
+                                     f"{name}: o rail nao foi montado")
+
+    def test_no_page_raises_while_rendering_the_common_chrome(self):
+        """O /comum.js roda sem excecao em nenhuma das quatro.
+
+        Um `comum.js` que estoura no `renderRail` deixa a pagina sem rail e sem
+        rodape, e o erro so' aparece no console do usuario. O harness captura
+        isso como falha de teste.
+        """
+        for name in self.PAGES:
+            with self.subTest(page=name):
+                r = self.monta(name)
+                self.assertEqual([], r["erros"],
+                                 f"{name}: o JS do cromo estourou: {r['erros']}")
+
+    def test_every_page_renders_every_destination_twice(self):
+        """Quatro destinos, em DUAS listas (rail fixo + menu do header) = 8.
+
+        E' a checagem que o HTML estatico nao faz: ele conta os containers, nao
+        os itens. Se o `renderRail` so' preenchesse a primeira lista, o menu do
+        header ficaria vazio em tela pequena e nenhum teste atual acusaria.
+        """
+        for name in self.PAGES:
+            with self.subTest(page=name):
+                r = self.monta(name, seletores=(".rail-item",))
+                itens = r["achados"][".rail-item"]
+                self.assertEqual(
+                    len(itens), len(self.DESTINATIONS) * 2,
+                    f"{name}: esperava {len(self.DESTINATIONS) * 2} itens "
+                    f"(4 destinos x 2 listas), veio {len(itens)}")
+                self.assertEqual(
+                    [i["href"] for i in itens][:len(self.DESTINATIONS)],
+                    list(self.DESTINATIONS),
+                    f"{name}: os hrefs do rail nao batem com os destinos")
+
+    def test_the_current_page_is_marked_in_the_rendered_dom(self):
+        """Cada lista tem EXATAMENTE um item com aria-current="page".
+
+        Medido no DOM montado para a pagina certa: entrando em /ajustes, o item
+        marcado em cada lista tem de ser o de /ajustes -- e nao o da raiz. Um
+        `railKey` que so' comparasse o comeco do caminho marcaria "/" para
+        todas as paginas, e o HTML estatico nunca mostraria isso porque a
+        marcacao nao esta nele.
+        """
+        for name in self.PAGES:
+            path = self.ROTA[name]
+            with self.subTest(page=name):
+                r = self.monta(name, pathname=path, seletores=(".rail-item",))
+                marcados = [i for i in r["achados"][".rail-item"]
+                            if i["ariaCurrent"] == "page"]
+                self.assertEqual(
+                    len(marcados), 2,
+                    f"{name}: esperava 1 item marcado por lista (2 no total), "
+                    f"veio {len(marcados)}")
+                for item in marcados:
+                    self.assertEqual(
+                        item["href"], path,
+                        f"{name}: o item marcado aponta para {item['href']}, "
+                        f"e nao para a pagina atual ({path})")
+
+    def test_the_brand_is_a_link_in_the_rendered_dom(self):
+        """A marca do rail e' um link clicavel para o Estudio, nas quatro."""
+        for name in self.PAGES:
+            with self.subTest(page=name):
+                r = self.monta(name, seletores_um=(".rail-brand-link",))
+                link = r["achadoUm"][".rail-brand-link"]
+                self.assertIsNotNone(link, f"{name}: a marca do rail nao existe")
+                self.assertEqual(link["tag"], "A", f"{name}: a marca nao e um <a>")
+                self.assertEqual(link["href"], "/",
+                                 f"{name}: a marca nao leva ao Estudio")
+
+    def test_the_local_badge_is_rendered_outside_the_brand_link(self):
+        """O selo LOCAL existe, e fora do <a> da marca.
+
+        O selo e' rotulo, nao destino. Dentro do `<a>` ele viraria parte da
+        area clicavel e o leitor de tela o anunciaria como nome do link --
+        "LOCAL" como destino nao quer dizer nada. Mede-se a ARVORE, nao a
+        string: e' o que o `split("</a>")` do teste antigo nao via.
+        """
+        for name in self.PAGES:
+            with self.subTest(page=name):
+                r = self.monta(name, seletores=(".rail-brand-badge",))
+                selos = r["achados"][".rail-brand-badge"]
+                self.assertEqual(len(selos), 1, f"{name}: sem o selo LOCAL")
+                self.assertNotIn("A", selos[0]["ancestrais"],
+                                 f"{name}: o selo LOCAL entrou no link da marca")
+
+    def test_the_rendered_chrome_classes_exist_in_a_stylesheet(self):
+        """Toda classe que o cromo RENDERIZA tem de existir em algum CSS.
+
+        Este teste existe por um bug real: o `headerContextHtml` montava a raiz
+        como `pre + '-context'`, e como o prefixo ja' era `header-context` o
+        resultado foi `header-context-context` -- uma classe que nenhum CSS
+        define. O wrapper perdia o `display:flex` e a altura ia de 38px para
+        102px em Estudio, Ajustes e Publicar (a Biblioteca escapou porque la' o
+        prefixo e' `scrap-header`, entao `scrap-header-context` saiu certo).
+
+        Nenhum teste pegava isso: o DOM de teste nao aplica CSS, e os probes de
+        browser mediam so' a cor do icone. Aqui se confere o CONTRATO entre o que
+        o JS escreve e o que o CSS declara -- sem precisar de layout.
+
+        A lista de excecoes e' FECHADA de proposito. A primeira versao deste
+        teste filtrava por prefixo ("tudo que comeca com `header-context-` pode
+        passar") e por isso NAO pegava o proprio bug que o motivou: a classe
+        espuria comeca com `header-context-`. Uma excecao por nome obriga a
+        encarar cada caso novo.
+        """
+        #: As folhas que o cromo usa.
+        folhas = ["shared.css", "index.css", "scrap.css", "publicar.css",
+                  "ajustes.css"]
+        css = ""
+        for folha in folhas:
+            caminho = server.WEB_DIR / folha
+            if caminho.exists():
+                css += caminho.read_text(encoding="utf-8")
+        #: Os nomes de classe DEFINIDOS no CSS (`.nome`).
+        definidas = set(re.findall(r"\.([A-Za-z][A-Za-z0-9_-]*)", css))
+        #: Os nomes de classe que o cromo EMITE no DOM renderizado.
+        emitidas = set()
+        for name in self.PAGES:
+            r = self.monta(name, incluir_html=True)
+            for achado in re.finditer(r'class="([^"]+)"', r["html"] or ""):
+                emitidas.update(achado.group(1).split())
+        #: `header-context-context` nunca pode voltar: e' o bug que este teste
+        #: existe para impedir. Por isso ele e' exigido AUSENTE, e nao tolerado.
+        self.assertNotIn(
+            "header-context-context", emitidas,
+            "a raiz do cabecalho voltou a ser `pre + '-context'`: nenhum CSS "
+            "define essa classe e o wrapper perde o layout")
+        #: Classes sem regra no CSS que NAO vem do cromo (nasceram antes, ou sao
+        #: de paginas especificas). Conferidas uma a uma; nenhuma e' do cromo.
+        toleradas = {
+            "ajustes-abertura__texto", "clips-grid", "clips-status",
+            "execution-progress-message", "publicar-lista", "resumo-card",
+            "studio-welcome-copy", "sub-heading", "summary-list",
+        }
+        faltando = sorted(emitidas - definidas - toleradas)
+        self.assertEqual(
+            [], faltando,
+            "o cromo renderiza classes que nenhum CSS define: %r" % faltando)
+
+    def test_the_footer_is_rendered_on_every_page(self):
+        """O rodape monta e traz a saida para os docs."""
+        for name in self.PAGES:
+            with self.subTest(page=name):
+                r = self.monta(name, seletores=("[data-footer]",))
+                hosts = r["achados"]["[data-footer]"]
+                self.assertTrue(hosts, f"{name}: sem hospedeiro de rodape")
+                html = hosts[0]["innerHTML"]
+                self.assertNotEqual("", html, f"{name}: o rodape nao foi montado")
+
+
+
     """O rail: uma lista, tres paginas, dois lugares por pagina.
 
     A lista de destinos era escrita a mao SEIS vezes (rail fixo + menu do header,
@@ -2676,17 +2889,22 @@ class RailNavigationTests(unittest.TestCase):
         dos dois mundos, porque o usuario clica e nada acontece. Um controle
         que *parece* interativo e obrigado a ser.
 
-        Um `<span>` aqui so se justificaria na propria pagina que ele aponta,
-        e nao e o caso: o rail-brand leva ao Estudio, que existe.
+        Medido no DOM renderizado: a marca hoje nasce em `renderChrome()`, entao
+        o HTML-fonte nao a contem mais. A assercao virou estrutural — o
+        `<a href="/">` tem de ser ANCESTRAL do texto da marca, e nao um pedaco de
+        string entre dois marcadores.
         """
-        for name in self.PAGES:
-            markup = self.markup(name)
-            brand = markup.split('class="rail-brand"', 1)[1].split("</div>", 1)[0]
+        for name in sorted(RenderedMarkupTests.PAGES):
+            dados = pagina_montada(
+                name, seletores=(".rail-brand-link",),
+                seletores_um=(".rail-brand",))
             with self.subTest(page=name):
-                self.assertIn("<a class=\"rail-brand-link\"", brand,
-                              f"{name}: a marca do rail nao e um link")
-                self.assertIn('href="/"', brand,
-                              f"{name}: a marca do rail nao leva ao Estudio")
+                links = dados["achados"][".rail-brand-link"]
+                self.assertTrue(links, f"{name}: a marca do rail nao e um link")
+                self.assertEqual(links[0]["tag"].lower(), "a",
+                                 f"{name}: a marca do rail nao e um <a>")
+                self.assertEqual(links[0]["href"], "/",
+                                 f"{name}: a marca do rail nao leva ao Estudio")
 
     def test_the_local_badge_stays_out_of_the_link(self):
         """O selo LOCAL e rotulo, nao destino: fora do `<a>`.
@@ -2694,22 +2912,33 @@ class RailNavigationTests(unittest.TestCase):
         Dentro, ele viraria parte da area clicavel e o leitor de tela o
         anunciaria como o nome do link — "LOCAL" como destino nao quer dizer
         nada.
+
+        Medido pela CADEIA DE ANCESTRAIS do selo, e nao por `split("</a>")`:
+        procurar `</a>` num HTML que ja' passou pelo `innerHTML` do navegador
+        nao diz onde o elemento esta' na arvore.
         """
-        for name in self.PAGES:
-            markup = self.markup(name)
-            brand = markup.split('class="rail-brand"', 1)[1].split("</div>", 1)[0]
+        for name in sorted(RenderedMarkupTests.PAGES):
+            dados = pagina_montada(name, seletores=(".rail-brand-badge",))
             with self.subTest(page=name):
-                link = brand.split("</a>", 1)[0]
-                self.assertNotIn("rail-brand-badge", link,
-                                 f"{name}: o selo LOCAL entrou no link da marca")
+                selos = dados["achados"][".rail-brand-badge"]
+                self.assertTrue(selos, f"{name}: o selo LOCAL sumiu")
+                self.assertNotIn(
+                    "A", selos[0]["ancestrais"],
+                    f"{name}: o selo LOCAL entrou no link da marca")
 
     def test_every_page_has_the_two_list_containers(self):
-        """Um container no rail fixo, um no menu do header. Nada mais."""
-        for name in self.PAGES:
-            markup = self.markup(name)
+        """Um container no rail fixo, um no menu do header. Nada mais.
+
+        Medido no DOM RENDERIZADO: o segundo container nasce em
+        `renderChrome()` (dentro do `menuBtnHtml`). No HTML-fonte sobrou um so'
+        -- o do rail --, entao contar `data-rail-list` no arquivo passou a
+        medir o lugar errado e dava 1 em vez de 2.
+        """
+        for name in sorted(RenderedMarkupTests.PAGES):
+            dados = pagina_montada(name, seletores=("[data-rail-list]",))
             with self.subTest(page=name):
                 self.assertEqual(
-                    markup.count("data-rail-list"),
+                    len(dados["achados"]["[data-rail-list]"]),
                     2,
                     f"{name}: esperava 2 <ul data-rail-list> (rail + menu do header)",
                 )
@@ -2718,7 +2947,9 @@ class RailNavigationTests(unittest.TestCase):
         """A lista nao pode voltar para o HTML.
 
         E' a regressao exata que este passo corrigiu: duas copias escritas a mao
-        que ninguem lembra de atualizar juntas.
+        que ninguem lembra de atualizar juntas. Aqui o alvo e' mesmo o
+        HTML-FONTE: o que se proibe e' a lista escrita a mao no arquivo, nao os
+        itens que o `renderRail` cria em tempo de execucao (esses sao o objetivo).
         """
         for name in self.PAGES:
             markup = self.markup(name)
@@ -2727,13 +2958,24 @@ class RailNavigationTests(unittest.TestCase):
                 self.assertNotIn("rail-item", markup)
 
     def test_one_container_is_the_rail_and_the_other_is_the_header_menu(self):
-        for name in self.PAGES:
-            markup = self.markup(name)
-            rail = markup.split("</nav>", 1)[0]
-            fallback = markup.split("data-rail-picker", 1)[1].split("</header>", 1)[0]
+        """Cada container no seu dono: o `<nav class="rail">` e o header.
+
+        Medido pela arvore, e nao por `split("</nav>")`: o container do menu
+        nasce dentro do header e o do rail dentro do `<nav>`; a assercao
+        confere o `ancestrais` de cada um.
+        """
+        for name in sorted(RenderedMarkupTests.PAGES):
+            dados = pagina_montada(name, seletores=("[data-rail-list]",))
             with self.subTest(page=name):
-                self.assertEqual(rail.count("data-rail-list"), 1, "rail fixo")
-                self.assertEqual(fallback.count("data-rail-list"), 1, "menu do header")
+                listas = dados["achados"]["[data-rail-list]"]
+                self.assertEqual(len(listas), 2, f"{name}: esperava 2 listas")
+                donos = [lista["ancestrais"] for lista in listas]
+                self.assertEqual(
+                    sum("NAV" in d for d in donos), 1,
+                    f"{name}: esperava exatamente 1 lista dentro do <nav>")
+                self.assertEqual(
+                    sum("HEADER" in d for d in donos), 1,
+                    f"{name}: esperava exatamente 1 lista dentro do <header>")
 
     def test_the_rail_lists_destinations_as_plain_links(self):
         """O rail e' lista sempre visivel; so o menu do header abre e fecha.
@@ -2750,15 +2992,44 @@ class RailNavigationTests(unittest.TestCase):
                 self.assertNotIn("aria-haspopup", rail)
 
     def test_the_header_fallback_is_a_toggle_with_aria(self):
-        for name in self.PAGES:
-            markup = self.markup(name)
+        """O botao do menu abre e fecha, e o ARIA diz isso.
+
+        Medido no DOM renderizado E no estado do elemento, nao no texto: o
+        botao nasce em `renderChrome()` (dentro do `menuBtnHtml`), entao o
+        HTML-fonte nao tem `class="menu-btn` em lugar nenhum. Procurar a
+        substring no arquivo passou a falhar nas quatro paginas sem que o
+        controle tivesse piorado.
+
+        Aqui os atributos vem do mapa do elemento (`aria_expanded` booleano,
+        `aria_controls` por id), e nao de um `assertIn` sobre a string: um
+        `assertIn('aria-expanded="false"')` tambem passa se o atributo estiver
+        num elemento que NAO e' o botao.
+        """
+        for name in sorted(RenderedMarkupTests.PAGES):
+            dados = pagina_montada(
+                name, seletores=(".menu-btn",),
+                seletores_um=("#rail-menu-sm",))
             with self.subTest(page=name):
-                self.assertIn('class="menu-btn', markup)
-                self.assertIn('aria-haspopup="true"', markup)
-                self.assertIn('aria-expanded="false"', markup)
-                self.assertIn('aria-controls="rail-menu-sm"', markup)
-                self.assertIn('id="rail-menu-sm"', markup)
-                self.assertIn("data-rail-menu", markup)
+                botoes = dados["achados"][".menu-btn"]
+                self.assertEqual(len(botoes), 1,
+                                 f"{name}: esperava 1 botao de menu")
+                botao = botoes[0]
+                self.assertEqual(botao["tag"].lower(), "button",
+                                 f"{name}: o menu nao e' um <button>")
+                self.assertEqual(botao["attrs"].get("aria-haspopup"), "true",
+                                 f"{name}: sem aria-haspopup")
+                self.assertEqual(botao["attrs"].get("aria-expanded"), "false",
+                                 f"{name}: o menu ja' nasce aberto")
+                self.assertEqual(botao["attrs"].get("aria-controls"),
+                                 "rail-menu-sm",
+                                 f"{name}: o botao nao aponta para a lista")
+                #: O alvo do `aria-controls` tem de existir de verdade.
+                menu = dados["achadoUm"]["#rail-menu-sm"]
+                self.assertIsNotNone(menu,
+                                     f"{name}: aria-controls aponta para um id "
+                                     "que nao existe no DOM")
+                self.assertEqual(menu["attrs"].get("data-rail-menu"), "",
+                                 f"{name}: a lista do menu perdeu data-rail-menu")
 
     def test_every_destination_is_declared_in_the_js(self):
         """As entradas de RAIL_PAGES, e nao copias no HTML.

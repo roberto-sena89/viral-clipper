@@ -26,13 +26,10 @@
      preenche os dois <ul data-rail-list> desta pagina. Para acrescentar uma
      pagina, edite RAIL_PAGES la — nao ha lista para duplicar aqui. -->
 <nav class="rail" aria-label="Navegação principal">
-  <div class="rail-brand">
-    <a class="rail-brand-link" href="/" aria-label="Viral Clipper — abrir o Estúdio">
-      <span class="brand-mark" aria-hidden="true"><img src="/favicon.svg" alt="" width="36" height="36"></span>
-      <span class="rail-brand-copy"><strong>Viral Clipper</strong><small>Publicar</small></span>
-    </a>
-    <span class="rail-brand-badge" aria-label="Aplicativo local">LOCAL</span>
-  </div>
+  <!-- A marca, o cabecalho de contexto e o menu vem do /comum.js: uma tabela
+       por pagina (BRAND / HC) e um render. Eram blocos copiados nos quatro
+       HTMLs, e a copia divergiu -- ver o comentario em comum.js. -->
+  <div class="rail-brand" data-brand></div>
 
   <div class="rail-label" id="rail-label-paginas">Páginas</div>
 
@@ -45,25 +42,11 @@
 
 <header>
   <div class="wrap header-inner">
-    <div class="header-context" aria-label="Publicação dos clips gerados">
-      <span class="header-context-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none"><path d="M12 15.5V4m0 0L7.75 8.25M12 4l4.25 4.25" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.75 14.5v3.75A1.75 1.75 0 0 0 6.5 20h11a1.75 1.75 0 0 0 1.75-1.75V14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-      </span>
-      <span class="header-context-copy">
-        <span class="header-context-eyebrow">PÓS-RENDER</span>
-        <strong>Publicar <span class="header-context-long"><span aria-hidden="true">/</span> Legenda e tags</span><span class="header-context-short">Publicar</span></strong>
-      </span>
-    </div>
+    <div data-header-context></div>
     <div class="nav-actions">
       <!-- Fallback do rail abaixo de 920px: mesmos destinos, em menu. -->
       <div class="rail-dropdown" data-rail-picker>
-        <button class="menu-btn pressable" type="button" id="rail-menu-btn"
-                aria-haspopup="true" aria-expanded="false" aria-controls="rail-menu-sm">
-          <span class="mb-bars" aria-hidden="true">☰</span>
-          <span class="sr-only">Menu de páginas</span>
-          <span class="mb-caret" aria-hidden="true">▾</span>
-        </button>
-        <ul class="rail-menu" id="rail-menu-sm" data-rail-menu data-rail-list hidden></ul>
+        <div data-menu-picker></div>
       </div>
       <!-- Sem botao de salvar: esta pagina nao tem estado proprio. O unico
            controle e' reler o clips.json, que a execucao reescreve. -->

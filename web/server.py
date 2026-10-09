@@ -289,6 +289,35 @@ def _poster_path(video: Path) -> Path:
     return video.with_suffix(".jpg")
 
 
+# O poster NAO e' o primeiro quadro do clipe.
+#
+# Medido nos cinco clipes de ``output/``: o quadro 0 esta' com os olhos fechados
+# ou baixados em TODOS eles, e num deles os olhos so' abrem por volta de 5 s --
+# o ponto de corte cai enquanto o apresentador ainda se acomoda na frase. Um
+# piscar ou um olhar baixo nao e' quadro representativo, e e' exatamente o que
+# o filtro `thumbnail` descarta: ele compara os quadros do lote e devolve o mais
+# parecido com a media, entao um estado que dura 1 a 3 quadros em centenas nao
+# ganha. Quadro 0 deu olhos abertos em 1 dos 5 clipes; o representativo dos
+# keyframes, em 3 dos 5.
+#
+# Os keyframes entram como conjunto de candidatos porque sao baratos de
+# decodificar e ja' vem espalhados pelo clipe inteiro: 375 ms para extrair,
+# contra 10674 ms do representativo do clipe INTEIRO (que deu 4 de 5). Com cinco
+# clipes nao da' para separar 3 de 4, e o custo entraria na primeira abertura da
+# pagina -- por isso o caminho caro ficou de fora.
+#
+# Dois heurísticos foram testados e DESCARTADOS, para ninguem repetir o
+# caminho: as cascatas de olho do OpenCV (marcaram 2 olhos num quadro de olhos
+# fechados, e a nota final ficou sem separacao -- 0,03 entre o 1o e o 4o lugar)
+# e a fracao de esclera clara na faixa dos olhos (o quadro fechado de um clipe
+# marcou mais esclera que o aberto de outro).
+#
+# O lote e' maior que qualquer conjunto real de keyframes (5 a 8 num clipe de
+# 35 a 57 s, GOP de ~7 s), entao o lote so' fecha no fim do arquivo e o unico
+# quadro emitido e' o representativo de TODOS eles -- e nao o dos primeiros N.
+POSTER_KEYFRAME_BATCH = 1000
+
+
 def _write_poster(video: Path, logger: util.Logger | None = None) -> str | None:
     """Extract one frame of ``video`` into a sidecar ``.jpg``; return its name.
 
@@ -297,10 +326,10 @@ def _write_poster(video: Path, logger: util.Logger | None = None) -> str | None:
     reported as a failure because ffmpeg could not be found or the frame grab
     failed. The caller keeps ``rendered: True`` and simply has no ``thumb``.
 
-    The frame is taken at the clip's own start -- the file written by the
-    renderer begins at the cut in-point, so ``-frames:v 1`` with no ``-ss`` is
-    already the hook frame. Seeking back into the source would be a second
-    guess about the same offset the renderer already resolved.
+    O quadro e' o representativo dos keyframes do clipe, e o primeiro quadro e'
+    apenas a reserva -- o porque esta' em ``POSTER_KEYFRAME_BATCH``. Os dois sao
+    quadros do proprio clipe, entao nenhum e' um segundo palpite sobre o
+    instante que o renderizador ja' resolveu.
     """
     if not video.exists():
         return None
@@ -311,20 +340,36 @@ def _write_poster(video: Path, logger: util.Logger | None = None) -> str | None:
         return None
     # Overwrite in place: a re-render of the same clip must not fail on an
     # existing poster, and the frame it would write is the newer one.
-    cmd = [
-        ffmpeg, "-y",
-        "-i", str(video),
-        "-frames:v", "1",
-        "-q:v", "3",
-        "-loglevel", "error",
-        str(poster),
-    ]
-    try:
-        util.run(cmd, logger=logger, check=True)
-    except Exception as exc:  # noqa: BLE001 - a missing poster is not a failed clip
-        if logger:
-            logger.warn(f"Poster nao gerado para {video.name}: {exc}")
-        return None
+    #
+    # Duas tentativas, na ordem. A primeira e' a escolha; a segunda e' o
+    # primeiro quadro puro, que e' o que este modulo fazia antes e continua
+    # valendo para um ffmpeg cujo decodificador nao aceite `-skip_frame` ou cujo
+    # build nao traga o filtro `thumbnail` -- um poster ruim e' muito melhor do
+    # que nenhum, porque o cartao vazio e' o defeito que isto conserta.
+    # `-skip_frame` e' opcao de ENTRADA (antes do `-i`), `-vf` e' de saida.
+    tentativas = (
+        (["-skip_frame", "nokey"], ["-vf", f"thumbnail=n={POSTER_KEYFRAME_BATCH}"]),
+        ([], []),
+    )
+    for antes, filtro in tentativas:
+        cmd = [
+            ffmpeg, "-y",
+            *antes,
+            "-i", str(video),
+            *filtro,
+            "-frames:v", "1",
+            "-q:v", "3",
+            "-loglevel", "error",
+            str(poster),
+        ]
+        try:
+            util.run(cmd, logger=logger, check=True)
+        except Exception as exc:  # noqa: BLE001 - a missing poster is not a failed clip
+            if logger:
+                logger.warn(f"Poster nao gerado para {video.name}: {exc}")
+            continue
+        if poster.exists():
+            break
     if not poster.exists():
         return None
     return poster.name
@@ -1189,7 +1234,15 @@ def _publicacao_payload() -> dict:
                 rel = ""
         poster = ""
         if rel:
-            imagem = _poster_path(base / rel)
+            clipe_em_disco = base / rel
+            imagem = _poster_path(clipe_em_disco)
+            if not imagem.is_file() and clipe_em_disco.is_file():
+                # Reparo na leitura. Um clipe cujo poster nunca foi escrito --
+                # execucao antiga, ou uma feita pela CLI, que nao escreve
+                # poster nenhum -- mostraria a caixa 9:16 vazia para sempre,
+                # porque nada re-renderiza um clipe que ja' esta' no disco. Uma
+                # extracao, na primeira abertura da pagina, e o arquivo fica.
+                _write_poster(clipe_em_disco)
             if imagem.is_file():
                 poster = str(imagem.relative_to(base)).replace("\\", "/")
         clips.append({

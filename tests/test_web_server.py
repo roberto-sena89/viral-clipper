@@ -2279,6 +2279,86 @@ class SharedStyleSheetTests(unittest.TestCase):
                         "verdades, e a da pagina manda")
 
 
+class StylesheetWellFormedTests(unittest.TestCase):
+    """Nenhuma folha de estilo pode terminar com bloco aberto.
+
+    Medido ao vivo: um `}` perdido no `.rail-brand` do `shared.css` fez o
+    navegador DESCARTAR a folha inteira -- a pagina abriu sem rail, sem header
+    e sem layout, com o menu virando uma lista de links azuis. A suite passava
+    assim mesmo, e a razao e' a forma dos testes de CSS: eles procuram seletor
+    por regex, e um arquivo cuja chave nunca fecha continua casando com os
+    padroes que eles procuram. O balanceamento e a unica checagem que olha o
+    arquivo INTEIRO em vez de procurar uma agulha nele.
+
+    So' as folhas entram. Um `.js` tem chave dentro de literal de regex
+    (`/\\{/`) e de template string, e conta-las por caractere daria falso
+    positivo; para o JS, quem valida a sintaxe e' o harness DOM, que executa o
+    `comum.js` de verdade.
+    """
+
+    def folhas(self):
+        return sorted(server.WEB_DIR.glob("*.css"))
+
+    def test_there_is_a_sheet_to_check(self):
+        """Sem isto, um `glob` que nao acha nada deixaria o teste verde."""
+        self.assertTrue(self.folhas(), "nenhuma folha de estilo encontrada")
+
+    def _problema(self, texto: str) -> tuple[str | None, int]:
+        """Devolve (erro estrutural, profundidade final) da folha."""
+        # Comentario nao e' codigo, e `content: "{"` e' texto, nao chave. Os
+        # dois saem antes de contar -- sem isso a checagem mede o que esta
+        # escrito, nao o que o navegador interpreta.
+        limpo = re.sub(r"/\*.*?\*/", "", texto, flags=re.S)
+        limpo = re.sub(r'"[^"\n]*"', '""', limpo)
+        limpo = re.sub(r"'[^'\n]*'", "''", limpo)
+        profundidade = 0
+        for i, ch in enumerate(limpo):
+            if ch == "{":
+                profundidade += 1
+            elif ch == "}":
+                profundidade -= 1
+                if profundidade < 0:
+                    linha = limpo[:i].count("\n") + 1
+                    return f"`}}` a mais na linha {linha}", profundidade
+        return None, profundidade
+
+    def test_every_sheet_closes_what_it_opens(self):
+        for folha in self.folhas():
+            with self.subTest(folha=folha.name):
+                erro, profundidade = self._problema(
+                    folha.read_text(encoding="utf-8"))
+                self.assertIsNone(
+                    erro,
+                    f"{folha.name}: {erro} -- a cascata morre ali e o resto "
+                    "da folha deixa de valer",
+                )
+                self.assertEqual(
+                    profundidade, 0,
+                    f"{folha.name} termina com {profundidade} bloco(s) "
+                    "aberto(s): o navegador descarta a folha a partir do erro",
+                )
+
+    def test_the_check_catches_a_missing_brace(self):
+        """Sabote e confirme que a checagem cai.
+
+        Uma checagem que nunca reprova nada nao protege nada -- e esta e' a
+        forma exata do defeito que ela existe para pegar: um `}` perdido numa
+        refatoracao.
+        """
+        with open(server.WEB_DIR / "shared.css", encoding="utf-8") as fh:
+            texto = fh.read()
+        self.assertEqual(self._problema(texto)[1], 0, "a folha ja' esta' quebrada")
+
+        # A sabotagem sai do texto JA' limpo: tirar o primeiro `}` do arquivo
+        # cru poderia remover o de dentro de um comentario e nao mudar nada.
+        limpo = re.sub(r"/\*.*?\*/", "", texto, flags=re.S)
+        limpo = re.sub(r'"[^"\n]*"', '""', limpo)
+        limpo = re.sub(r"'[^'\n]*'", "''", limpo)
+        erro, profundidade = self._problema(limpo.replace("}", "", 1))
+        self.assertIsNone(erro, "tirar um `}` deve acusar bloco aberto, nao sobra")
+        self.assertEqual(profundidade, 1, "a sabotagem nao desbalanceou a folha")
+
+
 class ContrastTokensTests(unittest.TestCase):
     """O contraste dos tokens de texto, calculado e não lembrado.
 

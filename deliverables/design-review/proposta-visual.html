@@ -75,16 +75,21 @@
     --line-strong:   color-mix(in oklab, var(--c-ink) 20%, transparent);
     --ring:          var(--c-accent);
 
-    /* --- ESCALA TIPOGRÁFICA: 8 DEGRAUS, e o painel usa 89 ------------------
-       Medido: 271 declarações de `font-size` com 89 valores distintos — e
-       `.78rem`, `0.78rem`, `.8rem` e `0.8rem` convivendo como se fossem
-       coisas diferentes. Oito degraus cobrem tudo o que o painel faz, e um
+    /* --- ESCALA TIPOGRÁFICA: 8 DEGRAUS ------------------------------------
+       O painel JÁ TEM uma escala de 10 degraus em `--text-*`
+       (`web/shared.css:256-274`), aplicada em ~147 das 271 declarações de
+       `font-size`. O que não terminou foi a MIGRAÇÃO: as outras ~124 ainda
+       escrevem `rem` cru, e sobram 59 valores DECLARADOS distintos
+       (`0.72rem` e `.72rem` convivendo como se fossem coisas diferentes) e
+       43 COMPUTADOS no DOM. Oito degraus cobrem tudo o que o painel faz, e um
        degrau só é criado quando um PAPEL novo aparece.
 
-       O menor degrau é 12px de propósito: hoje há texto a 8,3px (o selo
-       "LOCAL" do rail), 8,5px (os monogramas IG/TT/YT) e 9,3px (o eyebrow do
-       header). Abaixo de 12px não é hierarquia, é ilegibilidade — e o painel
-       é usado no celular, que é onde a pessoa tem dúvida. */
+       O menor degrau é 12px de propósito: hoje há texto a 8,32px (o selo
+       "LOCAL" do rail) e 7,68px medido no celular — abaixo até do menor
+       token existente, que é `--text-2xs` = 11px. Isso só acontece por
+       cadeia de `em`: um valor relativo multiplica o pai e atravessa o piso
+       que a escala declara. Abaixo de 12px não é hierarquia, é ilegibilidade
+       — e o painel é usado no celular, que é onde a pessoa tem dúvida. */
     --t-1:  0.75rem;                    /* 12px  metadado, selo, contador      */
     --t-2:  0.8125rem;                  /* 13px  dica de campo, nota           */
     --t-3:  0.875rem;                   /* 14px  corpo, rótulo, input          */
@@ -99,12 +104,16 @@
     --lh-body:  1.6;
     --track-tight: -0.02em;
 
-    /* --- ESPAÇAMENTO: 8 DEGRAUS, e o painel usa 26 ------------------------
-       Medido no Estúdio: 26 valores distintos, sendo 1px×48, 2px×9, 3px×1,
-       5px×2, 7px×30, 9px×51, 11px×19, 13px×32, 15px×4, 17px×7, 19px×4. Ou
-       seja: o ritmo é "todo inteiro de 1 a 20". Um sistema de 4pt tem oito
-       passos e cobre 95% dos casos; os 5% restantes são sinal de que o
-       componente está tentando dizer algo que o layout não tem onde pôr. */
+    /* --- ESPAÇAMENTO: 8 DEGRAUS, e o painel usa 35 ------------------------
+       Medido na união das 4 páginas: 35 valores distintos de padding/margin/
+       gap. No Estúdio isolado são 26, sendo 1px×48, 2px×9, 3px×1, 5px×2,
+       7px×30, 9px×51, 11px×19, 13px×32, 15px×4, 17px×7, 19px×4 — ou seja, o
+       ritmo é "todo inteiro de 1 a 20". Um sistema de 4pt tem oito passos e
+       cobre 95% dos casos; os 5% restantes são sinal de que o componente
+       está tentando dizer algo que o layout não tem onde pôr.
+
+       Esta é a lacuna MAIS REAL da revisão: ao contrário da tipografia, aqui
+       NÃO existe nenhum token. `--s-*`, `--space-*`, `--gap-*` — nenhum. */
     --s-1:  4px;
     --s-2:  8px;
     --s-3:  12px;
@@ -114,19 +123,31 @@
     --s-7:  48px;
     --s-8:  64px;
 
-    /* --- RAIO E ELEVAÇÃO: 3 degraus cada ---------------------------------- */
+    /* --- RAIO E ELEVAÇÃO: 3 degraus cada ----------------------------------
+       Os valores são os que o painel JÁ usa (`--radius-sm|md|lg` = 8/14/22).
+       Arredondar para 8/12/18 seria churn visual sem ganho: a fase que adota
+       os tokens precisa sair pixel-idêntica, senão um diff de pixel deixa de
+       significar alguma coisa. */
     --r-sm: 8px;
-    --r-md: 12px;
-    --r-lg: 18px;
+    --r-md: 14px;
+    --r-lg: 22px;
 
     --e-1: 0 1px 2px color-mix(in oklab, black 40%, transparent);
     --e-2: 0 8px 24px -10px color-mix(in oklab, black 70%, transparent);
     --e-3: 0 24px 60px -20px color-mix(in oklab, black 80%, transparent);
 
     /* --- MOVIMENTO: 3 durações, 2 curvas ----------------------------------
-       Hoje: 4 durações declaradas + as que estão soltas em `transition:`
-       inline (180ms, 200ms, 250ms, 300ms, 400ms espalhados). Três durações
-       bastam e dizem para que servem. */
+       Hoje: 42 declarações com duração em `transition`/`animation`, com
+       valores soltos (120, 150, 160, 180, 260, 400ms e 0.9s a 3.0s). Três
+       durações bastam e dizem para que servem.
+
+       `prefers-reduced-motion` JÁ EXISTE no painel — mas é ad hoc, elemento
+       por elemento (`.jump-links a`, `.skip-link`, `.site-footer .footer-link`,
+       `.site-footer .footer-copy`), sem regra global. E `shared.css:710-717`
+       documenta uma armadilha MEDIDA: `.site-footer *` (0,1,0) dentro do
+       media query perdia por especificidade para `.site-footer .footer-link`
+       (0,2,0), e `transitionDuration` seguia `0.18s`. Uma regra global nova
+       precisa vencer a cascata, não a posição. */
     --m-1: 120ms;   /* resposta a ponteiro: press, hover                  */
     --m-2: 200ms;   /* mudança de estado: abre, fecha, seleciona          */
     --m-3: 320ms;   /* entrada de conteúdo: painel, lista, toast          */
@@ -599,10 +620,10 @@
   </p>
 
   <div class="grid-3 espaco-g">
-    <div class="card kpi"><span class="kpi__n kpi__n--neutro">89</span><span class="kpi__r">valores distintos de <code>font-size</code> no CSS. A escala declarada tem 10 degraus.</span></div>
+    <div class="card kpi"><span class="kpi__n kpi__n--neutro">59</span><span class="kpi__r">valores <strong>declarados</strong> distintos de <code>font-size</code> no CSS (43 <strong>computados</strong> na tela). A escala existe — 10 degraus — e a migração parou no meio.</span></div>
     <div class="card kpi"><span class="kpi__n kpi__n--neutro">34</span><span class="kpi__r">cores de texto diferentes pintadas no Estúdio. O sistema declara 3 níveis.</span></div>
     <div class="card kpi"><span class="kpi__n kpi__n--neutro">26</span><span class="kpi__r">valores distintos de espaçamento em uso. Um sistema de 4pt tem 8.</span></div>
-    <div class="card kpi"><span class="kpi__n kpi__n--warn">17</span><span class="kpi__r">breakpoints distintos. Quatro deles (1100/1150/1160/1180) fazem o mesmo papel.</span></div>
+    <div class="card kpi"><span class="kpi__n kpi__n--warn">19</span><span class="kpi__r">valores distintos de largura, em 43 <code>@media</code>. Cada um é o ponto <em>medido</em> em que um componente quebra — não uma escala. Consolidá-los já foi tentado, medido e revertido.</span></div>
   </div>
 
   <p class="mini mudo espaco">
@@ -628,7 +649,7 @@
         <span class="sev sev--p0">P0</span>
         <div>
           <strong>A escala tipográfica não é usada.</strong>
-          <p class="card__sub">271 declarações de <code>font-size</code>, <strong>89 valores distintos</strong>. Pior: <code>.78rem</code> e <code>0.78rem</code> convivem — cinco pares idênticos separados só pelo zero à esquerda. Na tela, 37 tamanhos diferentes.</p>
+          <p class="card__sub">271 declarações de <code>font-size</code>, <strong>59 valores declarados distintos</strong> (43 computados). Só ~147 usam a escala <code>--text-*</code> que já existe; as outras ~124 ainda escrevem <code>rem</code> cru. Pior: <code>.72rem</code> e <code>0.72rem</code> convivem — o mesmo valor separado só pelo zero à esquerda.</p>
         </div>
       </div>
 
@@ -644,7 +665,7 @@
         <span class="sev sev--p0">P0</span>
         <div>
           <strong>Piso de legibilidade violado.</strong>
-          <p class="card__sub">O selo <em>LOCAL</em> do rail é <strong>8,3px</strong>; os monogramas IG/TT/YT são <strong>8,5px</strong>; o eyebrow do header é <strong>9,3px</strong>. Só no Estúdio há <strong>45 nós de texto abaixo de 12px</strong>.</p>
+          <p class="card__sub">O selo <em>LOCAL</em> do rail mede <strong>8,32px</strong> — e no celular a Biblioteca chega a <strong>7,68px</strong>. O menor degrau que a escala declara é <code>--text-2xs</code> = <strong>11px</strong>: o texto está <em>abaixo do piso da própria escala</em>, porque uma cadeia de <code>em</code> multiplica o pai. Valor relativo não respeita o piso que o sistema promete.</p>
         </div>
       </div>
 
@@ -660,7 +681,7 @@
         <span class="sev sev--p1">P1</span>
         <div>
           <strong>Ritmo de espaçamento inexistente.</strong>
-          <p class="card__sub">26 valores distintos. O uso real é “todo inteiro de 1 a 20”: 48× <code>1px</code>, 30× <code>7px</code>, 51× <code>9px</code>, 19× <code>11px</code>, 32× <code>13px</code>. Cada um é uma exceção que ninguém vai lembrar depois.</p>
+          <p class="card__sub"><strong>35 valores distintos</strong> na união das 4 páginas (26 só no Estúdio). O uso real é “todo inteiro de 1 a 20”: 48× <code>1px</code>, 30× <code>7px</code>, 51× <code>9px</code>, 19× <code>11px</code>, 32× <code>13px</code>. Cada um é uma exceção que ninguém vai lembrar depois. <strong>Aqui não existe nenhum token</strong> — nem <code>--s-*</code>, nem <code>--space-*</code>, nem <code>--gap-*</code>.</p>
         </div>
       </div>
     </div>
@@ -687,8 +708,8 @@
       <div class="achado">
         <span class="sev sev--p1">P1</span>
         <div>
-          <strong>17 breakpoints, 4 deles redundantes.</strong>
-          <p class="card__sub">1100, 1150, 1160 e 1180 existem em arquivos diferentes fazendo o mesmo tipo de trabalho. O resultado é que ninguém consegue prever em que largura a tela muda.</p>
+          <strong>19 valores de largura, em 43 <code>@media</code>.</strong>
+          <p class="card__sub">1100, 1150, 1160 e 1180 existem em arquivos diferentes fazendo o mesmo tipo de trabalho — e é tentador unificá-los. <strong>Não unifique:</strong> <code>shared.css:34-68</code> registra que consolidar 760/768 ou 380/420 <em>já foi tentado</em>, e a medição no navegador mostrou que as bandas guardam componentes <em>diferentes</em> na mesma faixa. O problema real é que ninguém consegue prever em que largura a tela muda — a cura é <code>@container</code> no componente, não um número redondo.</p>
         </div>
       </div>
 
@@ -826,7 +847,7 @@
       <h3 class="card__h">A escala: 10 degraus de tipo, 8 de espaço</h3>
       <div class="tabela-wrap espaco">
         <table class="dados">
-          <caption>Substitui 89 valores de <code>font-size</code> e 26 de espaçamento.</caption>
+          <caption>Substitui 59 valores <em>declarados</em> de <code>font-size</code> (43 computados) e 35 de espaçamento.</caption>
           <thead><tr><th scope="col">Degrau</th><th scope="col">Valor</th><th scope="col">Papel</th></tr></thead>
           <tbody>
             <tr><td><code>--t-1</code></td><td class="num">12px</td><td class="tab">metadado, selo, contador</td></tr>
@@ -855,7 +876,7 @@
           </tbody>
         </table>
       </div>
-      <p class="mini mudo espaco">Hoje há 43 animações declaradas e durações soltas em <code>transition</code> inline (180, 200, 250, 300, 400ms). Três tokens, e <code>prefers-reduced-motion</code> zera os três de uma vez.</p>
+      <p class="mini mudo espaco">Hoje há <strong>42 declarações com duração</strong> em <code>transition</code>/<code>animation</code>, com valores soltos (120, 150, 160, 180, 260, 400ms e 0.9s a 3.0s). Três tokens, e <strong>uma regra global</strong> de <code>prefers-reduced-motion</code> zera os três de uma vez. A que existe hoje é <em>ad hoc</em>, elemento por elemento — e já falhou por especificidade (<code>shared.css:710-717</code>: o <code>transitionDuration</code> media <code>0.18s</code> mesmo com o sistema pedindo movimento reduzido).</p>
     </div>
   </div>
 
@@ -1230,7 +1251,7 @@
       <h3 class="card__h">O que isso apaga</h3>
       <ul class="marcado espaco">
         <li>as regras de <code>.field-row.triple</code> que existem <strong>por página</strong></li>
-        <li>4 dos 17 breakpoints — os que só existiam para isso</li>
+        <li>os poucos breakpoints que ficarem <strong>órfãos</strong> — os que existiam <em>só</em> para isso. Não os medidos do shell</li>
         <li>a necessidade de saber de cor em que largura cada tela quebra</li>
         <li>a regra <code>[data-page="ajustes"] …</code> que existe para desfazer o que o card do Estúdio faz</li>
       </ul>
@@ -1332,7 +1353,7 @@
 
     <div class="card fase">
       <div class="fase__h"><span class="fase__n">2</span><h3 class="card__h" style="margin:0;">Adesão à escala</h3></div>
-      <p class="card__sub">89 <code>font-size</code> → 8 degraus. 26 espaçamentos → 8. 34 cores de texto → 3 papéis.</p>
+      <p class="card__sub">59 <code>font-size</code> declarados → 8 degraus. 35 espaçamentos → 8. 58 cores de texto → 3 papéis.</p>
       <ul class="marcado">
         <li>substituir cada <code>font-size</code> cru por um token (o mapa é mecânico: o valor mais próximo do degrau)</li>
         <li>mesma coisa para <code>padding</code>/<code>gap</code>/<code>margin</code></li>
@@ -1349,7 +1370,7 @@
       <ul class="marcado">
         <li><code>container-type: inline-size</code> nos cards com grade interna</li>
         <li>trocar as regras de página por <code>@container</code></li>
-        <li>reduzir de 17 para 5 breakpoints (380 / 640 / 900 / 1200 / 1440)</li>
+        <li>remover <strong>só</strong> os breakpoints que ficarem órfãos (~3-4). Os <em>medidos</em> do shell ficam — 17→5 é uma promessa que a medição não sustenta</li>
         <li>levar os 46 alvos de toque a 44px — inputs a 44px, <code>.toggle</code> a 44×44</li>
       </ul>
       <p class="mini mudo"><strong>Critério de aceite:</strong> sonda em 10 larguras sem overflow, sem rótulo quebrado, e nenhum alvo abaixo de 24px (piso WCAG 2.5.8).</p>
@@ -1402,7 +1423,7 @@
   </div>
 
   <div class="nota nota--ok espaco-g">
-    <strong>Nada aqui é reescrita.</strong> O painel tem 11.890 linhas de HTML/CSS/JS, uma suíte de ~1500
+    <strong>Nada aqui é reescrita.</strong> O painel tem 12.261 linhas de HTML/CSS/JS, uma suíte de mais de 1.500
     testes, comentários que registram medições e uma identidade visual coerente. A proposta usa tudo isso:
     a fase 1 é arquitetura, a 2 é obediência ao design que já existe, a 3 é portabilidade do componente, e
     só a 4 muda o que a pessoa vê — depois que as três anteriores garantiram que dá para mudar sem quebrar.

@@ -293,31 +293,29 @@
 
   /* ---------- A MARCA E O CABECALHO DE CONTEXTO ----------
 
-     Os dois moravam escritos a mao em cada um dos quatro HTML, e divergiram --
-     nao por decisao, por copia:
+     A marca nasce em UM lugar (`brandHtml`) e e' a MESMA do rodape: o
+     componente `footer-brand` (icone SVG inline + nome + slogan), com o CSS
+     do rail ajustando so' o tamanho. Antes o rail trazia o favicon em `<img>`
+     + "Viral Clipper / Editor de videos curtos" e o rodape o SVG + "viral-
+     clipper / Seu conteudo..." -- duas marcas diferentes para o mesmo
+     produto, na mesma tela, com o icone de um lado e do outro.
 
-       - a descricao da marca (`.rail-brand-copy small`) dizia "Editor de
-         videos curtos" no index e no scrap, e o NOME DA PAGINA nas outras
-         duas ("Ajustes", "Publicar"). E' o subtitulo do PRODUTO, entao nao
-         pode mudar de pagina para pagina;
-       - o botao do menu em tela pequena era um SVG no index/scrap e os
-         caracteres `☰` / `▾` no ajustes/publicar, com dois rotulos
-         diferentes ("Abrir navegacao" / "Menu de paginas"). O glifo depende
-         da fonte instalada; o SVG, nao.
-
-     Aqui a marca e' CONSTANTE e o cabecalho vem de uma tabela por pagina. Um
+     O cabecalho de contexto continua vindo da tabela HC por pagina. Um
      `title`/`long`/`short` novo entra na tabela e o HTML nao muda. */
 
-  //: O subtitulo do produto. Um so' para as quatro paginas, de proposito.
+  //: Nome e slogan da marca, no formato minusculo com hifen. Uma fonte so':
+  //: o rodape e a marca do rail escrevem exatamente estas strings.
+  const MARCA_NOME = 'viral-clipper';
+  const MARCA_SLOGAN = 'Seu conteúdo. Novas possibilidades.';
+
   const BRAND = {
+    //: A variante com maiusculas e' para o leitor de tela: o nome VISUAL e'
+    //: minusculo de proposito, mas "Viral Clipper" dito em voz alta quer
+    //: virar nome proprio, nao uma sigla.
     nome: 'Viral Clipper',
-    desc: 'Editor de vídeos curtos',
     badge: 'LOCAL',
     badgeTitulo: 'Aplicativo local',
   };
-
-  //: O icone da marca. O MESMO do favicon: um clipe com um play dentro.
-  const BRAND_ICONE = '<img src="/favicon.svg" alt="" width="36" height="36">';
 
   /* O cabecalho de contexto de cada pagina, chaveado pela rota canonica.
 
@@ -404,11 +402,17 @@
   };
 
   function brandHtml() {
-    return '<a class="rail-brand-link" href="/" aria-label="' +
+    // O MESMO componente do rodape (`footer-brand`). A classe
+    // `rail-brand-link` fica no `<a>` porque e' o alvo de navegacao que o CSS
+    // de hover/focus e os testes de contrato conhecem; o tamanho vem das
+    // regras `.rail-brand .footer-brand__*` do shared.css.
+    return '<a class="rail-brand-link footer-brand" href="/" aria-label="' +
         esc(BRAND.nome) + ' — abrir o Estúdio">' +
-        '<span class="brand-mark" aria-hidden="true">' + BRAND_ICONE + '</span>' +
-        '<span class="rail-brand-copy"><strong>' + esc(BRAND.nome) +
-          '</strong><small>' + esc(BRAND.desc) + '</small></span>' +
+        '<span class="footer-brand__icon" aria-hidden="true">' + ICONE_MARCA + '</span>' +
+        '<span class="footer-brand__content">' +
+          '<span class="footer-brand__name">' + esc(MARCA_NOME) + '</span>' +
+          '<span class="footer-brand__description">' + esc(MARCA_SLOGAN) + '</span>' +
+        '</span>' +
       '</a>' +
       '<span class="rail-brand-badge" aria-label="' + esc(BRAND.badgeTitulo) +
         '">' + esc(BRAND.badge) + '</span>';
@@ -614,11 +618,11 @@
     return '' +
       '<div class="footer-container">' +
         '<div class="footer-main">' +
-          '<a class="footer-brand" href="/" aria-label="Viral Clipper — início">' +
+          '<a class="footer-brand" href="/" aria-label="' + esc(BRAND.nome) + ' — início">' +
             '<span class="footer-brand__icon" aria-hidden="true">' + ICONE_MARCA + '</span>' +
             '<span class="footer-brand__content">' +
-              '<span class="footer-brand__name">viral-clipper</span>' +
-              '<span class="footer-brand__description">Seu conteúdo. Novas possibilidades.</span>' +
+              '<span class="footer-brand__name">' + esc(MARCA_NOME) + '</span>' +
+              '<span class="footer-brand__description">' + esc(MARCA_SLOGAN) + '</span>' +
             '</span>' +
           '</a>' +
           '<nav class="footer-nav" aria-label="Navegação do rodapé">' + footerNavHtml() + '</nav>' +

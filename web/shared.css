@@ -123,17 +123,7 @@
 /* Ancoras sob este header sticky: scrollIntoView (#config, a virilha do
    hero) e o foco de #url rolam o elemento até a borda superior da viewport.
    Sem a margem, o titulo para POR BAIXO da barra de 68px e some. */
-[id] { scroll-margin-top: 84px; }.brand-mark {
-  width: 36px; height: 36px; border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-soft));
-  display: grid; place-items: center;
-  box-shadow: 0 8px 20px -6px var(--accent-glow);
-  /* O SVG da marca entra como imagem: o fundo em gradiente continua no CSS
-     para o ícone degradar para a caixa chapada se o arquivo faltar. O `color`
-     e o `font-weight` ficam porque o texto some — o slot agora e de imagem. */
-  overflow: hidden;
-}
-.brand-mark img, .brand-mark svg { width: 100%; height: 100%; display: block; }.nav-actions { display: flex; gap: 9px; align-items: center; flex: 0 0 auto; }.rail {
+[id] { scroll-margin-top: 84px; }.nav-actions { display: flex; gap: 9px; align-items: center; flex: 0 0 auto; }.rail {
   position: fixed; top: 0; left: 0; bottom: 0; width: var(--rail-w); z-index: 60;
   display: flex; flex-direction: column;
   background: linear-gradient(180deg, var(--bg-surface), var(--bg-deep));
@@ -144,7 +134,31 @@
   font-weight: 600; font-size: 1rem; letter-spacing: -0.02em;
   padding: 0 6px 16px; border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 14px;
-}.rail-brand .brand-mark { width: 30px; height: 30px; border-radius: 9px; font-size: var(--text-cta); flex: none; }.rail-brand small { display: block; color: var(--text-muted); font-weight: 400; font-size: var(--text-2xs); letter-spacing: 0.04em; text-transform: uppercase; }.rail-label {
+/* A marca do rail e' o componente `footer-brand` em tamanho compacto. O
+   fundo da caixa, a borda e a cor do SVG vem das regras base do componente
+   (que agora nao e' mais scoped no `.site-footer`); aqui so' o TAMANHO e a
+   ellipsis do texto mudam -- 32px de caixa contra os 48 do rodape. */
+.rail-brand .footer-brand { gap: 10px; }
+.rail-brand .footer-brand__icon { width: 32px; height: 32px; border-radius: 10px; box-shadow: 0 6px 16px -7px var(--accent-glow); }
+.rail-brand .footer-brand__icon svg { width: 17px; height: 17px; }
+.rail-brand .footer-brand__content { gap: 2px; }
+.rail-brand .footer-brand__name {
+  overflow: hidden;
+  font-size: var(--text-body-sm);
+  font-weight: 650;
+  letter-spacing: -.025em;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-brand .footer-brand__description {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}.rail-label {
   font-size: var(--text-2xs); font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
   color: var(--text-muted); padding: 0 10px; margin: 4px 0 8px;
 }.rail-menu {
@@ -348,33 +362,6 @@
   border-radius: 9px;
 }
 .rail-brand-link:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 4px; }
-.rail-brand-link .brand-mark {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  box-shadow: 0 6px 16px -7px var(--accent-glow);
-}
-.rail-brand-copy { display: grid; min-width: 0; gap: 2px; }
-.rail-brand-copy strong {
-  overflow: hidden;
-  font-size: var(--text-body-sm);
-  font-weight: 650;
-  letter-spacing: -.025em;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rail-brand .rail-brand-copy small {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: .62rem;
-  font-weight: 450;
-  letter-spacing: .005em;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  text-transform: none;
-  white-space: nowrap;
-}
 .rail-brand-badge {
   flex: 0 0 auto;
   padding: 4px 6px;
@@ -446,6 +433,51 @@
 }
 .skip-link:focus { top: 12px; }
 @media (prefers-reduced-motion: reduce) { .skip-link { transition: none; } }
+
+/* ---------- MARCA (componente footer-brand) ----------
+   Nao e' estilo de rodape: e' o componente de marca do produto, usado no
+   RODAPE e na MARCA DO RAIL -- os dois lugares em que a marca aparece. As
+   regras base sao da classe pura, com fallback de token: `--footer-accent` e
+   `--footer-muted` sao definidos dentro de `.site-footer`, e no rail eles nao
+   existem. Cada contexto so' ajusta o tamanho (`.site-footer` 48px,
+   `.rail-brand` 32px). O bloco mora FORA da secao FOOTER de proposito: as
+   regras do rodape continuam todas escopadas em `.site-footer`, e este
+   componente -- que nao e' mais exclusivo do rodape -- deixa de ser uma
+   delas. */
+.footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.875rem;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 0.75rem;
+}
+
+.footer-brand__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  color: var(--footer-accent, var(--accent-soft));
+  background: rgba(255, 79, 174, 0.1);
+  border: 1px solid rgba(255, 139, 200, 0.22);
+  border-radius: 14px;
+}
+.footer-brand__icon svg { width: 26px; height: 26px; }
+
+.footer-brand__content { display: grid; gap: 0.3rem; }
+.footer-brand__name {
+  font-size: var(--text-title);
+  font-weight: 750;
+  letter-spacing: -0.035em;
+}
+.footer-brand__description {
+  color: var(--footer-muted, var(--text-muted));
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
 
 /* ---------- FOOTER ----------
    Vive no shared.css, e nao no css de uma pagina, porque o rodape esta nas
@@ -527,41 +559,6 @@
 }
 
 .site-footer .footer-main { padding-bottom: 2rem; }
-
-.site-footer .footer-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.875rem;
-  min-width: 0;
-  color: inherit;
-  text-decoration: none;
-  border-radius: 0.75rem;
-}
-
-.site-footer .footer-brand__icon {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 48px;
-  height: 48px;
-  color: var(--footer-accent);
-  background: rgba(255, 79, 174, 0.1);
-  border: 1px solid rgba(255, 139, 200, 0.22);
-  border-radius: 14px;
-}
-.site-footer .footer-brand__icon svg { width: 26px; height: 26px; }
-
-.site-footer .footer-brand__content { display: grid; gap: 0.3rem; }
-.site-footer .footer-brand__name {
-  font-size: var(--text-title);
-  font-weight: 750;
-  letter-spacing: -0.035em;
-}
-.site-footer .footer-brand__description {
-  color: var(--footer-muted);
-  font-size: 0.8125rem;
-  line-height: 1.5;
-}
 
 .site-footer .footer-nav {
   display: flex;

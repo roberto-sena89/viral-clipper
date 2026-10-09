@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import unittest
 from dataclasses import replace
@@ -25,6 +26,13 @@ from viralclipper.ig_profile import ProfileItem, ProfileListing
 from viralclipper.util import ClipperError
 from web import server
 from web.server import resolve_within
+
+# A escala tipografica e' conferida contra o proprio normalizador, e nao contra
+# uma copia do mapa: `FontScaleTests` importa `tools/normalizar_fontes.py` e le
+# `MAPA`/`TETO_PX`/`SEM_DEGRAU` de lá. Um `import` de `tools` nao basta -- a
+# pasta nao esta' no sys.path do pacote.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+import normalizar_fontes as fontes  # noqa: E402
 
 # A medicao do DOM de verdade. Os testes de markup que dependem do JS rodar
 # (rail, rodape, marca) chamam `pagina_montada`, que executa o /comum.js com os
@@ -2445,6 +2453,260 @@ class ContrastTokensTests(unittest.TestCase):
                     px, 11,
                     f"{folha}: --text-caption = {rem}rem = {px:.1f}px com base "
                     "14px — abaixo de 11px nenhuma dica se le no celular")
+
+
+class BreakpointScaleTests(unittest.TestCase):
+    """Congela o mapa de larguras do painel.
+
+    Ha' 19 valores distintos de breakpoint em 43 ``@media``. A tentacao e'
+    junta-los num punhado de degraus nomeados, e este arquivo existe para
+    impedir que isso aconteca por descuido: a medicao no navegador
+    (``sticky-probe/breakpoint_peso.js``) mostra que bandas vizinhas guardam
+    COMPONENTES DIFERENTES. Juntar 760 e 768 mexeria no ``job-card`` e no
+    ``[data-section-nav]`` ao mesmo tempo; juntar 380 e 420 empilharia o ``.kv``
+    da Biblioteca antes de o cabecalho caber.
+
+    O teste nao proibe acrescentar uma banda — proibe acrescentar uma banda SEM
+    dizer qual componente ela serve. Cada valor novo entra no mapa abaixo junto
+    do seletor que o motivou; a revisao ve o que mudou.
+    """
+
+    #: valor -> uma descricao curta do que ele governa. Conferido um a um em
+    #: `tools/breakpoints.py`, que imprime o seletor de cada `@media`.
+    MAPA = {
+        380: "kv",
+        420: "job-card, studio-overline, header-context (marca)",
+        480: "seg, pick-kv",
+        520: "publicar-topo",
+        620: "result, search-loading",
+        640: "header-inner, field-row, execution-card, footer",
+        720: "select-rich, auth-block",
+        760: "job-card",
+        768: "section-nav",
+        920: "rail -> gaveta (body)",
+        960: "hero, path-picker, brand",
+        980: "ajustes-abertura, scrap-welcome",
+        981: "scrap-grid (faixa do meio)",
+        1100: "studio-pair, main-grid",
+        1150: "scrap tablist",
+        1160: "field-row.triple, studio-welcome",
+        1180: "scrap-grid",
+        1279: "scrap-grid (teto da faixa do meio)",
+        1280: "main-grid do ajustes, scrap-grid (faixa larga)",
+    }
+
+    def folhas(self) -> list[Path]:
+        return sorted(p for p in server.WEB_DIR.glob("*.css") if p.is_file())
+
+    def test_the_map_matches_the_stylesheets(self):
+        """O mapa acima e' exatamente o que as folhas declaram."""
+        achados = set()
+        padrao = re.compile(r"(?:min|max)-width:\s*(\d+)px")
+        for folha in self.folhas():
+            for linha in folha.read_text(encoding="utf-8").splitlines():
+                if "@media" not in linha:
+                    continue
+                for achado in padrao.finditer(linha):
+                    achados.add(int(achado.group(1)))
+        self.assertEqual(
+            sorted(achados), sorted(self.MAPA),
+            "as larguras declaradas nas folhas mudaram. Se acrescentou uma "
+            "banda, descreva no MAPA qual componente ela serve; se removeu, "
+            "tire a entrada. Larguras: %r" % sorted(achados))
+
+    def test_every_band_documents_its_component(self):
+        """Nenhuma banda entra sem dizer o que governa."""
+        for valor, descricao in self.MAPA.items():
+            with self.subTest(largura=valor):
+                self.assertTrue(
+                    descricao and descricao.strip(),
+                    f"{valor}px entrou no mapa sem descrever o componente")
+
+    def test_the_stylesheets_explain_the_scale(self):
+        """O porque' de nao haver escala unica esta' escrito na folha.
+
+        Sem isso, o proximo a mexer ve' 19 numeros "soltos" e "consolida" — que
+        e' justamente o que a medicao diz para nao fazer.
+        """
+        texto = (server.WEB_DIR / "shared.css").read_text(encoding="utf-8")
+        self.assertIn("ESCALA DE LARGURA", texto,
+                      "shared.css perdeu o bloco que explica o mapa")
+        self.assertIn("breakpoint_peso.js", texto,
+                      "o bloco perdeu a referencia a' sonda que mede as bandas")
+
+    def test_the_structural_cut_is_920(self):
+        """920px e' o corte estrutural: o rail vira gaveta.
+
+        Ele esta' em `shared.css` e no `index.css`, e a ORDEM das folhas no
+        <head> existe para ele vencer o `.rail` do shared. Se alguem mover esse
+        valor num arquivo e nao no outro, o rail reaparece no celular.
+        """
+        #: O valor e' citado na documentacao do topo do shared.css, que explica
+        #: a ordem das folhas. Se ele mudar, essa explicacao fica mentindo.
+        shared = (server.WEB_DIR / "shared.css").read_text(encoding="utf-8")
+        self.assertIn("max-width: 920px", shared,
+                      "o shared.css perdeu a @media de 920px")
+        index = (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
+        self.assertIn("max-width: 920px", index,
+                      "o index.css perdeu a @media de 920px — o rail pode "
+                      "reaparecer no celular")
+
+
+class FontScaleTests(unittest.TestCase):
+    """Congela a escala tipografica: o que entra no mapa e o que fica de fora.
+
+    O painel declarava ``font-size`` 271 vezes: 56 via ``var(--text-*)`` e 215
+    com um literal ``rem``, formando 52 valores distintos. O padrao era deriva,
+    nao desenho -- ``0.65`` a ``0.71rem`` sao todos o mesmo degrau
+    (``--text-2xs``) escrito de memoria.
+
+    A PRIMEIRA TENTATIVA DE NORMALIZAR ERROU DUAS VEZES, e este arquivo existe
+    por causa disso:
+
+    1. ``tools/normalizar_fontes.py`` prometia no cabecalho "diferenca <=
+       0,6px" e mapeava 8 literais acima disso, a pior movendo 18,40px para
+       17,00px (1,40px) num ``h2``. Nenhum teste olhava para o mapa -- a troca
+       de literal por token e' invisivel para "o token existe no CSS".
+    2. Ao corrigir, o teto virou "metade do passo da escala". Mas a escala tem
+       passo de 0,50px num trecho e 5,00px em outro, entao a regra reprovava
+       literais obvios (``0.72rem``, a 0,52px de ``2xs`` e a 1,28px do segundo
+       degrau) e aprovava empates. O teto certo e' metade da SEPARACAO entre os
+       dois degraus mais proximos do literal.
+
+    As checagens abaixo reproduzem as duas contas a partir do MAPA, para que a
+    proxima versao nao repita nenhuma das duas.
+    """
+
+    def scale_values(self) -> dict[str, float]:
+        """Os degraus de `--text-*` de shared.css, em px. Sem os `-lh`."""
+        return fontes.escala_de(server.WEB_DIR / "shared.css")
+
+    def test_the_map_is_within_the_local_bound(self):
+        """Nenhuma entrada do MAPA passa do seu teto local.
+
+        O teto nao e' um numero fixo: e' metade da separacao entre os dois
+        degraus mais proximos do literal. Dentro dele, o degrau escolhido
+        venceu sem duvida; fora, o segundo degrau esta' a' mesma distancia e a
+        escolha vira desenho.
+        """
+        escala = self.scale_values()
+        self.assertTrue(escala, "shared.css nao declara a escala --text-*")
+        fora = []
+        for literal, degrau in fontes.MAPA.items():
+            with self.subTest(literal=literal):
+                self.assertIn(degrau, escala,
+                              f"{literal} aponta para --text-{degrau}, que "
+                              "nao existe em shared.css")
+                delta = abs(float(literal) * 16 - escala[degrau])
+                teto = fontes.limite(literal, escala)
+                if delta > teto:
+                    fora.append((literal, degrau, round(delta, 2),
+                                 round(teto, 2)))
+        self.assertEqual(
+            fora, [],
+            "estes literais empatam entre dois degraus -- nao ha' 'o mais "
+            "proximo', entao a troca seria escolha de desenho: %r" % fora)
+
+    def test_the_map_picks_the_true_nearest_step(self):
+        """O degrau de cada entrada e' mesmo o mais proximo da escala.
+
+        Uma entrada pode caber no teto e ainda apontar para o degrau errado
+        (o teto e' sobre distancia, nao sobre ordem). Este teste confere a
+        ordem: nao existe degrau mais perto do que o escolhido.
+        """
+        escala = self.scale_values()
+        errados = []
+        for literal, degrau in fontes.MAPA.items():
+            px = float(literal) * 16
+            escolhido = abs(px - escala[degrau])
+            mais_perto = min(escala, key=lambda k: abs(px - escala[k]))
+            if mais_perto != degrau:
+                errados.append((literal, degrau, mais_perto, escolhido))
+        self.assertEqual(
+            errados, [],
+            "estes literais apontam para um degrau que nao e' o mais proximo "
+            "(literal, escolhido, o certo, delta): %r" % errados)
+
+    def test_the_excluded_literals_really_exceed_the_bound(self):
+        """O que ficou em SEM_DEGRAU passa mesmo do teto local.
+
+        Sem isto, alguem "conserta" o teste acima tirando uma entrada ruim do
+        MAPA e esquecendo de registrar por que' ela saiu. Toda exclusao tem de
+        ser explicita e justificada pelo numero.
+        """
+        escala = self.scale_values()
+        for literal, campos in fontes.SEM_DEGRAU.items():
+            degrau, _antes, _depois, delta, _segundo = campos
+            with self.subTest(literal=literal):
+                real = abs(float(literal) * 16 - escala[degrau])
+                self.assertGreater(
+                    real, fontes.limite(literal, escala),
+                    f"{literal} esta em SEM_DEGRAU mas cabe no teto local "
+                    f"({real:.2f}px) -- devia estar no MAPA")
+                self.assertAlmostEqual(
+                    real, delta, places=2,
+                    msg=f"o delta anotado para {literal} nao bate com a escala")
+
+    def test_no_stylesheet_uses_a_bare_rem_font_size_in_the_map(self):
+        """Os literais do MAPA nao voltam para as folhas.
+
+        Uma regra nova escrita com `0.68rem` em vez de `var(--text-2xs)` e'
+        exatamente a deriva que este trabalho removeu. O teste acusa o literal
+        que o mapa ja' sabe converter -- o que o mapa nao conhece (os de
+        SEM_DEGRAU) passa, porque para esses nao ha' degrau.
+        """
+        padrao = re.compile(r"font-size:\s*([0-9]*\.?[0-9]+)rem")
+        achados = []
+        for folha in sorted(server.WEB_DIR.glob("*.css")):
+            for numero, linha in enumerate(
+                    folha.read_text(encoding="utf-8").splitlines(), 1):
+                achado = padrao.search(linha)
+                if not achado:
+                    continue
+                valor = achado.group(1)
+                if valor.startswith("."):
+                    valor = "0" + valor
+                if valor in fontes.MAPA:
+                    achados.append(f"{folha.name}:{numero} usa {valor}rem")
+        self.assertEqual(
+            achados, [],
+            "estes literais ja' tem token -- troque por var(--text-*): %r"
+            % achados)
+
+    def test_every_bare_rem_font_size_is_mapped_or_registered(self):
+        """Nenhum literal `rem` fica sem veredito.
+
+        ESTE TESTE NASCEU DE UMA SABOTAGEM QUE PASSOU. Tirar `0.71` do MAPA
+        sem registrar em SEM_DEGRAU nao quebrava nada: os outros testes so'
+        olham as entradas QUE ESTAO no mapa, nunca as folhas. O literal sumia
+        do veredito e virava deriva de novo, em silencio.
+
+        A regra completa e': todo `font-size: <n>rem` nas folhas esta' no MAPA
+        (tem degrau, sera' convertido) OU em SEM_DEGRAU (nao tem degrau, e a
+        decisao esta' registrada). Um literal na lista de ninguem e' um
+        buraco.
+
+        A comparacao passa por ``canonico()``: `0.8`, `0.80` e `.8` sao o mesmo
+        tamanho, e o mapa escrito a mao usa formas que o CSS nao usa. Comparar
+        a chave crua deixava `0.8rem` passar como orfao E como nao-convertido,
+        ao mesmo tempo.
+        """
+        padrao = re.compile(r"font-size:\s*([0-9]*\.?[0-9]+)rem")
+        orfaos = []
+        for folha in sorted(server.WEB_DIR.glob("*.css")):
+            for numero, linha in enumerate(
+                    folha.read_text(encoding="utf-8").splitlines(), 1):
+                achado = padrao.search(linha)
+                if not achado:
+                    continue
+                valor = fontes.canonico(achado.group(1))
+                if valor not in fontes.CHAVES and valor not in fontes.CHAVES_SEM:
+                    orfaos.append(f"{folha.name}:{numero} usa {valor}rem")
+        self.assertEqual(
+            orfaos, [],
+            "estes literais nao estao no MAPA nem em SEM_DEGRAU -- ninguem "
+            "decidiu se eles tem degrau. Ou mapeie, ou registre por que' "
+            "ficam: %r" % orfaos)
 
 
 class FieldDescriptionTests(unittest.TestCase):

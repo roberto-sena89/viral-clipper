@@ -1,0 +1,1443 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Revisão visual e proposta de refatoração — Viral Clipper</title>
+<style>
+/* ============================================================================
+   VIRAL CLIPPER — REVISÃO VISUAL E PROPOSTA DE REFATORAÇÃO
+   Documento autocontido. Sem dependência externa: nenhuma fonte remota,
+   nenhum script, nenhum framework. Abre por file:// e por http:// igual.
+
+   O documento DEMONSTRA o sistema que propõe — as mesmas camadas, os mesmos
+   tokens e as mesmas técnicas que o painel passaria a usar.
+   ========================================================================== */
+
+/* ---------- 1. CAMADAS ------------------------------------------------------
+   O painel hoje tem 13 `!important` em index.css e 3 em scrap.css. Cada um é
+   a assinatura de uma briga de cascata: uma regra que precisou gritar para
+   vencer outra. `@layer` resolve a briga por ARQUITETURA, não por força: a
+   ordem entre camadas é declarada uma vez e vale sempre, independente de
+   especificidade e de ordem de arquivo. Nenhum `!important` é necessário. */
+@layer reset, tokens, base, layout, components, utilities;
+
+/* ---------- 2. TOKENS TIPADOS ----------------------------------------------
+   `@property` dá TIPO a uma custom property. Sem ele, `--x: 8px` é uma string
+   que o navegador não sabe interpolar: `transition: --x 200ms` não anima, e
+   `calc(var(--x) * 2)` só funciona por sorte. Com `syntax`, o token passa a
+   ser um número de verdade — animável, validável e impossível de escrever
+   errado em silêncio. */
+@property --space-unit { syntax: '<length>'; inherits: true; initial-value: 4px; }
+@property --radius     { syntax: '<length>'; inherits: true; initial-value: 10px; }
+@property --elev       { syntax: '<number>'; inherits: true; initial-value: 0; }
+
+@layer tokens {
+  :root {
+    /* --- PALETA: 8 valores, e SÓ 8 -----------------------------------------
+       Hoje o index.css tem 83 hex de 6 dígitos e o shared.css 21. A paleta
+       crua do painel tem 11 valores. A diferença é o problema: 83 hex para
+       11 cores significa que a mesma cor aparece escrita de 7 formas quase
+       iguais (#8d97a8, #9ba5b5, #aab3c1, #c5ceda, #d7deea...), e cada uma é
+       uma decisão tomada de novo, na mão, por alguém com pressa.
+
+       A regra: NENHUM hex depois deste bloco. Toda cor sai de um token, e
+       todo tom intermediário sai de `color-mix()` sobre um token. Assim a
+       paleta não pode crescer sem alguém editar este bloco de propósito. */
+    --c-ink:        #f4f6fa;
+    --c-ink-2:      #c3ccda;
+    --c-ink-3:      #9aa6b8;
+    --c-surface-0:  #0a0c11;
+    --c-surface-1:  #11151d;
+    --c-surface-2:  #171c26;
+    --c-accent:     #ff4fae;
+    --c-accent-ink: #2a0f1e;
+    --c-ok:         #4ed6a0;
+    --c-warn:       #f5b544;
+    --c-danger:     #ff7a8a;
+
+    /* --- PAPÉIS SEMÂNTICOS -------------------------------------------------
+       O componente nunca fala de cor; fala de PAPEL. `--fg-muted` e não
+       `#9ba6b5`. É o que permite trocar a paleta inteira sem tocar em 700
+       regras — e o que impede o "cinza novo" de nascer a cada card. */
+    --bg:            var(--c-surface-0);
+    --bg-raised:     var(--c-surface-1);
+    --bg-sunken:     color-mix(in oklab, var(--c-surface-0) 70%, black);
+    --bg-hover:      color-mix(in oklab, var(--c-ink) 5%, transparent);
+    --bg-active:     color-mix(in oklab, var(--c-accent) 14%, transparent);
+
+    --fg:            var(--c-ink);
+    --fg-2:          var(--c-ink-2);
+    --fg-3:          var(--c-ink-3);
+    --fg-accent:     color-mix(in oklab, var(--c-accent) 55%, white);
+
+    --line:          color-mix(in oklab, var(--c-ink) 10%, transparent);
+    --line-strong:   color-mix(in oklab, var(--c-ink) 20%, transparent);
+    --ring:          var(--c-accent);
+
+    /* --- ESCALA TIPOGRÁFICA: 8 DEGRAUS, e o painel usa 89 ------------------
+       Medido: 271 declarações de `font-size` com 89 valores distintos — e
+       `.78rem`, `0.78rem`, `.8rem` e `0.8rem` convivendo como se fossem
+       coisas diferentes. Oito degraus cobrem tudo o que o painel faz, e um
+       degrau só é criado quando um PAPEL novo aparece.
+
+       O menor degrau é 12px de propósito: hoje há texto a 8,3px (o selo
+       "LOCAL" do rail), 8,5px (os monogramas IG/TT/YT) e 9,3px (o eyebrow do
+       header). Abaixo de 12px não é hierarquia, é ilegibilidade — e o painel
+       é usado no celular, que é onde a pessoa tem dúvida. */
+    --t-1:  0.75rem;                    /* 12px  metadado, selo, contador      */
+    --t-2:  0.8125rem;                  /* 13px  dica de campo, nota           */
+    --t-3:  0.875rem;                   /* 14px  corpo, rótulo, input          */
+    --t-4:  1rem;                       /* 16px  corpo de leitura, item de nav */
+    --t-5:  1.25rem;                    /* 20px  título de card                */
+    --t-6:  1.5rem;                     /* 24px  título de seção               */
+    --t-7:  clamp(1.75rem, 1.2rem + 1.6vw, 2.25rem);   /* título de página   */
+    --t-8:  clamp(2.25rem, 1.4rem + 2.6vw, 3rem);      /* número-herói       */
+
+    --lh-tight: 1.2;
+    --lh-snug:  1.4;
+    --lh-body:  1.6;
+    --track-tight: -0.02em;
+
+    /* --- ESPAÇAMENTO: 8 DEGRAUS, e o painel usa 26 ------------------------
+       Medido no Estúdio: 26 valores distintos, sendo 1px×48, 2px×9, 3px×1,
+       5px×2, 7px×30, 9px×51, 11px×19, 13px×32, 15px×4, 17px×7, 19px×4. Ou
+       seja: o ritmo é "todo inteiro de 1 a 20". Um sistema de 4pt tem oito
+       passos e cobre 95% dos casos; os 5% restantes são sinal de que o
+       componente está tentando dizer algo que o layout não tem onde pôr. */
+    --s-1:  4px;
+    --s-2:  8px;
+    --s-3:  12px;
+    --s-4:  16px;
+    --s-5:  24px;
+    --s-6:  32px;
+    --s-7:  48px;
+    --s-8:  64px;
+
+    /* --- RAIO E ELEVAÇÃO: 3 degraus cada ---------------------------------- */
+    --r-sm: 8px;
+    --r-md: 12px;
+    --r-lg: 18px;
+
+    --e-1: 0 1px 2px color-mix(in oklab, black 40%, transparent);
+    --e-2: 0 8px 24px -10px color-mix(in oklab, black 70%, transparent);
+    --e-3: 0 24px 60px -20px color-mix(in oklab, black 80%, transparent);
+
+    /* --- MOVIMENTO: 3 durações, 2 curvas ----------------------------------
+       Hoje: 4 durações declaradas + as que estão soltas em `transition:`
+       inline (180ms, 200ms, 250ms, 300ms, 400ms espalhados). Três durações
+       bastam e dizem para que servem. */
+    --m-1: 120ms;   /* resposta a ponteiro: press, hover                  */
+    --m-2: 200ms;   /* mudança de estado: abre, fecha, seleciona          */
+    --m-3: 320ms;   /* entrada de conteúdo: painel, lista, toast          */
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
+
+    /* --- MEDIDAS DE LAYOUT ------------------------------------------------ */
+    --rail: 232px;
+    --header: 56px;
+    --wrap: 1440px;
+    --gutter: clamp(16px, 3vw, 32px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root { --m-1: 1ms; --m-2: 1ms; --m-3: 1ms; }
+  }
+}
+
+/* ---------- 3. RESET ------------------------------------------------------- */
+@layer reset {
+  *, *::before, *::after { box-sizing: border-box; }
+  * { margin: 0; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  img, svg, video { display: block; max-width: 100%; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { background: none; border: 0; cursor: pointer; }
+  h1, h2, h3, h4 { text-wrap: balance; font-weight: 650; letter-spacing: var(--track-tight); }
+  p { text-wrap: pretty; }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: var(--r-sm); }
+  ::selection { background: color-mix(in oklab, var(--c-accent) 40%, transparent); }
+}
+
+/* ---------- 4. BASE -------------------------------------------------------- */
+@layer base {
+  body {
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: var(--t-3);
+    line-height: var(--lh-body);
+    color: var(--fg);
+    background: var(--bg);
+    /* `min-height: 100dvh` e não `100vh`: no celular a barra de endereço
+       aparece e some, e `vh` é medido contra a viewport MAIOR. O resultado é
+       a página "pular" quando a barra recolhe. `dvh` acompanha. */
+    min-height: 100dvh;
+    /* O painel usa `background-attachment: fixed` com dois radial-gradients
+       de 1200×600px. `fixed` obriga o navegador a repintar o gradiente a cada
+       quadro de scroll — e no iOS ele é simplesmente ignorado, o que faz o
+       fundo mudar de comportamento entre plataformas. Aqui o brilho é um
+       elemento `position: fixed` com `pointer-events: none`: custa um
+       compositing layer, não um repaint. */
+  }
+
+  #brilho {
+    position: fixed; inset: -20% -10% auto; height: 70vh; z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(60% 100% at 78% 0%, color-mix(in oklab, var(--c-accent) 13%, transparent), transparent 70%),
+      radial-gradient(50% 90% at 8% 100%, color-mix(in oklab, #5aa9e6 8%, transparent), transparent 70%);
+    filter: blur(20px);
+  }
+
+  /* `font-size: inherit` e não `0.92em`. O `em` parece inofensivo e é o que
+     mais faz texto miúdo nascer: 0.92 × 13px = 11,96px, abaixo do piso de
+     12px que este próprio documento propõe. Herdar o tamanho mantém a
+     monoespaçada honesta em relação à escala — e mono no mesmo px já lê
+     menor por ter largura fixa. */
+  code, kbd, samp { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: inherit; }
+  code { background: var(--bg-sunken); padding: 0.1em 0.4em; border-radius: 6px; color: var(--fg-2); }
+  strong { font-weight: 620; color: var(--fg); }
+  a { color: var(--fg-accent); text-decoration-color: color-mix(in oklab, var(--c-accent) 40%, transparent); text-underline-offset: 3px; }
+}
+
+/* ---------- 5. LAYOUT DO DOCUMENTO ----------------------------------------- */
+@layer layout {
+  .skip {
+    position: absolute; left: 12px; top: -60px; z-index: 100;
+    padding: 10px 14px; border-radius: var(--r-sm);
+    background: var(--bg-raised); border: 1px solid var(--c-accent);
+    font-size: var(--t-3); font-weight: 600; text-decoration: none; color: var(--fg);
+    transition: top var(--m-2) var(--ease);
+  }
+  .skip:focus { top: 12px; }
+
+  .doc-head {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(16px) saturate(160%);
+    background: color-mix(in oklab, var(--c-surface-0) 88%, transparent);
+    border-bottom: 1px solid var(--line);
+  }
+  .doc-head__in {
+    max-width: var(--wrap); margin-inline: auto; padding-inline: var(--gutter);
+    height: var(--header); display: flex; align-items: center; gap: var(--s-4);
+  }
+  .marca { display: flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: var(--track-tight); }
+  .marca__ico {
+    width: 28px; height: 28px; border-radius: 8px; flex: none;
+    background: linear-gradient(140deg, var(--c-accent), color-mix(in oklab, var(--c-accent) 40%, #7b5cff));
+    box-shadow: var(--e-1);
+    display: grid; place-items: center; color: #fff; font-size: var(--t-1); font-weight: 800;
+  }
+  .doc-nav { display: flex; gap: var(--s-1); margin-inline-start: auto; flex-wrap: wrap; }
+  .doc-nav a {
+    font-size: var(--t-2); color: var(--fg-3); text-decoration: none; font-weight: 550;
+    /* 44px de alvo de toque. O painel hoje tem 46 alvos abaixo disso só no
+       Estúdio — inclusive o próprio menu do rail. */
+    min-height: 44px; display: inline-flex; align-items: center;
+    padding-inline: var(--s-3); border-radius: var(--r-sm);
+    transition: color var(--m-1) var(--ease), background var(--m-1) var(--ease);
+  }
+  .doc-nav a:hover { color: var(--fg); background: var(--bg-hover); }
+
+  main { max-width: var(--wrap); margin-inline: auto; padding: var(--s-7) var(--gutter) var(--s-8); }
+  section { margin-block-end: var(--s-8); scroll-margin-top: calc(var(--header) + var(--s-4)); }
+  /* `content-visibility: auto` deixa o navegador PULAR o layout e a pintura
+     das seções fora da tela. Este documento tem ~9 seções longas; o painel
+     tem 3750px no desktop e 6267px no celular. O `contain-intrinsic-size`
+     reserva a altura estimada para a barra de rolagem não mentir. */
+  .pesada { content-visibility: auto; contain-intrinsic-size: auto 1200px; }
+
+  .grid-2 { display: grid; gap: var(--s-5); grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
+  .grid-3 { display: grid; gap: var(--s-4); grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
+}
+
+/* ---------- 6. COMPONENTES -------------------------------------------------- */
+@layer components {
+
+  /* --- título de seção --- */
+  .sec { display: flex; align-items: baseline; gap: var(--s-3); margin-block-end: var(--s-5); flex-wrap: wrap; }
+  .sec__num {
+    font-size: var(--t-2); font-weight: 750; letter-spacing: 0.08em;
+    color: var(--fg-accent); font-variant-numeric: tabular-nums;
+  }
+  .sec__h { font-size: var(--t-6); }
+  .sec__nota { flex: 1 1 320px; font-size: var(--t-3); color: var(--fg-3); line-height: var(--lh-snug); }
+
+  .lede { font-size: var(--t-4); color: var(--fg-2); line-height: var(--lh-body); max-width: 68ch; }
+  .lede + .lede { margin-block-start: var(--s-3); }
+
+  /* --- card --- */
+  .card {
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: var(--s-5);
+    /* `@property` + `--elev` fazem a elevação ser um NÚMERO, não uma sombra
+       copiada. Um só lugar decide o que "elevado" significa. */
+    box-shadow: var(--e-1);
+  }
+  .card--flat { background: transparent; }
+  .card__h { font-size: var(--t-5); margin-block-end: var(--s-1); }
+  .card__sub { font-size: var(--t-2); color: var(--fg-3); line-height: var(--lh-snug); }
+
+  /* --- número-herói --- */
+  .kpi { display: grid; gap: var(--s-1); }
+  .kpi__n {
+    font-size: var(--t-8); font-weight: 700; line-height: 1; letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+    color: var(--c-accent);
+    /* `color-mix` sobre o próprio token: o número puxa a cor da marca sem que
+       ninguém escreva um hex novo. É o que hoje falta — o painel tem 34 cores
+       de texto porque cada tom foi digitado à mão. */
+  }
+  .kpi__n--ok { color: var(--c-ok); }
+  .kpi__n--warn { color: var(--c-warn); }
+  .kpi__n--neutro { color: var(--fg); }
+  .kpi__r { font-size: var(--t-2); color: var(--fg-3); line-height: var(--lh-snug); }
+
+  /* --- tabela de dados ---
+     O painel tem UMA `<table>` (a prévia da transcrição) — e ela é o
+     componente mais bem construído do projeto: thead, hover de linha,
+     `white-space: nowrap` na coluna de duração, rolagem com altura máxima.
+     O resto dos dados tabulares (a fila, com job/estado/progresso/clips/
+     tempo/ações) virou card. Card não se compara; tabela se compara. */
+  .tabela-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-raised); }
+  table.dados { width: 100%; border-collapse: collapse; font-size: var(--t-3); }
+  table.dados caption { text-align: start; padding: var(--s-4) var(--s-4) var(--s-2); font-size: var(--t-2); color: var(--fg-3); }
+  table.dados th, table.dados td { padding: 10px var(--s-4); text-align: start; vertical-align: middle; }
+  table.dados thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--bg-raised);
+    font-size: var(--t-1); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--fg-3); white-space: nowrap;
+    border-block-end: 1px solid var(--line-strong);
+  }
+  table.dados tbody tr { border-block-end: 1px solid var(--line); }
+  table.dados tbody tr:last-child { border-block-end: 0; }
+  table.dados tbody tr:hover { background: var(--bg-hover); }
+  /* Números alinham na VÍRGULA só com `tabular-nums`: sem ele, "111" e "999"
+     têm larguras diferentes e a coluna dança a cada atualização do poll. */
+  table.dados .num { text-align: end; font-variant-numeric: tabular-nums; }
+  table.dados .tab { color: var(--fg-3); font-size: var(--t-2); }
+  /* `:has()` deixa a LINHA reagir ao estado de um FILHO — sem JS, sem classe
+     no `<tr>`. É o que o painel faz hoje escrevendo `running`/`done`/`fail`
+     na className do card pelo JS: estado mora no dado, apresentação mora no
+     CSS, e os dois se encontram aqui. */
+  tr:has(.pill--run) td:first-child { box-shadow: inset 3px 0 0 var(--c-accent); }
+  tr:has(.pill--ok)  td:first-child { box-shadow: inset 3px 0 0 var(--c-ok); }
+  tr:has(.pill--err) td:first-child { box-shadow: inset 3px 0 0 var(--c-danger); }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 9px; border-radius: 999px;
+    font-size: var(--t-1); font-weight: 600; white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .pill--run { color: var(--c-accent); background: color-mix(in oklab, var(--c-accent) 12%, transparent); border-color: color-mix(in oklab, var(--c-accent) 30%, transparent); }
+  .pill--ok  { color: var(--c-ok);     background: color-mix(in oklab, var(--c-ok) 12%, transparent);     border-color: color-mix(in oklab, var(--c-ok) 30%, transparent); }
+  .pill--err { color: var(--c-danger); background: color-mix(in oklab, var(--c-danger) 12%, transparent); border-color: color-mix(in oklab, var(--c-danger) 30%, transparent); }
+  .pill--wait{ color: var(--fg-3);     background: var(--bg-hover); border-color: var(--line); }
+
+  /* --- barra de progresso: `transform`, nunca `width` ---
+     Animar `width` obriga o navegador a refazer o layout a cada quadro. A
+     barra do painel anima `width`. Aqui a barra tem 100% e o preenchimento
+     anda por `transform: scaleX()`, que roda no compositor. */
+  .barra { height: 6px; border-radius: 999px; background: var(--bg-sunken); overflow: hidden; }
+  .barra__fill {
+    height: 100%; border-radius: inherit; transform-origin: left center;
+    background: linear-gradient(90deg, var(--c-accent), color-mix(in oklab, var(--c-accent) 60%, #7b5cff));
+    transition: transform var(--m-3) var(--ease);
+  }
+
+  /* --- botões --- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2);
+    min-height: 40px; padding-inline: var(--s-4);
+    border-radius: var(--r-sm); border: 1px solid var(--line-strong);
+    background: var(--bg-raised); color: var(--fg);
+    font-size: var(--t-3); font-weight: 600;
+    transition: background var(--m-1) var(--ease), border-color var(--m-1) var(--ease),
+                transform var(--m-1) var(--ease-spring);
+  }
+  .btn:hover { background: var(--bg-hover); border-color: var(--fg-3); }
+  .btn:active { transform: scale(0.97); transition-duration: var(--m-1); }
+  .btn--primary {
+    background: var(--c-accent); border-color: var(--c-accent); color: var(--c-accent-ink);
+  }
+  .btn--primary:hover { background: color-mix(in oklab, var(--c-accent) 88%, white); border-color: transparent; }
+  .btn--quiet { background: transparent; border-color: transparent; color: var(--fg-3); }
+  .btn--quiet:hover { background: var(--bg-hover); color: var(--fg); }
+  .btn--danger { color: var(--c-danger); border-color: color-mix(in oklab, var(--c-danger) 34%, transparent); }
+  .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+  .btn[disabled]:active { transform: none; }
+
+  /* --- campo --- */
+  .campo { display: grid; gap: 6px; min-width: 0; }
+  .campo > label { font-size: var(--t-2); font-weight: 600; color: var(--fg-2); }
+  .campo input, .campo select, .campo textarea {
+    width: 100%; min-height: 40px; padding: 9px var(--s-3);
+    background: var(--bg-sunken); color: var(--fg);
+    border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+    font-size: var(--t-3);
+    transition: border-color var(--m-1) var(--ease), background var(--m-1) var(--ease);
+  }
+  .campo input:hover, .campo select:hover { border-color: var(--fg-3); }
+  .campo input:focus-visible, .campo select:focus-visible, .campo textarea:focus-visible {
+    outline: 2px solid var(--ring); outline-offset: 1px; border-color: transparent;
+  }
+  .campo .dica { font-size: var(--t-2); color: var(--fg-3); line-height: var(--lh-snug); }
+
+  /* ---------- O PONTO CENTRAL: `@container` ---------------------------------
+     O `.field-row.triple` do painel colapsa para uma coluna dentro do card de
+     275px — e colapsa por um `@media` de PÁGINA. Isso funciona, mas amarra o
+     componente à largura da JANELA: o mesmo card num modal, num painel
+     lateral ou numa grade de 4 colunas não tem como se adaptar, porque a
+     media query não sabe nada sobre ele.
+
+     `@container` faz a pergunta certa: "quão larga é a MINHA caixa?", não
+     "quão larga é a tela?". O componente passa a ser portátil — o mesmo
+     markup funciona em qualquer contexto, e o CSS de página deixa de existir
+     para isso. Arraste o controle abaixo e veja o MESMO componente mudar. */
+  .grade-campos { container-type: inline-size; }
+  .grade-campos__alvo {
+    display: grid; gap: var(--s-3);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  @container (width < 640px) { .grade-campos__alvo { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @container (width < 420px) { .grade-campos__alvo { grid-template-columns: minmax(0, 1fr); } }
+
+  /* --- demonstração interativa do container --- */
+  .demo {
+    display: grid; gap: var(--s-4);
+    grid-template-columns: minmax(0, 1fr) 260px;
+    align-items: start;
+  }
+  @media (max-width: 860px) { .demo { grid-template-columns: minmax(0, 1fr); } }
+  .demo__caixa {
+    width: var(--demo-w, 100%);
+    border: 1px dashed color-mix(in oklab, var(--c-accent) 45%, transparent);
+    border-radius: var(--r-md); padding: var(--s-4);
+    background: color-mix(in oklab, var(--c-accent) 4%, transparent);
+    /* SEM `transition` na largura. Isto é manipulação DIRETA: o controle
+       arrasta, a caixa acompanha. Uma transição de 200ms aqui faz a caixa
+       chegar atrasada ao dedo — e, medido, fazia o contador de colunas
+       reportar o valor ANTERIOR, porque o layout ainda não tinha assentado.
+       Transição é para mudança de estado; arrasto não é mudança de estado. */
+  }
+  .demo__painel { display: grid; gap: var(--s-3); }
+  .demo__painel output {
+    font-size: var(--t-3); font-weight: 650; font-variant-numeric: tabular-nums;
+    color: var(--fg-accent);
+  }
+  input[type=range] { width: 100%; accent-color: var(--c-accent); min-height: 32px; }
+
+  /* --- comparação antes/depois --- */
+  .comp { display: grid; gap: var(--s-4); grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+  .comp__lado { display: grid; gap: var(--s-3); align-content: start; }
+  .comp__rot {
+    display: inline-flex; align-items: center; gap: var(--s-2);
+    font-size: var(--t-1); font-weight: 750; letter-spacing: 0.07em; text-transform: uppercase;
+  }
+  .comp__rot--antes { color: var(--c-danger); }
+  .comp__rot--depois { color: var(--c-ok); }
+  .comp__rot::before { content: ''; width: 20px; height: 2px; border-radius: 2px; background: currentColor; }
+  .shot {
+    border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden;
+    background: var(--bg-sunken); max-height: 460px; overflow-y: auto;
+  }
+  .shot img { width: 100%; }
+  .shot__cap { padding: var(--s-3) var(--s-4); font-size: var(--t-1); color: var(--fg-3); border-block-start: 1px solid var(--line); }
+
+  /* --- lista de achados --- */
+  .achado { display: grid; gap: var(--s-2); grid-template-columns: auto 1fr; align-items: start; }
+  .sev {
+    display: inline-grid; place-items: center; min-width: 34px; height: 22px; padding-inline: 7px;
+    border-radius: 6px; font-size: var(--t-1); font-weight: 750; letter-spacing: 0.04em;
+  }
+  .sev--p0 { background: color-mix(in oklab, var(--c-danger) 20%, transparent); color: var(--c-danger); }
+  .sev--p1 { background: color-mix(in oklab, var(--c-warn) 20%, transparent); color: var(--c-warn); }
+  .sev--p2 { background: var(--bg-hover); color: var(--fg-3); }
+
+  /* --- gráfico de barras --- */
+  .barras { display: grid; gap: 5px; }
+  .barras__l { display: grid; grid-template-columns: 78px minmax(0, 1fr) 56px; gap: var(--s-3); align-items: center; font-size: var(--t-2); }
+  .barras__t { height: 14px; border-radius: 4px; background: var(--bg-hover); overflow: hidden; }
+  .barras__f { height: 100%; border-radius: 4px; background: var(--c-accent); }
+  .barras__f--ok { background: var(--c-ok); }
+  .barras__f--warn { background: var(--c-warn); }
+  .barras__v { text-align: end; font-variant-numeric: tabular-nums; color: var(--fg-3); }
+
+  /* --- mockup do app --- */
+  .app {
+    border: 1px solid var(--line-strong); border-radius: var(--r-lg); overflow: hidden;
+    background: var(--bg); box-shadow: var(--e-3);
+  }
+  .app__bar {
+    display: flex; align-items: center; gap: var(--s-3);
+    padding: var(--s-2) var(--s-3); border-block-end: 1px solid var(--line);
+    background: var(--bg-raised); font-size: var(--t-1); color: var(--fg-3);
+  }
+  .app__dots { display: flex; gap: 5px; }
+  .app__dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--line-strong); }
+  .app__body { padding: var(--s-4); display: grid; gap: var(--s-4); }
+
+  /* a barra de comando — o coração da proposta do Estúdio */
+  .cmd {
+    display: grid; gap: var(--s-3);
+    grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+    align-items: end;
+    padding: var(--s-4);
+    background: var(--bg-raised); border: 1px solid var(--line-strong); border-radius: var(--r-md);
+  }
+  @media (max-width: 900px) { .cmd { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .cmd__go { grid-column: 1 / -1; } }
+  @media (max-width: 560px) { .cmd { grid-template-columns: minmax(0, 1fr); } }
+  .cmd__go { display: flex; gap: var(--s-2); }
+
+  .faixa {
+    display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap;
+    padding: var(--s-2) var(--s-4); border-radius: var(--r-sm);
+    background: var(--bg-raised); border: 1px solid var(--line);
+    font-size: var(--t-2); color: var(--fg-3);
+  }
+  .faixa strong { color: var(--fg); font-variant-numeric: tabular-nums; }
+
+  .duas { display: grid; gap: var(--s-4); grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+
+  /* ---------- o painel de ajustes, agora dirigido por CONTAINER ---------- */
+  .painel {
+    container-type: inline-size;
+    background: var(--bg-raised); border: 1px solid var(--line);
+    border-radius: var(--r-md); padding: var(--s-4); display: grid; gap: var(--s-3); align-content: start;
+  }
+  .painel__h { font-size: var(--t-4); }
+  .painel__campos { display: grid; gap: var(--s-3); grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  @container (width < 560px) { .painel__campos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @container (width < 380px) { .painel__campos { grid-template-columns: minmax(0, 1fr); } }
+  /* O rótulo que quebra em duas linhas empurra o input para baixo dos
+     vizinhos — o painel mediu isso e resolveu encurtando o texto. Com
+     container query a causa desaparece: quando não cabe, vira uma coluna. */
+  @container (width < 460px) { .painel__campos .campo > label { font-size: var(--t-1); } }
+
+  /* --- fase do plano --- */
+  .fase { display: grid; gap: var(--s-3); }
+  .fase__h { display: flex; align-items: center; gap: var(--s-3); }
+  .fase__n {
+    width: 28px; height: 28px; border-radius: 50%; flex: none;
+    display: grid; place-items: center; font-size: var(--t-2); font-weight: 700;
+    background: var(--bg-active); color: var(--fg-accent);
+  }
+  ul.marcado { list-style: none; padding: 0; display: grid; gap: 7px; }
+  ul.marcado li { display: grid; grid-template-columns: 18px 1fr; gap: var(--s-3); align-items: start; font-size: var(--t-3); color: var(--fg-2); }
+  ul.marcado li::before { content: '→'; color: var(--fg-accent); font-weight: 700; }
+
+  .nota {
+    border-inline-start: 3px solid var(--c-warn);
+    background: color-mix(in oklab, var(--c-warn) 7%, transparent);
+    padding: var(--s-3) var(--s-4); border-radius: 0 var(--r-sm) var(--r-sm) 0;
+    font-size: var(--t-3); color: var(--fg-2);
+  }
+  .nota--ok { border-color: var(--c-ok); background: color-mix(in oklab, var(--c-ok) 7%, transparent); }
+  .nota--err { border-color: var(--c-danger); background: color-mix(in oklab, var(--c-danger) 7%, transparent); }
+
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    font-size: var(--t-1); padding: 3px 9px; border-radius: 999px;
+    background: var(--bg-hover); color: var(--fg-3); border: 1px solid var(--line);
+    font-weight: 550;
+  }
+  .tag--novo { color: var(--c-ok); border-color: color-mix(in oklab, var(--c-ok) 30%, transparent); background: color-mix(in oklab, var(--c-ok) 9%, transparent); }
+  .tag--sai { color: var(--c-danger); border-color: color-mix(in oklab, var(--c-danger) 30%, transparent); background: color-mix(in oklab, var(--c-danger) 9%, transparent); }
+}
+
+@layer utilities {
+  .sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  .mudo { color: var(--fg-3); }
+  .mini { font-size: var(--t-2); }
+  .espaco { margin-block-start: var(--s-4); }
+  .espaco-g { margin-block-start: var(--s-6); }
+}
+</style>
+</head>
+<body>
+<div id="brilho" aria-hidden="true"></div>
+<a class="skip" href="#main">Pular para o conteúdo</a>
+
+<header class="doc-head">
+  <div class="doc-head__in">
+    <span class="marca"><span class="marca__ico" aria-hidden="true">VC</span> Revisão visual &amp; proposta</span>
+    <nav class="doc-nav" aria-label="Seções do documento">
+      <a href="#diagnostico">Diagnóstico</a>
+      <a href="#sistema">Sistema</a>
+      <a href="#estudio">Estúdio</a>
+      <a href="#biblioteca">Biblioteca</a>
+      <a href="#ajustes">Ajustes</a>
+      <a href="#tabelas">Tabelas</a>
+      <a href="#plano">Plano</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ===================== 1. SUMÁRIO ===================== -->
+<section>
+  <p class="sec__num">REVISÃO DE INTERFACE · 08/10/2026</p>
+  <h1 style="font-size:var(--t-7); margin-block:var(--s-2) var(--s-4); max-width:22ch;">O painel tem um sistema de design. O CSS não usa.</h1>
+  <p class="lede">
+    O <code>shared.css</code> declara uma escala tipográfica semântica de 10 degraus, três níveis de texto,
+    uma paleta de 11 valores e tokens de papel. É um sistema bem pensado — melhor do que a maioria dos
+    produtos internos tem. O problema é que <strong>as outras 3 folhas o ignoram</strong>: elas escrevem
+    <code>.78rem</code>, <code>#8d97a8</code> e <code>padding: 13px</code> direto, e o resultado é que a
+    interface que chega à tela não é a que foi desenhada.
+  </p>
+  <p class="lede">
+    Esta não é uma proposta de “deixar mais bonito”. É uma proposta de <strong>fazer o CSS obedecer ao
+    design que já existe</strong> — e, no caminho, trocar quatro coisas de lugar onde a estrutura atual
+    cobra um preço de uso todos os dias.
+  </p>
+
+  <div class="grid-3 espaco-g">
+    <div class="card kpi"><span class="kpi__n kpi__n--neutro">89</span><span class="kpi__r">valores distintos de <code>font-size</code> no CSS. A escala declarada tem 10 degraus.</span></div>
+    <div class="card kpi"><span class="kpi__n kpi__n--neutro">34</span><span class="kpi__r">cores de texto diferentes pintadas no Estúdio. O sistema declara 3 níveis.</span></div>
+    <div class="card kpi"><span class="kpi__n kpi__n--neutro">26</span><span class="kpi__r">valores distintos de espaçamento em uso. Um sistema de 4pt tem 8.</span></div>
+    <div class="card kpi"><span class="kpi__n kpi__n--warn">17</span><span class="kpi__r">breakpoints distintos. Quatro deles (1100/1150/1160/1180) fazem o mesmo papel.</span></div>
+  </div>
+
+  <p class="mini mudo espaco">
+    Tudo acima foi <strong>medido no navegador</strong>, com o painel rodando em <code>127.0.0.1:7755</code>,
+    em 1440 / 1024 / 390px. Não é leitura de arquivo — é o que o navegador de fato pintou.
+    As capturas estão em <code>antes/</code>.
+  </p>
+</section>
+
+<!-- ===================== 2. DIAGNÓSTICO ===================== -->
+<section id="diagnostico" class="pesada">
+  <div class="sec">
+    <span class="sec__num">01</span>
+    <h2 class="sec__h">Diagnóstico medido</h2>
+    <p class="sec__nota">Ordenado por impacto. <strong>P0</strong> quebra uma regra que o próprio projeto já reconhece; <strong>P1</strong> custa qualidade ou manutenção; <strong>P2</strong> é oportunidade.</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="card" style="display:grid; gap:var(--s-4);">
+      <h3 class="card__h">Aderência ao sistema</h3>
+
+      <div class="achado">
+        <span class="sev sev--p0">P0</span>
+        <div>
+          <strong>A escala tipográfica não é usada.</strong>
+          <p class="card__sub">271 declarações de <code>font-size</code>, <strong>89 valores distintos</strong>. Pior: <code>.78rem</code> e <code>0.78rem</code> convivem — cinco pares idênticos separados só pelo zero à esquerda. Na tela, 37 tamanhos diferentes.</p>
+        </div>
+      </div>
+
+      <div class="achado">
+        <span class="sev sev--p0">P0</span>
+        <div>
+          <strong>Contraste reprovando a WCAG AA.</strong>
+          <p class="card__sub"><code>#687386</code> em <code>index.css:1761</code> dá <strong>4,11:1</strong> sobre o fundo — abaixo dos 4,5:1 exigidos para texto normal. Aparece em 4 telas. Irmão dele, <code>#596274</code>, é ainda mais escuro. Os dois são hex cru, fora do token.</p>
+        </div>
+      </div>
+
+      <div class="achado">
+        <span class="sev sev--p0">P0</span>
+        <div>
+          <strong>Piso de legibilidade violado.</strong>
+          <p class="card__sub">O selo <em>LOCAL</em> do rail é <strong>8,3px</strong>; os monogramas IG/TT/YT são <strong>8,5px</strong>; o eyebrow do header é <strong>9,3px</strong>. Só no Estúdio há <strong>45 nós de texto abaixo de 12px</strong>.</p>
+        </div>
+      </div>
+
+      <div class="achado">
+        <span class="sev sev--p1">P1</span>
+        <div>
+          <strong>34 cores de texto para 3 papéis.</strong>
+          <p class="card__sub">O Estúdio pinta 34 cinzas diferentes. Muitos a 1–3 pontos de distância entre si (<code>#8d97a8</code>, <code>#9ba5b5</code>, <code>#aab3c1</code>, <code>#c5ceda</code>) — indistinguíveis a olho, mas todos decisões tomadas de novo.</p>
+        </div>
+      </div>
+
+      <div class="achado">
+        <span class="sev sev--p1">P1</span>
+        <div>
+          <strong>Ritmo de espaçamento inexistente.</strong>
+          <p class="card__sub">26 valores distintos. O uso real é “todo inteiro de 1 a 20”: 48× <code>1px</code>, 30× <code>7px</code>, 51× <code>9px</code>, 19× <code>11px</code>, 32× <code>13px</code>. Cada um é uma exceção que ninguém vai lembrar depois.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="display:grid; gap:var(--s-4);">
+      <h3 class="card__h">Arquitetura e estrutura</h3>
+
+      <div class="achado">
+        <span class="sev sev--p1">P1</span>
+        <div>
+          <strong>Duas folhas de página se sobrepõem em 25 seletores.</strong>
+          <p class="card__sub"><code>index.css</code> (515 seletores) e <code>scrap.css</code> (338) declaram <code>.card</code>, <code>.btn</code>, <code>.chip</code>, <code>.log-box</code>, <code>.toast</code>, <code>.rail</code>, <code>body</code>… cada um com valores próprios. Sem <code>@layer</code>, quem vence é a ordem de arquivo — e o <code>shared.css</code> precisa ser linkado <em>antes</em> por causa disso, com um comentário de 30 linhas explicando por quê.</p>
+        </div>
+      </div>
+
+      <div class="achado">
+        <span class="sev sev--p1">P1</span>
+        <div>
+          <strong>16 <code>!important</code> como solução de cascata.</strong>
+          <p class="card__sub">13 no <code>index.css</code>, 3 no <code>scrap.css</code>. Cada um é uma derrota de arquitetura registrada em código.</p>
+        </div>
+      </div>
+
+      <div class="achado">
+        <span class="sev sev--p1">P1</span>
+        <div>
+          <strong>17 breakpoints, 4 deles redundantes.</strong>
+          <p class="card__sub">1100, 1150, 1160 e 1180 existem em arquivos diferentes fazendo o mesmo tipo de trabalho. O resultado é que ninguém consegue prever em que largura a tela muda.</p>
+        </div>
+      </div>
+
+      <div class="achado">
+        <span class="sev sev--p1">P1</span>
+        <div>
+          <strong>Layout da Biblioteca desperdiça ~1000px.</strong>
+          <p class="card__sub">Três colunas de 340 / 469 / 291px com alturas de 1220 / 341 / 184px. Sobram cerca de mil pixels de vazio sob os dois painéis da direita, em toda visita.</p>
+        </div>
+      </div>
+
+      <div class="achado">
+        <span class="sev sev--p1">P1</span>
+        <div>
+          <strong>46 alvos de toque abaixo de 44px no Estúdio.</strong>
+          <p class="card__sub">Inputs de 40px, botões de 42px, o <code>.toggle</code> com 44×24px e o atalho <em>Ajustar</em> com 36×24px. No dedo, isso é erro de toque.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2 espaco-g">
+    <div class="card">
+      <h3 class="card__h">Os tamanhos de fonte que chegam à tela</h3>
+      <p class="card__sub espaco">37 tamanhos. Os cinco primeiros somam <strong>57%</strong> de todo o texto — e três deles (12,0 / 12,2 / 12,8px) fazem o mesmo trabalho.</p>
+      <div class="barras espaco">
+        <div class="barras__l"><span class="mudo">12,0px</span><span class="barras__t"><span class="barras__f" style="width:100%"></span></span><span class="barras__v">43</span></div>
+        <div class="barras__l"><span class="mudo">14,1px</span><span class="barras__t"><span class="barras__f" style="width:63%"></span></span><span class="barras__v">27</span></div>
+        <div class="barras__l"><span class="mudo">12,2px</span><span class="barras__t"><span class="barras__f" style="width:53%"></span></span><span class="barras__v">23</span></div>
+        <div class="barras__l"><span class="mudo">12,8px</span><span class="barras__t"><span class="barras__f" style="width:42%"></span></span><span class="barras__v">18</span></div>
+        <div class="barras__l"><span class="mudo">13,4px</span><span class="barras__t"><span class="barras__f" style="width:19%"></span></span><span class="barras__v">8</span></div>
+        <div class="barras__l"><span class="mudo">11,2px</span><span class="barras__t"><span class="barras__f barras__f--warn" style="width:16%"></span></span><span class="barras__v">7</span></div>
+        <div class="barras__l"><span class="mudo">10,4px</span><span class="barras__t"><span class="barras__f barras__f--warn" style="width:16%"></span></span><span class="barras__v">7</span></div>
+        <div class="barras__l"><span class="mudo">10,2px</span><span class="barras__t"><span class="barras__f barras__f--warn" style="width:9%"></span></span><span class="barras__v">4</span></div>
+        <div class="barras__l"><span class="mudo">9,9px</span><span class="barras__t"><span class="barras__f barras__f--warn" style="width:7%"></span></span><span class="barras__v">3</span></div>
+        <div class="barras__l"><span class="mudo">8,3px</span><span class="barras__t"><span class="barras__f barras__f--warn" style="width:5%"></span></span><span class="barras__v">2</span></div>
+        <div class="barras__l"><span class="mudo">…+27 outros</span><span class="barras__t"><span class="barras__f" style="width:9%; opacity:.35"></span></span><span class="barras__v">17</span></div>
+      </div>
+      <p class="mini mudo espaco">Vermelho = abaixo de 12px. Somam <strong>45 nós de texto</strong> só no Estúdio.</p>
+    </div>
+
+    <div class="card">
+      <h3 class="card__h">As cores de texto que chegam à tela</h3>
+      <p class="card__sub espaco">34 valores. Os cinco mais usados são quatro cinzas diferentes mais o branco — e os quatro cinzas cobrem o mesmo papel.</p>
+      <div class="barras espaco">
+        <div class="barras__l"><span class="mudo">#f3f4f6</span><span class="barras__t"><span class="barras__f barras__f--ok" style="width:100%"></span></span><span class="barras__v">40</span></div>
+        <div class="barras__l"><span class="mudo">#cbd5e1</span><span class="barras__t"><span class="barras__f barras__f--ok" style="width:85%"></span></span><span class="barras__v">34</span></div>
+        <div class="barras__l"><span class="mudo">#9ba6b5</span><span class="barras__t"><span class="barras__f barras__f--ok" style="width:63%"></span></span><span class="barras__v">25</span></div>
+        <div class="barras__l"><span class="mudo">#c0c8d5</span><span class="barras__t"><span class="barras__f barras__f--warn" style="width:53%"></span></span><span class="barras__v">21</span></div>
+        <div class="barras__l"><span class="mudo">#a4aebe</span><span class="barras__t"><span class="barras__f barras__f--warn" style="width:40%"></span></span><span class="barras__v">16</span></div>
+        <div class="barras__l"><span class="mudo">#edf0f6</span><span class="barras__t"><span class="barras__f barras__f--warn" style="width:30%"></span></span><span class="barras__v">12</span></div>
+        <div class="barras__l"><span class="mudo">#8d97a8</span><span class="barras__t"><span class="barras__f barras__f--warn" style="width:13%"></span></span><span class="barras__v">5</span></div>
+        <div class="barras__l"><span class="mudo">#687386</span><span class="barras__t"><span class="barras__f barras__f--warn" style="width:3%"></span></span><span class="barras__v">1</span></div>
+        <div class="barras__l"><span class="mudo">…+26 outros</span><span class="barras__t"><span class="barras__f" style="width:9%; opacity:.35"></span></span><span class="barras__v">…</span></div>
+      </div>
+      <p class="mini mudo espaco">Verde = token do sistema. Amarelo = hex escrito à mão. <code>#687386</code> é o que reprova no contraste.</p>
+    </div>
+  </div>
+
+  <div class="nota nota--ok espaco-g">
+    <strong>O que já está certo e não deve ser tocado:</strong> a paleta unificada em <code>shared.css</code>
+    (o comentário explica que a Biblioteca pintava indigo enquanto o Estúdio pintava magenta — isso foi
+    resolvido), a auto-hospedagem da fonte Inter, o <code>prefers-reduced-motion</code> presente em 21 blocos,
+    o <code>skip-link</code>, os alvos de toque de 44px no rodapé e no rail, a estrutura semântica
+    (<code>dl</code> na ficha, <code>fieldset</code> no curador, <code>role=status</code> nas regiões vivas)
+    e a tabela da transcrição — que é o componente mais bem construído do projeto.
+  </div>
+</section>
+
+<!-- ===================== 3. SISTEMA ===================== -->
+<section id="sistema" class="pesada">
+  <div class="sec">
+    <span class="sec__num">02</span>
+    <h2 class="sec__h">O sistema proposto</h2>
+    <p class="sec__nota">Mesma identidade — o magenta fica, o fundo escuro fica. O que muda é que ele passa a ter <strong>regras que o CSS consegue obedecer</strong>.</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3 class="card__h">Camadas, não <code>!important</code></h3>
+      <p class="card__sub espaco">A causa raiz de 16 <code>!important</code> e de 25 seletores duplicados é que a cascata é decidida por ordem de arquivo. <code>@layer</code> declara a ordem <em>uma vez</em>:</p>
+      <pre class="espaco" style="background:var(--bg-sunken); padding:var(--s-4); border-radius:var(--r-sm); overflow-x:auto; font-size:var(--t-2); line-height:1.7;"><code style="background:none; padding:0;">@layer reset, tokens, base, layout, components, utilities;</code></pre>
+      <ul class="marcado espaco">
+        <li><code>components</code> sempre vence <code>base</code>, sem depender de quem foi linkado antes</li>
+        <li>uma folha de página deixa de precisar de <code>!important</code> para sobrescrever</li>
+        <li>o comentário de 30 linhas no <code>shared.css</code> explicando a ordem de <code>&lt;link&gt;</code> desaparece</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3 class="card__h">Tokens tipados com <code>@property</code></h3>
+      <p class="card__sub espaco">Uma custom property hoje é texto opaco: <code>--radius: 8px</code> não pode ser interpolado nem validado. Com tipo, ela vira um valor de verdade.</p>
+      <pre class="espaco" style="background:var(--bg-sunken); padding:var(--s-4); border-radius:var(--r-sm); overflow-x:auto; font-size:var(--t-2); line-height:1.7;"><code style="background:none; padding:0;">@property --radius { syntax: '&lt;length&gt;'; inherits: true; initial-value: 10px; }</code></pre>
+      <p class="card__sub espaco">Ganho direto: dá para animar raio, espaçamento e elevação; e um valor fora do tipo é rejeitado em vez de quebrar o layout em silêncio.</p>
+    </div>
+  </div>
+
+  <div class="card espaco-g">
+    <h3 class="card__h">A paleta: 11 valores, e nenhum hex depois deste bloco</h3>
+    <p class="card__sub espaco">A paleta crua do painel já é boa. O que falta é que os tons intermediários — hovers, tints, bordas — sejam <em>derivados</em> dela, e não digitados. <code>color-mix()</code> faz isso: o hover de qualquer botão, a borda de qualquer card e o fundo de qualquer selo saem do mesmo token.</p>
+
+    <div class="grid-3 espaco">
+      <div style="display:grid; gap:var(--s-2);">
+        <span class="mini mudo">Papéis de texto (eram 34)</span>
+        <div style="display:grid; gap:6px;">
+          <div style="padding:9px 12px; border-radius:var(--r-sm); background:var(--bg-sunken); color:var(--fg); font-size:var(--t-3);">--fg · texto primário</div>
+          <div style="padding:9px 12px; border-radius:var(--r-sm); background:var(--bg-sunken); color:var(--fg-2); font-size:var(--t-3);">--fg-2 · secundário</div>
+          <div style="padding:9px 12px; border-radius:var(--r-sm); background:var(--bg-sunken); color:var(--fg-3); font-size:var(--t-3);">--fg-3 · dica e metadado</div>
+          <div style="padding:9px 12px; border-radius:var(--r-sm); background:var(--bg-sunken); color:var(--fg-accent); font-size:var(--t-3);">--fg-accent · destaque</div>
+        </div>
+      </div>
+      <div style="display:grid; gap:var(--s-2);">
+        <span class="mini mudo">Superfícies (eram 9 tons de quase-preto)</span>
+        <div style="display:grid; gap:6px;">
+          <div style="padding:9px 12px; border-radius:var(--r-sm); background:var(--bg); border:1px solid var(--line); font-size:var(--t-3);">--bg · página</div>
+          <div style="padding:9px 12px; border-radius:var(--r-sm); background:var(--bg-raised); border:1px solid var(--line); font-size:var(--t-3);">--bg-raised · card</div>
+          <div style="padding:9px 12px; border-radius:var(--r-sm); background:var(--bg-sunken); border:1px solid var(--line); font-size:var(--t-3);">--bg-sunken · poço, input</div>
+          <div style="padding:9px 12px; border-radius:var(--r-sm); background:var(--bg-active); border:1px solid var(--line); font-size:var(--t-3);">--bg-active · selecionado</div>
+        </div>
+      </div>
+      <div style="display:grid; gap:var(--s-2);">
+        <span class="mini mudo">Estado (sempre com ícone ou texto, nunca só cor)</span>
+        <div style="display:grid; gap:6px;">
+          <span class="pill pill--run">Processando</span>
+          <span class="pill pill--ok">Concluído</span>
+          <span class="pill pill--err">Erro</span>
+          <span class="pill pill--wait">Na fila</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2 espaco-g">
+    <div class="card">
+      <h3 class="card__h">A escala: 10 degraus de tipo, 8 de espaço</h3>
+      <div class="tabela-wrap espaco">
+        <table class="dados">
+          <caption>Substitui 89 valores de <code>font-size</code> e 26 de espaçamento.</caption>
+          <thead><tr><th scope="col">Degrau</th><th scope="col">Valor</th><th scope="col">Papel</th></tr></thead>
+          <tbody>
+            <tr><td><code>--t-1</code></td><td class="num">12px</td><td class="tab">metadado, selo, contador</td></tr>
+            <tr><td><code>--t-2</code></td><td class="num">13px</td><td class="tab">dica de campo, nota</td></tr>
+            <tr><td><code>--t-3</code></td><td class="num">14px</td><td class="tab">corpo, rótulo, input</td></tr>
+            <tr><td><code>--t-4</code></td><td class="num">16px</td><td class="tab">leitura, item de navegação</td></tr>
+            <tr><td><code>--t-5</code></td><td class="num">20px</td><td class="tab">título de card</td></tr>
+            <tr><td><code>--t-6</code></td><td class="num">24px</td><td class="tab">título de seção</td></tr>
+            <tr><td><code>--t-7</code></td><td class="num">28→36px</td><td class="tab">título de página (fluido)</td></tr>
+            <tr><td><code>--t-8</code></td><td class="num">36→48px</td><td class="tab">número-herói</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="mini mudo espaco">Espaço: <code>4 · 8 · 12 · 16 · 24 · 32 · 48 · 64</code>. Tudo que não cai num degrau é sinal de que o componente quer dizer algo que o layout não tem onde pôr.</p>
+    </div>
+
+    <div class="card">
+      <h3 class="card__h">Movimento: 3 durações com significado</h3>
+      <div class="tabela-wrap espaco">
+        <table class="dados">
+          <thead><tr><th scope="col">Token</th><th scope="col">Duração</th><th scope="col">Quando</th></tr></thead>
+          <tbody>
+            <tr><td><code>--m-1</code></td><td class="num">120ms</td><td class="tab">resposta a ponteiro: press, hover</td></tr>
+            <tr><td><code>--m-2</code></td><td class="num">200ms</td><td class="tab">mudança de estado: abre, seleciona</td></tr>
+            <tr><td><code>--m-3</code></td><td class="num">320ms</td><td class="tab">entrada de conteúdo: painel, lista</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="mini mudo espaco">Hoje há 43 animações declaradas e durações soltas em <code>transition</code> inline (180, 200, 250, 300, 400ms). Três tokens, e <code>prefers-reduced-motion</code> zera os três de uma vez.</p>
+    </div>
+  </div>
+
+  <div class="nota espaco-g">
+    <strong>Cor nunca é o único sinal.</strong> Os selos de estado acima têm ponto + texto. O rail marca a
+    página atual com fundo, borda <em>e</em> <code>aria-current</code>. Os gráficos deste documento usam
+    rótulo numérico além da barra. O painel já acerta nisso em vários pontos — a proposta é não perder.
+  </div>
+</section>
+
+<!-- ===================== 4. ESTÚDIO ===================== -->
+<section id="estudio" class="pesada">
+  <div class="sec">
+    <span class="sec__num">03</span>
+    <h2 class="sec__h">Estúdio: de vitrine para bancada</h2>
+    <p class="sec__nota">A página que a pessoa abre todo dia começa com 354px de hero de landing, tipografia de 42px e um cartão de “fluxo de edição” — antes de qualquer coisa útil.</p>
+  </div>
+
+  <div class="comp">
+    <div class="comp__lado">
+      <span class="comp__rot comp__rot--antes">Antes</span>
+      <div class="shot"><img src="antes/estudio_desktop.png" alt="Estúdio atual: hero de 354px antes do primeiro campo, sete cards empilhados em duas colunas, 3750px de altura."></div>
+      <p class="shot__cap">Hero de 354px · 7 cards · 3750px no desktop, <strong>6267px no celular</strong> · 445 elementos visíveis · o card de Execução esticado a 676px para empatar com o Fonte, com o log vazio ocupando a maior parte.</p>
+    </div>
+
+    <div class="comp__lado">
+      <span class="comp__rot comp__rot--depois">Depois</span>
+      <div class="app">
+        <div class="app__bar">
+          <span class="app__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>127.0.0.1:7755 — Estúdio</span>
+          <span style="margin-inline-start:auto;">viral-clipper · 9:16 1080×1920</span>
+        </div>
+        <div class="app__body">
+
+          <div class="cmd">
+            <div class="campo">
+              <label for="d-url">URL do vídeo</label>
+              <input id="d-url" type="url" value="https://www.youtube.com/watch?v=dQw4w9WgXcQ">
+            </div>
+            <div class="campo">
+              <label for="d-count">Quantidade</label>
+              <input id="d-count" type="number" value="5">
+            </div>
+            <div class="campo">
+              <label for="d-out">Pasta</label>
+              <input id="d-out" type="text" value="output">
+            </div>
+            <div class="cmd__go">
+              <button class="btn btn--primary" type="button">Gerar cortes</button>
+              <button class="btn" type="button">Simular</button>
+            </div>
+          </div>
+
+          <div class="faixa">
+            <span class="pill pill--run">Processando</span>
+            <span>Renderizando <strong>2 de 5</strong> cortes</span>
+            <span style="margin-inline-start:auto;">Baixando · Transcrevendo · <strong>Renderizando</strong></span>
+          </div>
+
+          <div class="duas">
+            <div class="painel">
+              <h3 class="painel__h">Fonte</h3>
+              <div class="painel__campos">
+                <div class="campo"><label>Cookies</label><select><option>Nenhum</option></select></div>
+                <div class="campo"><label>Download</label><select><option>Só os trechos</option></select></div>
+                <div class="campo"><label>Reframe</label><select><option>Focus</option></select></div>
+              </div>
+            </div>
+            <div class="painel">
+              <h3 class="painel__h">Curador com IA <span class="tag">desligado</span></h3>
+              <div class="painel__campos">
+                <div class="campo"><label>Provedor</label><select disabled><option>—</option></select></div>
+                <div class="campo"><label>Modelo</label><input value="gpt-4o-mini" disabled></div>
+                <div class="campo"><label>Top-N</label><input value="24" disabled></div>
+              </div>
+              <p class="mini mudo">Os campos ficam <strong>visivelmente inertes</strong> enquanto o interruptor está desligado — hoje eles já desabilitam, e isso está certo. O que muda é a leitura: a explicação vem antes, não dentro de um parágrafo no meio do bloco.</p>
+            </div>
+          </div>
+
+          <div>
+            <h3 class="painel__h" style="margin-block-end:var(--s-3);">Fila de processamento</h3>
+            <div class="tabela-wrap">
+              <table class="dados">
+                <thead>
+                  <tr>
+                    <th scope="col">Job</th><th scope="col">Estado</th><th scope="col">Progresso</th>
+                    <th scope="col" class="num">Cortes</th><th scope="col" class="num">Tempo</th><th scope="col">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>dQw4w9WgXcQ</td>
+                    <td><span class="pill pill--run">Renderizando</span></td>
+                    <td><span class="barra" style="display:block; width:120px;"><span class="barra__fill" style="transform:scaleX(.4)"></span></span></td>
+                    <td class="num">2 / 5</td>
+                    <td class="num">4m12s</td>
+                    <td><button class="btn btn--quiet" type="button">Abrir</button></td>
+                  </tr>
+                  <tr>
+                    <td>aB3xY9kLmNo</td>
+                    <td><span class="pill pill--ok">Concluído</span></td>
+                    <td><span class="barra" style="display:block; width:120px;"><span class="barra__fill" style="transform:scaleX(1)"></span></span></td>
+                    <td class="num">7</td>
+                    <td class="num">11m40s</td>
+                    <td><button class="btn btn--quiet" type="button">Abrir</button></td>
+                  </tr>
+                  <tr>
+                    <td>pQ7rS2tUvWx</td>
+                    <td><span class="pill pill--err">Erro</span></td>
+                    <td><span class="barra" style="display:block; width:120px;"><span class="barra__fill" style="transform:scaleX(.18); background:var(--c-danger)"></span></span></td>
+                    <td class="num">—</td>
+                    <td class="num">0m48s</td>
+                    <td><button class="btn btn--quiet" type="button">Ver log</button></td>
+                  </tr>
+                  <tr>
+                    <td>zX1cV2bN3m</td>
+                    <td><span class="pill pill--wait">Na fila</span></td>
+                    <td><span class="barra" style="display:block; width:120px;"><span class="barra__fill" style="transform:scaleX(0)"></span></span></td>
+                    <td class="num">—</td>
+                    <td class="num">—</td>
+                    <td><button class="btn btn--quiet" type="button">Cancelar</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <p class="shot__cap">Sem hero. O H1 vira título de página de 28px, e o campo que <em>é</em> o começo do trabalho sobe para o topo. Barra de comando → faixa de estado → dois painéis → tabela da fila. Tudo acima da dobra.</p>
+    </div>
+  </div>
+
+  <div class="grid-3 espaco-g">
+    <div class="card">
+      <h3 class="card__h">O que sai</h3>
+      <div class="tags espaco">
+        <span class="tag tag--sai">hero de 354px</span>
+        <span class="tag tag--sai">display de 42,4px</span>
+        <span class="tag tag--sai">card “fluxo de edição”</span>
+        <span class="tag tag--sai">7 jump-links</span>
+        <span class="tag tag--sai">card de Execução esticado</span>
+        <span class="tag tag--sai">fila em cards</span>
+      </div>
+      <p class="card__sub espaco">O hero de uma ferramenta de uso diário não convence ninguém: quem abre já comprou. Ele só empurra o primeiro campo para baixo da dobra.</p>
+    </div>
+    <div class="card">
+      <h3 class="card__h">O que fica</h3>
+      <div class="tags espaco">
+        <span class="tag tag--novo">atalhos, como âncoras do rail</span>
+        <span class="tag tag--novo">aviso do ranker_top_n</span>
+        <span class="tag tag--novo">fonte → execução lado a lado</span>
+        <span class="tag tag--novo">log técnico</span>
+        <span class="tag tag--novo">galeria 9:16</span>
+        <span class="tag tag--novo">estado na classe do card</span>
+      </div>
+      <p class="card__sub espaco">As decisões de conteúdo do painel são boas e foram tomadas com cuidado — inclusive as que estão documentadas em comentário. A proposta mexe em <em>onde</em>, não em <em>o quê</em>.</p>
+    </div>
+    <div class="card">
+      <h3 class="card__h">O ganho</h3>
+      <ul class="marcado espaco">
+        <li>primeiro campo: de <strong>y≈593</strong> para <strong>y≈120</strong></li>
+        <li>altura do desktop: <strong>3750 → ~1900px</strong></li>
+        <li>altura no celular: <strong>6267 → ~3100px</strong></li>
+        <li>os 4 cards de ajuste entram numa linha só de rolagem</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 5. BIBLIOTECA ===================== -->
+<section id="biblioteca" class="pesada">
+  <div class="sec">
+    <span class="sec__num">04</span>
+    <h2 class="sec__h">Biblioteca: o vazio de mil pixels</h2>
+    <p class="sec__nota">Três colunas de 340 / 469 / 291px com 1220 / 341 / 184px de altura. O resultado é que dois terços da tela ficam vazios — e o painel de sessão, que é configuração, ocupa o lugar mais caro da página.</p>
+  </div>
+
+  <div class="comp">
+    <div class="comp__lado">
+      <span class="comp__rot comp__rot--antes">Antes</span>
+      <div class="shot"><img src="antes/biblioteca_desktop.png" alt="Biblioteca atual: três colunas desbalanceadas, com o card de busca ocupando 1220px de altura e um vazio de mil pixels sob os painéis da direita."></div>
+      <p class="shot__cap">A coluna de busca acumula plataforma + modo + URL + viral + limite + cookies + arquivo + sessionid em 340px. As notas de ajuda, a 10–11px, quebram em 6 linhas cada. Os outros dois painéis terminam em y=593 e a página vai até y=1947.</p>
+    </div>
+
+    <div class="comp__lado">
+      <span class="comp__rot comp__rot--depois">Depois</span>
+      <div class="app">
+        <div class="app__bar">
+          <span class="app__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>127.0.0.1:7755 — Biblioteca</span>
+        </div>
+        <div class="app__body">
+
+          <div class="cmd" style="grid-template-columns: minmax(0,1fr) auto;">
+            <div class="campo">
+              <label for="d-busca">Link do vídeo ou perfil</label>
+              <input id="d-busca" type="url" value="https://www.instagram.com/reel/Cx1y2z3/">
+            </div>
+            <div class="cmd__go"><button class="btn btn--primary" type="button">Buscar</button></div>
+          </div>
+
+          <div class="faixa">
+            <span class="tag">Instagram</span><span class="tag">TikTok</span><span class="tag">YouTube</span>
+            <span style="margin-inline-start:auto;">Sessão: <strong>cookies.txt</strong></span>
+            <button class="btn btn--quiet" type="button">Ajustar sessão ▾</button>
+          </div>
+
+          <div style="display:grid; gap:var(--s-4); grid-template-columns: minmax(0,1fr) 320px; align-items:start;">
+            <div>
+              <h3 class="painel__h" style="margin-block-end:var(--s-3);">Resultados <span class="mudo mini">— 18 itens</span></h3>
+              <div class="tabela-wrap">
+                <table class="dados">
+                  <thead>
+                    <tr>
+                      <th scope="col" style="width:44px;"><span class="sr">Seleção</span><input type="checkbox" aria-label="Selecionar todos"></th>
+                      <th scope="col">Item</th><th scope="col" class="num">Views</th><th scope="col">Tipo</th><th scope="col">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td><input type="checkbox" aria-label="Selecionar Cx1y2z3"></td><td>Cx1y2z3 · “o erro que quase me custou…”</td><td class="num">1,2 M</td><td><span class="tag">reel</span></td><td><button class="btn btn--quiet" type="button">Enviar ao Estúdio</button></td></tr>
+                    <tr><td><input type="checkbox" aria-label="Selecionar Cy4w5v6"></td><td>Cy4w5v6 · “ninguém te conta isso sobre…”</td><td class="num">840 mil</td><td><span class="tag">reel</span></td><td><button class="btn btn--quiet" type="button">Enviar ao Estúdio</button></td></tr>
+                    <tr><td><input type="checkbox" aria-label="Selecionar Cz7u8t9"></td><td>Cz7u8t9 · carrossel sobre produtividade</td><td class="num">312 mil</td><td><span class="tag">post</span></td><td><button class="btn btn--quiet" type="button">Enviar ao Estúdio</button></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="faixa" style="margin-block-start:var(--s-3);">
+                <span>2 selecionados</span>
+                <button class="btn btn--primary" type="button">Baixar selecionados</button>
+                <button class="btn" type="button">Baixar tudo do perfil</button>
+              </div>
+            </div>
+
+            <aside class="painel" style="position:sticky; top:calc(var(--header) + var(--s-4));">
+              <h3 class="painel__h">Escolha</h3>
+              <p class="card__sub">Cx1y2z3 · “o erro que quase me custou…”</p>
+              <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:var(--s-2);">
+                <div class="campo"><label class="mini mudo">Views</label><strong>1,2 M</strong></div>
+                <div class="campo"><label class="mini mudo">Duração</label><strong>0:47</strong></div>
+              </div>
+              <button class="btn btn--primary" type="button">Usar como fonte</button>
+              <p class="mini mudo">Transcrição, nota e render existentes são reaproveitados.</p>
+            </aside>
+          </div>
+
+        </div>
+      </div>
+      <p class="shot__cap">Os resultados viram o painel principal, em tabela — porque é comparar itens que a pessoa veio fazer. A sessão sai do meio do caminho e vira um disclosure na faixa de contexto. A coluna “Escolha” encosta no topo e acompanha a rolagem.</p>
+    </div>
+  </div>
+
+  <div class="grid-2 espaco-g">
+    <div class="card">
+      <h3 class="card__h">Por que tabela, e não cards</h3>
+      <ul class="marcado espaco">
+        <li><strong>Comparar é o trabalho.</strong> Views, tipo e duração lado a lado, em colunas alinhadas — em card, cada número fica num lugar diferente.</li>
+        <li><strong>Números alinham na vírgula</strong> com <code>font-variant-numeric: tabular-nums</code>. Sem isso, “840 mil” e “1,2 M” dançam.</li>
+        <li><strong>Seleção em lote vira uma coluna</strong>, com o “selecionar todos” no cabeçalho — hoje é um botão acima da lista.</li>
+        <li><strong>Cabe muito mais por tela.</strong> 3 linhas de 44px mostram o mesmo que 3 cards de 160px.</li>
+        <li><strong>Ordenável com <code>aria-sort</code></strong> — e o navegador anuncia a ordenação, o que card nenhum faz.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 class="card__h">A sessão sai do caminho</h3>
+      <p class="card__sub espaco">Cookies de navegador, arquivo <code>cookies.txt</code> e <code>sessionid</code> do Instagram ocupam hoje <strong>mais da metade</strong> da coluna de busca — e são configuração de uma vez só. Três notas de 10–11px explicando App-Bound Encryption e o caminho do DevTools ficam no meio do fluxo de quem só quer colar um link.</p>
+      <p class="card__sub espaco">Na proposta, viram um disclosure <strong>fechado por padrão</strong> na faixa de contexto, com o estado visível (“Sessão: cookies.txt”). Quem precisa abre; quem não precisa nunca vê.</p>
+      <div class="nota espaco">
+        Isso não é esconder informação: é <strong>divulgação progressiva</strong>. A nota continua acessível e o estado continua anunciado — só deixa de competir com o campo que a pessoa veio usar.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 6. AJUSTES ===================== -->
+<section id="ajustes" class="pesada">
+  <div class="sec">
+    <span class="sec__num">05</span>
+    <h2 class="sec__h">Ajustes: o mesmo componente, em qualquer largura</h2>
+    <p class="sec__nota">Esta é a mudança mais estrutural da proposta, e a que rende mais a longo prazo.</p>
+  </div>
+
+  <div class="comp">
+    <div class="comp__lado">
+      <span class="comp__rot comp__rot--antes">Antes</span>
+      <div class="shot"><img src="antes/ajustes_desktop.png" alt="Ajustes atual: quatro colunas de 1148/275/275/275px, com a grade de três campos colapsando por media query de página."></div>
+      <p class="shot__cap">Quatro colunas (1148 + 3×275px). O <code>.field-row.triple</code> colapsa de 3 para 1 coluna dentro dos cards de 275px — e colapsa por um <code>@media</code> de <strong>página</strong>. Funciona, mas amarra o componente à largura da <em>janela</em>: o mesmo card num modal ou num painel lateral não teria como se adaptar.</p>
+    </div>
+
+    <div class="comp__lado">
+      <span class="comp__rot comp__rot--depois">Depois</span>
+      <div class="app">
+        <div class="app__bar">
+          <span class="app__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>127.0.0.1:7755 — Ajustes</span>
+        </div>
+        <div class="app__body">
+          <div style="display:grid; gap:var(--s-3); grid-template-columns: repeat(auto-fit, minmax(min(100%,300px),1fr));">
+            <div class="painel">
+              <h3 class="painel__h">Seleção</h3>
+              <div class="painel__campos">
+                <div class="campo"><label>Duração mín.</label><input value="30"></div>
+                <div class="campo"><label>Duração máx.</label><input value="60"></div>
+                <div class="campo"><label>Alvo</label><input value="42"></div>
+              </div>
+            </div>
+            <div class="painel">
+              <h3 class="painel__h">Transcrição</h3>
+              <div class="painel__campos">
+                <div class="campo"><label>Whisper</label><select><option>small</option></select></div>
+                <div class="campo"><label>Idioma</label><select><option>auto</option></select></div>
+                <div class="campo"><label>Beam</label><input value="1"></div>
+              </div>
+            </div>
+            <div class="painel">
+              <h3 class="painel__h">Renderização</h3>
+              <div class="painel__campos">
+                <div class="campo"><label>Reframe</label><select><option>focus</option></select></div>
+                <div class="campo"><label>Legenda</label><select><option>karaokê</option></select></div>
+                <div class="campo"><label>CRF</label><input value="20"></div>
+              </div>
+            </div>
+          </div>
+          <p class="mini mudo">Cada painel é o <strong>mesmo componente</strong>. Nenhum sabe da largura da janela — só da própria caixa.</p>
+        </div>
+      </div>
+      <p class="shot__cap">O card deixa de ter largura fixa. Entra numa grade fluida, e a grade interna responde ao próprio container.</p>
+    </div>
+  </div>
+
+  <div class="card espaco-g">
+    <h3 class="card__h">A demonstração: o mesmo card, quatro larguras</h3>
+    <p class="card__sub espaco">Arraste o controle. O markup não muda em nenhum ponto — só a largura da caixa. É <code>@container</code>, e não <code>@media</code>: a pergunta que o CSS faz é “quão larga é a <em>minha</em> caixa?”, não “quão larga é a tela?”.</p>
+
+    <div class="demo espaco">
+      <div class="demo__caixa" id="demo-caixa">
+        <div class="grade-campos">
+          <div class="grade-campos__alvo">
+            <div class="campo"><label>Duração mínima (s)</label><input value="30"></div>
+            <div class="campo"><label>Duração máxima (s)</label><input value="60"></div>
+            <div class="campo"><label>Alvo (s)</label><input value="42"></div>
+            <div class="campo"><label>Nota mínima</label><input value="0"></div>
+            <div class="campo"><label>Silêncio entre clips</label><input value="6"></div>
+            <div class="campo"><label>Motor de análise</label><select><option>hybrid</option></select></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="demo__painel">
+        <div class="campo">
+          <label for="demo-range">Largura da caixa</label>
+          <input id="demo-range" type="range" min="300" max="1148" value="900" step="1">
+        </div>
+        <output id="demo-out" for="demo-range">900 px · 3 colunas</output>
+        <div class="tabela-wrap">
+          <table class="dados">
+            <thead><tr><th scope="col">Largura</th><th scope="col">Colunas</th></tr></thead>
+            <tbody>
+              <tr><td class="num">≥ 640px</td><td class="tab">3</td></tr>
+              <tr><td class="num">420–639px</td><td class="tab">2</td></tr>
+              <tr><td class="num">&lt; 420px</td><td class="tab">1</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="mini mudo">As mesmas três regras, com ou sem <code>@media</code> de página em volta — e valendo também dentro de um modal, de uma gaveta ou de uma grade de 6 colunas.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2 espaco-g">
+    <div class="card">
+      <h3 class="card__h">O que isso apaga</h3>
+      <ul class="marcado espaco">
+        <li>as regras de <code>.field-row.triple</code> que existem <strong>por página</strong></li>
+        <li>4 dos 17 breakpoints — os que só existiam para isso</li>
+        <li>a necessidade de saber de cor em que largura cada tela quebra</li>
+        <li>a regra <code>[data-page="ajustes"] …</code> que existe para desfazer o que o card do Estúdio faz</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 class="card__h">E o <code>&lt;select&gt;</code>?</h3>
+      <p class="card__sub espaco">O painel troca 6 <code>&lt;select&gt;</code> nativos por um <code>&lt;button&gt;</code> + <code>div[role=listbox]</code> — o que dá o dropdown rico com título e descrição. O custo: o <code>&lt;select&gt;</code> fica <code>aria-hidden</code> + <code>tabindex="-1"</code>, e o widget perde busca por digitação, Home/End e o seletor nativo do celular.</p>
+      <p class="card__sub espaco">Com <strong>36 opções</strong> no <em>Modelo de legenda</em>, digitar “po” e pular para “Poppins” é a diferença entre 2 segundos e 12 rolagens. Caminho moderno: <code>appearance: base-select</code> + <code>::picker(select)</code> estiliza o <strong>select nativo</strong>, mantendo teclado, busca por digitação e o picker do sistema — com o dropdown atual como fallback.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 7. TABELAS ===================== -->
+<section id="tabelas" class="pesada">
+  <div class="sec">
+    <span class="sec__num">06</span>
+    <h2 class="sec__h">Tabelas: o componente mais bem feito é o menos usado</h2>
+    <p class="sec__nota">O painel tem <strong>uma</strong> <code>&lt;table&gt;</code>: a prévia da transcrição. E ela é, de longe, o componente mais bem construído do projeto.</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3 class="card__h">O que a tabela da transcrição acerta</h3>
+      <div class="tabela-wrap espaco">
+        <table class="dados">
+          <caption>É assim que ela está hoje — e não precisa mudar.</caption>
+          <thead><tr><th scope="col">Minuto</th><th scope="col" class="num">Dur.</th><th scope="col">Fala</th></tr></thead>
+          <tbody>
+            <tr><td>0:03</td><td class="num">4,2s</td><td>Abertura chocante questionando o vazamento…</td></tr>
+            <tr><td>0:21</td><td class="num">7,8s</td><td>O cara não é o pica das galáxias de tecnologia…</td></tr>
+            <tr><td>0:44</td><td class="num">3,1s</td><td>E aí ninguém explica por que isso importa.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="marcado espaco">
+        <li><code>thead</code> de verdade — não um <code>div</code> fingindo de cabeçalho</li>
+        <li>coluna de duração com <code>white-space: nowrap</code> e alinhada à direita</li>
+        <li>rolagem com altura máxima, sem empurrar a página</li>
+        <li>hover de linha, que dá o rastro de leitura em lista longa</li>
+        <li>largura de 1% na coluna estreita, deixando a fala levar o resto</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3 class="card__h">O que ela deveria ter a mais</h3>
+      <ul class="marcado espaco">
+        <li><code>font-variant-numeric: tabular-nums</code> nos minutos e durações — hoje “1:07” e “11:07” têm larguras diferentes e a coluna dança a cada nova transcrição</li>
+        <li><code>position: sticky</code> no <code>thead</code> — numa lista de 200 falas, o cabeçalho sai de vista e as colunas perdem o nome</li>
+        <li>uma coluna de ação (reproduzir a partir deste minuto)</li>
+        <li><code>&lt;caption&gt;</code> com a contagem — “218 falas · 12m40s transcritos”</li>
+        <li>resumo em texto para leitor de tela, já que a tabela é a informação</li>
+      </ul>
+      <div class="nota nota--ok espaco">
+        Este componente já está no padrão. Ele é o <strong>modelo</strong> para os outros dois lugares onde o painel mostra dados tabulares e usa cards.
+      </div>
+    </div>
+  </div>
+
+  <div class="card espaco-g">
+    <h3 class="card__h">Os dois lugares que pedem tabela</h3>
+    <div class="grid-2 espaco">
+      <div>
+        <h4 style="font-size:var(--t-4); margin-block-end:var(--s-2);">1. A fila de processamento</h4>
+        <p class="card__sub">Hoje: cards, com o estado morando na classe (<code>running</code>/<code>done</code>/<code>fail</code>) e um resumo de 4 números + 5 filtros acima. Para responder “qual job está travado?” é preciso ler 4 cards inteiros.</p>
+        <p class="card__sub espaco">Proposta: a tabela da seção do Estúdio — job, estado, progresso, cortes, tempo, ações. O resumo de 4 números continua (é o “de relance”), mas vira uma <strong>faixa</strong>, não uma grade de cards.</p>
+      </div>
+      <div>
+        <h4 style="font-size:var(--t-4); margin-block-end:var(--s-2);">2. Os resultados da Biblioteca</h4>
+        <p class="card__sub">Hoje: 20 cards de retrato, cada um com capa, shortcode, views e ações em posições ligeiramente diferentes.</p>
+        <p class="card__sub espaco">Proposta: a tabela com coluna de seleção, título, views, tipo e ação. A capa continua — mas como miniatura de 32px na primeira coluna, não como o corpo do card.</p>
+      </div>
+    </div>
+    <div class="nota espaco">
+      <strong>O que não vira tabela:</strong> a galeria de clips. Ali a pessoa está <em>olhando</em> os cortes, não comparando números — o retrato 9:16 é a informação. Ela continua em grade.
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 8. PLANO ===================== -->
+<section id="plano" class="pesada">
+  <div class="sec">
+    <span class="sec__num">07</span>
+    <h2 class="sec__h">Plano de execução</h2>
+    <p class="sec__nota">Em fases, cada uma com resultado visível e verificável. A ordem não é por tamanho — é por <strong>dependência</strong>: as fases 1 e 2 são pré-requisito de todas as outras.</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="card fase">
+      <div class="fase__h"><span class="fase__n">1</span><h3 class="card__h" style="margin:0;">Camadas e tokens</h3></div>
+      <p class="card__sub">Nenhuma mudança visual. Só a fundação que faz o resto ser possível.</p>
+      <ul class="marcado">
+        <li>declarar <code>@layer</code> nas 4 folhas, na mesma ordem</li>
+        <li>tipar os tokens com <code>@property</code></li>
+        <li>esvaziar os 16 <code>!important</code> — cada um vira uma regra na camada certa</li>
+        <li>eliminar os 25 seletores duplicados entre <code>index.css</code> e <code>scrap.css</code></li>
+      </ul>
+      <p class="mini mudo"><strong>Critério de aceite:</strong> as 4 telas renderizam idênticas (comparação de pixel por página), e o <code>test_web_server</code> continua verde.</p>
+    </div>
+
+    <div class="card fase">
+      <div class="fase__h"><span class="fase__n">2</span><h3 class="card__h" style="margin:0;">Adesão à escala</h3></div>
+      <p class="card__sub">89 <code>font-size</code> → 8 degraus. 26 espaçamentos → 8. 34 cores de texto → 3 papéis.</p>
+      <ul class="marcado">
+        <li>substituir cada <code>font-size</code> cru por um token (o mapa é mecânico: o valor mais próximo do degrau)</li>
+        <li>mesma coisa para <code>padding</code>/<code>gap</code>/<code>margin</code></li>
+        <li>substituir os 83 hex por tokens; tom intermediário vira <code>color-mix()</code></li>
+        <li>corrigir <code>#687386</code> e <code>#596274</code> — é o que reprova no contraste</li>
+        <li>subir todo texto a ≥12px (o selo “LOCAL” e os monogramas são os casos extremos)</li>
+      </ul>
+      <p class="mini mudo"><strong>Critério de aceite:</strong> auditoria nova acusa 0 reprovação de contraste, 0 texto &lt;12px, e a contagem de valores distintos cai para ≤12.</p>
+    </div>
+
+    <div class="card fase">
+      <div class="fase__h"><span class="fase__n">3</span><h3 class="card__h" style="margin:0;">Container queries e toque</h3></div>
+      <p class="card__sub">O componente deixa de depender da largura da janela.</p>
+      <ul class="marcado">
+        <li><code>container-type: inline-size</code> nos cards com grade interna</li>
+        <li>trocar as regras de página por <code>@container</code></li>
+        <li>reduzir de 17 para 5 breakpoints (380 / 640 / 900 / 1200 / 1440)</li>
+        <li>levar os 46 alvos de toque a 44px — inputs a 44px, <code>.toggle</code> a 44×44</li>
+      </ul>
+      <p class="mini mudo"><strong>Critério de aceite:</strong> sonda em 10 larguras sem overflow, sem rótulo quebrado, e nenhum alvo abaixo de 24px (piso WCAG 2.5.8).</p>
+    </div>
+
+    <div class="card fase">
+      <div class="fase__h"><span class="fase__n">4</span><h3 class="card__h" style="margin:0;">Estrutura das páginas</h3></div>
+      <p class="card__sub">A mudança que a pessoa sente. Depende de 1–3 estarem prontas.</p>
+      <ul class="marcado">
+        <li><strong>Estúdio:</strong> hero sai, barra de comando entra, fila vira tabela</li>
+        <li><strong>Biblioteca:</strong> grade balanceada, sessão vira disclosure, resultados em tabela</li>
+        <li><strong>Ajustes:</strong> grade fluida de painéis, sem regra por página</li>
+        <li>atalhos internos viram âncoras na própria navegação</li>
+      </ul>
+      <p class="mini mudo"><strong>Critério de aceite:</strong> Estúdio abaixo de 2000px no desktop e 3200px no celular; nenhuma seção com mais de 300px de vazio.</p>
+    </div>
+  </div>
+
+  <div class="card espaco-g">
+    <h3 class="card__h">Riscos, e como cada um é contido</h3>
+    <div class="tabela-wrap espaco">
+      <table class="dados">
+        <thead>
+          <tr><th scope="col">Risco</th><th scope="col">Por que acontece</th><th scope="col">Contenção</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Quebrar os testes de markup</strong></td>
+            <td class="tab">A suíte lê o HTML por regex e por <code>inspect.getsource</code>: ids, níveis de heading, <code>aria-describedby</code> e literais de rota</td>
+            <td class="tab">Fases 1–3 não tocam markup. A fase 4 roda a suíte inteira e compara a lista <code>classname::name</code>, nunca a contagem</td>
+          </tr>
+          <tr>
+            <td><strong>Árvore compartilhada</strong></td>
+            <td class="tab"><code>web/*.css</code> e <code>web/*.js</code> estão sendo editados por outra sessão agora</td>
+            <td class="tab">Fase 1–3 em arquivos novos (<code>tokens.css</code>), com o <code>@layer</code> entrando por último — um commit por vez, arquivo por arquivo</td>
+          </tr>
+          <tr>
+            <td><strong>Perda de decisões documentadas</strong></td>
+            <td class="tab">Os comentários do CSS registram medições e o porquê de cada escolha — há regras que parecem erro e são intenção</td>
+            <td class="tab">Cada comentário que explica uma medida é <strong>movido junto</strong> com a regra, nunca apagado. Regra cuja justificativa não se entende fica como está</td>
+          </tr>
+          <tr>
+            <td><strong>Mudança visual indesejada</strong></td>
+            <td class="tab">A fase 2 mexe em toda a tipografia de uma vez</td>
+            <td class="tab">Captura das 4 telas em 3 larguras antes e depois; a comparação é a revisão</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="nota nota--ok espaco-g">
+    <strong>Nada aqui é reescrita.</strong> O painel tem 11.890 linhas de HTML/CSS/JS, uma suíte de ~1500
+    testes, comentários que registram medições e uma identidade visual coerente. A proposta usa tudo isso:
+    a fase 1 é arquitetura, a 2 é obediência ao design que já existe, a 3 é portabilidade do componente, e
+    só a 4 muda o que a pessoa vê — depois que as três anteriores garantiram que dá para mudar sem quebrar.
+  </div>
+</section>
+
+</main>
+
+<footer style="border-block-start:1px solid var(--line); padding:var(--s-6) var(--gutter); font-size:var(--t-2); color:var(--fg-3);">
+  <div style="max-width:var(--wrap); margin-inline:auto; display:flex; gap:var(--s-4); flex-wrap:wrap; justify-content:space-between;">
+    <span>Revisão visual e proposta de refatoração · Viral Clipper · 08/10/2026</span>
+    <span>Medido em <code>127.0.0.1:7755</code> a 1440 / 1024 / 390px · 12 capturas · 6 sondas</span>
+  </div>
+</footer>
+
+<script>
+// Único script do documento: a demonstração de container query.
+// Em 6 linhas, porque o CSS faz o trabalho — o JS só move a largura.
+const caixa = document.getElementById('demo-caixa');
+const range = document.getElementById('demo-range');
+const out = document.getElementById('demo-out');
+function atualiza() {
+  const w = +range.value;
+  caixa.style.setProperty('--demo-w', w + 'px');
+  // A leitura tem de vir DEPOIS do layout assentar. `getComputedStyle` força
+  // reflow, mas o valor de `grid-template-columns` de uma consulta de
+  // container só é final quando o tamanho do container é final — daí o rAF.
+  requestAnimationFrame(() => {
+    const alvo = caixa.querySelector('.grade-campos__alvo');
+    const n = getComputedStyle(alvo).gridTemplateColumns.split(' ').length;
+    out.textContent = w + ' px · ' + n + (n === 1 ? ' coluna' : ' colunas');
+  });
+}
+range.addEventListener('input', atualiza);
+atualiza();
+</script>
+</body>
+</html>

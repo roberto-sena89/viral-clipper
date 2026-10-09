@@ -17,7 +17,6 @@
     // Enquanto for false, o autosave fica desligado: cada tecla digitada
     // viraria um PUT 404.
     canSave: false,
-    curatorPromptPath: '',
     saving: false,
   };
 
@@ -379,60 +378,10 @@
       r.path ? 'Gravado em ' + r.path : 'Ajustes vindos do servidor.');
   }
 
-  // ---------- o prompt ----------
-  // O texto, os rotulos e os estados desta secao sao os MESMOS da pagina
-  // Estúdio: o card existe nas duas e um usuario que alterna entre elas nao
-  // pode ver dois textos diferentes para o mesmo botao. A Ajustes e a via
-  // canonica (e onde se salva em disco pelo botao); o Estúdio le o mesmo
-  // arquivo e mostra as mesmas frases.
-  //
-  // A cor do estado vem de `data-kind` e nao de `style.color`: o aviso de erro
-  // e' o mesmo padrao do resto do painel, e um `style` escrito aqui e' uma
-  // terceira copia da paleta (o token, a folha e a string).
-  function setPromptStatus(message, kind) {
-    const el = $('#curator-prompt-status');
-    el.textContent = message || '';
-    el.dataset.kind = kind || '';
-  }
-
-  async function loadCuratorPrompt() {
-    setPromptStatus('Lendo…');
-    const r = await api('/prompts/curador');
-    if (r.offline || r.error) {
-      setPromptStatus('Servidor fora do ar: o prompt não pode ser lido nem salvo.', 'erro');
-      return;
-    }
-    $('#curator-prompt').value = r.text || '';
-    $('#curator-prompt-path').value = r.path || '';
-    state.curatorPromptPath = r.path || '';
-    setPromptStatus(
-      r.exists ? 'Prompt carregado do arquivo.' : 'O arquivo ainda não existe — salve para criá-lo.',
-      'ok',
-    );
-  }
-
-  async function saveCuratorPrompt() {
-    const text = $('#curator-prompt').value;
-    if (!text.trim()) {
-      setPromptStatus('O prompt não pode ficar vazio.', 'erro');
-      return;
-    }
-    setPromptStatus('Salvando…');
-    const r = await api('/prompts/curador', {
-      // PUT: o corpo e' o prompt inteiro.
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text }),
-    });
-    if (r.offline || r.error) {
-      setPromptStatus('Não foi possível salvar: ' + (r.error || 'servidor fora do ar'), 'erro');
-      return;
-    }
-    state.curatorPromptPath = r.path || state.curatorPromptPath;
-    $('#curator-prompt-path').value = state.curatorPromptPath;
-    setPromptStatus('Salvo em ' + (r.path || 'arquivo') + '.', 'ok');
-    toast('Prompt do curador salvo.', 'ok');
-  }
+  // O editor do prompt do curador NAO mora mais aqui. `prompts/curador.txt`
+  // ganhou dono unico no Estúdio (etapa 3): o card, os botoes e o status saem
+  // de `index.html`/`index.js` e nada nesta pagina le `#curator-prompt*`. O
+  // atalho "04 Prompt do curador" no topo leva para la.
 
   // ---------- transcricao colada ----------
   // A tabela de conferencia mora aqui desde que o campo migrou da pagina
@@ -527,9 +476,6 @@
 
   $('#btn-save').addEventListener('click', () => saveSettings(false));
   $('#btn-save-side').addEventListener('click', () => saveSettings(false));
-
-  $('#btn-prompt-load').addEventListener('click', loadCuratorPrompt);
-  $('#btn-prompt-save').addEventListener('click', saveCuratorPrompt);
 
   // O colar dispara a organizacao sozinho, num setTimeout(0) para o valor ja
   // estar no textarea quando o handler roda -- o evento `paste` acontece ANTES
@@ -628,6 +574,5 @@
   // ---------- partida ----------
   renderSummary();
   loadSettings();
-  loadCuratorPrompt();
   marcarSecaoAtual();
 })();

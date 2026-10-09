@@ -18,6 +18,13 @@
     // (o botao #btn-library alterna entre as duas listas).
     galleryQuery: '',
     galleryMode: 'job',
+    // A vista ativa do Estudio (`config` | `resultados`) e a etapa ativa de
+    // Configurar (1..4). Vivem no state, e nao no DOM, pelo mesmo motivo do
+    // filtro da fila: o estado manda e a tela e' consequencia — assim um clique
+    // e um deep-link (`?vista=` / `?etapa=`) entram pelo MESMO caminho, em vez
+    // de virarem dois comportamentos que divergem no primeiro ajuste.
+    view: 'config',
+    etapa: 1,
     // Caminho do arquivo de prompt do curador e se ele ja existe em disco. Os
     // dois vem do servidor: o painel nunca inventa o caminho, porque quem
     // decide onde o arquivo mora e o servidor (CURATOR_PROMPT_PATH).
@@ -776,6 +783,38 @@ count: $('#count').value.trim() === ''
     refreshRankerTopNHint();
   }
 
+  // Os rotulos pt-BR do RENDER, pela mesma razao do ENGINE_LABELS: a ficha do
+  // Estudio LE o ajuste, nao o edita, e um valor tecnico cru na tela ("focus",
+  // "block") e' o mesmo defeito de ler "hybrid" aqui e "Hybrid" em Ajustes.
+  //
+  // O que NAO vem para ca' e' a lista de modelos de legenda: ela tem 36
+  // entradas e mora em ajustes.html (`data-title`), que e' quem EDITA. Copiar
+  // 36 nomes para ca' criaria a segunda fonte de verdade que este projeto
+  // combate — duas listas que divergem no primeiro preset novo. A ficha diz o
+  // COMPORTAMENTO da legenda (tres estados) e o reframe (quatro), que sao
+  // vocabulario DESTA tela.
+  const LAYOUT_WORDS = { focus: 'Foco', center: 'Centro', blur: 'Desfoque', fit: 'Barras' };
+  const CAPTION_WORDS = {
+    karaoke: 'palavra destacada',
+    block: 'linha em bloco',
+    none: 'sem legendas',
+  };
+
+  function renderRenderSummary() {
+    const el = $('#render-summary-value');
+    if (!el) return;
+    const a = state.ajustes;
+    const partes = [LAYOUT_WORDS[a.layout] || a.layout || '—'];
+    partes.push(CAPTION_WORDS[a.caption_style] || a.caption_style || '—');
+    partes.push('CRF ' + fmtSeconds(a.crf));
+    // `font_size` vazio significa "herda do modelo": mostrar "fonte —" seria
+    // descrever uma escolha que ninguem fez.
+    if (a.font_size !== null && a.font_size !== undefined) {
+      partes.push('fonte ' + fmtSeconds(a.font_size));
+    }
+    el.textContent = partes.join(' · ');
+  }
+
   // Com `count = 0` ("quantidade automatica"), o curador so consegue escolher
   // entre as janelas que julgou: as demais vao para score -1 e o piso relativo
   // as descarta. Ou seja, `ranker_top_n` deixa de ser um dial de custo e vira o
@@ -801,6 +840,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     if (r.offline || r.error) return;
     applyAjustes(r.settings || {});
     renderSelectionSummary();
+    renderRenderSummary();
   }
 
   // ---------- curador: provedores e prompt ----------
@@ -1934,6 +1974,11 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     $$('#btn-run-side, #btn-plan, #btn-render').forEach((b) => b.disabled = true);
     setStatus('running', planOnly ? 'Simulando…' : 'Renderizando…');
     startTimer();
+    // O detalhe abre junto com o run: as etapas nomeadas e o registro tecnico
+    // sao o que a pessoa quer ver enquanto espera, e cobrar um clique a mais
+    // para ver o que esta' acontecendo e' o oposto do que a barra existe para
+    // fazer. Fechar continua sendo escolha dela — nada aqui fecha sozinho.
+    abrirDetalheDaExecucao(true);
     const comando = '$ ' + cliCommand(o);
     log(comando);
     // Registra o estado atual da pasta para separar os cortes deste job dos
@@ -2188,6 +2233,146 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     }
   }
 
+  // ---------- vistas e etapas do Estudio ----------
+  //
+  // Duas VISTAS (Configurar | Resultados) e, dentro de Configurar, quatro
+  // ETAPAS. Nenhuma rota nova: a troca e' um `hidden` ligado por JS, entao o
+  // contrato de rotas (`ApiNamespaceTests.PAGES`) fica intacto e o servidor
+  // nunca soube que isso existe.
+  //
+  // O estado manda e a tela e' consequencia. Um clique e um deep-link entram
+  // pelo mesmo caminho, entao nao ha dois comportamentos para a mesma coisa —
+  // era o defeito classico de "o botao funciona, o link colado nao".
+  const VIEWS = ['config', 'resultados'];
+  const ETAPAS = [1, 2, 3, 4];
+
+  // O endereco guarda o LUGAR, nao o estado inteiro: so' o que difere do
+  // padrao entra na query. Assim `/` continua limpo na primeira visita e
+  // `?etapa=3` continua legivel quando alguem cola o link. O `url=` do handoff
+  // da Biblioteca e o `#hash` de uma ancora passam intactos: quem mexe num nao
+  // pode apagar o outro, e o hash e' escrito de volta de proposito — um
+  // `replaceState` sem ele apagaria a ancora que a pessoa acabou de clicar.
+  function syncEndereco() {
+    const params = new URLSearchParams(window.location.search);
+    if (state.view === VIEWS[0]) params.delete('vista');
+    else params.set('vista', state.view);
+    if (state.etapa === ETAPAS[0]) params.delete('etapa');
+    else params.set('etapa', String(state.etapa));
+    const query = params.toString();
+    history.replaceState(null, '', window.location.pathname
+      + (query ? '?' + query : '') + window.location.hash);
+  }
+
+  function setView(nome, opts) {
+    const alvo = VIEWS.indexOf(nome) >= 0 ? nome : VIEWS[0];
+    state.view = alvo;
+    VIEWS.forEach((v) => {
+      const painel = document.getElementById(v);
+      if (painel) painel.hidden = v !== alvo;
+    });
+    $$('.view-tab').forEach((aba) => {
+      const ativa = aba.dataset.view === alvo;
+      aba.setAttribute('aria-selected', String(ativa));
+      // O padrao ARIA de `tablist` deixa SO' a aba ativa no fluxo do Tab; as
+      // outras se alcancam pelas setas. Sem o `tabIndex`, as duas abas ficam
+      // paradas no caminho do teclado e o Tab ganha um passo que nao faz nada.
+      aba.tabIndex = ativa ? 0 : -1;
+    });
+    if (!opts || opts.endereco !== false) syncEndereco();
+  }
+
+  function setEtapa(n, opts) {
+    const numero = Number(n);
+    const alvo = ETAPAS.indexOf(numero) >= 0 ? numero : ETAPAS[0];
+    state.etapa = alvo;
+    ETAPAS.forEach((e) => {
+      const painel = document.getElementById('etapa-' + e);
+      if (painel) painel.hidden = e !== alvo;
+    });
+    // `aria-current="step"` e' a posicao na ESCADA, nao um "concluido": nao ha
+    // validacao entre as etapas (a unica exigencia de verdade e' a URL, e quem
+    // cobra ela e' o botao de gerar), entao marcar "pronto" seria afirmar algo
+    // que a tela nao tem como verificar.
+    $$('.etapa-tab').forEach((aba) => {
+      aba.setAttribute('aria-current', Number(aba.dataset.etapa) === alvo ? 'step' : 'false');
+    });
+    if (!opts || opts.endereco !== false) syncEndereco();
+  }
+
+  function lerEndereco() {
+    const params = new URLSearchParams(window.location.search);
+    const vista = (params.get('vista') || '').trim();
+    const etapa = parseInt(params.get('etapa') || '', 10);
+    setView(vista || VIEWS[0], { endereco: false });
+    setEtapa(Number.isFinite(etapa) ? etapa : ETAPAS[0], { endereco: false });
+  }
+
+  // O padrao ARIA de `tablist`: as setas andam entre as abas (com volta nas
+  // pontas) e Home/End vao as extremas. E' o que devolve a operacao por teclado
+  // que o `tabIndex` acima tirou do fluxo do Tab.
+  function setasDaTablist(nav, botoes, ativar) {
+    if (!nav) return;
+    nav.addEventListener('keydown', (ev) => {
+      const atual = botoes.indexOf(document.activeElement);
+      if (atual < 0) return;
+      let destino = null;
+      if (ev.key === 'ArrowRight' || ev.key === 'ArrowDown') destino = (atual + 1) % botoes.length;
+      else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowUp') destino = (atual - 1 + botoes.length) % botoes.length;
+      else if (ev.key === 'Home') destino = 0;
+      else if (ev.key === 'End') destino = botoes.length - 1;
+      if (destino === null) return;
+      ev.preventDefault();
+      ativar(botoes[destino]);
+      botoes[destino].focus();
+    });
+  }
+
+  // A barra de acao e' a UNICA parte da pagina que atravessa as duas vistas: o
+  // botao que produz o corte e o estado do trabalho ficam a vista nas duas.
+  // O detalhe (etapas e registro tecnico) nasce recolhido, senao a barra vira
+  // uma parede de log por cima da configuracao — e quem so' quer apertar
+  // "Gerar cortes" nao precisa ver o diagnostico para isso.
+  function abrirDetalheDaExecucao(aberto) {
+    const botao = $('#action-bar-toggle');
+    const detalhe = $('#action-bar-detail');
+    if (!botao || !detalhe) return;
+    detalhe.hidden = !aberto;
+    botao.setAttribute('aria-expanded', String(!!aberto));
+    const rotulo = botao.querySelector('.action-bar-toggle-text');
+    if (rotulo) rotulo.textContent = aberto ? 'Ocultar detalhes' : 'Detalhes';
+  }
+
+  // A escada das etapas e a barra de vistas sao NAVEGACAO, nao um portao: cada
+  // botao leva a qualquer destino, e a ordem existe para dar um caminho, nao
+  // uma fila. Um wizard que exigisse a etapa 1 antes da 2 contradiria a
+  // propria abertura da pagina ("so' o link e' obrigatorio").
+  $$('.view-tab').forEach((aba) => {
+    aba.addEventListener('click', () => setView(aba.dataset.view));
+  });
+  $$('.etapa-tab').forEach((aba) => {
+    aba.addEventListener('click', () => setEtapa(aba.dataset.etapa));
+  });
+  setasDaTablist($('.views-nav'), $$('.view-tab'), (aba) => setView(aba.dataset.view));
+  setasDaTablist($('.etapa-nav'), $$('.etapa-tab'), (aba) => setEtapa(aba.dataset.etapa));
+
+  // Os atalhos da abertura trocam a vista ANTES de rolar: dois dos tres
+  // destinos moram na vista Resultados, que nasce `hidden`, e o navegador rola
+  // ate' um elemento oculto sem sair do lugar. O `hashchange` que o proprio
+  // salto provoca reescreve o endereco depois, ja' com o hash novo — por isso
+  // `syncEndereco` tambem esta ouvindo o evento.
+  $$('[data-ir-vista]').forEach((atalho) => {
+    atalho.addEventListener('click', () => setView(atalho.dataset.irVista));
+  });
+
+  const toggleDetalhe = $('#action-bar-toggle');
+  if (toggleDetalhe) {
+    toggleDetalhe.addEventListener('click', () => {
+      const detalhe = $('#action-bar-detail');
+      abrirDetalheDaExecucao(!!(detalhe && detalhe.hidden));
+    });
+  }
+  window.addEventListener('hashchange', syncEndereco);
+
   // ---------- eventos ----------
   // O run de um video tem UM botao: `#btn-run-side`, no card de Execucao, ao
   // lado de "Simular sem renderizar". O header teve um identico e saiu — duas
@@ -2240,6 +2425,12 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   // mais nenhuma copia da lista de rotas -- nem os `liga('btn-rail-*')` que
   // havia aqui.
   $('#hero-cta').addEventListener('click', () => {
+    // O CTA promete "comecar": ele volta para Configurar e para a etapa 1 antes
+    // de rolar. Na vista Resultados o `#config` esta' oculto — rolar ate' um
+    // elemento `hidden` nao sai do lugar — e na etapa 3 o `#url`, que ele foca,
+    // tambem esta' oculto.
+    setView('config');
+    setEtapa(1);
     document.getElementById('config').scrollIntoView({ behavior: 'smooth' });
     setTimeout(() => $('#url').focus(), 500);
   });
@@ -2260,7 +2451,12 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     field.dispatchEvent(new Event('input', { bubbles: true }));
     params.delete('url');
     const query = params.toString();
-    history.replaceState(null, '', window.location.pathname + (query ? '?' + query : ''));
+    // O `#hash` e' escrito de volta: sem ele, chegar de um atalho
+    // (`/?url=X#queue`) perdia a ancora no instante em que o handoff consumia o
+    // `url`. Os parametros que nao sao o `url` tambem ficam — `vista` e `etapa`
+    // inclusos, que sao de quem chegou, nao deste codigo.
+    history.replaceState(null, '', window.location.pathname
+      + (query ? '?' + query : '') + window.location.hash);
     toast('Vídeo recebido da página Scrap.', 'ok');
   })();
 
@@ -2415,10 +2611,18 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   startPolling();
   poll();
 
+  // O endereco e' lido antes de qualquer pintura: `?vista=resultados` ou
+  // `?etapa=3` precisam estar aplicados de saída, senao a pessoa ve a vista
+  // padrao aparecer e ser trocada logo depois. `lerEndereco` NAO reescreve o
+  // endereco (passa `endereco: false`) — quem chegou com um link colado tem
+  // direito de ver o link dele intacto na barra.
+  lerEndereco();
+
   // Os 6 parametros de selecao vem de /ajustes.json; sem esperar por eles, um
   // clique em Rodar logo apos o load mandaria os defaults do HTML em vez do
   // que esta salvo. A leitura e rapida (arquivo local) e nao bloqueia a tela.
   renderSelectionSummary();
+  renderRenderSummary();
   loadAjustes();
 
   bindQueueFilters();

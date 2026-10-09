@@ -2559,13 +2559,13 @@ class BreakpointScaleTests(unittest.TestCase):
         720: "select-rich, auth-block",
         760: "job-card",
         768: "section-nav",
-        920: "rail -> gaveta (body)",
-        960: "hero, path-picker, brand",
+        920: "rail -> gaveta (body), etapa-list, action-bar",
+        960: "hero, brand, header-context",
         980: "ajustes-abertura, scrap-welcome",
         981: "scrap-grid (faixa do meio)",
-        1100: "studio-pair, main-grid",
+        1100: "etapa-list (escada das etapas)",
         1150: "scrap tablist",
-        1160: "field-row.triple, studio-welcome",
+        1160: "studio-welcome, main-grid (gap)",
         1180: "scrap-grid",
         1279: "scrap-grid (teto da faixa do meio)",
         1280: "main-grid do ajustes, scrap-grid (faixa larga)",
@@ -3168,6 +3168,16 @@ class RenderedMarkupTests(unittest.TestCase):
             caminho = server.WEB_DIR / folha
             if caminho.exists():
                 css += caminho.read_text(encoding="utf-8")
+        #: Os COMENTARIOS saem antes da varredura, e este `sub` e' a diferenca
+        #: entre um teste honesto e um que passa por acidente. `definidas` e'
+        #: um `re.findall` de `.nome` sobre o texto CRU, entao um comentario que
+        #: CITASSE uma classe a "definia" -- e quatro classes emitidas pelo
+        #: Estudio (`main-head`, `etapa-nav`, `card-fonte`, `action-bar-detail`)
+        #: so' apareciam em comentario. Reescrever um comentario derrubaria o
+        #: teste sem nada ter mudado no layout. E' a mesma armadilha que ja' fez
+        #: o `HeroSectionTests` contar quatro atalhos no hero por causa de um
+        #: `href="#..."` escrito dentro de um comentario.
+        css = re.sub(r"/\*.*?\*/", " ", css, flags=re.S)
         #: Os nomes de classe DEFINIDOS no CSS (`.nome`).
         definidas = set(re.findall(r"\.([A-Za-z][A-Za-z0-9_-]*)", css))
         #: Os nomes de classe que o cromo EMITE no DOM renderizado.
@@ -3188,6 +3198,15 @@ class RenderedMarkupTests(unittest.TestCase):
             "ajustes-abertura__texto", "clips-grid", "clips-status",
             "execution-progress-message", "publicar-lista", "resumo-card",
             "studio-welcome-copy", "sub-heading", "summary-list",
+            # Ganchos ESTRUTURAIS do Estudio. Existem no DOM para o leitor de
+            # tela e para o JS, e herdam o layout do PAI: o `gap` do
+            # `.main-grid` separa o `.main-head` do `.etapa-nav`; o `.card`
+            # veste o `.card-fonte`; o `.execution-card` (flex-column) empilha o
+            # `.action-bar-detail` abaixo da linha de estado. Nenhum precisa de
+            # regra propria -- mas TODOS precisam estar aqui, senao a varredura
+            # SEM comentario os acusa. Medidos no navegador junto com o resto do
+            # Estudio (1709px de altura, uma etapa visivel por vez).
+            "action-bar-detail", "card-fonte", "etapa-nav", "main-head",
         }
         faltando = sorted(emitidas - definidas - toleradas)
         self.assertEqual(
@@ -5612,417 +5631,481 @@ class UserProviderCardTests(unittest.TestCase):
         self.assertIn("no-key", corpo)
 
 
-class BodyGridLayoutTests(unittest.TestCase):
-    """O corpo do Estudio: a grade 2x2 que ESTICA, sem deixar vao.
+class EstudioEtapasTests(unittest.TestCase):
+    """O corpo do Estudio: duas VISTAS, quatro ETAPAS, uma barra de acao.
 
-    Historico das mudancas de forma:
+    Historico das mudancas de forma — o mesmo corpo, quatro desenhos:
 
-    1. Era UMA coluna (788px) com tudo empilhado mais um aside de 340px so com
-       o prompt — a coluna curta ficava ~1350px mais baixa e o vazio aparecia.
-    2. Virou TRES colunas iguais; a do meio (Curador 605 + Provedores 886 =
-       1537px) ficou ~870px mais alta que a do Prompt (667px).
-    3. Virou uma grade 2x2: `fonte | exec` na linha 1 e `curador | prompt` na
-       linha 2.
-    4. TRES pedidos do Sr. Sena em 2026-10-07, na ordem em que chegaram:
-       (a) o Prompt PROXIMO da Execucao; (b) o Curador ABAIXO DO FONTE e
-       alinhado ao Prompt; (c) "nao deixe nenhum espaco vazio na pagina".
-       (a) e (b) foram perseguidos mexendo nas areas — o Fonte passou a cobrir
-       duas faixas, o Prompt esticou por duas, o Curador desceu para a largura
-       toda. Cada arranjo matava um vao e abria outro: no ultimo, a coluna da
-       ESQUERDA terminava em 2029px e a da direita em 1118px — 911px de buraco
-       embaixo do Prompt, que era exatamente a reclamacao de (c).
-       A solucao nao estava nas areas e sim em `align-items`: a grade volta a
-       ser a 2x2 SIMPLES (que ja atendia (a) e (b) de uma vez) e ESTICA as
-       celulas. As duas colunas terminam na mesma linha.
+    1. UMA coluna (788px) com tudo empilhado mais um aside de 340px so' com o
+       prompt: a coluna curta ficava ~1350px mais baixa e o vazio aparecia.
+    2. TRES colunas iguais; a do meio ficou ~870px mais alta que a do Prompt.
+    3. Uma grade 2x2 (`fonte | exec` / `curador | prompt`) com
+       `align-items: stretch` para matar um vao medido de 911px.
+    4. Duas VISTAS, com quatro ETAPAS dentro da primeira (esta).
 
-    O que este teste trava NAO e a largura (isso e medicao de navegador, feita
-    no `estudio_grid.js`) e sim a ARVORE, a ORDEM e as duas regras de CSS que
-    sustentam o "sem vao": `align-items: stretch` e a corrente de `flex: 1` da
-    celula ate o card. Trocar o aninhamento muda o layout em silencio — o
-    navegador conserta HTML malformado e uma `grid-area` errada nao da erro.
+    O salto de 3 para 4 nao foi de geometria. A 2x2 tentava resolver por
+    ARRANJO um problema de QUANTIDADE: nove secoes ficavam visiveis ao mesmo
+    tempo, entao a fila — que e' o RESULTADO do trabalho — estava a uma rolagem
+    longa do botao que a produz, e o formulario dividia a atencao com o
+    resultado de um job que talvez nem estivesse rodando. Um painel por vez
+    resolve por ausencia de vao, e a barra de acao atravessa as duas vistas
+    para o botao nunca sair de perto.
+
+    O que este teste trava NAO e' a largura (isso e' medicao de navegador, em
+    `sticky-probe/estudio_varredura.js`) e sim a ARVORE, a ORDEM, o ESTADO
+    inicial e as regras de CSS que sustentam a troca. Trocar o aninhamento muda
+    o layout em silencio: o navegador conserta HTML malformado, e um `hidden`
+    que PERDE para uma classe nao da' erro — da' quatro paineis empilhados. Foi
+    exatamente o que aconteceu na primeira versao desta reorganizacao, e o
+    teste que fecha essa porta e'
+    `test_the_hidden_rule_beats_the_panel_display`.
     """
 
-    # As quatro areas, na ordem em que o pedido as quer no documento.
-    CELULAS = ("studio-cell-fonte", "studio-cell-exec",
-               "studio-cell-curador", "studio-cell-prompt")
+    VISTAS = ("config", "resultados")
+    ETAPAS = ("1", "2", "3", "4")
 
     @classmethod
     def setUpClass(cls):
-        cls.html = page_source("index.html")
+        # Os tres arquivos CRUS, e nao `page_source`: aquele helper concatena
+        # html + css + js numa string so', e as contagens daqui precisam saber
+        # em qual arquivo cada coisa mora — `etapa` aparece na folha E no
+        # markup, e `class="etapa"` so' no markup.
+        cls.html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
         cls.css = (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
+        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+
+    # --------------------------------------------------------------- helpers
 
     def _sem_comentarios(self):
         """O HTML sem os comentarios `<!-- … -->`.
 
-        Eles citam markup e quebrariam a contagem de `</div>`; tirar antes de
-        contar e a base de todo o resto.
+        Eles citam markup (`class=`, `id=`) e quebrariam toda contagem deste
+        teste. Nao e' hipotese: um comentario que citava `href="#queue"` ja'
+        fez `HeroSectionTests` contar quatro atalhos onde havia tres.
         """
         return re.sub(r"<!--.*?-->", "", self.html, flags=re.S)
 
-    def _bloco_de(self, classe, corpo=None):
-        """O `<div class="{classe}">` inteiro, do abre ao fecha que o casa.
+    def _abre(self, alvo, corpo=None):
+        """A tag de ABERTURA que casa com `alvo`, do `<` ate' o `>`.
 
-        `.*?` nao serve: o primeiro `</div>` que aparece ja nao e o do no. Aqui
-        acha-se o abre pela classe, conta-se a profundidade `<div>`/`</div>` ate
-        voltar a zero e devolve-se o recorte fechado — o unico jeito honesto de
-        saber onde um no aninhado termina.
+        E' o que se quer para ler atributos (`hidden`, `role`, `aria-*`) sem
+        tropecar no corpo do elemento.
         """
         corpo = self._sem_comentarios() if corpo is None else corpo
-        alvo = f'class="{classe}"'
+        i = corpo.index(alvo)
+        ini = corpo.rindex("<", 0, i)
+        return corpo[ini:corpo.index(">", ini) + 1]
+
+    def _bloco(self, alvo, corpo=None):
+        """O elemento que casa com `alvo`, do abre ao fecha balanceado.
+
+        `.*?` nao serve: o primeiro `</div>` que aparece ja' nao e' o do no'.
+        O nome da tag sai do proprio recorte — o `alvo` pode casar com um
+        `<section>`, um `<div>` ou um `<nav>` — e a contagem e' da MESMA tag,
+        senao fechar um `<section>` pararia no primeiro `</div>` interno.
+        """
+        corpo = self._sem_comentarios() if corpo is None else corpo
         if alvo not in corpo:
             raise AssertionError(f"o bloco `{alvo}` sumiu do index.html")
         i = corpo.index(alvo)
-        ini = corpo.rindex("<div", 0, i)
+        ini = corpo.rindex("<", 0, i)
+        m = re.match(r"<([a-zA-Z][\w-]*)", corpo[ini:])
+        if not m:
+            raise AssertionError(f"nao achei a tag que abre `{alvo}`")
+        tag = m.group(1)
         depth = 0
-        for m in re.finditer(r"<div\b|</div>", corpo[ini:]):
-            depth += 1 if m.group(0) == "<div" else -1
+        for mm in re.finditer(r"<%s\b|</%s>" % (tag, tag), corpo[ini:]):
+            depth += -1 if mm.group(0).startswith("</") else 1
             if depth == 0:
-                return corpo[ini:ini + m.end()]
+                return corpo[ini:ini + mm.end()]
         raise AssertionError(f"o bloco `{alvo}` nunca fecha")
 
-    def _itens_do_grid(self):
-        """Os filhos diretos do `.main-grid`, em ordem.
+    def _ids(self):
+        return set(re.findall(r"\sid=\"([^\"]+)\"", self.html))
 
-        O `<form>` conta como item porque nao e `<div>` (a varredura de
-        profundidade so ve `<div>`/`</div>`); as QUATRO celulas vivem dentro
-        dele e sobem para o grid via `display: contents`, entao a lista de
-        filhos do grid na arvore HTML inclui o form e NAO as celulas — que e
-        exatamente o que este teste precisa distinguir.
+    def _faixas(self, largura):
+        """Todos os corpos de `@media (max-width: {largura}px)` do index.css."""
+        return re.findall(
+            r"@media \(max-width: %dpx\)\s*\{((?:[^{}]|\{[^}]*\})*)\n\}" % largura,
+            self.css, re.S)
+
+    # -------------------------------------------------------- as duas vistas
+
+    def test_the_two_views_exist_and_only_one_starts_visible(self):
+        """`#config` nasce aberta; `#resultados` nasce `hidden`."""
+        for vista in self.VISTAS:
+            with self.subTest(vista=vista):
+                self.assertIn(f'id="{vista}"', self.html)
+                self.assertIn('role="tabpanel"', self._abre(f'id="{vista}"'))
+        self.assertNotIn("hidden", self._abre('id="config"'))
+        self.assertIn("hidden", self._abre('id="resultados"'))
+
+    def test_the_two_view_tabs_declare_the_pair(self):
+        """Duas abas `role="tab"`, uma por vista, ligadas por `aria-controls`.
+
+        `aria-selected` e' o estado, e nao a classe: e' o que o leitor de tela
+        anuncia E o que o CSS pinta (`[aria-selected="true"]`), entao a cor e o
+        anuncio nao podem divergir — so' existe uma fonte.
         """
-        bloco = self._bloco_de("main-grid")
-        inner = bloco[bloco.index(">") + 1:bloco.rindex("</div>")]
-        itens, depth = [], 0
-        for linha in inner.split("\n"):
-            faixa = linha.strip()
-            abre_div = len(re.findall(r"<div\b", linha))
-            antes = depth
-            depth += abre_div - len(re.findall(r"</div>", linha))
-            if antes == 0 and (abre_div or faixa.startswith("<form")):
-                itens.append(faixa)
-        return itens
+        abas = re.findall(r'<button class="view-tab"[^>]*>', self._sem_comentarios())
+        self.assertEqual(len(abas), len(self.VISTAS), f"abas de vista: {abas}")
+        for vista, aba in zip(self.VISTAS, abas):
+            with self.subTest(vista=vista):
+                self.assertIn('role="tab"', aba)
+                self.assertIn(f'data-view="{vista}"', aba)
+                self.assertIn(f'aria-controls="{vista}"', aba)
+        self.assertIn('aria-selected="true"', abas[0])
+        self.assertIn('aria-selected="false"', abas[1])
 
-    # ---------------------------------------------------------------- arvore
+    def test_the_two_panels_are_labelled_by_their_tab(self):
+        for vista in self.VISTAS:
+            with self.subTest(vista=vista):
+                self.assertIn(f'aria-labelledby="tab-{vista}"', self._abre(f'id="{vista}"'))
+                self.assertIn(f'id="tab-{vista}"', self.html)
 
-    def test_the_cells_are_the_four_expected_ones(self):
-        """Cada celula existe UMA vez — a base de tudo o resto neste teste."""
-        for celula in self.CELULAS:
-            with self.subTest(celula=celula):
-                self.assertEqual(
-                    self.html.count(f'class="studio-cell {celula}"'), 1,
-                    f"a celula `{celula}` nao aparece exatamente 1 vez")
+    # -------------------------------------------------------- as quatro etapas
 
-    def test_fonte_and_execucao_are_two_sibling_cells(self):
-        """Fonte e Execucao sao celulas IRMAS: o par entrada/saida.
+    def test_the_four_etapas_exist_and_only_the_first_starts_visible(self):
+        """Um painel por vez: so' a etapa 1 nasce sem `hidden`.
 
-        Empilha-las devolve o problema antigo: preencher os campos e rolar a
-        pagina para achar o botao. Irmas, o CSS as poem lado a lado.
+        A etapa 1 nao tem `hidden` no markup de proposito — o estado inicial e'
+        o proprio HTML, entao a pagina ja' nasce certa e o JS so' precisa
+        trocar. Marcar as quatro como ocultas e abrir a primeira por script
+        deixaria um quadro sem painel nenhum.
         """
-        fonte = self._bloco_de("studio-cell studio-cell-fonte")
-        exec_ = self._bloco_de("studio-cell studio-cell-exec")
-        self.assertIn("card-fonte", fonte)
-        self.assertIn("execution-card", exec_)
-        # uma nao contem a outra
-        self.assertNotIn("execution-card", fonte)
-        self.assertNotIn("card-fonte", exec_)
+        for n in self.ETAPAS:
+            with self.subTest(etapa=n):
+                abre = self._abre(f'id="etapa-{n}"')
+                self.assertIn(f'data-etapa="{n}"', abre)
+                self.assertIn(f'aria-labelledby="etapa-{n}-titulo"', abre)
+                self.assertIn(f'id="etapa-{n}-titulo"', self.html)
+                self.assertEqual("hidden" in abre, n != "1",
+                                 f"o estado inicial da etapa {n} mudou")
 
-    def test_the_curador_cell_carries_the_curador_and_the_providers(self):
-        """Curador e Meus provedores na MESMA celula.
+    def test_the_four_etapa_buttons_are_a_ladder_with_the_first_marked(self):
+        botoes = re.findall(r'<button class="etapa-tab"[^>]*>', self._sem_comentarios())
+        self.assertEqual(len(botoes), len(self.ETAPAS), f"botoes de etapa: {botoes}")
+        for n, botao in zip(self.ETAPAS, botoes):
+            with self.subTest(etapa=n):
+                self.assertIn(f'data-etapa="{n}"', botao)
+        # `aria-current="step"` e' a POSICAO na escada, e so' a etapa 1 a tem no
+        # estado inicial. Nao ha "concluido": nao existe validacao entre as
+        # etapas, e marcar uma como pronta afirmaria algo que a tela nao sabe.
+        self.assertIn('aria-current="step"', botoes[0])
+        for botao in botoes[1:]:
+            with self.subTest(botao=botao):
+                self.assertIn('aria-current="false"', botao)
 
-        O Curador ESCOLHE o provedor; o card de provedores e onde um que ainda
-        nao existe passa a existir. Juntos, a escolha e a origem da lista ficam
-        a um olhar de distancia.
+    def test_the_ladder_is_navigation_and_not_a_gate(self):
+        """Nenhum botao de etapa nasce desabilitado.
+
+        A abertura da pagina promete que "so' o link e' obrigatorio". Um wizard
+        que so' liberasse a etapa 2 depois da 1 contradiria a promessa, e a
+        ordem das etapas existe para dar um caminho, nao uma fila.
         """
-        cel = self._bloco_de("studio-cell studio-cell-curador")
-        self.assertIn("Curador com IA", cel)
-        self.assertIn('id="card-meus-provedores"', cel)
+        ladder = self._bloco('class="etapa-nav"')
+        self.assertNotIn("disabled", ladder)
+        self.assertNotIn("aria-disabled", ladder)
+        self.assertEqual(len(re.findall(r'class="etapa-tab"', ladder)), len(self.ETAPAS))
 
-    def test_the_prompt_is_its_own_cell(self):
-        """O prompt e celula propria, separado do Curador na arvore.
+    def test_the_etapas_live_inside_the_single_form(self):
+        """As QUATRO etapas ficam dentro do `<form id="clip-form">`, em ordem.
 
-        Na tela ele divide a faixa de baixo com o Curador (area `prompt`); na
-        arvore e' separado para nao herdar a altura dele nem a da Execucao — e',
-        ao contrario, a celula que ABSORVE a sobra da faixa pelo textarea.
-        """
-        cel = self._bloco_de("studio-cell studio-cell-prompt")
-        self.assertIn("prompt-card", cel)
-        self.assertNotIn("Curador com IA", cel)
-        self.assertNotIn("card-meus-provedores", cel)
-
-    def test_the_execution_card_is_not_in_the_curador_cell(self):
-        """A Execucao pertence a linha 1 (par do Fonte), nao a do Curador.
-
-        O `.studio-col` antigo embrulhava Execucao + Curador juntos; separar os
-        dois foi o que abriu a coluna nova. Se o Execucao voltar para dentro da
-        celula do Curador, o par entrada/saida se desfaz.
-        """
-        cel = self._bloco_de("studio-cell studio-cell-curador")
-        self.assertNotIn("execution-card", cel)
-
-    def test_the_four_cells_follow_the_declared_order_in_the_document(self):
-        """A ordem no documento e fonte, exec, curador, prompt.
-
-        A ordem importa em duas frentes: e a ordem de leitura para teclado e
-        leitor de tela, e e a ordem que a coluna unica usa ao empilhar — abaixo
-        de 1100px ela e a UNICA coisa que posiciona as celulas.
-
-        A coluna unica e' o espelho da grade: `fonte exec` na faixa de cima e
-        `curador prompt` na de baixo viram fonte, exec, curador, prompt. Trocar
-        a ordem no documento sem trocar as areas (ou o contrario) faz a tela
-        estreita contar uma historia diferente da larga.
-        """
-        posicoes = [self.html.index(f'class="studio-cell {c}"') for c in self.CELULAS]
-        self.assertEqual(
-            posicoes, sorted(posicoes),
-            f"as celulas sairam de ordem: {list(zip(self.CELULAS, posicoes))}")
-
-    def test_the_cells_live_inside_the_form(self):
-        """As quatro celulas ficam DENTRO do `<form id="clip-form">`.
-
-        Os campos de cada card precisam estar no form para o botao "Gerar
-        cortes" os ler. Com `display: contents` o form nao tem caixa, mas a
-        arvore continua mandando: fora do form, o payload perde os campos.
+        Um painel fora do form perde os campos no payload: o `hidden` esconde,
+        mas quem coleta os valores e' o form. E a ordem 1..4 e' a ordem de
+        leitura — e' ela que a coluna unica usa, ja' que nao ha grade.
         """
         corpo = self._sem_comentarios()
         ini = corpo.index('<form id="clip-form"')
         fim = corpo.index("</form>", ini)
-        for celula in self.CELULAS:
-            with self.subTest(celula=celula):
-                pos = corpo.index(f'class="studio-cell {celula}"')
-                self.assertTrue(
-                    ini < pos < fim,
-                    f"a celula `{celula}` ficou fora do form")
+        posicoes = []
+        for n in self.ETAPAS:
+            pos = corpo.index(f'id="etapa-{n}"')
+            with self.subTest(etapa=n):
+                self.assertTrue(ini < pos < fim, f"a etapa {n} ficou fora do form")
+            posicoes.append(pos)
+        self.assertEqual(posicoes, sorted(posicoes), "as etapas sairam de ordem")
 
-    def test_the_head_sits_above_the_cells(self):
-        """A cabeca (overline + titulo + instrucao) vem ANTES das celulas."""
+    def test_the_ladder_sits_between_the_head_and_the_form(self):
+        """A ordem do documento: cabeca, escada de etapas, form.
+
+        A escada e' o que diz "ha quatro partes"; ela vem depois do titulo (que
+        diz o que se esta configurando) e antes do primeiro campo.
+        """
         corpo = self._sem_comentarios()
         cabeca = corpo.index('class="main-head"')
-        for celula in self.CELULAS:
-            with self.subTest(celula=celula):
-                self.assertLess(
-                    cabeca, corpo.index(f'class="studio-cell {celula}"'),
-                    f"`{celula}` aparece antes da cabeca .main-head")
+        escada = corpo.index('class="etapa-nav"')
+        form = corpo.index('<form id="clip-form"')
+        self.assertLess(cabeca, escada, "a escada de etapas subiu para antes da cabeca")
+        self.assertLess(escada, form, "a escada de etapas desceu para dentro do form")
+
+    # ---------------------------------------------------------- a barra de acao
+
+    def test_the_action_bar_is_outside_both_views(self):
+        """A barra e' IRMA' das vistas, nao filha de nenhuma.
+
+        E' o que a deixa atravessar as duas: dentro de `#config` ela sumiria ao
+        trocar para Resultados, e o botao que dispara o trabalho sairia de
+        perto justamente quando o trabalho esta' rodando.
+        """
+        studio = self._bloco('class="studio"')
+        self.assertNotIn('id="action-bar"', studio,
+                         "a barra de acao entrou para dentro do .studio")
+        for vista in self.VISTAS:
+            with self.subTest(vista=vista):
+                self.assertNotIn('id="action-bar"', self._bloco(f'id="{vista}"'))
+
+    def test_the_action_bar_detail_starts_collapsed(self):
+        """O detalhe nasce recolhido, e o recolhedor DECLARA isso.
+
+        `aria-expanded="false"` + `aria-controls` no botao e' o contrato: o
+        estado do recolhimento e' explicito no markup, e nao inferido de uma
+        classe. O log e' diagnostico, nao estado — abri-lo por padrao punha meia
+        tela de registro por cima da configuracao.
+        """
+        abre = self._abre('id="action-bar-toggle"')
+        self.assertIn('aria-expanded="false"', abre)
+        self.assertIn('aria-controls="action-bar-detail"', abre)
+        self.assertIn("hidden", self._abre('id="action-bar-detail"'))
 
     # ------------------------------------------------------------------- css
 
-    def _regra_base(self):
-        """O corpo da regra `.main-grid` da GRADE (fora de `@media`).
+    def test_the_hidden_rule_beats_the_panel_display(self):
+        """`[hidden]` tem de VENCER o `display` de quem ele esconde.
 
-        `.main-grid` aparece mais de uma vez no arquivo: a primeira so tem
-        `display`/`gap`, e a grade do `@media` tambem declara areas. A regra
-        base e a que tem DUAS colunas `minmax(0, 1fr)` — e a unica assinatura
-        que so ela carrega.
-        """
-        regras = [
-            corpo for corpo in re.findall(r"\.main-grid\s*\{([^}]*)\}", self.css, re.S)
-            if "grid-template-areas" in corpo
-            and corpo.count("minmax(0, 1fr)") == 2
-        ]
-        self.assertEqual(
-            len(regras), 1,
-            f"esperava UMA regra base .main-grid (2 tracks); achei {len(regras)}")
-        return regras[0]
+        Este e' o teste que existe por causa de um defeito real. O UA declara
+        `[hidden] { display: none }` com a MESMA especificidade de uma classe
+        (0,1,0), entao `.etapa { display: flex }` ganhava por vir DEPOIS e os
+        QUATRO paineis ficavam empilhados na tela com o atributo ligado — sem
+        erro, sem aviso, so' a pagina quatro vezes mais alta. Medido no
+        navegador antes da cura: `#etapa-2` marcado `hidden` com caixa em
+        y=1328 e a pagina com 3234px de altura (1709 depois).
 
-    def test_the_base_rule_declares_two_tracks(self):
-        """A grade base tem DOIS tracks `minmax(0, 1fr)`.
-
-        O `minmax(0, …)` e obrigatorio: filho de grid nunca encolhe abaixo do
-        conteudo sem ele, e um `<select>` mais largo que a coluna empurraria o
-        track alem da tela.
-        """
-        colunas = re.search(
-            r"grid-template-columns:\s*([^;]+);", self._regra_base()
-        ).group(1)
-        self.assertEqual(colunas.count("minmax(0,"), 2, colunas)
-        self.assertNotRegex(colunas, r"(?<!minmax\(0,\s)\b1fr\b",
-                            f"track com `1fr` solto: {colunas}")
-
-    def test_the_areas_are_the_plain_2x2_with_the_curador_under_the_fonte(self):
-        """As areas sao `fonte exec` / `curador prompt` — a 2x2 simples.
-
-        Ela atende os TRES pedidos do Sr. Sena de 2026-10-07 de uma vez, e e' por
-        isso que voltou a ser esta:
-
-        1. O Prompt PROXIMO da Execucao: esta na coluna da direita, e a Execucao
-           e' o card de cima dessa mesma coluna.
-        2. O Curador ABAIXO DO FONTE e ALINHADO ao Prompt: os dois dividem a
-           faixa de baixo, Curador na coluna 1 e Prompt na coluna 2.
-        3. "Nao deixe nenhum espaco vazio": com `align-items: stretch` (o teste
-           vizinho) as duas colunas terminam na MESMA linha.
-
-        O que nao se pode voltar a fazer e' esticar uma celula por DUAS faixas
-        (o `"fonte exec" / "fonte prompt" / "curador prompt"` tentado mais cedo
-        hoje): isso poe o Fonte com 668px numa area de 2007px e devolve 1339px de
-        vao embaixo dele. Cada celula ocupa UMA faixa.
-        """
-        areas = re.search(
-            r"grid-template-areas:\s*((?:\s*\"[^\"]+\")+)", self._regra_base()
-        )
-        self.assertIsNotNone(areas, "as grid-template-areas do .main-grid sumiram")
-        # normaliza o espaco interno: alinhar as colunas no texto e so estetica
-        linhas = [" ".join(l.split()) for l in re.findall(r'"([^"]+)"', areas.group(1))]
-        self.assertEqual(
-            linhas,
-            ["cabeca cabeca", "fonte exec", "curador prompt"],
-            f"as areas do corpo mudaram: {linhas}")
-        # Todas as faixas de corpo tem DUAS colunas: nenhuma celula estica.
-        for faixa in linhas[1:]:
-            with self.subTest(faixa=faixa):
-                self.assertEqual(
-                    len(faixa.split()), 2,
-                    f"a faixa `{faixa}` deixou de ter duas colunas — uma celula "
-                    "esta esticando e vai sobrar vao na outra")
-        # O Curador na COLUNA 1 da faixa de baixo: e o que o poe sob o Fonte.
-        self.assertEqual(
-            linhas[-1].split()[0], "curador",
-            "o Curador saiu da coluna da esquerda e nao fica mais sob o Fonte")
-        # O Prompt na COLUNA 2 da mesma faixa: alinhado ao Curador e sob a
-        # Execucao, que ocupa a coluna 2 da faixa de cima.
-        self.assertEqual(
-            linhas[-1].split()[1], "prompt",
-            "o Prompt saiu da coluna da direita e nao fica mais sob a Execucao")
-
-    def test_the_base_rule_stretches_the_cells_instead_of_leaving_a_hole(self):
-        """A grade ESTICA as celulas (`align-items: stretch`).
-
-        E' o que mata o vao, e a razao de a 2x2 ter voltado. Medido em 1440px com
-        `align-items: start`: a coluna da esquerda terminava em 2029px e a da
-        direita em 1118px — 911px de buraco embaixo do Prompt. Com `stretch` as
-        duas terminam na mesma linha (2599px, medido).
-
-        `start` e' exatamente o valor que este teste existe para impedir de
-        voltar: ele parece inofensivo e devolve o buraco inteiro.
-        """
-        self.assertRegex(
-            self._regra_base(), r"align-items:\s*stretch\s*;",
-            "a grade perdeu o `align-items: stretch` e o vao volta")
-        self.assertNotRegex(
-            self._regra_base(), r"align-items:\s*start\s*;",
-            "a grade voltou para `align-items: start` — 911px de vao")
-
-    def test_every_cell_is_a_flex_column_whose_card_fills_it(self):
-        """A celula leva a altura esticada ATE' o card (`flex: 1`).
-
-        Sem isto o `stretch` do grid estica a celula e o card continua com a
-        altura do proprio conteudo — o mesmo vao, so que com um `<div>` no meio.
-        O `margin-bottom: 0` mata os 14px que o `.card` traz e que sobrariam no
-        pe' de cada celula.
+        `.etapa[hidden]` (0,2,0) resolve sem `!important`, e isso tambem e'
+        deliberado: `!important` aqui obrigaria a proxima regra que precisasse
+        de `display` no painel a brigar com ele.
         """
         self.assertRegex(
             self.css,
-            r"\.studio-cell\s*\{[^}]*display:\s*flex\s*;"
-            r"[^}]*flex-direction:\s*column\s*;",
-            "a `.studio-cell` deixou de ser coluna flex")
-        self.assertRegex(
-            self.css,
-            r"\.studio-cell\s*>\s*\.card\s*\{[^}]*flex:\s*1[^;]*;"
-            r"[^}]*margin-bottom:\s*0\s*;",
-            "o card deixou de preencher a celula (ou voltou a margem de 14px)")
-
-    def test_the_slack_lands_where_it_can_be_used(self):
-        """A sobra vai para onde ela SERVE, nao para um vao.
-
-        Medido em 1440px, coluna de 564px: a Execucao tem 472px numa faixa de
-        668px, e o Prompt 618px numa faixa de 1319px. Os dois destinos:
-
-        - Execucao: as acoes descem para o rodape do card (`margin-top: auto`),
-          em vez de sobrar vao embaixo dos botoes.
-        - Prompt: o textarea cresce. E' o card certo para isso — o arquivo
-          `prompts/curador.txt` tem 349 linhas, entao editor alto e' USO, nao
-          enfeite. A corrente e' card > form-section > field > textarea, e o
-          teste cobra os quatro elos: quebrar um so ja faz o textarea voltar ao
-          tamanho natural e o vao reaparecer.
-        """
-        self.assertRegex(
-            self.css,
-            r"\.execution-card\s+\.execution-actions\s*\{\s*margin-top:\s*auto\s*;",
-            "as acoes da Execucao perderam o `margin-top: auto`")
-        for seletor in (
-            r"\.prompt-card\s*\{\s*display:\s*flex\s*;",
-            r"\.prompt-card\s+\.form-section\s*\{[^}]*flex:\s*1[^;]*;",
-            r"\.prompt-card\s+\.form-section\s*>\s*\.field:first-child\s*\{"
-            r"[^}]*flex:\s*1[^;]*;",
-            r"\.prompt-card\s+\.form-section\s*>\s*\.field:first-child\s+textarea\s*\{"
-            r"[^}]*flex:\s*1[^;]*;",
-        ):
-            with self.subTest(seletor=seletor):
-                self.assertRegex(
-                    self.css, seletor,
-                    f"elo quebrado na corrente do Prompt: {seletor}")
-
-    def test_every_cell_has_its_area_declared(self):
-        """Cada `.studio-cell-*` recebe uma `grid-area` com o proprio nome.
-
-        Celula sem `grid-area` cai no auto-placement e vai parar em qualquer
-        faixa livre — foi o que jogou a cabeca para o rodape numa tentativa.
-        """
-        for celula in self.CELULAS:
-            area = celula.replace("studio-cell-", "")
-            with self.subTest(celula=celula):
-                self.assertRegex(
-                    self.css,
-                    rf"\.{celula}\s*\{{\s*grid-area:\s*{area}\s*;",
-                    f"a `{celula}` nao declara `grid-area: {area}`")
+            r"\.studio-view\[hidden\]\s*,\s*\n\s*\.etapa\[hidden\]\s*\{\s*display:\s*none\s*;\s*\}",
+            "a regra que faz o `hidden` vencer o `display` do painel sumiu — "
+            "as quatro etapas voltam a aparecer ao mesmo tempo")
+        # E o par precisa mesmo existir: sem `display` no painel a regra nao
+        # teria contra o que competir, e o teste acima seria decorativo.
+        self.assertRegex(self.css, r"\.etapa\s*\{[^}]*display:\s*flex\s*;",
+                         "o `.etapa` deixou de declarar `display`: o teste perdeu o alvo")
 
     def test_the_form_dissolves_into_the_grid(self):
         """O form vira `display: contents`.
 
-        Sem isso ele seria UM item do grid e as quatro celulas ficariam
-        empilhadas dentro dele — o grid nunca as veria, e nao haveria grade.
+        Sem isso ele seria UM item do grid e as quatro etapas ficariam
+        empilhadas dentro dele — o grid nunca as veria, e a cabeca e a escada
+        nao teriam as faixas delas.
         """
         self.assertRegex(
             self.css,
             r"\.main-grid\s*>\s*form#clip-form\s*\{\s*display:\s*contents\s*;",
-            "o form perdeu o `display: contents` e o grid nao ve as celulas")
+            "o form perdeu o `display: contents` e o grid nao ve as etapas")
 
-    def test_the_narrow_breakpoint_stacks_the_cells(self):
-        """Abaixo de 1100px a grade cai para UMA coluna.
+    def test_the_studio_is_the_stack_that_spaces_the_two_views(self):
+        """O respiro entre a barra de vistas e o painel mora no `.studio`.
 
-        Duas colunas em ~1000px apertam o Fonte, que tem `.field-row.triple`
-        (Pasta, Quantidade, Download) e quebra feio. O corte tem de existir, e
-        tem de trocar as AREAS junto com as colunas — trocar so os tracks
-        deixaria as areas antigas posicionando as celulas.
+        Ele morava num `padding-top` do `.main-grid`, que so' existe em
+        Configurar — o `#resultados` nao tem formulario. Medido antes de mover:
+        com a barra terminando em y=520, a cabeca do Configurar comecava em
+        y=544 (24px) e o `#queue` do Resultados em y=520 (0px). O `gap` no
+        invólucro vale para as duas.
         """
-        # Ha varios `@media (max-width: 1100px)` no arquivo; o do corpo e o que
-        # mexe no `.main-grid`. Filtrar pelo conteudo, nao pela posicao.
-        faixas = re.findall(
-            r"@media \(max-width: 1100px\)\s*\{((?:[^{}]|\{[^}]*\})*)\n\}",
-            self.css, re.S)
-        corpo = next((f for f in faixas if ".main-grid" in f), None)
-        self.assertIsNotNone(corpo, "o @media (max-width: 1100px) do .main-grid sumiu")
         self.assertRegex(
-            corpo,
-            r"grid-template-columns:\s*minmax\(0, 1fr\)\s*;",
-            "o @media de 1100px nao colapsou para uma coluna")
-        self.assertRegex(corpo, r"grid-template-areas:",
-                         "o @media de 1100px trocou as colunas mas nao as areas")
+            self.css,
+            r"\.studio\s*\{[^}]*display:\s*flex\s*;[^}]*flex-direction:\s*column\s*;"
+            r"[^}]*gap:\s*\d+px\s*;",
+            "o `.studio` deixou de ser a coluna flex que separa a barra da vista")
+        base = re.search(
+            r"^\.main-grid\s*\{([^}]*)\}", self.css, re.S | re.M)
+        self.assertIsNotNone(base, "a regra base do .main-grid sumiu")
+        self.assertNotIn(
+            "padding-top", base.group(1),
+            "o `padding-top` voltou para o `.main-grid`: o Resultados fica sem "
+            "respiro e o Configurar fica com dois")
 
-    def test_no_other_rule_overrides_the_columns(self):
-        """Nenhuma outra regra `.main-grid` declara colunas fora do padrao.
+    def test_the_body_is_a_single_track(self):
+        """A grade do corpo e' UMA coluna `minmax(0, 1fr)`.
 
-        Havia uma segunda regra de colunas num breakpoint antigo (1160px) que
-        sobrevivia e reescrevia os tracks por baixo da grade nova. Declarar
-        colunas em dois lugares sem declarar as AREAS junto quebra o layout.
-
-        A regra de Ajustes e ESCOPADA (`[data-page="ajustes"] .main-grid`) e nao
-        entra nesta conta: ela nao disputa especificidade com a grade do Estudio
-        — so a propria pagina de Ajustes a recebe. Aqui contam apenas as regras
-        SEM escopo, que valem para o Estudio.
+        Um painel por vez nao tem duas colunas para igualar. O `minmax(0, …)`
+        continua obrigatorio: filho de grid tem `min-width: auto` e um
+        `<select>` mais largo que a coluna empurraria o track alem da tela.
         """
-        # Tira as regras escopadas antes de contar. Filtrar pelo escopo e mais
-        # seguro que um lookbehind, que erra quando a regra vem indentada dentro
-        # de um `@media` (o caso do breakpoint de 1280px).
+        regras = re.findall(
+            r"^\.main-grid\s*\{([^}]*grid-template-columns:[^}]*)\}",
+            self.css, re.S | re.M)
+        self.assertEqual(len(regras), 1, f"regras de coluna do .main-grid: {regras}")
+        colunas = re.search(r"grid-template-columns:\s*([^;]+);", regras[0]).group(1)
+        self.assertEqual(colunas.count("minmax(0,"), 1, colunas)
+        self.assertNotRegex(colunas, r"(?<!minmax\(0,\s)\b1fr\b",
+                            f"track com `1fr` solto: {colunas}")
+
+    def test_no_other_unscoped_rule_declares_the_columns(self):
+        """Nenhuma outra regra `.main-grid` SEM escopo declara colunas.
+
+        Havia uma segunda no breakpoint de 1100px, de quando a grade era uma
+        2x2 e as colunas precisavam colapsar junto com as areas. Com uma coluna
+        so', ela virou uma regra que reescrevia os tracks por baixo — e sem
+        areas para manter em sincronia, um segundo lugar declarando colunas e'
+        so' uma chance de divergirem.
+
+        A grade de Ajustes e' ESCOPADA (`[data-page="ajustes"] .main-grid`) e
+        nao entra nesta conta: ela so' e' aplicada na pagina de Ajustes.
+        """
         sem_escopo = re.sub(
             r'\[data-page="[^"]+"\]\s+\.main-grid[^{]*\{[^}]*\}', "", self.css)
         blocos = re.findall(r"\.main-grid[^{]*\{([^}]*)\}", sem_escopo, re.S)
         com_colunas = [b for b in blocos if "grid-template-columns" in b]
         self.assertEqual(
-            len(com_colunas), 2,
+            len(com_colunas), 1,
             "o numero de regras de `.main-grid` SEM escopo com "
             f"`grid-template-columns` mudou ({len(com_colunas)}); confira se "
             "sobrou breakpoint antigo")
-        # A grade de Ajustes tem a propria declaracao escopada; o contrato dela
-        # (as QUATRO colunas iguais, a area de cada card) vive em
-        # `AjustesTrioTests`, que e a classe dona desta pagina.
+
+    def test_the_etapa_panel_is_a_flex_column_whose_card_fills_it(self):
+        """A etapa e' coluna flex e o card nao traz margem.
+
+        A etapa 4 carrega DOIS cards (o Curador e o "Meus provedores"), e o
+        `gap` e' quem os separa; a `margin-bottom` do `.card` seria um segundo
+        espacamento somado ao primeiro.
+        """
+        self.assertRegex(
+            self.css,
+            r"\.etapa\s*\{[^}]*display:\s*flex\s*;[^}]*flex-direction:\s*column\s*;",
+            "o `.etapa` deixou de ser coluna flex")
+        self.assertRegex(
+            self.css,
+            r"\.etapa\s*>\s*\.card\s*\{\s*margin-bottom:\s*0\s*;\s*\}",
+            "o card voltou a trazer a margem que o `gap` da etapa ja' da'")
+
+    def test_the_ladder_reorganizes_at_the_documented_bands(self):
+        """A escada cai para 2 colunas em 1100px e para 1 em 920px.
+
+        Medido: em 1100px cada botao fica com ~250px e "Ajustes do video" ainda
+        cabe numa linha; abaixo disso o nome quebra em duas e o botao fica mais
+        alto que os vizinhos, desalinhando a faixa. Abaixo de 920px — o mesmo
+        corte em que o rail vira gaveta — nao ha duas colunas de 214px que
+        segurem um rotulo.
+        """
+        faixas = [f for f in self._faixas(1100) if ".etapa-list" in f]
+        self.assertEqual(len(faixas), 1, f"esperava um @media de 1100px com .etapa-list")
+        self.assertRegex(faixas[0], r"grid-template-columns:\s*repeat\(2,",
+                         "a escada nao cai para duas colunas em 1100px")
+        faixas = [f for f in self._faixas(920) if ".etapa-list" in f]
+        self.assertEqual(len(faixas), 1, f"esperava um @media de 920px com .etapa-list")
+        self.assertRegex(faixas[0], r"grid-template-columns:\s*minmax\(0,\s*1fr\)\s*;",
+                         "a escada nao cai para uma coluna em 920px")
+
+    def test_the_action_bar_stops_floating_on_a_narrow_screen(self):
+        """Abaixo de 920px a barra sai do `sticky` — e a regra VENCE a cascata.
+
+        Grudada no pe' da janela num celular ela cobre uma fatia grande da
+        unica coluna — e nao ha largura sobrando para o conteudo passar ao
+        lado. Estatica, ela volta a ser o ultimo bloco do documento.
+
+        Nao basta a media query EXISTIR: ela tem de vir DEPOIS do `position:
+        sticky` que desliga. Escrita antes, perde a cascata (mesma
+        especificidade, ultimo vence) e vira uma regra MORTA — que foi o
+        defeito real: a regra nasceu la' em cima, junto da escada das etapas, e
+        a 480px a barra seguia `position: sticky`, 180px grudados no pe'. Por
+        isso o teste mede a ORDEM, nao so' a presenca.
+        """
+        base = re.search(
+            r"\.action-bar\s*\{[^}]*position:\s*sticky\s*;[^}]*bottom:\s*0\s*;",
+            self.css)
+        self.assertIsNotNone(base, "a barra de acao deixou de ser sticky")
+        faixas = [f for f in self._faixas(920) if ".action-bar" in f]
+        self.assertEqual(len(faixas), 1, "esperava um @media de 920px com .action-bar")
+        self.assertRegex(faixas[0], r"\.action-bar\s*\{[^}]*position:\s*static",
+                         "a barra continua flutuando no celular")
+        desliga = re.search(r"\.action-bar\s*\{[^}]*position:\s*static", self.css)
+        self.assertIsNotNone(desliga, "a barra continua flutuando no celular")
+        self.assertGreater(
+            desliga.start(), base.start(),
+            "a regra que desliga o `sticky` vem ANTES da que o liga: mesma "
+            "especificidade, ultimo vence — a media query esta' MORTA")
+
+    def test_the_saida_row_reorganizes_by_width_instead_of_by_breakpoint(self):
+        """A linha de tres campos da etapa 2 usa `minmax`, nao `1fr` fixo.
+
+        O par input+botao da "Pasta" nao encolhe abaixo de 78px (o botao) +
+        8px (o gap), entao com `repeat(3, 1fr)` as tres colunas encolhiam
+        juntas e o input pagava: medido em 960px, **98px** — o caminho visivel
+        era um pedaco de nada. Com um piso de 320px a linha cai para duas ou
+        uma coluna sozinha, e o pior caso medido passou a ser 237px.
+        """
+        self.assertRegex(
+            self.css,
+            r"\.card-saida\s+\.field-row\.triple\s*\{\s*"
+            r"grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(\d+px,\s*1fr\)\)",
+            "a linha da etapa 2 voltou ao `repeat(3, 1fr)` e o campo Pasta aperta")
+
+    # -------------------------------------------------------------------- js
+
+    def test_the_view_switch_creates_no_route(self):
+        """A troca de vista/etapa nao vira rota — o servidor resolve so' o path.
+
+        `do_GET` faz `urlparse(self.path).path` antes de rotear, entao
+        `?etapa=3` e' a MESMA pagina com uma query. E' o que mantem
+        `ApiNamespaceTests.PAGES` intacto: nenhuma pagina nova, nenhum contrato
+        de rota novo. Se alguem "promover" a query a rota, este teste cai.
+        """
+        import inspect
+
+        fonte = inspect.getsource(server.Handler.do_GET)
+        self.assertIn("urlparse(self.path).path", fonte,
+                      "o do_GET deixou de separar path e query")
+        self.assertNotIn('"etapa"', fonte,
+                         "a etapa virou uma rota de verdade")
+        self.assertNotIn('"vista"', fonte,
+                         "a vista virou uma rota de verdade")
+
+    def test_the_deep_link_reads_and_writes_the_place(self):
+        """`?vista=` e `?etapa=` entram e saem pela mesma funcao.
+
+        Um clique e um link colado tem de cair no MESMO caminho: o estado
+        (`state.view`/`state.etapa`) manda, e a tela e' consequencia. Se o
+        clique escrevesse o endereco por um lado e a leitura fosse por outro,
+        os dois divergiriam no primeiro ajuste.
+        """
+        for funcao in ("setView", "setEtapa", "lerEndereco", "syncEndereco"):
+            with self.subTest(funcao=funcao):
+                self.assertIn(f"function {funcao}(", self.js,
+                              f"`{funcao}` sumiu do index.js")
+        for chave in ("'vista'", "'etapa'"):
+            with self.subTest(chave=chave):
+                self.assertIn(chave, fn_body(self.js, "syncEndereco"))
+                self.assertIn(chave, fn_body(self.js, "lerEndereco"))
+        self.assertIn("history.replaceState", fn_body(self.js, "syncEndereco"),
+                      "o endereco deixou de ser reescrito: um F5 perde o lugar")
+        # O `hash` e' escrito de VOLTA: sem ele, um `replaceState` apagaria a
+        # ancora que a pessoa acabou de clicar.
+        self.assertIn("location.hash", fn_body(self.js, "syncEndereco"),
+                      "o endereco perdeu a ancora ao ser reescrito")
+
+    def test_the_switch_uses_hidden_and_not_a_class(self):
+        """A troca e' por `hidden`, e nao por uma classe de visibilidade.
+
+        O `hidden` e' o estado que o HTML ja' sabe declarar (a etapa 1 nasce
+        aberta, a 2 nao) e o que o leitor de tela entende. Uma classe
+        `is-active` funcionaria na cor e deixaria o painel visivel para quem
+        nao ve' cor.
+        """
+        for funcao in ("setView", "setEtapa"):
+            corpo = fn_body(self.js, funcao)
+            with self.subTest(funcao=funcao):
+                self.assertIn(".hidden =", corpo,
+                              f"`{funcao}` deixou de usar `hidden`")
+        corpo = fn_body(self.js, "abrirDetalheDaExecucao")
+        self.assertIn(".hidden =", corpo)
+        self.assertIn("aria-expanded", corpo,
+                      "o recolhedor deixou de declarar o estado")
+
 
 
 class UserProviderStoreTests(unittest.TestCase):
@@ -6273,13 +6356,18 @@ class ManualApiKeyTests(unittest.TestCase):
                       "o formulario repoe a chave salva no campo")
 
 
-class AjustesTrioTests(unittest.TestCase):
-    """Transcricao, Renderizacao e Prompt dividem a largura da pagina /ajustes.
+class AjustesDuoTests(unittest.TestCase):
+    """Transcricao e Renderizacao dividem a largura da pagina /ajustes.
 
-    Sao os tres passos que produzem o corte — o texto que entra, o visual que
-    sai e o criterio que escolhe os trechos — e por isso ficam lado a lado. O
-    grid da pagina tem QUATRO colunas iguais: o trio mais o Resumo. A Selecao
-    ocupa a faixa de cima, na largura toda.
+    Sao os DOIS passos que produzem o corte — o texto que entra e o visual que
+    sai — e por isso ficam lado a lado. O grid da pagina tem TRES colunas
+    iguais: a Selecao ocupa a faixa de cima na largura toda, e abaixo dela o
+    par (Transcricao + Renderizacao) fica ao lado do Resumo.
+
+    Era um TRIO ate' o Prompt do curador sair para o Estudio (etapa 3), onde
+    ganhou dono unico. Um componente chamado "trio" com dois filhos e' a
+    mentira que sobra depois da mudanca — por isso o wrapper virou `.duo` e
+    este teste passou a travar DOIS cards e TRES colunas, nao tres e quatro.
 
     O que este teste trava e a ARVORE, as AREAS do grid e as regras CSS de
     contencao — nao a largura (isso e medicao de navegador, feita no
@@ -6288,11 +6376,11 @@ class AjustesTrioTests(unittest.TestCase):
     fica feio.
     """
 
-    #: Os tres cards que formam o trio, na ordem em que aparecem.
-    CARDS = ("Transcrição", "Renderização", "Prompt do curador")
+    #: Os DOIS cards que formam o par, na ordem em que aparecem.
+    CARDS = ("Transcrição", "Renderização")
 
-    #: As quatro areas do grid, na ordem da segunda faixa.
-    AREAS = ("trans", "rend", "prompt", "resumo")
+    #: As quatro areas do grid: a faixa de cima (largura toda) e a de baixo.
+    AREAS = ("selecao", "trans", "rend", "resumo")
 
     @classmethod
     def setUpClass(cls):
@@ -6302,45 +6390,72 @@ class AjustesTrioTests(unittest.TestCase):
     def _sem_comentarios_css(self):
         return re.sub(r"/\*.*?\*/", "", self.css, flags=re.S)
 
-    def _trecho_trio(self):
-        """O recorte do `.trio`, do abre ao `<!-- /.trio -->`."""
-        if 'class="trio"' not in self.html:
-            raise AssertionError("o `.trio` sumiu de ajustes.html")
-        return self.html[self.html.index('class="trio"'):self.html.index("<!-- /.trio -->")]
+    def _trecho_duo(self):
+        """O recorte do `.duo`, do abre ao `<!-- /.duo -->`."""
+        if 'class="duo"' not in self.html:
+            raise AssertionError("o `.duo` sumiu de ajustes.html")
+        return self.html[self.html.index('class="duo"'):self.html.index("<!-- /.duo -->")]
 
-    def test_the_three_cards_are_inside_the_trio(self):
-        trecho = self._trecho_trio()
+    def test_the_two_cards_are_inside_the_duo(self):
+        trecho = self._trecho_duo()
         for card in self.CARDS:
-            self.assertIn(card, trecho, f"o card {card} saiu do trio lado a lado")
+            self.assertIn(card, trecho, f"o card {card} saiu do par lado a lado")
 
-    def test_the_card_order_is_transcricao_renderizacao_prompt(self):
-        """A ordem importa: o texto entra, o render sai, o prompt decide."""
-        trecho = self._trecho_trio()
+    def test_the_card_order_is_transcricao_then_renderizacao(self):
+        """A ordem importa: o texto entra, o render sai."""
+        trecho = self._trecho_duo()
         self.assertLess(trecho.index("Transcrição"), trecho.index("Renderização"))
-        self.assertLess(trecho.index("Renderização"), trecho.index("Prompt do curador"))
 
-    def test_the_trio_opens_and_closes_exactly_once(self):
-        self.assertEqual(self.html.count('class="trio"'), 1,
-                         "o `.trio` foi duplicado")
-        self.assertEqual(self.html.count("<!-- /.trio -->"), 1,
-                         "o marcador de fim do `.trio` sumiu ou duplicou")
+    def test_the_prompt_card_left_the_page(self):
+        """O terceiro card NAO mora mais aqui — o Estudio e' o dono do prompt.
 
-    def test_the_resumo_is_the_fourth_column(self):
-        """O Resumo deixou de ser um aside lateral: e a 4a coluna do grid.
-
-        Ele tem de continuar DENTRO do `.main-grid` (como irmao direto) e ser
-        depois do trio — senao nao entra na grade.
+        O que se trava e o CARD, nao a frase: "Prompt do curador" continua na
+        pagina como ROTULO do atalho 04, que leva ao Estudio (`/?etapa=3`). O
+        que nao pode voltar e o editor — o `id` que o `ajustes.js` lia e a
+        classe do card. O contrato do dono unico tem testes proprios em
+        `test_ajustes.py` (`PromptCardSingleOwnerTests`); aqui so' se garante
+        que o `.duo` tem DOIS filhos, nao tres.
         """
-        fim_trio = self.html.index("<!-- /.trio -->")
-        fim_grid = self.html.index("</div>", self.html.index("</aside>"))
-        self.assertIn("Resumo", self.html[fim_trio:fim_grid],
-                      "o Resumo nao esta depois do trio, dentro do grid")
+        self.assertNotIn('id="curator-prompt"', self.html,
+                         "o editor do prompt voltou para a pagina de Ajustes")
+        self.assertNotIn("card-prompt", self.html,
+                         "a classe do card do prompt voltou para Ajustes")
+        self.assertEqual(self._trecho_duo().count('class="card '), 2,
+                         "o `.duo` deixou de ter dois cards")
 
-    def test_the_prompt_does_not_swallow_what_comes_after_it(self):
-        """A `</form>` fecha o trio: nada de card de fora entrar por engano."""
-        fim = self.html.index("<!-- /.trio -->")
+    def test_the_duo_opens_and_closes_exactly_once(self):
+        self.assertEqual(self.html.count('class="duo"'), 1,
+                         "o `.duo` foi duplicado")
+        self.assertEqual(self.html.count("<!-- /.duo -->"), 1,
+                         "o marcador de fim do `.duo` sumiu ou duplicou")
+
+    def test_the_resumo_is_the_third_column(self):
+        """O Resumo e' a TERCEIRA coluna do grid, ao lado do par.
+
+        Ele tem de continuar DENTRO do `.main-grid` e ser depois do par — senao
+        nao entra na grade.
+        """
+        fim_duo = self.html.index("<!-- /.duo -->")
+        fim_grid = self.html.index("</div>", self.html.index("</aside>"))
+        self.assertIn("Resumo", self.html[fim_duo:fim_grid],
+                      "o Resumo nao esta depois do par, dentro do grid")
+
+    def test_the_resumo_sits_outside_the_form(self):
+        """O Resumo e' IRMAO do form, nao filho: o form fecha antes dele.
+
+        Com o form em `display: contents` o Resumo ate' entraria no grid mesmo
+        dentro dele, mas ele nao e' um campo — nao vai no `save` e nao deve
+        viajar junto. A prova barata e' a ordem na arvore.
+        """
+        self.assertLess(self.html.index("</form>"),
+                        self.html.index('class="card-resumo"'),
+                        "o Resumo entrou no form; ele e' coluna, nao campo")
+
+    def test_the_duo_does_not_swallow_what_comes_after_it(self):
+        """A `</form>` fecha o par: nada de card de fora entrar por engano."""
+        fim = self.html.index("<!-- /.duo -->")
         self.assertIn("</form>", self.html[fim:],
-                      "o trio nao fecha antes do form")
+                      "o `.duo` nao fecha antes do form")
 
     def test_the_balance_of_divs_is_intact(self):
         """A arvore fechou: -1 em qualquer ponto = `</div>` sobrando.
@@ -6365,13 +6480,29 @@ class AjustesTrioTests(unittest.TestCase):
             "o form de Ajustes perdeu o `display: contents`",
         )
 
-    def test_the_css_declares_four_equal_columns(self):
+    def test_the_css_declares_three_equal_columns(self):
         css = self._sem_comentarios_css()
         self.assertRegex(
             css,
             r'\[data-page="ajustes"\]\s+\.main-grid\s*\{[^}]*'
-            r"grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)",
-            "o grid de Ajustes perdeu as quatro colunas iguais",
+            r"grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)",
+            "o grid de Ajustes perdeu as tres colunas iguais",
+        )
+
+    def test_the_areas_put_selecao_on_top_and_the_pair_beside_the_resumo(self):
+        """A forma do grid: `selecao` na faixa de cima, `trans rend resumo` embaixo.
+
+        A contagem de colunas sozinha nao diz ONDE cada card cai; e' o mapa de
+        areas que garante que a Selecao ocupa a largura toda e o par fica ao
+        lado do Resumo, nao empilhado com ele.
+        """
+        css = self._sem_comentarios_css()
+        self.assertRegex(
+            css,
+            r'\[data-page="ajustes"\]\s+\.main-grid\s*\{[^}]*'
+            r'grid-template-areas:\s*'
+            r'"selecao selecao selecao"\s*"trans\s+rend\s+resumo"',
+            "as areas de Ajustes deixaram de ser selecao em cima e o par embaixo",
         )
 
     def test_every_area_has_an_owner(self):
@@ -6388,18 +6519,18 @@ class AjustesTrioTests(unittest.TestCase):
         """Sem isto o `.triple` fica com ~80px por coluna e o rotulo quebra.
 
         O par de regras e o que faz o card de ~272px funcionar: uma coluna por
-        linha dentro do trio, e a volta do `.triple` quando ele empilha.
+        linha dentro do par, e a volta do `.triple` quando ele empilha.
         """
         sem_comentarios = self._sem_comentarios_css()
         self.assertRegex(
             sem_comentarios,
-            r"\.trio\s+\.field-row[^{]*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)",
-            "os `.field-row` dentro do `.trio` nao foram para uma coluna",
+            r"\.duo\s+\.field-row[^{]*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)",
+            "os `.field-row` dentro do `.duo` nao foram para uma coluna",
         )
         self.assertRegex(
             sem_comentarios,
-            r"\.trio\s+\.field-row\.triple\s*\{[^}]*repeat\(3,",
-            "o `.triple` nao volta a tres colunas quando o trio empilha",
+            r"\.duo\s+\.field-row\.triple\s*\{[^}]*repeat\(3,",
+            "o `.triple` nao volta a tres colunas quando o par empilha",
         )
 
     def test_the_css_stacks_below_the_breakpoint(self):
@@ -8372,9 +8503,16 @@ class TouchTargetTests(unittest.TestCase):
         return (server.WEB_DIR / nome).read_text(encoding="utf-8")
 
     def test_the_selection_edit_link_is_never_below_24px(self):
-        """O "Ajustar" da Execucao: 15px no desktop, em QUALQUER ponteiro."""
+        """O "Editar em Ajustes" da etapa 2: 15px no desktop, em QUALQUER ponteiro.
+
+        Ele era o "Ajustar" da Execucao (`.execution-selection-edit`) e mudou de
+        casa junto com a ficha: com a Execucao virando barra de acao, o link
+        ficou sendo o da ficha da etapa 2, que leva para Ajustes. O alvo nao
+        mudou de tamanho nem de motivo — 15px reprova no 2.5.8 em qualquer
+        ponteiro.
+        """
         linhas = [l for l in self.css("index.css").splitlines()
-                  if l.strip().startswith(".execution-selection-edit {")]
+                  if l.strip().startswith(".etapa-ficha-edit {")]
         self.assertEqual(len(linhas), 1, "a regra do Ajustar sumiu ou duplicou")
         self.assertIn("min-height: 24px", linhas[0],
                       "alvo solteiro de 15px: reprova no 2.5.8")

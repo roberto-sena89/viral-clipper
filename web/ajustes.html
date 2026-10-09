@@ -129,16 +129,23 @@
       </dl>
     </div>
 
-    <!-- Atalhos internos: quatro cards longos, com um salto entre cada um.
-         A classe e' a do shared.css, sem nome novo; o que diferencia esta
+    <!-- Atalhos internos: os cards longos desta pagina, com um salto entre cada
+         um. A classe e' a do shared.css, sem nome novo; o que diferencia esta
          instancia e' o `data-section-nav` -- o gancho que o scroll-spy do
          ajustes.js le, e que troca os botoes por botoes com ordem de
-         leitura (01-04) e estado da secao visivel. -->
+         leitura (01-04) e estado da secao visivel.
+
+         O quarto atalho e' o unico que SAI da pagina: o editor do prompt do
+         curador mudou de casa (Estudio > etapa 3) e ficou com um dono so. Um
+         link para a ancora antiga seria um salto para lugar nenhum -- o
+         scroll-spy o descarta em silencio, porque so observa `a[href^="#"]`,
+         e o clique nao faria nada. Apontar para a etapa nova mantem o atalho
+         util e a numeracao inteira. -->
     <nav class="jump-links" aria-label="Atalhos desta página" data-section-nav>
       <a href="#card-selecao" aria-current="location"><span class="jump-num" aria-hidden="true">01</span> Seleção</a>
       <a href="#card-transcricao"><span class="jump-num" aria-hidden="true">02</span> Transcrição</a>
       <a href="#card-renderizacao"><span class="jump-num" aria-hidden="true">03</span> Renderização</a>
-      <a href="#card-prompt"><span class="jump-num" aria-hidden="true">04</span> Prompt do curador</a>
+      <a href="/?etapa=3"><span class="jump-num" aria-hidden="true">04</span> Prompt do curador</a>
     </nav>
 
   </section>
@@ -223,12 +230,15 @@
           </div>
         </div>
 
-        <!-- Transcricao, Renderizacao e Prompt lado a lado. Sao os tres passos
-             que produzem o corte — o texto que entra, o visual que sai e o
-             criterio que escolhe os trechos — por isso andam juntos. `.trio` e
-             uma grade de 3 colunas iguais que divide a largura da pagina; abaixo
-             do breakpoint ela empilha e cada card recupera a largura cheia. -->
-        <div class="trio">
+        <!-- Transcricao e Renderizacao lado a lado. Sao os DOIS passos que
+             produzem o corte — o texto que entra e o visual que sai — por isso
+             andam juntos. O terceiro (o prompt do curador) saiu para o Estudio:
+             ele nunca foi um ajuste, mora em `prompts/curador.txt` e ficou com
+             dono unico la'. O nome do wrapper acompanhou — um componente
+             chamado "trio" com dois filhos e' a mentira que sobra depois da
+             mudanca. `.duo` e' uma grade de 2 colunas iguais; abaixo do
+             breakpoint ela empilha e cada card recupera a largura cheia. -->
+        <div class="duo">
 
         <div id="card-transcricao" class="card card-transcricao" tabindex="-1">
           <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 11v2M8 7.5v9M12 4.5v15M16 8.5v7M20 10.5v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span> Transcrição</h2>
@@ -459,52 +469,25 @@
           </div>
         </div>
 
-        <div id="card-prompt" class="card prompt-card" tabindex="-1">
-          <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 19.2 6 15l9.6-9.6a1.85 1.85 0 0 1 2.6 0l.4.4a1.85 1.85 0 0 1 0 2.6L9 18l-4 .2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14.4 6.6l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span> Prompt do curador</h2>
-          <p class="card-lede">As regras em prosa que escolhem os melhores trechos do vídeo.</p>
+        <!-- O card "Prompt do curador" saiu DESTA pagina: o Estudio (etapa 3)
+             passou a ser o unico dono de `prompts/curador.txt`. Duas copias do
+             mesmo editor sao a definicao de duas fontes de verdade, e elas ja'
+             tinham divergido: os rotulos diziam "Regras de curadoria" de um lado
+             e "Regras do curador" do outro, os botoes diziam "Carregar/Salvar no
+             arquivo" aqui e outra coisa la', e o status desta copia nascia com um
+             texto fixo que o JS sobrescrevia antes de qualquer fetch -- mentira
+             no HTML, invisivel na tela.
 
-          <div class="form-section">
-            <div class="field">
-              <label for="curator-prompt">Regras de curadoria</label>
-              <textarea id="curator-prompt" name="curator-prompt" rows="16" spellcheck="false"
-                        placeholder="Carregue o prompt do arquivo, ou escreva aqui e salve."
-                        aria-describedby="curator-prompt-hint"></textarea>
-              <p class="hint" id="curator-prompt-hint">
-                Escreva em prosa livre, do jeito que você escreveria para uma pessoa.
-                O <strong>formato de resposta</strong> (o JSON com as notas, a headline e as
-                hashtags) é anexado pelo próprio motor — não precisa escrevê-lo, e ele não
-                se perde quando você edita o texto.
-              </p>
-            </div>
-            <div class="field">
-              <label for="curator-prompt-path">Arquivo (a fonte da verdade)</label>
-              <input type="text" id="curator-prompt-path" name="curator-prompt-path" readonly
-                     placeholder="prompts/curador.txt" aria-describedby="curator-prompt-path-hint">
-              <p class="hint" id="curator-prompt-path-hint">
-                Versionado no git: dá para ver o que mudou entre versões e voltar atrás
-                se os cortes piorarem. Editar o arquivo invalida o cache do curador
-                automaticamente.
-              </p>
-            </div>
-            <div class="row-actions prompt-actions">
-              <button class="btn pressable" type="button" id="btn-prompt-load">Carregar do arquivo</button>
-              <button class="btn btn-primary pressable" type="button" id="btn-prompt-save">Salvar no arquivo</button>
-              <!-- Sem a classe `hint`: isto e um estado vivo, nao a descricao
-                   de um campo. O contrato que `test_no_description_orphan`
-                   cobra e o de dica ligada a um controle por aria-describedby,
-                   e um leitor de tela anunciar "Salvo em..." como descricao de
-                   um campo seria errado. O role=status e o que faz o leitor
-                   anunciar a mudanca sozinho. -->
-              <span role="status" id="curator-prompt-status" class="prompt-status"></span>
-            </div>
-          </div>
-        </div>
+             O que NAO mudou: `prompts/curador.txt` continua sendo a fonte da
+             verdade do motor, versionada no git, e o `CURATOR_PROMPT_PATH` do
+             servidor continua decidindo o caminho. O que mudou foi ONDE ele se
+             edita. Quem quiser o editor: Estudio > etapa 3. -->
 
-        </div><!-- /.trio -->
+        </div><!-- /.duo -->
 
       </form>
 
-    <!-- COLUNA LATERAL: o Resumo e a QUARTA coluna do grid (ao lado do trio),
+    <!-- COLUNA LATERAL: o Resumo e a TERCEIRA coluna do grid (ao lado do par),
          nao mais um aside de metade da pagina. O sticky vive no CSS
          (`[data-page="ajustes"] .card-resumo .card`), e nao num `style=`: uma
          regra de layout escrita no atributo nao sobrevive a media query que a

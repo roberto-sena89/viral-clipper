@@ -57,11 +57,9 @@ def control_ids(markup: str) -> set[str]:
 #:
 #: ``None`` means the control carries no value of its own: either it is a
 #: toggle that *derives* another field (``headline-on`` decides whether
-#: ``headline_seconds`` is 0 or its own number), or it belongs to something the
-#: server owns (``curator-prompt`` is saved through ``/prompts/curador``, not
-#: through this file, and ``curator-prompt-path`` is read-only output), or it is
-#: bookkeeping that does not live in ``ajustes.toml`` at all
-#: (``transcript-url``).
+#: ``headline_seconds`` is 0 or its own number), or it is bookkeeping that does
+#: not live in ``ajustes.toml`` at all (``transcript-url``, which rides beside
+#: ``settings`` in the POST and is kept in a sidecar by the server).
 CONTROLES = {
     "min-duration": "min_duration",
     "max-duration": "max_duration",
@@ -94,8 +92,14 @@ CONTROLES = {
     # Sem os sete controles `ranker-*`: o card do Curador saiu desta pagina e
     # mora so em Cortes. As chaves correspondentes sairam de AJUSTES_KEYS junto,
     # entao `test_the_controls_cover_every_key_exactly_once` fecha nos dois lados.
-    "curator-prompt": None,
-    "curator-prompt-path": None,
+    #
+    # Sem `curator-prompt` e `curator-prompt-path` pela mesma razao: o editor do
+    # prompt do curador ficou com DONO UNICO no Estudio (etapa 3), e os dois ids
+    # sairam daqui junto com o card inteiro. A entrada `None` que eles tinham
+    # dizia "o servidor e' quem manda, nao este arquivo" -- o que continua
+    # verdade, so' que agora nao ha nem controle nesta pagina para dizer isso.
+    # O contrato de exclusividade esta em `PromptCardSingleOwnerTests`.
+    #
     # O carimbo do video: o texto colado so vale para a URL que o gravou, e o
     # id do campo e `transcript-url`. Nao mapeia para chave nenhuma porque nao
     # vive em ajustes.toml -- vai como irmao de `settings` no POST /ajustes e o
@@ -506,120 +510,113 @@ class AjustesAtomicWriteTests(unittest.TestCase):
         self.assertEqual(prompt.read_text(encoding="utf-8"), "regras do curador\n")
 
 
-class PromptCardParityTests(unittest.TestCase):
-    """O card "Prompt do curador" existe nas DUAS paginas -- e tem de ser o mesmo.
+class PromptCardSingleOwnerTests(unittest.TestCase):
+    """O editor do prompt do curador tem UM dono: o Estudio, etapa 3.
 
-    Duas copias do mesmo card e a definicao de duas fontes de verdade: a que
-    ninguem olha envelhece sozinha. Foi assim que os rotulos divergiram (a
-    Cortes dizia "Regras de curadoria", a Ajustes "Regras do curador"; os botoes
-    diziam "Carregar/Salvar no arquivo" de um lado e "Recarregar/Salvar prompt"
-    do outro), e o status da Ajustes nasceu com um texto fixo
-    ("Prompt carregado do arquivo.") que o JS sobrescreve antes de qualquer
-    fetch -- ou seja, mentia no HTML e nunca aparecia na tela.
+    Ele existiu nas DUAS paginas — Estudio e Ajustes — com os mesmos ids e os
+    mesmos rotulos, e as copias divergiram: os rotulos diziam "Regras de
+    curadoria" de um lado e "Regras do curador" do outro, os botoes diziam
+    "Carregar/Salvar no arquivo" numa e outra coisa na outra, e o status da
+    copia de Ajustes nascia com um texto fixo ("Prompt carregado do arquivo.")
+    que o JS sobrescrevia antes de qualquer fetch — mentira no HTML, invisivel
+    na tela.
 
-    Nao da para apagar uma das copias: o servidor trata
-    `prompts/curador.txt` como fonte de verdade do repo
-    (``CURATOR_PROMPT_PATH``, fixo, nunca vindo da requisicao), e a Cortes so
-    grava o caminho no payload depois que ``loadCuratorPrompt()`` confirmou que
-    o arquivo existe. Manter o editor so na pagina de execucao deixaria o run
-    dependente de um save que talvez nao tenha acontecido.
+    O que `prompts/curador.txt` NAO perdeu: ele continua sendo a fonte da
+    verdade do motor, versionado no git, e o `CURATOR_PROMPT_PATH` do servidor
+    continua decidindo o caminho (nunca vindo da requisicao). O que mudou foi
+    ONDE ele se edita — e o atalho "Prompt do curador" da pagina Ajustes leva
+    para la'.
 
-    Entao o que se trava aqui e a IGUALDADE, nao a existencia.
+    Entao o que se trava aqui deixou de ser a IGUALDADE e passou a ser a
+    EXCLUSIVIDADE: os ids existem numa pagina e SO' nela, e o JS da outra nao os
+    procura. O segundo lado importa tanto quanto o primeiro — um
+    `$('#curator-prompt')` esquecido em `ajustes.js` devolve null, e
+    `.addEventListener` sobre null estoura no load e mata o IIFE inteiro: a
+    pagina de Ajustes fica sem autosave, sem resumo e sem a tabela da
+    transcricao, sem dizer por que.
     """
+
+    #: Os ids do card. O JS das duas paginas lia exatamente estes.
+    IDS = ("curator-prompt", "curator-prompt-path", "btn-prompt-load",
+           "btn-prompt-save", "curator-prompt-status")
 
     @classmethod
     def setUpClass(cls):
-        cls.ajustes = page_source("ajustes.html")
         cls.cortes = page_source("index.html")
+        cls.ajustes = page_source("ajustes.html")
+        cls.cortes_js = page_source("index.js")
+        cls.ajustes_js = page_source("ajustes.js")
 
-    def _card(self, markup: str) -> str:
-        """O bloco do card, recortado entre o `<div>` que o abre e o fechamento.
+    def test_the_card_lives_only_in_the_studio(self):
+        self.assertIn('class="card prompt-card"', self.cortes)
+        self.assertNotIn('class="card prompt-card"', self.ajustes)
 
-        A ancora e a CLASSE do card (`prompt-card`), nao o texto do titulo: o
-        texto solto aparece tambem num comentario `<!-- Prompt do curador … -->`
-        que a Cortes ganhou ao virar grade, e ancorar nele pegava o comentario
-        (e o `<div>` de outro card logo antes). O recorte por `</div>`
-        balanceado continua valendo para o fim, e por isso sobrevive a uma
-        edicao no conteudo do card.
-        """
-        i = markup.index('class="card prompt-card"')
-        i = markup.rindex("<div", 0, i)
-        profundidade = 0
-        for m in re.finditer(r"<div\b|</div>", markup[i:]):
-            profundidade += 1 if m.group(0).startswith("<div") else -1
-            if profundidade == 0:
-                return markup[i:i + m.end()]
-        raise AssertionError("card do prompt sem </div> de fechamento")
-
-    def test_both_pages_have_the_card(self):
-        self.assertIn("Prompt do curador", self.ajustes)
-        self.assertIn("Prompt do curador", self.cortes)
-
-    def test_the_same_controls_are_on_both(self):
-        # Os ids sao o contrato funcional: o JS das duas paginas le exatamente
-        # estes. Um id renomeado num lado quebra o outro em silencio.
-        for cid in ("curator-prompt", "curator-prompt-path",
-                    "btn-prompt-load", "btn-prompt-save", "curator-prompt-status"):
+    def test_no_prompt_id_survives_in_ajustes(self):
+        # A ancora e a CLASSE do card (`prompt-card`) e o id de cada controle,
+        # nao o texto do titulo: "Prompt do curador" continua na pagina de
+        # Ajustes como ROTULO do atalho que leva ao Estudio, e ancorar no texto
+        # reprovaria justamente o link que faz a ponte.
+        for cid in self.IDS:
             with self.subTest(id=cid):
-                self.assertIn(cid, self.ajustes)
                 self.assertIn(cid, self.cortes)
+                self.assertNotIn(cid, self.ajustes)
 
-    def test_the_labels_are_the_same_on_both(self):
-        # O rotulo e o que o usuario le. Divergir aqui e o defeito que esta
-        # classe existe para pegar.
-        def rotulos(markup: str) -> set[str]:
-            card = self._card(markup)
-            return set(re.findall(r"<label[^>]*>(.*?)</label>", card, re.S))
+    def test_ajustes_js_does_not_read_a_control_that_left(self):
+        # O par obrigatorio: tirar o markup E quem o le. O `'#id'` entre aspas e
+        # o formato exato de um `$('#id')` — a mesma trava que
+        # `RenderSectionOwnershipTests` usa para os controles que migraram.
+        for cid in self.IDS:
+            with self.subTest(id=cid):
+                self.assertNotIn(f"'#{cid}'", self.ajustes_js)
 
-        a, c = rotulos(self.ajustes), rotulos(self.cortes)
-        self.assertEqual(a, c, f"rotulos divergem: Ajustes={a} Cortes={c}")
+    def test_the_studio_js_is_the_reader(self):
+        # O outro lado da exclusividade: o dono PRECISA ler os ids, senao o card
+        # fica na tela sem funcionar — e nenhum teste de markup acusaria.
+        for cid in ("curator-prompt", "curator-prompt-path",
+                    "btn-prompt-load", "btn-prompt-save"):
+            with self.subTest(id=cid):
+                self.assertIn(f"'#{cid}'", self.cortes_js)
+        self.assertIn("/prompts/curador", self.cortes_js)
 
-    def test_the_button_texts_are_the_same_on_both(self):
-        def botoes(markup: str) -> list[str]:
-            card = self._card(markup)
-            return [b.strip() for b in re.findall(r"<button[^>]*>(.*?)</button>", card, re.S)]
+    def test_the_status_starts_empty(self):
+        # Um estado vivo nasce vazio; quem o preenche e' a resposta do servidor.
+        m = re.search(
+            r"<span[^>]*id=\"curator-prompt-status\"[^>]*>(.*?)</span>",
+            self.cortes, re.S,
+        )
+        self.assertIsNotNone(m, "span de status ausente no Estudio")
+        self.assertEqual(m.group(1).strip(), "",
+                         "o status nasce com texto: mentira no HTML")
 
-        a, c = botoes(self.ajustes), botoes(self.cortes)
-        self.assertEqual(a, c, f"botoes divergem: Ajustes={a} Cortes={c}")
-
-    def test_the_status_starts_empty_on_both(self):
-        # A Ajustes trazia `>Prompt carregado do arquivo.<` dentro do span, com
-        # cor verde fixa no style. `loadCuratorPrompt()` chama `setPromptStatus`
-        # antes de qualquer fetch, entao aquele texto nunca chegava a tela -- mas
-        # ficava no HTML afirmando algo que nao foi verificado. Um estado vivo
-        # tem de nascer vazio; quem o preenche e a resposta do servidor.
-        for nome, markup in (("ajustes", self.ajustes), ("cortes", self.cortes)):
-            with self.subTest(pagina=nome):
-                m = re.search(
-                    r"<span[^>]*id=\"curator-prompt-status\"[^>]*>(.*?)</span>",
-                    markup, re.S,
-                )
-                self.assertIsNotNone(m, "span de status ausente")
-                self.assertEqual(m.group(1).strip(), "",
-                                 "o status nasce com texto: mentira no HTML")
-
-    def test_the_path_field_is_readonly_on_both(self):
+    def test_the_path_field_is_readonly(self):
         # O caminho vem de `CURATOR_PROMPT_PATH` no servidor e nunca da
-        # requisicao -- e o que impede o painel de virar gravador de arquivo
+        # requisicao — e' o que impede o painel de virar gravador de arquivo
         # arbitrario. Um campo editavel aqui abriria essa porta.
-        for nome, markup in (("ajustes", self.ajustes), ("cortes", self.cortes)):
-            with self.subTest(pagina=nome):
-                self.assertRegex(
-                    markup,
-                    r"<input[^>]*id=\"curator-prompt-path\"[^>]*readonly",
-                )
+        self.assertRegex(
+            self.cortes,
+            r"<input[^>]*id=\"curator-prompt-path\"[^>]*readonly",
+        )
 
-    def test_the_hint_ids_used_by_each_card_resolve(self):
-        # A Ajustes ganhou um segundo hint (`curator-prompt-path-hint`) que so a
-        # Cortes tinha. Referencia aria quebrada nao quebra a tela -- so some
-        # com a descricao para quem usa leitor de tela.
-        for nome, markup in (("ajustes", self.ajustes), ("cortes", self.cortes)):
-            ids = set(re.findall(r"\sid=\"([^\"]+)\"", markup))
-            card = self._card(markup)
-            for m in re.finditer(r"aria-describedby=\"([^\"]+)\"", card):
-                for ref in m.group(1).split():
-                    with self.subTest(pagina=nome, ref=ref):
-                        self.assertIn(ref, ids)
+    def test_the_card_still_has_its_labels_and_buttons(self):
+        # O card ficou com um dono so', mas nao pode ter ficado sem conteudo: a
+        # exclusividade nao e' licenca para esvaziar o editor.
+        card = self.cortes[self.cortes.index('class="card prompt-card"'):]
+        card = card[:card.index("</section>")]
+        for rotulo in ("Regras de curadoria", "Arquivo (a fonte da verdade)"):
+            with self.subTest(rotulo=rotulo):
+                self.assertIn(rotulo, card)
+        for cid in ("btn-prompt-load", "btn-prompt-save"):
+            with self.subTest(id=cid):
+                self.assertIn(f'id="{cid}"', card)
+
+    def test_the_ajustes_shortcut_points_at_the_new_home(self):
+        # A ponte entre as paginas. O atalho antigo apontava para `#card-prompt`,
+        # uma ancora que deixou de existir: o scroll-spy de `ajustes.js` so'
+        # observa `a[href^="#"]`, entao ele descartaria o alvo em silencio e o
+        # clique nao faria nada. Um atalho morto e' pior que nenhum.
+        self.assertIn("Prompt do curador", self.ajustes)
+        self.assertIn('href="/?etapa=3"', self.ajustes)
+        self.assertNotIn('href="#card-prompt"', self.ajustes)
 
 
 class AjustesScriptTests(unittest.TestCase):

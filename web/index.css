@@ -180,29 +180,50 @@ body { padding-left: var(--rail-w); }
      que e a unica coisa que diz o que o site faz, descia para fora. */
 }
 
-/* ---------- AS CELULAS DO CORPO (grade 2x2) ----------
-   A antiga `.studio-col-curador` e a `.prompt-col` viraram celulas irmas com
-   nome proprio, posicionadas por `grid-template-areas` la embaixo.
+/* ---------- AS ETAPAS DO CORPO (um painel por vez) ----------
+   Cada `.etapa` e' um painel do formulario. So' um fica visivel: o JS liga e
+   desliga pelo `data-etapa`, e o `?etapa=` guarda o lugar num F5. As quatro
+   vivem dentro do MESMO `<form id="clip-form">`, entao o payload do run nao
+   depende de qual delas esta aberta — esconder um campo nao o tira do form.
 
-   A celula e' uma COLUNA FLEX cujo card ocupa a altura toda. Isto e' metade do
-   que faz a grade nao ter buraco: `.main-grid` estica a celula ate' o fim da
-   faixa (`align-items: stretch`) e o `flex: 1` leva essa altura ate' o card de
-   dentro. Sem ele a celula esticaria e o card continuaria com a altura do
-   proprio conteudo — o mesmo vao, com outro nome.
+   O painel e' uma COLUNA FLEX com `gap` porque a etapa 4 carrega DOIS cards (o
+   Curador e o "Meus provedores") e eles precisam do mesmo respiro que a grade
+   dava. O `margin-bottom: 0` tira os 24px que o `.card` traz: aqui quem separa
+   um card do outro e' o `gap`, nao a margem.
 
-   O `margin-bottom: 0` mata o respiro do `.card` (24px, e 14px depois do
-   override de `[data-page]`): dentro da celula quem separa um card do outro e'
-   o `gap`. Sem isto sobram 14px de vazio no pe' de cada celula — e' pouco por
-   celula, mas e' justamente o vao que o pedido de "nenhum espaco vazio" mira. */
-.studio-cell {
+   Antes disto eram QUATRO celulas posicionadas por `grid-template-areas` numa
+   2x2 que ESTICAVA as celulas para fechar o vao. Toda aquela mecanica
+   (`align-items: stretch`, a corrente de `flex: 1` da celula ate' o card, a
+   sobra indo para as acoes da Execucao e para o textarea do Prompt) existia
+   para resolver um problema que a pagina nao tem mais: com um painel por vez
+   nao ha duas colunas para igualar, e nao ha vao. */
+.etapa {
   display: flex;
   flex-direction: column;
   gap: 18px;
   min-width: 0;
 }
-.studio-cell > .card {
-  flex: 1 1 auto;
-  margin-bottom: 0;
+.etapa > .card { margin-bottom: 0; }
+
+/* A cabeca do painel. O rotulo e' um <p>, e nao um <h2>: o titulo de secao do
+   documento e' o "Configuracao do corte" da `.main-head`, e quatro <h2> a mais
+   (um por etapa) criariam quatro secoes de mesmo peso para rotular paineis. O
+   `aria-labelledby` funciona igual num <p> com id — o mesmo idioma que o card
+   de Execucao ja usava. */
+.etapa-head { display: flex; flex-direction: column; gap: 3px; }
+.etapa-rotulo {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: 0.1em;
+}
+.etapa-titulo {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-heading-sm);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: var(--text-heading-sm-lh);
 }
 
 /* ---------- CARTÕES ---------- */
@@ -1128,63 +1149,21 @@ body {
 .studio-actions .btn { min-height: 42px; }
 .studio-actions .btn:not(.btn-primary) { background: #121721; }
 
-/* ---------- FONTE E EXECUCAO LADO A LADO ----------
-   O par e o eixo da tela: o que ENTRA (link, pasta, quantidade) a esquerda,
-   o que SAI (botao, progresso, log) a direita. Empilhados, a pessoa
-   preenchia os campos, rolava a pagina e so entao achava o botao.
+/* ---------- (o par "Fonte | Execucao" foi DESFEITO) ----------
+   Aqui vivia o `.studio-pair` — uma grade de duas colunas com o que ENTRA
+   (Fonte) a' esquerda e o que SAI (Execucao) a' direita, mais o `.studio-col`
+   que empilhava Execucao e Curador na coluna da direita. Ele existia para
+   resolver um problema de LAYOUT: com o Curador fora do par, sobrabam 267px de
+   vazio na coluna direita.
 
-   O grid mora DENTRO do `<form id="clip-form">` porque os campos do Fonte
-   precisam estar no form — o botao "Gerar cortes" depende disso. Por isso
-   quem se moveu foi o card de Execucao, nao o de Fonte.
-
-   A coluna da direita e um `.studio-col` (exec + curador empilhados), nao um
-   card solto. Motivo, medido: com o Curador FORA do par, a coluna direita so
-   tinha a Execucao (449px em repouso) contra os 734px do Fonte, e sobravam
-   **267px de espaco vazio** dentro do par — buraco visivel na tela. Com o
-   Curador dentro, o par cresce para ~990-1263px e o vazio cai para **14px**
-   (o gap). A coluna existe para FECHAR o par, nao para dar pista a sticky
-   nenhum — o sticky do card saiu (ver a nota no `.execution-card`).
-
-   `align-items: start` faz cada coluna ter a altura do proprio conteudo. Sem
-   ele as duas esticam ate a mais alta e o card do Fonte ganha um rodape vazio
-   do tamanho do Curador. */
-.studio-pair {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: start;
-  gap: 18px;
-}
-
-/* A coluna da direita empilha Execucao + Curador com o mesmo respiro do par. */
-.studio-col {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  min-width: 0;
-}
-
-/* Em coluna unica o par empilha. 1100px e onde as duas colunas passam a
-   ficar estreitas demais para o Fonte, que tem 3 campos numa linha (Pasta,
-   Quantidade, Download) e quebra feio abaixo disso. */
-@media (max-width: 1100px) {
-  .studio-pair { grid-template-columns: minmax(0, 1fr); }
-}
-
-/* O card de Execucao vive no `.studio-pair`, nao mais no hero. O
-   `min-height: 1060px` do hero e o `min-height: 1050px` que o par chegou a
-   carregar existiam para sustentar um sticky que nao existe mais; os dois
-   foram REMOVIDOS. */
-.studio-pair > .card,
-.studio-pair > .studio-col { min-width: 0; }
-
-/* Card mais enxuto quando dividido com o irmao: cada margem conta em dobro
-   numa coluna de ~565px, metade da largura que ele tinha sozinho. */
-.studio-pair .execution-card { padding: 15px 16px; }
-.studio-pair .execution-card .execution-card-heading { margin-bottom: 12px; }
-.studio-pair .execution-progress-label { margin-top: 13px; }
-.studio-pair .execution-card #progress-label { min-height: 0; margin-bottom: 9px; }
-.studio-pair .execution-card .execution-selection { margin-bottom: 8px; }
-.studio-pair .execution-actions { gap: 6px; }
+   As duas classes foram REMOVIDAS junto com a reorganizacao em etapas, e nao
+   por terem ficado sem uso: a razao que as justificava desapareceu. A Execucao
+   nao e' mais uma celula ao lado de nada — virou a barra de acao, que atravessa
+   as duas vistas — e o Fonte e' o primeiro de quatro paineis que ocupam a
+   largura toda. Nao ha duas colunas para igualar, entao nao ha vao a fechar.
+   A medida que sustentava o par (267px de vazio, 14px depois) esta' registrada
+   aqui para quem topar com o mesmo problema: a saida e' fechar a coluna, e nao
+   distribuir o vazio. */
 
 .studio-workflow {
   padding: 17px 18px 15px;
@@ -1254,101 +1233,163 @@ body {
 .studio-output-spec strong { color: #f4f6fa; font-size: 0.83rem; font-variant-numeric: tabular-nums; }
 .studio-output-spec small { margin-left: 5px; color: #9ba5b5; font-size: var(--text-2xs); font-weight: 500; }
 
-/* A regra EFETIVA do grid. A de cima (.main-grid, ~linha 217) so define
-   `display: grid` e o gap; esta, por vir depois, sobrescreve as colunas —
-   mesma especificidade, vence a ultima. Editar so a de cima nao muda nada
-   na tela (foi o que aconteceu: as colunas continuaram 788/340).
+/* A GRADE DO CORPO: uma coluna de paineis.
 
-   DUAS COLUNAS e DUAS faixas de corpo. A cabeca (config-heading + section-sub)
-   ocupa a primeira faixa, na largura toda; abaixo dela,
+   A cabeca (`.main-head`) ocupa a primeira faixa, a escada de etapas
+   (`.etapa-nav`) a segunda, e o `<form id="clip-form">` — que vira
+   `display: contents` — entrega as QUATRO etapas como faixas seguintes. So' uma
+   etapa esta visivel por vez (o JS liga o `hidden`), entao o que se ve' sao
+   tres faixas.
 
-       "fonte    exec"       Fonte (entrada) | Execucao (saida)
-       "curador  prompt"     Curador (com Meus provedores) | Prompt do curador
+   O `display: contents` continua sendo obrigatorio e pelo mesmo motivo de
+   sempre: sem ele o form seria UM item do grid e as quatro etapas ficariam
+   empilhadas dentro dele — o grid nunca as veria.
 
-   O `<form id="clip-form">` vira `display: contents`: o box dele desaparece do
-   layout e as QUATRO celulas passam a ser itens do grid, cada uma na sua area.
-   Sem isso o form seria UM item so e as celulas ficariam empilhadas dentro
-   dele — o grid nao veria as quatro.
+   Aqui ja' houve uma 2x2 com `grid-template-areas` ("fonte exec" / "curador
+   prompt") que ESTICAVA as celulas para fechar o vao de 911px entre as colunas.
+   Toda aquela mecanica sumiu com a reorganizacao: um painel por vez nao tem
+   duas colunas para igualar, e o que fazia o vao era justamente a grade.
 
-   POR QUE ASSIM, em tres etapas — as tres pedidas pelo Sr. Sena em 2026-10-07:
-
-   1. O Prompt tinha de ficar PROXIMO da Execucao. Na 2x2 ele ja estava na
-      coluna da direita, mas 216px abaixo do fim da Execucao: a altura da faixa
-      era ditada pelo Fonte (682px) e nao pela Execucao (486px), e a sobra
-      virava vao.
-   2. O Curador tinha de ficar ABAIXO DO FONTE, a meia largura e alinhado ao
-      Prompt.
-   3. "Nao deixe nenhum espaco vazio na pagina."
-
-   A 3 e' a que manda, e ela e' justamente o que faz a grade voltar a ser a 2x2
-   simples — que atende (1) e (2) de uma vez: o Prompt fica na coluna da direita
-   (logo abaixo da Execucao) e o Curador na esquerda (logo abaixo do Fonte), os
-   dois na MESMA faixa, alinhados.
-
-   Com `align-items: start` (ate' hoje) a coluna da direita terminava em 1118px
-   e a da esquerda em 2029px — 911px de buraco embaixo do Prompt, que era
-   exatamente a reclamacao. `align-items: stretch` fecha isso: a celula estica
-   ate' o fim da faixa e o card de dentro tambem (`.studio-cell > .card`), entao
-   as duas colunas terminam na MESMA linha.
-
-   QUEM ABSORVE A SOBRA (medido em 1440px, coluna de 564px):
-
-     - Execucao: 472px numa faixa de 668px. As acoes descem para o rodape do
-       card (`margin-top: auto` em `.execution-actions`), em vez de sobrar vao
-       embaixo delas.
-     - Prompt: 618px numa faixa de 1319px. O textarea CRESCE — e' o unico card
-       da grade cujo conteudo principal e' texto longo, entao a sobra vira area
-       de escrita em vez de espaco morto.
-     - Fonte e Curador DEFINEM a altura das duas faixas, entao preenchem por
-       construcao.
-
-   Historico anterior, para nao repetir: ja foi UMA coluna (788px) com um aside
-   de 340px so para o prompt, e ja foram TRES colunas iguais — a do meio
-   (Curador 605px + Meus provedores 886px = 1537px) ficava 870px mais alta que
-   a do Prompt (667px).
-
-   Cada track e `minmax(0, 1fr)`: filho de grid tem `min-width: auto` e um
-   `<select>`/`<textarea>` mais largo que a coluna empurra o track alem da
+   Cada track e' `minmax(0, 1fr)`: filho de grid tem `min-width: auto` e um
+   `<select>`/`<textarea>` mais largo que a coluna empurraria o track alem da
    tela sem isso. */
 .main-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-areas:
-    "cabeca  cabeca"
-    "fonte   exec"
-    "curador prompt";
-  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
-  padding-top: 24px;
   padding-bottom: 36px;
 }
-/* O form nao tem box proprio: as 4 celulas sobem para o grid. */
 .main-grid > form#clip-form { display: contents; }
-/* A cabeca ocupa a faixa de cima, na largura toda. E UM item (`main-head`)
-   com area propria: sem area explicita o auto-placement a jogaria para a
-   ULTIMA faixa, depois dos cards que tem `grid-area` (foi o que aconteceu —
-   a cabeca apareceu com y=2550, embaixo de tudo). */
-.main-grid > .main-head { grid-area: cabeca; }
 
-.studio-cell-fonte   { grid-area: fonte; }
-.studio-cell-exec    { grid-area: exec; }
-.studio-cell-curador { grid-area: curador; }
-.studio-cell-prompt  { grid-area: prompt; }
+/* ---------- O INVÓLUCRO DAS DUAS VISTAS ----------
+   A barra de vistas e, abaixo dela, UMA das duas vistas. O `gap` e' o respiro
+   entre a barra e o painel, e ele mora AQUI, e nao num `padding-top` do
+   `.main-grid`: o `#resultados` nao tem `.main-grid` (nao ha formulario la'),
+   entao a medida dentro de uma vista so' deixava a outra colada na barra.
+   Medido no navegador antes de mover: com a barra terminando em y=520, o
+   `.main-head` do Configurar comecava em y=544 (24px) e o `#queue` do
+   Resultados em y=520 (0px) — a mesma barra, dois espacamentos.
 
-/* Uma coluna. Abaixo de ~1100px duas colunas apertam o Fonte, que tem
-   `.field-row.triple` (Pasta, Quantidade, Download) e quebra feio.
-   A ORDEM das areas segue a ordem do DOCUMENTO (fonte, exec, curador, prompt):
-   numa coluna so ela e' a unica coisa que posiciona. Nao ha o que esticar aqui
-   — cada faixa tem um item so, entao a altura da faixa e' a do proprio card. */
+   O `[hidden]` PRECISA vir declarado, e este e' o ponto que quase passou: o UA
+   declara `[hidden] { display: none }` com a MESMA especificidade de uma
+   classe, entao `.etapa { display: flex }` ganhava por vir DEPOIS e os quatro
+   paineis ficavam empilhados na tela com o atributo ligado. Medido no
+   navegador antes da cura: `#etapa-2` marcado `hidden` com caixa em y=1328, e
+   a pagina com 3234px de altura. `.etapa[hidden]` (0,2,0) vence `.etapa`
+   (0,1,0) sem precisar de `!important` — e sem `!important` a proxima regra
+   que precisar de `display` no painel continua podendo vencer. */
+.studio {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.studio-view[hidden],
+.etapa[hidden] { display: none; }
+
+/* ---------- O SELETOR DE VISTA ----------
+   Configurar | Resultados. Sao `role="tab"` de verdade: `aria-selected` diz
+   qual esta ativa (e o CSS pinta por ele, para a cor e o anuncio do leitor de
+   tela nunca divergirem) e as setas do teclado andam entre as duas. */
+.views-nav {
+  display: inline-flex;
+  gap: 4px;
+  margin-top: 24px;
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.view-tab {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+  min-height: 36px;
+  padding: 7px 20px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.view-tab:hover { color: var(--text-primary); }
+.view-tab[aria-selected="true"] {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
+}
+
+/* ---------- A ESCADA DAS ETAPAS ----------
+   Quatro botoes, um por etapa, todos alcancaveis o tempo todo. Ela e'
+   NAVEGACAO, nao medidor: nao ha estado "concluido" nem bloqueio, porque nao ha
+   validacao — a unica exigencia de verdade e' a URL, e quem cobra ela e' o
+   botao de gerar, na barra de acao. */
+.etapa-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.etapa-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 9px 13px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.etapa-tab:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.etapa-tab[aria-current="step"] {
+  border-color: var(--accent-soft);
+  background: var(--active-tint);
+  color: var(--text-primary);
+}
+.etapa-num {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.etapa-tab[aria-current="step"] .etapa-num {
+  background: var(--accent-soft);
+  color: #14161c;
+}
+.etapa-nome { font-size: var(--text-body-sm); font-weight: 600; }
+
+/* Abaixo de 1100px a escada de quatro etapas vira duas linhas de duas. Medido:
+   a 1100px cada botao fica com ~250px e "Ajustes do video" ainda cabe numa
+   linha; abaixo disso o nome quebra em duas e o botao fica mais alto que os
+   vizinhos, o que desalinha a linha inteira. */
 @media (max-width: 1100px) {
-  .main-grid {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "cabeca"
-      "fonte"
-      "exec"
-      "curador"
-      "prompt";
-  }
+  .etapa-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* Abaixo de 920px — o mesmo corte em que o rail vira gaveta — a escada
+   empilha numa coluna. O desligamento do `sticky` da BARRA DE ACAO e' o
+   MESMO corte, mas a regra dele nao mora aqui: ela vive junto do proprio
+   `.action-bar`, mais abaixo. Escrita aqui, ela perdia a cascata para o
+   `position: sticky` declarado DEPOIS (mesma especificidade, ultimo vence) —
+   uma media query morta, que e' pior que ausente porque o comentario jura que
+   o efeito existe. Medido no navegador com a regra neste lugar: a 480px a
+   barra seguia `position: sticky`, 180px grudados no pe'. */
+@media (max-width: 920px) {
+  .etapa-list { grid-template-columns: minmax(0, 1fr); }
 }
 .config-heading {
   display: flex;
@@ -1545,23 +1586,22 @@ main > section > .card { padding: 17px; }
    espaco com o input e sobra menos para o caminho, que e o que se le. */
 .path-picker > .btn { flex: 0 0 auto; white-space: nowrap; }
 
-/* O par input+botao NAO cabe lado a lado numa coluna de 3 no grid.
-   Medido: em 1440x900 a coluna "Pasta" tem 105px, o botao "Selecionar" ocupa
-   78px e o gap 8px — sobram 19px para o caminho, e o input media **26px**.
-   Nao adianta `flex: 1 1 auto` no input: nao ha espaco para distribuir.
-   Em 1160px (2 colunas) a celula fica com 104px e o problema e o mesmo.
+/* AQUI VIVIA o par de regras `.card-fonte .path-picker` (o botao "Selecionar"
+   descia para a linha de baixo em qualquer largura acima de 960px).
 
-   Entao o botao desce SEMPRE que a linha for de 3 ou de 2 colunas — ou seja,
-   enquanto o card-fonte estiver estreito. So na coluna unica (abaixo de
-   960px, onde o card ocupa a largura toda) o par volta a caber lado a lado. */
-.card-fonte .path-picker { flex-wrap: wrap; }
-.card-fonte .path-picker > input { flex: 1 1 100%; }
-.card-fonte .path-picker > .btn { flex: 1 1 100%; justify-content: center; }
-@media (max-width: 960px) {
-  .card-fonte .path-picker { flex-wrap: nowrap; }
-  .card-fonte .path-picker > input { flex: 1 1 auto; }
-  .card-fonte .path-picker > .btn { flex: 0 0 auto; }
-}
+   Ele morreu junto com a premissa que o justificava. A medicao original era
+   "em 1440x900 a coluna Pasta tem 105px, o botao ocupa 78px e o gap 8px —
+   sobram 19px para o caminho, e o input media 26px": o card Fonte era uma
+   celula de meia largura numa grade 2x2. Com um painel por vez nao ha grade
+   nem meia largura — o card ocupa a coluna inteira (medido: 1148px em 1440),
+   e as duas regras nao tinham mais o que esticar.
+
+   Pior que inofensivas: elas mentiam. `.card-fonte .path-picker` continuaria
+   casando com ZERO elementos, porque o par input+botao mudou de card — hoje
+   ele esta' na etapa 2 (`.card-saida`, o campo "Pasta"). Quem viesse ler a
+   folha concluiria que o card Fonte ainda tem um seletor de pasta para
+   proteger. */
+
 .field-note { display: block; margin: -6px 0 12px; }
 
 /* A volta para a Biblioteca, dentro do card Fonte. Nao usa `.hint` de
@@ -1583,21 +1623,28 @@ main > section > .card { padding: 17px; }
 
    Vale so para a Fonte: `.triple` tambem e usado por outras duas linhas do
    form, e elas nao foram tocadas. */
-@media (max-width: 1160px) {
-  .card-fonte .field-row.triple { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
+/* AQUI VIVIA `@media (max-width: 1160px) { .card-fonte .field-row.triple … }`,
+   que jogava a terceira coluna do Fonte para a linha de baixo. Mesma morte da
+   regra acima e pelo mesmo motivo: a medicao ("os tres controles somam ~212px
+   de minimo... e a coluna de 79px em 1280px quebrava o rotulo em duas linhas")
+   valia para um card de MEIA largura. O card Fonte nao tem mais `.triple`
+   nenhum — o unico `field-row` dele e' `.single` (a URL). O `.triple` que
+   sobrou no painel esta' na etapa 2 e ocupa a largura inteira. */
 
-/* ---------- GRID DA PAGINA AJUSTES: 4 colunas iguais ----------
-   A pagina de Ajustes preenche a largura toda com QUATRO colunas iguais:
-   Selecao ocupa a faixa de cima (na largura toda) e, abaixo, ficam
-   Transcricao | Renderizacao | Prompt | Resumo — um card por coluna, tudo do
-   mesmo tamanho. O Resumo deixou de ser um aside de metade da pagina e virou a
-   quarta coluna; o sticky dele continua.
+/* ---------- GRID DA PAGINA AJUSTES: 3 colunas iguais ----------
+   A pagina de Ajustes preenche a largura toda com TRES colunas iguais: Selecao
+   ocupa a faixa de cima (na largura toda) e, abaixo, ficam Transcricao |
+   Renderizacao | Resumo — um card por coluna, tudo do mesmo tamanho. O Resumo
+   deixou de ser um aside de metade da pagina e virou a ultima coluna; o sticky
+   dele continua.
 
-   POR QUE 4 E NAO 3: o pedido foi "lado a lado das secoes Transcricao e
-   Renderizacao, preenchendo toda a pagina, colunas de tamanho igual". Manter o
-   Resumo fora roubaria metade da largura para o trio (3x ~188px, ilegivel).
-   Trazendo o Resumo para dentro, as quatro dividem a largura toda.
+   Eram QUATRO ate' 2026-10-09, e a quarta era o "Prompt do curador". Ele saiu
+   daqui para o Estudio (etapa 3) por uma razao que nao e' de layout: ele NUNCA
+   foi um ajuste. Nao esta' em `AJUSTES_KEYS` nem em `ajustes.toml` — mora em
+   `prompts/curador.txt`, e o motor o le' pelo caminho que o servidor decide.
+   Manter o editor nas duas paginas era a definicao de duas fontes de verdade, e
+   elas ja' tinham divergido. Com ele fora, o par (Transcricao, Renderizacao)
+   mais o Resumo dividem a largura toda.
 
    O `<form id="ajustes-form">` ganha `display: contents`: o box dele some e os
    cards viram itens do grid direto. Sem isso o form seria UM item so e todos os
@@ -1608,24 +1655,20 @@ main > section > .card { padding: 17px; }
    tela sem isso.
 
    ESCOPADO por `[data-page="ajustes"]`: o Estudio usa `.main-grid` com outra
-   grade (2x2 com areas) e nao pode receber esta. A regra nao-escopada de cima
-   (`.main-grid`, ~linha 1103) continua valendo para a Cortes; esta, por ser mais
-   especifica e vir depois, vence na pagina de Ajustes. */
+   grade (uma coluna de paineis) e nao pode receber esta. A regra nao-escopada
+   (`.main-grid`) continua valendo para a Cortes; esta, por ser mais especifica
+   e vir depois, vence na pagina de Ajustes. */
 [data-page="ajustes"] .main-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-template-areas:
-    "selecao selecao selecao selecao"
-    "trans   rend    prompt  resumo";
+    "selecao selecao selecao"
+    "trans   rend    resumo";
   gap: 16px;
 }
 [data-page="ajustes"] .main-grid > form#ajustes-form { display: contents; }
 [data-page="ajustes"] .card-selecao   { grid-area: selecao; }
 [data-page="ajustes"] .card-transcricao { grid-area: trans; }
 [data-page="ajustes"] .card-renderizacao { grid-area: rend; }
-/* A coluna do prompt usa a classe que o card JA tem (`prompt-card`, a mesma
-   da Cortes) em vez de uma nova: o card e compartilhado e um segundo nome so
-   criaria mais uma coisa a manter sincronizada entre as duas paginas. */
-[data-page="ajustes"] .prompt-card    { grid-area: prompt; }
 [data-page="ajustes"] .card-resumo    { grid-area: resumo; }
 /* O Resumo gruda no topo enquanto a pagina rola: e' onde mora o estado do
    save, e o estado que se procura no meio da rolagem e' o da ultima gravacao.
@@ -1637,32 +1680,36 @@ main > section > .card { padding: 17px; }
    O `top: 92px` e' a barra de 68px mais 24px de folga. */
 [data-page="ajustes"] .card-resumo .card { position: sticky; top: 92px; }
 
-/* ---------- TRIO dentro de uma coluna ----------
-   Os tres cards andam juntos. Em Ajustes cada um ocupa UMA celula do grid (o
-   `.trio` e `display: contents` la, para nao aninhar grade dentro de grade);
-   na Cortes, se um dia o trio aparecer solto, ele vira grade de 3 colunas.
-   `align-items: start` para cada card ter a altura do proprio conteudo. */
-.trio {
+/* ---------- O PAR DE CARDS lado a lado ----------
+   Dois cards andam juntos. Em Ajustes cada um ocupa UMA celula do grid (o
+   `.duo` e `display: contents` la, para nao aninhar grade dentro de grade);
+   solto, ele vira uma grade de duas colunas.
+   `align-items: start` para cada card ter a altura do proprio conteudo.
+
+   Era `.trio` (tres cards: Transcricao, Renderizacao e o Prompt). O Prompt saiu
+   para o Estudio, e o nome foi junto: um componente chamado "trio" com dois
+   filhos e' a mentira que sobra depois da mudanca e que ninguem revisa. */
+.duo {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   align-items: start;
 }
-[data-page="ajustes"] .trio { display: contents; }
-.trio > .card { margin-bottom: 0; }
-/* Dentro de uma coluna do trio, os `.triple` viram UMA coluna. Medido a
-   ~272px de card: as tres colunas ficam com ~80px cada e o rotulo ("Modelo
-   Whisper") ocupa duas linhas enquanto o `select-rich` sobrepoe o texto na
-   seta. Uma coluna por linha e o que o espaco comporta — o campo nao encolhe,
-   so desce. */
-.trio .field-row,
-.trio .field-row.triple,
-.trio .field-row.single { grid-template-columns: minmax(0, 1fr); }
+[data-page="ajustes"] .duo { display: contents; }
+.duo > .card { margin-bottom: 0; }
+/* Dentro de uma coluna do par, os `.triple` viram UMA coluna. Medido a ~272px
+   de card: as tres colunas ficam com ~80px cada e o rotulo ("Modelo Whisper")
+   ocupa duas linhas enquanto o `select-rich` sobrepoe o texto na seta. Uma
+   coluna por linha e o que o espaco comporta — o campo nao encolhe, so desce. */
+.duo .field-row,
+.duo .field-row.triple,
+.duo .field-row.single { grid-template-columns: minmax(0, 1fr); }
 
-/* Abaixo do breakpoint as QUATRO colunas empilham: cada card recupera a largura
-   cheia da pagina e o `.triple` volta a caber. O breakpoint foi MEDIDO (sonda
-   `ajustes_4col_probe.js`): a 1281px os quatro cards ficam com 235px medidos e
-   ainda leem; a 1280px ja empilham. */
+/* Abaixo do breakpoint as colunas empilham: cada card recupera a largura cheia
+   da pagina e o `.triple` volta a caber. O breakpoint foi MEDIDO (sonda
+   `ajustes_4col_probe.js`) com QUATRO colunas: a 1281px os cards ficavam com
+   235px medidos e ainda liam; a 1280px ja' empilhavam. Com tres colunas ha' mais
+   largura por card, entao o corte segue folgado — e' o mesmo valor de antes. */
 @media (max-width: 1280px) {
   [data-page="ajustes"] .main-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -1670,46 +1717,30 @@ main > section > .card { padding: 17px; }
       "selecao"
       "trans"
       "rend"
-      "prompt"
       "resumo";
   }
   [data-page="ajustes"] .card-resumo .card { position: static; }
-  .trio { grid-template-columns: minmax(0, 1fr); }
-  .trio > .card { margin-bottom: 14px; }
+  .duo { grid-template-columns: minmax(0, 1fr); }
+  .duo > .card { margin-bottom: 14px; }
   /* Empilhado o card volta a largura cheia: o triple cabe de novo. */
-  .trio .field-row.triple { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .trio .field-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .duo .field-row.triple { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .duo .field-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* ---------- CARD DO PROMPT ----------
-   O card vive nas DUAS paginas. Na Cortes ele mora no aside estreito
-   (292-340px); em Ajustes, numa coluna de ~272px do trio. Nas duas a largura e
-   estreita, e isso muda dois ajustes: `rows="16"` num textarea de ~300px vira
-   uma tira alta demais, entao a ALTURA passa a ser do CSS (com resize vertical
-   disponivel); e os dois botoes com o status ao lado nao cabem numa linha, entao
-   o status desce sozinho em vez de empurrar os botoes. */
-/* O Prompt e' o card que ABSORVE a sobra da grade. Ele e' o mais curto da faixa
-   mais alta (medido: 618px numa faixa de 1319px) e o conteudo dele e' texto
-   longo, entao a sobra vira AREA DE ESCRITA em vez de vao morto. A corrente e':
-   .studio-cell (flex) > .card (flex) > .form-section (flex) > .field (flex)
-   > textarea (flex: 1). Todas ja eram coluna flex menos o `.card` e a
-   `.form-section` — que e' o que as duas primeiras regras acrescentam. */
+   Ele mora so' no Estudio agora (etapa 3), num painel de largura cheia. O
+   `rows="14"` do markup seria uma tira alta demais num card largo, entao a
+   ALTURA passa a ser do CSS (com resize vertical disponivel); e os dois botoes
+   com o status ao lado nao cabem numa linha, entao o status desce sozinho em
+   vez de empurrar os botoes. */
 .prompt-card { display: flex; flex-direction: column; }
 .prompt-card .form-section { display: flex; flex-direction: column; flex: 1 1 auto; }
 .prompt-card .form-section > .field:first-child { flex: 1 1 auto; }
 .prompt-card .form-section > .field:first-child textarea { flex: 1 1 auto; }
-.prompt-card textarea { min-height: 150px; resize: vertical; }
+.prompt-card textarea { min-height: 240px; resize: vertical; }
 .prompt-card .prompt-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .prompt-card .prompt-actions .btn { flex: 1 1 auto; }
 .prompt-card .prompt-actions #curator-prompt-status { flex: 1 0 100%; }
-
-/* Em Ajustes a coluna do prompt tem ~272px — a mesma largura que na Cortes.
-   O `min-height` maior deixa o textarea proporcional ao da transcricao, que
-   fica ao lado. As duas paginas carregam este arquivo, entao o escopo e por
-   pagina: `[data-page="ajustes"]` no <body> e o gancho. Nao da para escopar
-   pelo wrapper - as duas usam `<main class="wrap">`, recebido do shared.css. */
-[data-page="ajustes"] .prompt-card textarea { min-height: 220px; }
-[data-page="ajustes"] .prompt-card .prompt-actions { margin-top: 4px; }
 
 #queue-list { gap: 11px; }
 .job-card { border-radius: 11px; background: #141a24; }
@@ -1718,8 +1749,10 @@ main > section > .card { padding: 17px; }
 
 @media (max-width: 1160px) {
   .studio-welcome { grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr); }
-  /* A grade do corpo continua 2x2; so o gap aperta. Trocar as COLUNAS aqui
-     sem trocar as AREAS quebraria o layout (as areas mandam). */
+  /* So' o gap da grade do corpo aperta. Ela nao tem colunas para trocar: e'
+     uma coluna de paineis (um por vez) desde a reorganizacao em etapas, e o
+     que era uma 2x2 com `grid-template-areas` saiu inteiro — nao ha areas
+     para manter em sincronia com estes tracks. */
   .main-grid { gap: 16px; }
 }
 @media (max-width: 960px) {
@@ -1734,7 +1767,11 @@ main > section > .card { padding: 17px; }
   .studio-welcome h1 { max-width: 18ch; font-size: clamp(1.8rem, 8vw, 2.25rem); }
   .studio-welcome p.lead { font-size: var(--text-body); }
   .studio-workflow { padding: 14px; }
-  .main-grid { padding-top: 20px; }
+  /* SEM `padding-top` no `.main-grid`: o respiro entre a barra de vistas e o
+     painel e' o `gap` do `.studio` (24px), e ele vale igual nas DUAS vistas.
+     Havia um `padding-top: 20px` aqui, de quando a medida morava dentro da
+     vista de configuracao — com o gap no lugar dele, o Configurar ficava com
+     44px de respiro no celular e o Resultados com 24. */
   .config-heading { align-items: flex-start; flex-direction: column; gap: 9px; }
   .defaults-badge { white-space: normal; }
   .card { padding: 16px 14px; }
@@ -1810,145 +1847,229 @@ header .nav-actions .btn { min-height: 42px; }
   .header-context-short { display: inline !important; padding: 0 !important; color: var(--text-primary) !important; }
 }
 
-/* Painel de execução: status primeiro, etapa atual em seguida, diagnóstico por último.
+/* ---------- A BARRA DE ACAO ----------
+   A Execucao nao e' mais a quarta celula de uma grade no meio da pagina: virou
+   uma barra IRMA' das duas vistas, que atravessa as duas. Onde quer que a pessoa
+   esteja, o botao que dispara o trabalho e o estado dele estao a' vista — o
+   defeito de origem era preencher os campos, rolar a pagina e so' entao achar o
+   botao.
 
-   O card NAO e `sticky`. Ele era, e a decisao foi revertida em 2026-10-02:
-   ao rolar, ele descolava das outras secoes e ficava parado em `top: 84px`
-   enquanto Fonte, Curador e Prompt subiam — um bloco solto na tela. Medido
-   em 1440x900: grudava em 84px de scrollY 600 a ~900 e depois era arrastado
-   embora (pista de 14px), ou seja, o pior dos dois mundos.
+   Ela GRUDA no pe' da janela (`position: sticky; bottom: 0`), entao o
+   acompanhamento continua visivel durante a rolagem das quatro etapas. Abaixo de
+   920px ela para de grudar: fixa no pe' de um celular cobriria quase um terco da
+   tela e o conteudo so' seria legivel por baixo dela.
 
-   O comportamento agora e o das demais secoes: `position: relative` (o valor
-   inicial), fluxo normal, sobe junto com a pagina. Nao ha mais `align-items`
-   especial no pai, nem pista a calcular, nem `min-height` de sustentacao. */
+   NAO confundir com o sticky REVERTIDO em 2026-10-02. Aquele prendia o card em
+   `top: 84px` e o deixava descolado das outras secoes — um bloco solto no meio
+   da tela, pior dos dois mundos. Este e' o oposto: no pe', fora do fluxo de
+   leitura, e a decisao veio junto com a barra (o teste de aceitacao e' o
+   `EstudioEtapasTests`). */
+.action-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 40;
+  margin-top: 8px;
+  padding: 10px 0 14px;
+  background: linear-gradient(to top, var(--content-bg) 66%, transparent);
+}
+
+/* Abaixo de 920px — o mesmo corte em que o rail vira gaveta — a barra PARA DE
+   GRUDAR. Fixa no pe' de um celular ela cobriria quase um terco da tela, e o
+   unico jeito de ler o conteudo seria rolar por baixo dela. Estatica, ela
+   volta a ser o ultimo bloco do documento.
+
+   A regra vive AQUI, colada no `position: sticky` que ela desliga, e nao la'
+   em cima junto da escada das etapas — foi onde ela nasceu, e la' era INERTE:
+   o `sticky` desta mesma classe vinha depois na folha e vencia a cascata
+   (mesma especificidade, ultimo vence). Medido a 480px antes do conserto:
+   `position: sticky`, 180px cobrindo o pe' da tela. */
+@media (max-width: 920px) {
+  .action-bar { position: static; padding-bottom: 0; background: none; }
+}
+
+/* O card dentro da barra. A PRIMEIRA linha e' um flex-row — titulo, estado,
+   progresso, acoes e o recolhedor — e a segunda (`.action-bar-detail`) carrega
+   a escada de etapas e o log, que nascem ocultos. */
 .execution-card {
-  /* Coluna flex porque a celula a estica. A faixa e' mais alta que o conteudo
-     (medido: 472px numa faixa de 668px) e e' o `margin-top: auto` das acoes que
-     joga os botoes para o RODAPE do card: a sobra vira respiro entre as etapas
-     e os botoes, em vez de um vao morto embaixo de tudo. */
   display: flex;
   flex-direction: column;
-  padding: 18px;
+  gap: 10px;
+  padding: 12px 16px;
   border-color: rgba(112,201,238,.16);
   background: linear-gradient(160deg, rgba(112,201,238,.045), transparent 38%), #11161f;
 }
-.execution-card .execution-actions { margin-top: auto; }
+.execution-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
 .execution-card .execution-card-heading {
   display: flex;
   align-items: center;
   gap: 11px;
-  margin-bottom: 16px;
+  margin-bottom: 0;
 }
 .execution-icon {
   display: grid;
-  flex: 0 0 38px;
-  width: 38px;
-  height: 38px;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
   place-items: center;
   border: 1px solid rgba(112,201,238,.19);
-  border-radius: 11px;
+  border-radius: 10px;
   color: #8bd7f4;
   background: rgba(112,201,238,.07);
 }
-.execution-icon svg { display: block; width: 20px; height: 20px; }
+.execution-icon svg { display: block; width: 18px; height: 18px; }
 .execution-heading-copy { display: grid; min-width: 0; gap: 2px; }
 .execution-kicker { color: var(--text-muted); font-size: .59rem; font-weight: 700; letter-spacing: .12em; line-height: 1.2; }
 .execution-card .execution-card-heading h2,
 .execution-card .execution-card-heading .execution-title { margin: 0; color: var(--text-primary); font-size: 1rem; font-weight: 650; letter-spacing: -.025em; line-height: 1.3; }
-.execution-format {
-  margin-left: auto;
-  padding: 5px 7px;
-  border: 1px solid rgba(255,255,255,.09);
-  border-radius: 6px;
-  color: #aab3c1;
-  background: rgba(255,255,255,.025);
-  font-size: .62rem;
-  font-weight: 650;
-  letter-spacing: .04em;
-}
-.execution-state-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.execution-state-row { display: flex; align-items: center; gap: 10px; }
 .execution-card #status-pill { min-height: 34px; padding: 6px 10px; font-size: .75rem; }
 .execution-card #status-pill .dot { flex: 0 0 7px; width: 7px; height: 7px; }
 .execution-elapsed { display: flex; align-items: center; gap: 7px; color: #d3dae5; font-size: .75rem; font-variant-numeric: tabular-nums; }
 .execution-elapsed > span:first-child { color: var(--text-muted); font-size: var(--text-2xs); }
-.execution-progress-label { margin-top: 18px; color: #aab3c1; font-size: var(--text-2xs); font-weight: 650; letter-spacing: .05em; }
-.execution-card #progress-track { height: 6px; margin: 8px 0 9px; background: rgba(255,255,255,.075); }
-.execution-card #progress-label { min-height: 36px; margin: 0 0 12px; color: #d8dee8 !important; font-size: .76rem !important; line-height: 1.5; }
+/* A barra de progresso e' o unico elemento ELASTICO da linha: ela ocupa o que
+   sobra entre o estado e as acoes, que e' o que faz a barra parecer uma barra
+   em qualquer largura em vez de um bloco alinhado a' esquerda. */
+.execution-bar-row #progress-track { flex: 1 1 160px; height: 6px; margin: 0; background: rgba(255,255,255,.075); }
+.execution-progress-label { margin-top: 0; color: #aab3c1; font-size: var(--text-2xs); font-weight: 650; letter-spacing: .05em; }
+.execution-card #progress-label { min-height: 0; margin: 0 0 10px; color: #d8dee8 !important; font-size: .76rem !important; line-height: 1.5; }
 .execution-card .step-list { display: flex; flex-direction: column; gap: 5px; margin: 5px 0 12px; }
 .execution-card .step-list li { min-height: 31px; padding: 6px 9px; border: 1px solid rgba(255,255,255,.035); border-radius: 8px; background: rgba(255,255,255,.022); font-size: .72rem; }
 .execution-card .step-list li[data-state="agora"] { border-color: rgba(255,79,174,.19); background: rgba(255,79,174,.055); }
 .execution-card .step-list li[data-state="feito"] { border-color: rgba(52,211,153,.11); }
-.execution-card .backend-note { margin: 10px 0 0; border-left-color: var(--danger); font-size: .73rem; }
-.execution-actions { display: grid; gap: 8px; }
-/* Resumo so-leitura da secao "Selecao" (que mora em /ajustes). Discreto de
-   proposito: e contexto para nao rodar no escuro, nao um campo a preencher. */
-.execution-selection {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  margin: 0 0 10px;
-  padding: 6px 10px;
-  border: 1px solid rgba(255,255,255,.045);
-  border-radius: 8px;
-  background: rgba(255,255,255,.022);
-}
-/* O rotulo de 8.32px e' o texto MENOR do painel, e era o pior caso de
-   contraste: `#737f91` sobre o card (#11161f) reprovava por 0.03 — o tipo de
-   falha que passa despercebida no olho e trava na auditoria. Mesmo valor da
-   cauda do header: um tom para "texto secundario pequeno", nao dois. */
-.execution-selection-label { color: #9ba6b5; font-size: .52rem; font-weight: 700; letter-spacing: .11em; }
-.execution-selection-value { color: #c5ceda; font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
-/* Alvo de 24px: era um <a> solto de 15px na linha da selecao — abaixo do
-   minimo WCAG 2.2 (2.5.8, 24px) para alvo que nao e' texto corrido. O
-   inline-flex centraliza o rotulo dentro da altura nova sem mudar a linha. */
-.execution-selection-edit { color: #ff4fae; font-size: .62rem; font-weight: 600; text-decoration: none; white-space: nowrap; display: inline-flex; align-items: center; min-height: 24px; }
-.execution-selection-edit:hover, .execution-selection-edit:focus-visible { text-decoration: underline; }
-.execution-actions .btn { display: flex; width: 100%; min-height: 43px; align-items: center; justify-content: center; gap: 8px; margin: 0 !important; font-size: var(--text-caption); }
-.execution-actions .btn-primary { min-height: 46px; }
+.execution-card .backend-note { margin: 0; border-left-color: var(--danger); font-size: .73rem; }
+/* Na barra as acoes sao uma linha, nao uma pilha: `width: 100%` faria cada
+   botao ocupar a linha inteira e empilhar os dois. */
+.execution-card .execution-actions { display: flex; gap: 8px; }
+.execution-card .execution-actions .btn { width: auto; min-height: 40px; }
+.execution-card .execution-actions .btn-primary { min-height: 40px; }
 .execution-actions .btn svg { flex: 0 0 16px; width: 16px; height: 16px; }
 .execution-actions #btn-plan { color: #c5ceda; background: rgba(255,255,255,.025); }
-.execution-log-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 17px; color: #aab3c1; font-size: .63rem; font-weight: 650; }
-/* Mesmo par do `.execution-selection-label`: 8.32px, agora legivel. Este so'
-   aparece com execucao ativa, entao nao entrava na varredura estatica do
-   painel parado — foi achado cando o `#737f91` ficou sem nenhum uso. */
+.execution-log-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 4px; color: #aab3c1; font-size: .63rem; font-weight: 650; }
+/* Mesmo par do `.etapa-ficha-label`: 8.32px, agora legivel. */
 .execution-log-heading span:last-child { color: #9ba6b5; font-size: .52rem; letter-spacing: .11em; }
 .execution-card .log-box { min-height: 47px; max-height: 155px; margin-top: 7px; padding: 9px 10px; border-color: rgba(218,226,243,.075); border-radius: 8px; background: #0a0e14; color: #d1d9e6; /* era #b9c4d2, agora 7.1:1 */ font-size: var(--text-2xs); line-height: 1.55; }
 .execution-log-empty { color: var(--text-muted); font-family: 'Inter', system-ui, sans-serif; font-size: var(--text-2xs); font-style: normal; }
 
-/* ---------- O CARD NAO CARREGA PESO MORTO EM REPOUSO ----------
-   O `#log-box` e o cabecalho dele somam 63px de caixa vazia antes do
-   primeiro log. Em repouso dao espaco de volta para quem abre a pagina e ve
-   um bloco preto com uma frase cinza dentro.
-
-   `:has(.execution-log-empty)` e o sinal de "nada foi logado ainda": o JS
-   remove esse span no primeiro `log()` (index.js:86) e nunca o devolve.
-   Quando o job comeca, o log reaparece sozinho — e ai a pessoa esta
-   olhando o log, nao navegando a pagina. */
-.execution-card:has(.execution-log-empty) .execution-log-heading,
-.execution-card:has(.execution-log-empty) .log-box { display: none; }
+/* O recolhedor do detalhe. `aria-expanded` e' a fonte de verdade do visual: o
+   CSS pinta por ele e o leitor de tela anuncia pelo mesmo atributo — escrever
+   nos dois lugares separados e' como eles divergem. */
+.action-bar-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 7px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.action-bar-toggle:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.action-bar-toggle[aria-expanded="true"] { border-color: var(--accent-soft); color: var(--text-primary); }
+.action-bar-chevron { display: inline-block; transition: transform var(--motion-fast) var(--ease-out-expo); }
+.action-bar-toggle[aria-expanded="true"] .action-bar-chevron { transform: rotate(180deg); }
 
 /* O `hidden` do #backend-state e respeitado sozinho (nao ha `display` na
    regra .backend-note acima), mas a `.execution-card .backend-note` da
-   linha 1422 sobrescreve `margin`. Repetir o par aqui e o que garante que a
+   linha 1882 sobrescreve `margin`. Repetir o par aqui e o que garante que a
    nota some de fato quando o servidor esta no ar — ela media 51px mesmo
    escondida enquanto o JS nao rodasse. */
 .execution-card [hidden] { display: none !important; }
 
-/* Os dois `position: static !important` que existiam aqui (um para o card de
-   Execucao, outro para o aside) SAIRAM em 2026-10-02: nao ha mais sticky no
-   card para desligar em viewport estreita, e o aside que precisava do segundo
-   nao existe na Cortes. Ver a nota no `.execution-card`. */
+/* A regra que escondia o log vazio em repouso (`:has(.execution-log-empty)`)
+   SAIU: ela existia porque o log ocupava 63px de caixa preta no meio do card.
+   Agora o log mora dentro do `.action-bar-detail`, que nasce `hidden` — nao ha
+   mais peso morto para esconder, e a regra so' descreveria um estado que nao
+   acontece. */
+
 @media (max-width: 640px) {
-  .execution-card { padding: 16px 14px; }
-  .execution-card .execution-card-heading { margin-bottom: 13px; }
-  .execution-progress-label { margin-top: 15px; }
+  .execution-card { padding: 11px 13px; }
   .execution-card .log-box { max-height: 125px; }
+  /* Na tela estreita o rotulo do recolhedor some e fica so' a seta: o botao
+     inteiro nao cabe na linha junto com os dois de acao. */
+  .action-bar-toggle-text { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .execution-card .step-list li[data-state="agora"]::before { animation: none; }
+  .action-bar-chevron { transition: none; }
 }
+
+/* ---------- O CARD DA ETAPA 2 (saida e parametros) ----------
+   A linha de tres campos (Pasta | Quantidade | Download) se REORGANIZA pela
+   largura que tem, e nao por um numero de viewport.
+
+   O motivo e' medido. Com `repeat(3, 1fr)` — a regra base do `.field-row.triple`
+   — as tres colunas encolhiam juntas e o campo "Pasta" era o que pagava: o par
+   input+botao nao encolhe abaixo de 78px (o botao) + 8px (o gap), entao em
+   960px o input media **98px**. E' o mesmo defeito que a medicao antiga ja'
+   tinha apontado ("o input media 26px") na grade de meia largura; ele voltou
+   porque o card deixou de ser meia largura e passou a ser a coluna inteira,
+   onde as tres colunas dividem um espaco que nao sobra para elas.
+
+   `auto-fit` + `minmax(320px, 1fr)` em vez de um breakpoint: 320px e' o piso
+   em que o input ainda cabe com um caminho legivel (320 - 94 - 8 = 218px de
+   input, contra os 98px de antes), e a linha cai para duas ou uma coluna
+   sozinha quando o piso nao cabe.
+
+   Medido depois, largura da viewport -> largura do input "Pasta":
+   1440 -> 258, 1280 -> 365, 1180 -> 315, 1160 -> 305, 1100 -> 275,
+   980 -> 544, 960 -> 524, 920 -> 313, 768 -> 237, 720 -> 540, 640 -> 476,
+   480 -> 316. O pior caso deixou de ser 98px e passou a ser 237px, e a pagina
+   nao ganhou rolagem horizontal em nenhuma delas.
+
+   Vale so' para ESTE card. O `.triple` do card Fonte e do formulario de
+   Ajustes nao foram tocados: la' nao ha' `.path-picker`, e a linha de tres
+   campos largos cabe em tres colunas sem aperto. */
+.card-saida .field-row.triple {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+/* ---------- A FICHA DA ETAPA 2 (so' leitura) ----------
+   Mostra o que vem de `ajustes.toml` sem oferecer edicao: quem edita e' a
+   pagina Ajustes, e o link leva ate' la'. Ela existe porque a decisao de
+   duracao e de motor ficava invisivel no momento de clicar em "Gerar cortes" —
+   a pessoa rodaria sem saber com que parametros. Discreta de proposito: e'
+   contexto para nao rodar no escuro, nao um campo a preencher. */
+.etapa-ficha {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.022);
+}
+.etapa-ficha-linha {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  color: #c5ceda;
+  font-size: var(--text-body-sm);
+  font-variant-numeric: tabular-nums;
+}
+/* O rotulo de 8.32px e' o texto MENOR do painel, e era o pior caso de
+   contraste: `#737f91` sobre o card reprovava por 0.03 — o tipo de falha que
+   passa despercebida no olho e trava na auditoria. Mesmo valor da cauda do
+   header: um tom para "texto secundario pequeno", nao dois. */
+.etapa-ficha-label { color: #9ba6b5; font-size: .62rem; font-weight: 700; letter-spacing: .11em; }
+.etapa-ficha-nota { margin: 2px 0 0; color: var(--text-muted); font-size: var(--text-2xs); line-height: 1.55; }
+/* Alvo de 24px: era um <a> solto de 15px na linha da selecao — abaixo do
+   minimo WCAG 2.2 (2.5.8, 24px) para alvo que nao e' texto corrido. O
+   inline-flex centraliza o rotulo dentro da altura nova sem mudar a linha. */
+.etapa-ficha-edit { color: var(--accent-primary); font-size: .72rem; font-weight: 600; text-decoration: none; white-space: nowrap; display: inline-flex; align-items: center; min-height: 24px; }
+.etapa-ficha-edit:hover, .etapa-ficha-edit:focus-visible { text-decoration: underline; }
 /* ---------- AJUSTES: ABERTURA, FICHA E ATALHOS ----------
    A abertura continua sem imagem (cabecalho de ferramenta, nao hero de
    landing), mas a ficha virou CARD -- legenda, tres pares rotulo/valor e

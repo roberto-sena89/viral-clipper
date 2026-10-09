@@ -134,6 +134,7 @@
   font-weight: 600; font-size: 1rem; letter-spacing: -0.02em;
   padding: 0 6px 16px; border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 14px;
+}
 /* A marca do rail e' o componente `footer-brand` em tamanho compacto. O
    fundo da caixa, a borda e a cor do SVG vem das regras base do componente
    (que agora nao e' mais scoped no `.site-footer`); aqui so' o TAMANHO e a
@@ -152,12 +153,15 @@
   white-space: nowrap;
 }
 .rail-brand .footer-brand__description {
-  overflow: hidden;
+  /* SEM nowrap/ellipsis: "Seu conteúdo. Novas possibilidades." nao cabe em
+     ~120px de coluna (o selo LOCAL divide a linha com a marca), e cortar o
+     slogan para "Seu conteúdo. Nov…" transforma a promessa do produto em
+     reticencias. O rail e' vertical -- quebrar em duas ou tres linhas e' o
+     comportamento certo, e e' o que o rodape (mais largo) ja fazia. */
   color: var(--text-muted);
   font-size: var(--text-2xs);
   line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }.rail-label {
   font-size: var(--text-2xs); font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
   color: var(--text-muted); padding: 0 10px; margin: 4px 0 8px;

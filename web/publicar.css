@@ -118,20 +118,173 @@
 
 /* ---------- ficha da origem ---------- */
 
+/* O card e o CONTAINER da ficha: as colunas respondem a largura do card, nao
+   a da viewport. O rail some em 920px e devolve ~240px de coluna -- um
+   breakpoint de viewport desenharia a ficha para o tamanho errado sempre que
+   o rail estivesse presente. */
+.publicar-origem-card { container-type: inline-size; }
+
+.publicar-origem-kicker {
+  margin: 0 0 7px;
+  color: var(--accent-soft);
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+/* A ficha deixou de ser uma tabela de duas colunas (rotulo/valor) e virou uma
+   grade de CELULAS: cada metadado e' uma peca com a mesma moldura, e o que
+   muda dentro dela e' o papel do dado -- texto de leitura, estatistica,
+   identificador ou caminho. dt vira micro-rotulo; o valor carrega a escala. */
 .publicar-ficha {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 7px 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
   margin: 0;
-  font-size: var(--text-caption);
 }
-.publicar-ficha dt { color: var(--text-muted); }
+
+.publicar-ficha-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 11px 13px;
+  background: rgba(218, 226, 243, 0.035);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  transition:
+    border-color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease;
+}
+.publicar-ficha-cell:hover {
+  border-color: var(--border-strong);
+  background: rgba(218, 226, 243, 0.055);
+}
+
+.publicar-ficha dt {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .publicar-ficha dd {
   margin: 0;
   color: var(--text-secondary);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption-lh);
   overflow-wrap: anywhere;
 }
-.publicar-ficha a { color: var(--accent-soft); }
+
+/* Título: a unica celula que e' frase. Fundo com tinta da propria marca e
+   barra de acento nao decoram -- marcam hierarquia: e' o campo que diz QUAL
+   video, e os outros seis dizem sobre ele. */
+.publicar-ficha-cell--lead {
+  grid-column: 1 / -1;
+  background: rgba(255, 79, 174, 0.07);
+  border-color: rgba(255, 79, 174, 0.3);
+}
+.publicar-ficha-cell--lead:hover {
+  background: rgba(255, 79, 174, 0.1);
+  border-color: rgba(255, 79, 174, 0.42);
+}
+.publicar-ficha-cell--lead dd {
+  color: var(--text-primary);
+  font-size: var(--text-subtitle);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+}
+
+/* Estatistica: numero grande e tabular. Duracao e Trechos sao os dois campos
+   que se respondem de relance; rotulo minimo em cima, numero embaixo. */
+.publicar-ficha-cell--stat dd {
+  color: var(--text-primary);
+  font-size: var(--text-title);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.015em;
+}
+
+/* Identificador (Curador): valor que e' um NOME DE SISTEMA, nao prosa -- pill
+   para ler como etiqueta, nao como frase. */
+.publicar-ficha-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 10px;
+  background: var(--active-tint);
+  border: 1px solid rgba(255, 79, 174, 0.3);
+  border-radius: 999px;
+  color: var(--accent-soft);
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  overflow-wrap: anywhere;
+}
+
+/* Endereco: chip monoespacado com seta. O texto encolhe com ellipsis dentro
+   da celula; o URL inteiro fica no href e no title. */
+.publicar-ficha-cell--link { grid-column: 1 / -1; }
+.publicar-ficha-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 4px 10px;
+  background: var(--well-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  color: var(--accent-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  text-decoration: none;
+  transition:
+    border-color var(--motion-fast) ease,
+    color var(--motion-fast) ease;
+}
+.publicar-ficha-link:hover {
+  border-color: var(--border-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.publicar-ficha-link:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+.publicar-ficha-link-texto {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.publicar-ficha-seta { flex: 0 0 auto; width: 11px; height: 11px; }
+
+/* Relatorio: caminho de arquivo -- monoespacado sobre poco, como o resto do
+   painel mostra caminho (o log, o CLI). */
+.publicar-ficha-cell--caminho { grid-column: 1 / -1; }
+.publicar-ficha-caminho {
+  display: inline-block;
+  max-width: 100%;
+  padding: 3px 9px;
+  background: var(--well-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  overflow-wrap: anywhere;
+}
+
+/* Colunas por LARGURA DO CARD (container acima): 4 -> 2 -> 1. Os limiares sao
+   o ponto em que a celula mais larga da banda (rotulo "Duracao da fonte") e o
+   valor comecam a quebrar linha duas vezes. */
+@container (max-width: 640px) {
+  .publicar-ficha { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 360px) {
+  .publicar-ficha { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* ---------- tela estreita ---------- */
 
@@ -149,6 +302,6 @@
 @media (max-width: 520px) {
   .publicar-topo { gap: 11px; }
   .publicar-thumb { flex-basis: 68px; width: 68px; }
-  .publicar-ficha { grid-template-columns: minmax(0, 1fr); gap: 2px; }
-  .publicar-ficha dd { margin-bottom: 8px; }
+  /* A ficha nao entra aqui: as colunas dela sao do CONTAINER (regra acima),
+     e o rail ja' saiu da conta nessa largura. */
 }

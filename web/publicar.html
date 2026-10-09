@@ -12,7 +12,7 @@
      segunda verdade sobre nada que ja exista. -->
 <link rel="stylesheet" href="/shared.css?v=20261008">
 <link rel="stylesheet" href="/index.css?v=20261008">
-<link rel="stylesheet" href="/publicar.css?v=20261008">
+<link rel="stylesheet" href="/publicar.css?v=20261009">
 </head>
 <body data-page="publicar">
 
@@ -122,8 +122,14 @@
     <p class="hint hint-erro" id="publicar-erro" role="alert" hidden></p>
   </section>
 
-  <section class="card" id="publicar-origem">
-    <h2><span class="ico" aria-hidden="true">⤓</span> Origem</h2>
+  <!-- A ficha da origem e o atalho dela sobem e descem JUNTOS (mostrarOrigem).
+       O card ganha `container-type` para a ficha mudar de colunas pela
+       LARGURA DO CARD, nao da viewport: o rail some em 920px e devolve
+       ~240px de coluna -- um breakpoint de viewport desenharia a ficha para
+       o tamanho errado sempre que o rail estivesse presente. -->
+  <section class="card publicar-origem-card" id="publicar-origem" aria-labelledby="publicar-origem-titulo">
+    <p class="publicar-origem-kicker">Ficha da fonte</p>
+    <h2 id="publicar-origem-titulo"><span class="ico" aria-hidden="true">⤓</span> Origem</h2>
     <p class="hint">De onde saíram estes trechos.</p>
     <dl class="publicar-ficha" id="publicar-ficha"></dl>
   </section>
@@ -139,7 +145,7 @@
 <div class="toast-zone" id="toast-zone" role="status" aria-live="polite"></div>
 
 <script src="/comum.js?v=20261008"></script>
-<script src="/publicar.js?v=20261008"></script>
+<script src="/publicar.js?v=20261009"></script>
 
 </body>
 </html>

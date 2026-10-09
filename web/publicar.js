@@ -81,23 +81,67 @@
   let clipsLidos = [];
 
   function fichaHtml(data) {
-    const linhas = [];
-    const add = (rotulo, valor, href) => {
-      if (!valor) return;
-      const conteudo = href
-        ? '<a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(valor) + '</a>'
-        : esc(valor);
-      linhas.push('<dt>' + esc(rotulo) + '</dt><dd>' + conteudo + '</dd>');
+    // A duracao da FONTE e' leitura de minutos, nao medida de clipe: 713 s
+    // vira "11:53". O `segundos()` com decimal continua sendo o dos TRECHOS,
+    // onde 30,0s importa; em 11 minutos o decimal e' ruido.
+    const duracao = (valor) => {
+      const n = Number(valor);
+      if (!Number.isFinite(n) || n <= 0) return '';
+      const total = Math.round(n);
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      return h
+        ? h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0')
+        : m + ':' + String(s).padStart(2, '0');
     };
-    add('Título', data.title);
+    // O chip do endereco mostra so' o que se reconhece -- host + caminho. O
+    // URL COMPLETO viaja no href e no `title`, entao nada se perde, e uma
+    // query longa nao empurra o resto da ficha para fora da coluna.
+    const endereco = (valor) => {
+      try {
+        const u = new URL(valor);
+        return u.hostname.replace(/^www\./, '')
+          + (u.pathname === '/' ? '' : u.pathname) + u.search;
+      } catch (e) {
+        return String(valor);
+      }
+    };
+    const celulas = [];
+    const add = (rotulo, valor, op) => {
+      if (!valor) return;
+      const o = op || {};
+      let conteudo;
+      if (o.href) {
+        conteudo = '<a class="publicar-ficha-link" href="' + esc(o.href) + '"'
+          + ' title="' + esc(o.href) + '" target="_blank" rel="noopener">'
+          + '<span class="publicar-ficha-link-texto">' + esc(valor) + '</span>'
+          + '<svg class="publicar-ficha-seta" viewBox="0 0 12 12" aria-hidden="true" focusable="false">'
+          + '<path d="M3.75 8.25 8.25 3.75M4.5 3.75h3.75V7.5" fill="none" stroke="currentColor"'
+          + ' stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></a>';
+      } else if (o.chip) {
+        conteudo = '<span class="publicar-ficha-chip">' + esc(valor) + '</span>';
+      } else {
+        conteudo = esc(valor);
+        if (o.caminho) conteudo = '<code class="publicar-ficha-caminho">' + conteudo + '</code>';
+      }
+      celulas.push('<div class="publicar-ficha-cell' + (o.classe ? ' ' + o.classe : '') + '">'
+        + '<dt>' + esc(rotulo) + '</dt><dd>' + conteudo + '</dd></div>');
+    };
+    add('Título', data.title, { classe: 'publicar-ficha-cell--lead' });
     add('Canal', data.uploader);
-    add('Endereço', data.url, data.url);
-    add('Duração da fonte', data.source_duration ? segundos(data.source_duration) : '');
-    add('Trechos', (data.clips || []).length ? String(data.clips.length) : '');
-    add('Curador', data.model);
-    add('Relatório', data.path);
-    if (!linhas.length) return '<dt>—</dt><dd>Sem ficha: o relatório não trouxe os dados da origem.</dd>';
-    return linhas.join('');
+    add('Duração da fonte', duracao(data.source_duration), { classe: 'publicar-ficha-cell--stat' });
+    add('Trechos', (data.clips || []).length ? String(data.clips.length) : '',
+        { classe: 'publicar-ficha-cell--stat' });
+    add('Curador', data.model, { classe: 'publicar-ficha-cell--chip', chip: true });
+    add('Endereço', data.url ? endereco(data.url) : '',
+        { classe: 'publicar-ficha-cell--link', href: data.url });
+    add('Relatório', data.path, { classe: 'publicar-ficha-cell--caminho', caminho: true });
+    if (!celulas.length) {
+      return '<div class="publicar-ficha-cell publicar-ficha-cell--lead"><dt>—</dt>'
+        + '<dd>Sem ficha: o relatório não trouxe os dados da origem.</dd></div>';
+    }
+    return celulas.join('');
   }
 
   function cartaoHtml(clip, indice) {

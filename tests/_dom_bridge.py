@@ -144,6 +144,11 @@ def pagina_montada(nome: str, *,
         input=json.dumps(entrada),
         capture_output=True,
         text=True,
+        # UTF-8, nao a predefinida do Windows (cp1252): o node imprime UTF-8,
+        # e cp1252 TRAVA em qualquer byte fora da tabela — um "Í" no HTML da
+        # pagina (C3 8D) ja derrubou os testes de marca com
+        # UnicodeDecodeError dentro do reader thread do proprio subprocess.
+        encoding="utf-8",
         timeout=timeout,
         # O ambiente COMPLETO, com o DOM_JS por cima. Passar um `env` so' com
         # PATH quebra o node no Windows: ele precisa de SystemRoot e companhia

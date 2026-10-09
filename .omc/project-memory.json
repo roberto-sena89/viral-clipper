@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1790552409631,
+  "lastScanned": 1791473573492,
   "projectRoot": "C:\\Users\\USUARIO\\viral-clipper",
   "techStack": {
     "languages": [
@@ -41,12 +41,29 @@
   },
   "customNotes": [],
   "directoryMap": {
+    "deliverables": {
+      "path": "deliverables",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1791473573185,
+      "keyFiles": []
+    },
+    "design-system": {
+      "path": "design-system",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1791473573186,
+      "keyFiles": []
+    },
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
-      "fileCount": 1,
-      "lastAccessed": 1790552409477,
+      "fileCount": 4,
+      "lastAccessed": 1791473573187,
       "keyFiles": [
+        "auditoria-2026-10-07.md",
+        "curador.md",
+        "modelos-gratuitos.md",
         "modelos-nvidia.md"
       ]
     },
@@ -54,7 +71,7 @@
       "path": "out",
       "purpose": "Build output",
       "fileCount": 1,
-      "lastAccessed": 1790552409478,
+      "lastAccessed": 1791473573188,
       "keyFiles": [
         "viral_report.md"
       ]
@@ -62,21 +79,24 @@
     "output": {
       "path": "output",
       "purpose": null,
-      "fileCount": 8,
-      "lastAccessed": 1790552409478,
+      "fileCount": 0,
+      "lastAccessed": 1791473573188,
+      "keyFiles": []
+    },
+    "prompts": {
+      "path": "prompts",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1791473573189,
       "keyFiles": [
-        "clips.json",
-        "clips.md",
-        "fQwp2m_O-Uk_01_o_cara_não_é_o_pica_das_magias_de_tecnol_000003.mp4",
-        "fQwp2m_O-Uk_02_uma_delas_tem_seis_dedos_o_telô_tem_o_qu_000112.mp4",
-        "fQwp2m_O-Uk_03_tem_que_ser_uma_espada_casca_agora_de_ma_000175.mp4"
+        "curador.txt"
       ]
     },
     "templates": {
       "path": "templates",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1790552409479,
+      "lastAccessed": 1791473573189,
       "keyFiles": [
         "meme-pov.toml"
       ]
@@ -84,21 +104,21 @@
     "tests": {
       "path": "tests",
       "purpose": "Test files",
-      "fileCount": 21,
-      "lastAccessed": 1790552409480,
+      "fileCount": 29,
+      "lastAccessed": 1791473573190,
       "keyFiles": [
+        "test_ajustes.py",
         "test_archive.py",
+        "test_auto_mode.py",
         "test_batch.py",
-        "test_cli.py",
-        "test_config_file.py",
-        "test_download.py"
+        "test_cli.py"
       ]
     },
     "viralclipper": {
       "path": "viralclipper",
       "purpose": null,
-      "fileCount": 25,
-      "lastAccessed": 1790552409481,
+      "fileCount": 30,
+      "lastAccessed": 1791473573190,
       "keyFiles": [
         "archive.py",
         "audio.py",
@@ -110,41 +130,185 @@
     "web": {
       "path": "web",
       "purpose": null,
-      "fileCount": 13,
-      "lastAccessed": 1790552409482,
+      "fileCount": 18,
+      "lastAccessed": 1791473573192,
       "keyFiles": [
         "1.mp4",
         "2.mp4",
         "3.mp4",
-        "index.css",
-        "index.html"
+        "ajustes.html",
+        "ajustes.js"
       ]
     },
     "_scratch": {
       "path": "_scratch",
       "purpose": null,
-      "fileCount": 185,
-      "lastAccessed": 1790552409483,
+      "fileCount": 2,
+      "lastAccessed": 1791473573194,
       "keyFiles": [
-        "again_check.log",
-        "archive_farid.log",
-        "captured_graphql.json",
-        "capture_graphql.js",
-        "card_valid_check.js"
+        "audit_layout.mjs",
+        "probe_sel.mjs"
       ]
     },
     "__pycache__": {
       "path": "__pycache__",
       "purpose": null,
-      "fileCount": 3,
-      "lastAccessed": 1790552409484,
+      "fileCount": 5,
+      "lastAccessed": 1791473573201,
       "keyFiles": [
         "cache_e2e_test.cpython-314-pytest-9.1.1.pyc",
         "probe_ig_graphql.cpython-313.pyc",
-        "smoke_test.cpython-314-pytest-9.1.1.pyc"
+        "smoke_test.cpython-314-pytest-9.1.1.pyc",
+        "_smoke2.cpython-313.pyc",
+        "_smoke2.cpython-314.pyc"
       ]
     }
   },
-  "hotPaths": [],
+  "hotPaths": [
+    {
+      "path": "viralclipper/cli.py",
+      "accessCount": 36,
+      "lastAccessed": 1791491818719,
+      "type": "directory"
+    },
+    {
+      "path": "viralclipper/render.py",
+      "accessCount": 14,
+      "lastAccessed": 1791483329896,
+      "type": "directory"
+    },
+    {
+      "path": "viralclipper/template.py",
+      "accessCount": 7,
+      "lastAccessed": 1791484503866,
+      "type": "file"
+    },
+    {
+      "path": "web/shared.css",
+      "accessCount": 4,
+      "lastAccessed": 1791474022059,
+      "type": "file"
+    },
+    {
+      "path": "web/index.css",
+      "accessCount": 4,
+      "lastAccessed": 1791474279836,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_render.py",
+      "accessCount": 4,
+      "lastAccessed": 1791483494923,
+      "type": "file"
+    },
+    {
+      "path": "web",
+      "accessCount": 3,
+      "lastAccessed": 1791474297265,
+      "type": "directory"
+    },
+    {
+      "path": "tests/test_web_server.py",
+      "accessCount": 3,
+      "lastAccessed": 1791485745594,
+      "type": "directory"
+    },
+    {
+      "path": "",
+      "accessCount": 2,
+      "lastAccessed": 1791485715330,
+      "type": "directory"
+    },
+    {
+      "path": "web/ajustes.html",
+      "accessCount": 2,
+      "lastAccessed": 1791486189540,
+      "type": "file"
+    },
+    {
+      "path": "web/scrap.css",
+      "accessCount": 1,
+      "lastAccessed": 1791474152950,
+      "type": "file"
+    },
+    {
+      "path": "web/scrap.html",
+      "accessCount": 1,
+      "lastAccessed": 1791474317390,
+      "type": "file"
+    },
+    {
+      "path": "viralclipper/caption_presets.py",
+      "accessCount": 1,
+      "lastAccessed": 1791480089759,
+      "type": "file"
+    },
+    {
+      "path": "viralclipper",
+      "accessCount": 1,
+      "lastAccessed": 1791480567490,
+      "type": "directory"
+    },
+    {
+      "path": "tests/_fixtures.py",
+      "accessCount": 1,
+      "lastAccessed": 1791483415537,
+      "type": "directory"
+    },
+    {
+      "path": "TASKS_SUMMARY.md",
+      "accessCount": 1,
+      "lastAccessed": 1791483835066,
+      "type": "file"
+    },
+    {
+      "path": "PERFORMANCE_OPTIMIZATION_SUMMARY.md",
+      "accessCount": 1,
+      "lastAccessed": 1791484127894,
+      "type": "file"
+    },
+    {
+      "path": "TEMPLATE_EXTENSION_SUMMARY.md",
+      "accessCount": 1,
+      "lastAccessed": 1791484782774,
+      "type": "file"
+    },
+    {
+      "path": "viralclipper/ranker.py",
+      "accessCount": 1,
+      "lastAccessed": 1791485063300,
+      "type": "file"
+    },
+    {
+      "path": "viralclipper/providers.py",
+      "accessCount": 1,
+      "lastAccessed": 1791485079787,
+      "type": "file"
+    },
+    {
+      "path": "viralclipper/provider_probe.py",
+      "accessCount": 1,
+      "lastAccessed": 1791485094141,
+      "type": "file"
+    },
+    {
+      "path": "docs/curador.md",
+      "accessCount": 1,
+      "lastAccessed": 1791485127027,
+      "type": "file"
+    },
+    {
+      "path": "docs/modelos-gratuitos.md",
+      "accessCount": 1,
+      "lastAccessed": 1791485143731,
+      "type": "file"
+    },
+    {
+      "path": "docs/painel-web.md",
+      "accessCount": 1,
+      "lastAccessed": 1791485158149,
+      "type": "file"
+    }
+  ],
   "userDirectives": []
 }

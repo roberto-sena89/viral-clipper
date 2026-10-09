@@ -47,6 +47,37 @@ AS ENTRADAS QUE FICARAM DE FORA estao em `SEM_DEGRAU`, cada uma com o delta
 contra o seu degrau e o empate que a desqualifica. Sao os literais que estao no
 meio de dois degraus: 0.73, 0.74, 0.75, 0.76, 0.86, 0.98, 1.0, 1.125, 1.15.
 
+COMO SE PROVA QUE A TROCA NAO MUDOU O DESENHO
+---------------------------------------------
+Contar declaracoes no CSS nao prova nada sobre a tela: a cascata faz um
+`font-size` trocado num ancestral aparecer como dezenas de "diferencas" nos
+descendentes que so' herdam. Medido no navegador (Playwright), servir o commit
+anterior (`git archive <commit> web`) numa porta e o atual em outra, e comparar
+as duas capturas:
+
+    ANTES  2.865 medidas  |  DEPOIS  2.970 medidas
+
+A comparacao NAO pode ser por chave posicional. O indice da chave e' "a
+enesima folha de texto da pagina", e a pagina ganhou/perdeu nos entre este
+commit e o anterior: 435 chaves existem so' no antes e 540 so' no depois, entao
+comparar `...|strong|154` com `...|strong|154` compara elementos DIFERENTES e
+fabrica deltas de 2,08px que nao existem. Foi o que aconteceu na primeira
+leitura -- o "14.08px -> 12px" era dois elementos distintos no mesmo indice.
+
+A comparacao que vale e' por DISTRIBUICAO: quantos elementos tem cada valor de
+px em cada lado, e para onde cada contagem migrou. O resultado:
+
+    13,44px  404 -> 13,5px   478     o grosso (0,06px por elemento)
+    16,8px   160 -> 17px     180     o nome da marca no rodape (1,00px, visivel)
+    10,24..11,36px (215) -> 11px  226     o cluster sob o 2xs (<= 0,60px)
+    12,48px   92 -> 12,8px   107     (0,32px)
+    14,08px   47 -> 14px      47     (0,08px)
+    18px      20 -> 17px      20     (1,00px, o mesmo nome da marca)
+
+Toda transicao cai <= 0,60px, MENOS uma: `span.footer-brand__name`, 18px ->
+17px, 20 usos (4 paginas x 5 larguras). Essa foi medida a parte e passa: em
+todas as 20 combinacoes fica em UMA linha, sem estourar o container.
+
 Uso:
     python tools/normalizar_fontes.py --ver    # so' mostra o que faria
     python tools/normalizar_fontes.py          # aplica

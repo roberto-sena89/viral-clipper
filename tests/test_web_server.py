@@ -4619,9 +4619,12 @@ class DocsTests(unittest.TestCase):
     """
 
     def test_the_docs_button_points_at_the_local_page(self):
-        js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
-        self.assertIn("'/docs'", js)
-        self.assertNotIn("github.com/roberto-sena89", js,
+        # A entrada da ajuda mora no rodape (comum.js, "Como usar", nas 4
+        # paginas) desde que o secundario do hero saiu: o destino continua
+        # local, nao o GitHub.
+        comum = (server.WEB_DIR / "comum.js").read_text(encoding="utf-8")
+        self.assertIn("'/docs'", comum)
+        self.assertNotIn("github.com/roberto-sena89", comum,
                          "o botão voltou a depender do GitHub")
 
     def test_the_renderer_covers_the_readme_surface(self):

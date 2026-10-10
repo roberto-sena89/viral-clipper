@@ -2525,13 +2525,6 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     toast('Modo lote: use python -m viralclipper --batch urls.txt -o output');
     log('# modo lote (CLI):\npython -m viralclipper --batch urls.txt -o output --retry-failed');
   });
-  const abrirDocs = () => {
-    // Local: o README do repo renderizado pelo próprio servidor. O link pro
-    // GitHub dava 404 (repo privado/renomeado) — a única ajuda do produto
-    // não pode depender de endereço externo.
-    window.open('/docs', '_blank');
-  };
-  $('#btn-docs').addEventListener('click', abrirDocs);
   // A volta para a Biblioteca, agora um `<button>`: sem `href`, o destino mora
   // aqui. Mesma aba e mesmo mecanismo do rodape (`window.location.href`) -- a
   // Biblioteca devolve a URL por `?url=`, entao o ida-e-volta fecha no mesmo

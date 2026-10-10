@@ -8323,6 +8323,71 @@ class StudioToLibraryControlTests(unittest.TestCase):
         self.assertIn("index.js", doc)
 
 
+class StudioToAjustesControlTests(unittest.TestCase):
+    """A ida do Estudio para Ajustes, pela ficha da etapa 2.
+
+    A ficha mostra o que vem de `ajustes.toml` (selecao e render) e nao edita
+    nada -- quem edita e' a pagina de Ajustes. O controle que faz a ponte era
+    um `<a class="etapa-ficha-edit">`; virou `<button class="btn pressable">`,
+    e o destino passou a morar no `index.js`, como o irmao da Biblioteca.
+
+    Os dois lados sao medidos pelo mesmo motivo do irmao: um `<button>` nao
+    navega sozinho, entao um handler removido deixa o botao na tela sem fazer
+    nada -- e ele parece funcionar.
+    """
+
+    #: O id do botao.
+    ID = "btn-editar-ajustes"
+
+    #: A pagina de destino. Mora no JS, nao num `href`.
+    ROTA = "/ajustes"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.body = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+
+    def _botao(self) -> str:
+        """A tag `<button>` do controle, lida do proprio HTML."""
+        m = re.search(r'<button[^>]*\bid="' + self.ID + r'"[^>]*>', self.body)
+        if m is None:
+            raise AssertionError("o botao de Editar em Ajustes sumiu")
+        return m.group(0)
+
+    def test_the_studio_has_a_button_to_ajustes(self):
+        """Um `<button>` de verdade, com o `class` de botao do projeto."""
+        tag = self._botao()
+        self.assertIn('type="button"', tag,
+                      "sem `type` o botao dentro do form vira submit")
+        classes = re.search(r'class="([^"]*)"', tag)
+        self.assertIsNotNone(classes, "o botao ficou sem `class`")
+        tokens = classes.group(1).split()
+        self.assertIn("btn", tokens, "perdeu o `class` de botao do projeto")
+        self.assertIn("pressable", tokens, "perdeu o `pressable`")
+
+    def test_the_route_lives_in_the_js(self):
+        """O destino saiu do `href` e passou para o handler."""
+        self.assertNotIn(
+            'href="' + self.ROTA + '"', self.body,
+            "o controle voltou a ser um `<a href>`: o botao virou link")
+        alvo = "$('#" + self.ID + "')"
+        self.assertIn(alvo, self.js, "o botao nao tem handler no index.js")
+        bloco = self.js[self.js.index(alvo):][:400]
+        self.assertIn("window.location.href", bloco,
+                      "o botao nao navega por `window.location.href`")
+        self.assertIn("'" + self.ROTA + "'", bloco,
+                      "o handler nao aponta para Ajustes")
+
+    def test_the_button_lives_in_the_etapa2_ficha(self):
+        """Dentro da ficha da etapa 2 -- o bloco cujos valores ele edita."""
+        ficha = self.body.index('id="selection-summary"')
+        botao = self.body.index('id="' + self.ID + '"')
+        self.assertGreater(botao, ficha, "o botao saiu da ficha da etapa 2")
+        # E nao pode ter ido parar no rodape, que e' montado por comum.js.
+        comum = (server.WEB_DIR / "comum.js").read_text(encoding="utf-8")
+        self.assertNotIn(self.ID, comum, "o botao foi para o rodape (comum.js)")
+
+
 class ApiNamespaceTests(unittest.TestCase):
     """A separacao entre PAGINA e DADO -- o contrato que o item 4 fixou.
 
@@ -8545,20 +8610,32 @@ class TouchTargetTests(unittest.TestCase):
     def css(self, nome: str) -> str:
         return (server.WEB_DIR / nome).read_text(encoding="utf-8")
 
-    def test_the_selection_edit_link_is_never_below_24px(self):
-        """O "Editar em Ajustes" da etapa 2: 15px no desktop, em QUALQUER ponteiro.
+    def test_the_selection_edit_control_is_never_below_24px(self):
+        """O "Editar em Ajustes" da etapa 2 virou um `<button class="btn">`.
 
-        Ele era o "Ajustar" da Execucao (`.execution-selection-edit`) e mudou de
-        casa junto com a ficha: com a Execucao virando barra de acao, o link
-        ficou sendo o da ficha da etapa 2, que leva para Ajustes. O alvo nao
-        mudou de tamanho nem de motivo — 15px reprova no 2.5.8 em qualquer
-        ponteiro.
+        Ele era o "Ajustar" da Execucao (`.execution-selection-edit`), virou o
+        `<a>` da ficha da etapa 2 e agora e' um botao. O alvo nao encolheu: a
+        altura deixou de ser uma regra propria (24px) e passou a ser a do
+        `.btn`, que e' 40px no desktop e 44px no ponteiro grosso. O que este
+        teste protege continua o mesmo -- que o controle nunca seja um alvo
+        solteiro abaixo do minimo do 2.5.8.
         """
+        body = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        m = re.search(r'<button[^>]*\bid="btn-editar-ajustes"[^>]*>', body)
+        self.assertIsNotNone(m, "o controle de Editar em Ajustes sumiu")
+        classes = re.search(r'class="([^"]*)"', m.group(0))
+        self.assertIsNotNone(classes, "o botao ficou sem `class`")
+        self.assertIn("btn", classes.group(1).split(),
+                      "sem `.btn` o alvo volta a ser o texto solto (~15px)")
+        # A altura agora e' do `.btn`. Leia a ULTIMA regra `.btn {` do
+        # index.css: ha duas, e a de baixo e' a que vale na pagina.
         linhas = [l for l in self.css("index.css").splitlines()
-                  if l.strip().startswith(".etapa-ficha-edit {")]
-        self.assertEqual(len(linhas), 1, "a regra do Ajustar sumiu ou duplicou")
-        self.assertIn("min-height: 24px", linhas[0],
-                      "alvo solteiro de 15px: reprova no 2.5.8")
+                  if l.strip().startswith(".btn {")]
+        self.assertTrue(linhas, "o `.btn` base sumiu do index.css")
+        mh = re.search(r"min-height:\s*(\d+)px", linhas[-1])
+        self.assertIsNotNone(mh, "o `.btn` que a pagina usa perdeu o `min-height`")
+        self.assertGreaterEqual(int(mh.group(1)), 24,
+                                "alvo solteiro abaixo de 24px: reprova no 2.5.8")
 
     def test_the_cookies_summary_is_never_below_24px(self):
         """O disclosure "Acessar video restrito": media 19px no desktop."""

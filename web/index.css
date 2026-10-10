@@ -2072,11 +2072,11 @@ header .nav-actions .btn { min-height: 42px; }
    header: um tom para "texto secundario pequeno", nao dois. */
 .etapa-ficha-label { color: #9ba6b5; font-size: .62rem; font-weight: 700; letter-spacing: .11em; }
 .etapa-ficha-nota { margin: 2px 0 0; color: var(--text-muted); font-size: var(--text-2xs); line-height: 1.55; }
-/* Alvo de 24px: era um <a> solto de 15px na linha da selecao — abaixo do
-   minimo WCAG 2.2 (2.5.8, 24px) para alvo que nao e' texto corrido. O
-   inline-flex centraliza o rotulo dentro da altura nova sem mudar a linha. */
-.etapa-ficha-edit { color: var(--accent-primary); font-size: .72rem; font-weight: 600; text-decoration: none; white-space: nowrap; display: inline-flex; align-items: center; min-height: 24px; }
-.etapa-ficha-edit:hover, .etapa-ficha-edit:focus-visible { text-decoration: underline; }
+/* O `.etapa-ficha-edit` morreu: o "Editar em Ajustes" virou um
+   `<button class="btn pressable">`, e o `.btn` ja' traz a cor, a altura e o
+   `inline-flex` que o alvo de 24px precisava -- na verdade o alvo SOBE, dos 24
+   da regra antiga para os 40px do `.btn`. Mantida, seria uma regra casando
+   ZERO elementos. */
 /* ---------- AJUSTES: ABERTURA, FICHA E ATALHOS ----------
    A abertura continua sem imagem (cabecalho de ferramenta, nao hero de
    landing), mas a ficha virou CARD -- legenda, tres pares rotulo/valor e

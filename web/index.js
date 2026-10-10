@@ -2426,6 +2426,11 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   $('#btn-buscar-fonte').addEventListener('click', () => {
     window.location.href = '/biblioteca';
   });
+  // O irmao de cima, na ficha da etapa 2: tambem `<button>`, tambem com o
+  // destino aqui. Leva para Ajustes, que e' onde os valores da ficha se editam.
+  $('#btn-editar-ajustes').addEventListener('click', () => {
+    window.location.href = '/ajustes';
+  });
   // O rodape (marca, navegacao, "Como usar" e o copiar da CLI) saiu daqui
   // para /comum.js. Ele agora vive nas TRES paginas, e um comportamento que so
   // o index tinha deixaria Ajustes e Biblioteca com um rodape morto. A

@@ -693,8 +693,23 @@ input::placeholder { color: var(--text-muted); }
 }
 a.result-title { text-decoration: none; }
 a.result-title:hover { color: var(--accent-soft); text-decoration: underline; text-underline-offset: 3px; }
+/* M6: a linha de metadados e' uma GRADE, e nao um `flex-wrap` com separadores
+   "·". No flex cada card tinha um numero DIFERENTE de itens -- o uploader e as
+   views so' entravam quando existiam -- e cada um empurrava o seguinte: "1,2mi
+   views" caia numa posicao horizontal distinta por linha, e comparar os numeros
+   de cima a baixo (que e' o trabalho da lista) nao dava. Com colunas de largura
+   FIXA e `tabular-nums`, os digitos ocupam a mesma largura e as duas colunas de
+   numero ficam alinhadas entre TODOS os cards, inclusive os que nao tem
+   uploader -- a celula vazia continua ocupando a coluna, e e' isso que alinha.
+   As larguras sao as do pior caso MEDIDO, e nao estimado: `--text-2xs` tem
+   11px, entao "1h 02m" com o padding do selo ocupa 48px e NAO CABIA nos 7ch
+   (43px) da primeira versao -- ele quebrava em duas linhas e aquele card
+   ficava com 34px de meta contra 21px dos outros. Dai o `nowrap` nos dois e os
+   8ch. A coluna de views para em "1000mi views" (12ch) no pior caso absoluto. */
 .result-meta {
-  display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 11ch 8ch;
+  gap: 10px; align-items: center;
   font-size: var(--text-2xs); color: var(--text-muted);
   line-height: var(--text-2xs-lh); margin: 0;
 }
@@ -704,16 +719,22 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
 .result-uploader {
   display: inline-block; min-width: 0; max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  vertical-align: bottom;
 }
-.result-views { white-space: nowrap; }
-.result-meta .dot { color: var(--text-muted); opacity: 0.5; }
+/* Numero e' coluna: encostado a' direita e com digitos de largura igual, para a
+   unidade ("views") e a casa decimal nao dancarem de uma linha para a outra. */
+.result-views {
+  justify-self: end; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
 .result-badge {
-  display: inline-flex; align-items: center;
+  /* `stretch` e nao `center`: assim TODOS os selos tem a mesma largura e o
+     texto dentro deles comeca na mesma x. Centrado por fora, a pilula ficaria
+     com a borda alinhada e o numero, nao. */
+  display: inline-flex; align-items: center; justify-self: stretch; justify-content: center;
   font-size: var(--text-2xs); font-weight: 600; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   color: var(--text-secondary); background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--border-subtle);
-  border-radius: 999px; padding: 3px 10px; line-height: 1.2;
+  border-radius: 999px; padding: 3px 6px; line-height: 1.2;
 }
 .result-actions {
   display: flex; flex-direction: column; gap: 6px;

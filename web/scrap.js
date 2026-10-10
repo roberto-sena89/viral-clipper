@@ -258,12 +258,6 @@
 
   function resultCard(item, index) {
     const duration = fmtDuration(item.duration);
-    const parts = [];
-    if (item.uploader) parts.push('<span class="result-uploader">' + esc(item.uploader) + "</span>");
-    if (item.view_count != null) {
-      parts.push('<span class="result-views">' + esc(fmtCount(item.view_count)) + " views</span>");
-    }
-    const meta = parts.join('<span class="dot">·</span>');
 
     const title = item.title || "(sem título)";
     const href = safeUrl(item.url);
@@ -295,8 +289,19 @@
           // Sem href vira <span>: um `a` sem destino e' link falso. O `title`
           // aqui e' util porque o texto pode estar truncado por CSS.
           : '<span class="result-title" title="' + esc(title) + '">' + esc(title) + "</span>") +
+        // M6: as tres celulas existem SEMPRE, mesmo vazias. Antes era um
+        // `parts.join(' · ')` que so' entrava quando havia dado, entao cada
+        // linha tinha um numero diferente de separadores e "1,2mi views" caia
+        // numa posicao horizontal diferente por card -- comparar de cima a
+        // baixo, que e' o trabalho da lista, ficava impossivel. Com a grade de
+        // colunas fixas (`.result-meta`), o card sem uploader alinha com o card
+        // que tem, e a coluna de views fica na mesma x em todos.
         '<div class="result-meta">' +
-          (meta ? meta + '<span class="dot">·</span>' : "") +
+          '<span class="result-uploader">' +
+            (item.uploader ? esc(item.uploader) : "") + "</span>" +
+          '<span class="result-views">' +
+            (item.view_count != null ? esc(fmtCount(item.view_count)) + " views" : "") +
+          "</span>" +
           '<span class="result-badge">' + esc(duration) + "</span>" +
         "</div>" +
       "</div>" +

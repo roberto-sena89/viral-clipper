@@ -785,6 +785,76 @@ class ScrapCardTests(unittest.TestCase):
         self.assertIn('thousands === "1000"', self.page)
 
 
+class ResultRowHasAlignedColumnsTests(unittest.TestCase):
+    """A linha de resultado virou lista de midia: colunas de numero alinhadas.
+
+    O `.result-meta` era um `flex-wrap` com separadores "·", montado por
+    `parts.join()`. Cada card tinha um numero DIFERENTE de itens -- o uploader e
+    as views so' entravam quando existiam -- entao "16mi views" caia numa
+    posicao horizontal distinta por linha. Comparar os numeros de cima a baixo,
+    que e' o trabalho da lista, nao dava.
+
+    Agora sao tres colunas de largura fixa, e as tres celulas existem SEMPRE,
+    mesmo vazias: e' a celula vazia que mantem o alinhamento. Medido no
+    navegador com seis itens (dois sem uploader, um sem views), a 1440, 1024,
+    620 e 390px: a borda direita da coluna de views e as DUAS bordas do selo de
+    duracao coincidem nos seis.
+
+    A miniatura FICA. O `scrap.css` documenta por que: "escolher qual video
+    cortar sem ver o quadro e' adivinhacao". Uma tabela de texto pura
+    regrediria numa decisao que a pagina ja' acertou.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.js = (server.WEB_DIR / "scrap.js").read_text(encoding="utf-8")
+        cls.css = re.sub(
+            r"/\*.*?\*/", "",
+            (server.WEB_DIR / "scrap.css").read_text(encoding="utf-8"), flags=re.S)
+        # So' o corpo do `resultCard`, ate' o fim do `return`.
+        corpo = fn_body(cls.js, "resultCard")
+        cls.card = corpo[:corpo.index("</article>")]
+
+    def test_the_three_cells_are_always_built(self):
+        """A celula vazia e' o que alinha -- ela nao pode ser condicional."""
+        meta = self.card[self.card.index('class="result-meta"'):]
+        meta = meta[:meta.index("</div>")]
+        for celula in ("result-uploader", "result-views", "result-badge"):
+            with self.subTest(celula=celula):
+                self.assertIn(celula, meta)
+
+    def test_the_dot_separator_is_gone(self):
+        # Sem comentario: o comentario que explica a remocao CITA o
+        # `parts.join` que saiu, e sem esta limpeza a propria explicacao faria o
+        # teste da remocao falhar -- a mesma razao do `sem_comentario` que o
+        # `JumpLinksTests` usa.
+        codigo = re.sub(r"(?m)^\s*//.*$", "", self.card)
+        self.assertNotIn("parts.join", codigo)
+        self.assertNotIn('class="dot"', codigo)
+
+    def test_the_meta_is_a_grid_with_three_columns(self):
+        m = re.search(r"(?:^|\n)\.result-meta\s*\{([^}]*)\}", self.css)
+        self.assertIsNotNone(m, ".result-meta perdeu a regra base")
+        corpo = m.group(1)
+        self.assertIn("display: grid", corpo,
+                      "a meta voltou a ser flex: os numeros desalinham")
+        self.assertIn("grid-template-columns", corpo)
+        self.assertNotIn("flex-wrap", corpo)
+
+    def test_the_numbers_use_tabular_numerals(self):
+        """Sem `tabular-nums` o "1" e' mais estreito que o "0" e a coluna
+        inteira danca de uma linha para a outra."""
+        for seletor in (".result-views", ".result-badge"):
+            m = re.search(re.escape(seletor) + r"\s*\{([^}]*)\}", self.css)
+            self.assertIsNotNone(m, f"{seletor} perdeu a regra")
+            with self.subTest(seletor=seletor):
+                self.assertIn("tabular-nums", m.group(1))
+
+    def test_the_thumbnail_stays(self):
+        """A lista e' de MIDIA, nao uma tabela de texto."""
+        self.assertIn("result-thumb", self.js)
+
+
 class ScrapThumbTests(unittest.TestCase):
     """A thumbnail lookup must never turn a listed video into an error."""
 

@@ -115,6 +115,23 @@
   }
 
   function enhanceSelect(select) {
+    // Idempotencia que REFRESCA, em vez de so' recusar o segundo passe.
+    //
+    // O <select> de provedor e' remontado a cada save do card "Meus provedores"
+    // (`populateProviders` faz `innerHTML = ''` e recria as <option>), mas a
+    // guarda antiga apenas evitava embrulhar de novo: o painel rico ficava com
+    // os botoes do PRIMEIRO passe. Medido -- salvar um provedor novo punha o
+    // nome no <select> e em NENHUM lugar visivel, porque quem aparece na tela e'
+    // o painel. A pessoa salvava e nao achava o que salvou; e, sem poder
+    // escolher o provedor, os modelos extras dele nunca chegavam ao campo
+    // Modelo do Curador.
+    const embrulhado = select.closest('.select-rich');
+    if (embrulhado) {
+      // `rebuildRichSelect` e' exposto no fim desta funcao. Se faltar (versao
+      // antiga em cache), sair sem quebrar e' melhor que estourar.
+      if (typeof select.rebuildRichSelect === 'function') select.rebuildRichSelect();
+      return;
+    }
     const isCaptionPreset = select.id === 'caption-preset';
     const wrapper = document.createElement('div');
     wrapper.className = 'select-rich';
@@ -180,7 +197,16 @@
       panel.append(busca, lista);
     }
 
-    const optionEls = Array.from(select.options).map((opt) => {
+    // Os botoes do painel sao uma PROJECAO das <option> atuais -- por isso sao
+    // REMONTADOS, e nao guardados. `let` porque o refresh troca o array
+    // inteiro: o filtro da galeria e o `sync()` leem sempre o ultimo.
+    let optionEls = [];
+    function rebuild() {
+      lista.innerHTML = '';
+      optionEls = Array.from(select.options).map(optionButton);
+      sync();
+    }
+    function optionButton(opt) {
       const item = document.createElement('button');
       item.type = 'button';
       item.className = 'select-option pressable';
@@ -217,7 +243,7 @@
       // galeria do preset de legenda — um destino so' para as duas formas.
       lista.appendChild(item);
       return item;
-    });
+    }
     function sync() {      const active = select.options[select.selectedIndex];
       if (!active) return;
       const titleEl = trigger.querySelector('.sel-title');
@@ -321,13 +347,18 @@
     // consegue pintar por cima.
     document.body.appendChild(panel);
     wrapper.appendChild(select);
-    sync();
+    // `rebuild` monta os botoes a partir das <option> e fecha com `sync()`,
+    // que era o que esta linha fazia sozinha.
+    rebuild();
 
     // Escrever em select.value por codigo nao emite 'change', entao o trigger
     // rico continuaria mostrando o rotulo antigo - o que acontece toda vez que
     // a pagina de Ajustes aplica o que veio do servidor. O sync fica exposto
     // para quem escreve no select sem passar pelo usuario.
     select.syncRichSelect = sync;
+    // O refresh do painel, para quem remonta as <option> por fora (o card de
+    // provedores faz isso a cada save).
+    select.rebuildRichSelect = rebuild;
   }
   /* ---------- RAIL DE NAVEGACAO ----------
      A lista de destinos das paginas. Antes ela existia SEIS vezes no HTML (rail

@@ -915,6 +915,13 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     if (provider.api_key_env) $('#ranker-api-key-env').value = provider.api_key_env;
   }
 
+  // A lista viva do seletor de provedor, e se o 'change' ja' foi preso. Ambos no
+  // escopo do modulo porque `populateProviders` reentra a cada save: sem isto o
+  // handler unico nao enxergaria a lista nova, e um `addEventListener` interno
+  // empilharia um listener por save.
+  let providersAtuais = [];
+  let rankerChangeBound = false;
+
   function populateProviders(data) {
     const select = $('#ranker-provider');
     if (!select) return;
@@ -946,10 +953,18 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     select.removeAttribute('data-defer-enhance');
     enhanceSelect(select);
 
-    select.addEventListener('change', () => {
-      const chosen = providers.find((p) => p.name === select.value);
-      if (chosen) applyProvider(chosen);
-    });
+    // O 'change' e' preso UMA vez. Este bloco roda a cada save, e um
+    // `addEventListener` aqui dentro empilharia um listener por save -- o mesmo
+    // clique chamando `applyProvider` N vezes. A lista viva mora no escopo do
+    // modulo para o handler unico enxergar sempre a ultima.
+    providersAtuais = providers;
+    if (!rankerChangeBound) {
+      rankerChangeBound = true;
+      select.addEventListener('change', () => {
+        const chosen = providersAtuais.find((p) => p.name === select.value);
+        if (chosen) applyProvider(chosen);
+      });
+    }
   }
 
   // A lista de provedores vem do servidor. Quando a rota falha o select fica

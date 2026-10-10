@@ -6123,6 +6123,69 @@ class UserProviderCardTests(unittest.TestCase):
         self.assertIn("no-key", corpo)
 
 
+class RichSelectRefreshTests(unittest.TestCase):
+    """O dropdown rico e' uma PROJECAO das <option>: se elas mudam, ele muda.
+
+    O <select> de provedor e' remontado a cada save do card "Meus provedores"
+    (`populateProviders` faz `innerHTML = ''` e recria as opcoes). A guarda de
+    idempotencia do `enhanceSelect` apenas RECUSAVA o segundo passe, entao o
+    painel rico ficava com os botoes do PRIMEIRO. Medido no navegador: salvar um
+    provedor novo punha o nome no <select> e em nenhum lugar visivel -- e, sem
+    poder escolher o provedor, os modelos extras dele nunca chegavam ao campo
+    Modelo do Curador, que era o pedido.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.comum = (server.WEB_DIR / "comum.js").read_text(encoding="utf-8")
+        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+
+    def test_the_second_pass_rebuilds_instead_of_only_refusing(self):
+        """A guarda nao pode so' sair: ela tem de CHAMAR o rebuild.
+
+        A assercao e' sobre a CHAMADA (`select.rebuildRichSelect()`), e nao
+        sobre o nome: o comentario da guarda cita `rebuildRichSelect` para
+        explicar por que ela existe, e um `assertIn` do nome passava com a
+        chamada removida -- provando a propria explicacao.
+        """
+        bloco = fn_body(self.comum, "enhanceSelect")
+        guarda = bloco.split("const embrulhado", 1)[1].split("const isCaptionPreset", 1)[0]
+        self.assertIn("select.rebuildRichSelect()", guarda,
+                      "o segundo passe nao remonta: o provedor recem-salvo fica invisivel")
+
+    def test_the_refresh_is_exposed_on_the_element(self):
+        """Quem remonta as <option> por fora precisa de um caminho para o refresh."""
+        bloco = fn_body(self.comum, "enhanceSelect")
+        self.assertIn("select.rebuildRichSelect = rebuild", bloco,
+                      "nao ha como pedir o refresh do painel")
+
+    def test_the_buttons_are_rebuilt_from_the_current_options(self):
+        """O refresh le' `select.options` DE NOVO, e nao o array do primeiro passe."""
+        bloco = fn_body(self.comum, "enhanceSelect")
+        self.assertIn("let optionEls", bloco,
+                      "`optionEls` preso em `const` nao pode ser trocado pelo refresh")
+        corpo = bloco.split("function rebuild()", 1)[1].split("function optionButton", 1)[0]
+        self.assertIn("select.options", corpo,
+                      "o rebuild nao rele as opcoes atuais")
+        self.assertIn("sync()", corpo,
+                      "o rebuild nao ressincroniza o rotulo do trigger")
+
+    def test_the_change_listener_is_bound_once(self):
+        """`populateProviders` reentra a cada save; o listener nao pode empilhar.
+
+        Sem o guarda, o mesmo clique chama `applyProvider` N vezes apos N saves --
+        um vazamento que cresce com o uso, e nao aparece em nenhum teste de tela.
+        """
+        bloco = fn_body(self.js, "populateProviders")
+        self.assertIn("rankerChangeBound", bloco,
+                      "o listener de 'change' voltou a ser preso a cada save")
+        depois = bloco.split("if (!rankerChangeBound)", 1)[1]
+        self.assertIn("addEventListener('change'", depois,
+                      "o addEventListener saiu de dentro do guarda")
+        self.assertIn("providersAtuais", depois,
+                      "o handler unico nao le a lista viva")
+
+
 class EstudioEtapasTests(unittest.TestCase):
     """O corpo do Estudio: duas VISTAS, quatro ETAPAS, uma barra de acao.
 

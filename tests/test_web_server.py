@@ -2561,7 +2561,7 @@ class BreakpointScaleTests(unittest.TestCase):
         768: "section-nav",
         920: "rail -> gaveta (body), etapa-list, action-bar",
         960: "hero, brand, header-context",
-        980: "ajustes-abertura, scrap-welcome",
+        980: "ajustes-abertura, scrap-grid (empilhado)",
         981: "scrap-grid (faixa do meio)",
         1100: "etapa-list (escada das etapas)",
         1150: "scrap tablist",
@@ -2814,15 +2814,24 @@ class BreakpointInventoryTests(unittest.TestCase):
         # O comentario do `index.css` cita `@media (max-width: 1280px)` ao
         # explicar uma armadilha de cascata. A `@media` de verdade do 1280 esta'
         # no `scrap.css`; o `index.css` tem uma so', e ela nao e' esta.
-        do_1280 = [
-            (nome, numero)
-            for valor, nome, numero, _ in bp.ocorrencias()
+        #
+        # Os NUMEROS DE LINHA sao de proposito ausentes da assercao: eles andam
+        # a cada edicao (a remocao do card de fluxo do hero deslocou o do
+        # `scrap.css` em 17 linhas) e a revisao passaria a consertar o teste em
+        # vez de olhar o que ele guarda. O que importa e' de ONDE o 1280 vem.
+        # Se a citacao em prosa voltar para a contagem, aparece um TERCEIRO.
+        achados = [
+            (nome, texto)
+            for valor, nome, _, texto in bp.ocorrencias()
             if valor == 1280
         ]
-        self.assertNotIn(("index.css", 1633), do_1280,
-                         "o 1280 citado em prosa voltou para a contagem")
-        self.assertIn(("scrap.css", 1205), do_1280,
-                      "o 1280 de verdade saiu da contagem")
+        self.assertEqual(
+            achados,
+            [("index.css", "@media (max-width: 1280px) {"),
+             ("scrap.css", "@media (min-width: 1280px) {")],
+            "os 1280 contados mudaram -- um terceiro achado aqui e' o "
+            "`@media (max-width: 1280px)` citado em prosa voltando para a "
+            "contagem")
 
     def test_the_state_survives_a_comment_that_opens_and_closes_on_one_line(self):
         aberto, dentro = bp._fora_do_comentario("a { color: red } /* nota */", False)
@@ -5059,6 +5068,69 @@ class HeaderClosesWhatItOpensTests(unittest.TestCase):
             self._divs(header[:botao]), 2,
             "o CTA do Estudio caiu dentro de .rail-dropdown, que e' "
             "display:none acima de 920px — ele some no desktop")
+
+
+class HeroDropsTheFlowCardTests(unittest.TestCase):
+    """O hero perdeu o card "FLUXO DE IMPORTACAO" (M5).
+
+    Ele listava 01 Buscar / 02 Revisar / 03 Enviar ao Estudio ao lado de um
+    `p.lead` que ja' diz exatamente isso em prosa ("Busque um video ou explore
+    um perfil, revise os resultados e envie a midia escolhida ao Estudio"), e o
+    "arquivos salvos neste computador" vive no selo do cabecalho ("Downloads
+    neste PC", `comum.js`). Era uma legenda ao lado do texto que ela explicava.
+
+    O ganho medido esta' no CELULAR, nao no desktop: empilhado abaixo de 640px o
+    card somava 172px ao hero (438 -> 266 a 390px). Acima de 1100px o hero ja'
+    media 313px ANTES -- quem manda na altura e' a coluna de texto, e nao o
+    card -- entao a assercao aqui e' sobre o que sobrou, e nao sobre pixels.
+
+    Estes testes travam a remocao INTEIRA, markup e CSS: deixar as regras para
+    tras faria a proxima pessoa procurar um componente que nao existe.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = (server.WEB_DIR / "scrap.html").read_text(encoding="utf-8")
+        # O comentario que explica a remocao CITA o seletor e o rotulo; por isso
+        # o css e' lido sem comentario.
+        cls.css = re.sub(
+            r"/\*.*?\*/", "",
+            (server.WEB_DIR / "scrap.css").read_text(encoding="utf-8"), flags=re.S)
+
+    def test_the_markup_is_gone(self):
+        self.assertNotIn("scrap-flow-card", self.html)
+        self.assertNotIn("FLUXO DE IMPORTAÇÃO", self.html)
+
+    def test_the_rules_are_gone(self):
+        self.assertNotIn("scrap-flow-card", self.css,
+                         "sobrou regra de um componente que nao existe mais")
+
+    def test_the_hero_is_a_single_column(self):
+        m = re.search(r"(?:^|\n)\.scrap-welcome\s*\{([^}]*)\}", self.css)
+        self.assertIsNotNone(m, ".scrap-welcome perdeu a regra base")
+        self.assertNotIn("grid-template-columns", m.group(1),
+                         "o hero voltou a ter duas colunas — nao ha uma "
+                         "segunda coluna para preencher desde o M5")
+        self.assertNotIn("display: grid", m.group(1))
+
+    def test_the_heading_stays(self):
+        """`#scrap-title` e' o alvo do `aria-labelledby` do hero e dos testes
+        de heading: o M5 tira o card, nao o titulo."""
+        self.assertIn('id="scrap-title"', self.html)
+
+    def test_the_steps_survive_in_the_lead(self):
+        """A informacao do card nao se perdeu -- o `lead` ja' a carregava."""
+        lead = re.search(r'<p class="lead">(.*?)</p>', self.html, re.S)
+        self.assertIsNotNone(lead, "o hero perdeu a linha de apoio")
+        texto = lead.group(1).lower()
+        for verbo in ("busque", "revise", "envie"):
+            with self.subTest(passo=verbo):
+                self.assertIn(verbo, texto)
+
+    def test_the_download_location_survives_in_the_header(self):
+        """O card dizia "Arquivos salvos neste computador"; isso e' o selo."""
+        comum = (server.WEB_DIR / "comum.js").read_text(encoding="utf-8")
+        self.assertIn("Downloads neste PC", comum)
 
 
 class BackendReadinessTests(unittest.TestCase):

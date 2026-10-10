@@ -859,23 +859,25 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
 .card-sub { color: var(--text-muted); font-size: var(--text-caption); margin-bottom: 16px; }
 
 /* ---------- Scrap workspace redesign ---------- */
+/* O hero era um grid de DUAS colunas: a copia e um `.scrap-flow-card` que
+   listava 01 Buscar / 02 Revisar / 03 Enviar ao Estudio. O card saiu (M5), e
+   nao se perdeu informacao: o proprio `p.lead` logo acima ja' descreve os tres
+   passos ("Busque um video ou explore um perfil, revise os resultados e envie
+   a midia escolhida ao Estudio"), e o "arquivos salvos neste computador" vive
+   no selo do cabecalho ("Downloads neste PC", `comum.js`). Era uma legenda ao
+   lado do texto que ela explicava -- 410px de hero empurrando o trabalho para
+   fora da dobra. Com uma coluna so', o grid e o `gap` tambem saem. */
 .scrap-welcome {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(270px, .8fr);
-  align-items: center;
-  gap: clamp(24px, 4vw, 54px);
   padding: 34px 0 26px;
   border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 22px;
 }
 .scrap-welcome-copy { min-width: 0; }
-.scrap-welcome .studio-overline,
-.scrap-welcome .studio-card-label {
+.scrap-welcome .studio-overline {
   display: flex; align-items: center; gap: 9px;
   color: #939daf; font-size: var(--text-2xs); font-weight: 700; letter-spacing: .11em;
 }
-.scrap-welcome .studio-online-dot,
-.scrap-flow-card > p span {
+.scrap-welcome .studio-online-dot {
   flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%;
   background: #53d9af; box-shadow: 0 0 11px rgba(83,217,175,.48);
 }
@@ -892,20 +894,6 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   text-wrap: balance;
 }
 .scrap-welcome p.lead { max-width: 58ch; margin: 0; color: var(--text-secondary); }
-.scrap-flow-card {
-  min-width: 0; padding: 18px 20px 15px;
-  border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
-  background: linear-gradient(145deg, rgba(24,29,40,.96), rgba(15,18,25,.96));
-  box-shadow: var(--shadow-card);
-}
-.scrap-flow-card > .studio-card-label { color: var(--text-muted); font-size: var(--text-2xs); font-weight: 700; letter-spacing: .12em; }
-.scrap-flow-card ol { list-style: none; margin: 14px 0 13px; padding: 0; }
-.scrap-flow-card li { display: flex; align-items: center; gap: 12px; min-height: 38px; border-bottom: 1px solid rgba(255,255,255,.055); }
-.scrap-flow-card li:last-child { border-bottom: 0; }
-.scrap-flow-card li span { color: var(--accent-soft); font: 600 .7rem/1 ui-monospace, monospace; }
-.scrap-flow-card li strong { font-size: var(--text-body-sm); font-weight: 600; }
-.scrap-flow-card > p { display: flex; align-items: center; gap: 8px; margin: 0; padding-top: 11px; border-top: 1px solid var(--border-subtle); color: var(--text-muted); font-size: var(--text-2xs); }
-.scrap-flow-card > p span { width: 7px; height: 7px; border-radius: 50%; background: #55d6ae; box-shadow: 0 0 10px rgba(85,214,174,.45); }
 
 .scrap-grid {
   grid-template-columns: minmax(300px, .78fr) minmax(0, 1.55fr);
@@ -1158,7 +1146,6 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   .scrap-grid { grid-template-columns: minmax(275px, .84fr) minmax(0, 1.4fr); }
 }
 @media (max-width: 980px) {
-  .scrap-welcome { grid-template-columns: minmax(0, 1fr) minmax(240px, .78fr); gap: 20px; }
   .scrap-grid { grid-template-columns: minmax(0, 1fr); }
   /* O `.scrap-grid > .pick { position: static }` que existia aqui era o
      DESLIGAMENTO do sticky em viewport estreita. Saiu com o sticky: sem fixo
@@ -1168,13 +1155,9 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   .empty-state { min-height: 145px; }
 }
 @media (max-width: 640px) {
-  .scrap-welcome { grid-template-columns: minmax(0,1fr); gap: 17px; padding: 25px 0 20px; }
+  .scrap-welcome { padding: 25px 0 20px; }
   .scrap-welcome h1 { max-width: 18ch; font-size: clamp(1.85rem, 8vw, 2.3rem); }
   .scrap-welcome p.lead { font-size: .86rem; }
-  .scrap-flow-card { padding: 14px 16px; }
-  .scrap-flow-card ol { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
-  .scrap-flow-card li { min-height: 48px; align-items: flex-start; flex-direction: column; gap: 5px; border-bottom: 0; }
-  .scrap-flow-card li strong { font-size: .72rem; }
   .scrap-grid { gap: 12px; }
   .scrap-grid > .card, .scrap-grid > .pick .card { padding: 16px 14px; }
   .scrap-grid .tabs[aria-label="Plataforma"] { overflow-x: auto; }
@@ -1198,7 +1181,7 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
      pagina e o shared.css ja declara a sua regra de movimento reduzido.
      Duas fontes para a mesma coisa divergem -- foi o que fez o rodape
      ter valores diferentes por pagina. */
-  .scrap-welcome *, .scrap-flow-card *, .scrap-grid * { transition-duration: .01ms !important; }
+  .scrap-welcome *, .scrap-grid * { transition-duration: .01ms !important; }
 }
 
 /* Biblioteca em telas largas: buscar → resultados → item escolhido. */

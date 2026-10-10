@@ -27,8 +27,8 @@ Cada página tem dois `<ul data-rail-list>` vazios; o JS preenche.
 | Página        | Rota         | Arquivo        | `h1`                  |
 | ------------- | ------------ | -------------- | --------------------- |
 | Estúdio       | `/`          | `index.html`   | `#studio-title`       |
-| Publicar      | `/publicar`  | `publicar.html`| (ver `publicar.js`)   |
 | Ajustes       | `/ajustes`   | `ajustes.html` | `#ajustes`            |
+| Publicar      | `/publicar`  | `publicar.html`| (ver `publicar.js`)   |
 | Biblioteca    | `/biblioteca`| `scrap.html`   | `#scrap-title`        |
 
 Aliases `.html` (`/index.html`, `/ajustes.html`, …) e o redirect do endereço

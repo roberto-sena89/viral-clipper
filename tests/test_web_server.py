@@ -3033,7 +3033,7 @@ class RenderedMarkupTests(unittest.TestCase):
     """
 
     PAGES = ("index.html", "publicar.html", "ajustes.html", "scrap.html")
-    DESTINATIONS = ("/", "/publicar", "/ajustes", "/biblioteca")
+    DESTINATIONS = ("/", "/ajustes", "/publicar", "/biblioteca")
     #: Arquivo -> a rota em que ele e' servido. Nao da' para derivar do nome:
     #: `scrap.html` atende em `/biblioteca`, e inferir "/scrap" fazia este
     #: teste reprovar por um destino que nao existe.
@@ -3245,8 +3245,11 @@ class RenderedMarkupTests(unittest.TestCase):
     """
 
     PAGES = ("index.html", "publicar.html", "ajustes.html", "scrap.html")
-    #: Os unicos destinos do rail. Tem de bater com RAIL_PAGES e com as rotas.
-    DESTINATIONS = ("/", "/publicar", "/ajustes", "/biblioteca")
+    #: Os unicos destinos do rail, NA ORDEM em que o rail os mostra. Tem de
+    #: bater com `RAIL_PAGES` e com as rotas -- e a comparacao e' de TUPLA, nao
+    #: de conjunto: trocar duas abas de lugar e' uma mudanca que estes testes
+    #: tem de ver, e nao um detalhe que eles atravessam em silencio.
+    DESTINATIONS = ("/", "/ajustes", "/publicar", "/biblioteca")
     #: Campos que cada entrada precisa para o item sair completo no render.
     FIELDS = ("path", "ico", "title", "desc")
 

@@ -161,73 +161,6 @@
           limite de <em>Itens a listar</em>.
         </p>
 
-        <div class="auth-card" id="auth-card">
-          <div class="auth-head">
-            <div>
-              <p class="auth-title">Acesso e sessão</p>
-              <p class="auth-sub">Configure cookies quando uma plataforma exigir login. No Instagram, isso também pode ser necessário para reels públicos.</p>
-            </div>
-            <span class="auth-status" id="auth-status" data-state="none" role="status" aria-live="polite">Sem sessão</span>
-          </div>
-          <div class="auth-grid">
-            <div class="auth-block">
-              <div class="auth-block-head">
-                <span class="field-label" id="scrap-cookies-label">Navegador</span>
-              </div>
-              <div class="seg" role="radiogroup" aria-labelledby="scrap-cookies-label" aria-describedby="scrap-cookies-hint" id="cookies-seg">
-                <button type="button" class="seg-btn pressable" role="radio" data-value="" aria-checked="true" aria-label="Nenhum" title="Nenhum"><span class="seg-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="15" fill="none" stroke="currentColor" stroke-width="5"/><path d="M13.4 34.6 34.6 13.4" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></span></button>
-                <button type="button" class="seg-btn pressable" role="radio" data-value="chrome" aria-checked="false" tabindex="-1" aria-label="Google Chrome" title="Google Chrome"><span class="seg-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="#fff"/><circle cx="24" cy="24" r="15" fill="none" stroke="#EA4335" stroke-width="8" stroke-dasharray="30 64.25" transform="rotate(210 24 24)"/><circle cx="24" cy="24" r="15" fill="none" stroke="#FBBC05" stroke-width="8" stroke-dasharray="30 64.25" transform="rotate(330 24 24)"/><circle cx="24" cy="24" r="15" fill="none" stroke="#34A853" stroke-width="8" stroke-dasharray="30 64.25" transform="rotate(90 24 24)"/><circle cx="24" cy="24" r="11.5" fill="#fff"/><circle cx="24" cy="24" r="7.5" fill="#4285F4"/></svg></span></button>
-                <button type="button" class="seg-btn pressable" role="radio" data-value="firefox" aria-checked="false" tabindex="-1" aria-label="Mozilla Firefox" title="Mozilla Firefox"><span class="seg-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><defs><linearGradient id="ffx-a" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFDD5C"/><stop offset=".55" stop-color="#FF9E3D"/><stop offset="1" stop-color="#FF7139"/></linearGradient></defs><circle cx="24" cy="24" r="17" fill="url(#ffx-a)"/><path d="M24 7c4 5 6 9 6 14a6 6 0 0 1-12 0c0-5 2-9 6-14z" fill="#FFE9A8" opacity=".85"/><circle cx="17" cy="29" r="9.5" fill="#0060DF"/><path d="M10.5 26.5c2-1.5 5-1.5 7 0" stroke="#73A7FD" stroke-width="2" fill="none" stroke-linecap="round"/></svg></span></button>
-                <button type="button" class="seg-btn pressable" role="radio" data-value="edge" aria-checked="false" tabindex="-1" aria-label="Microsoft Edge" title="Microsoft Edge"><span class="seg-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><defs><linearGradient id="edx-a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4FD6DE"/><stop offset=".5" stop-color="#0C88C1"/><stop offset="1" stop-color="#17468B"/></linearGradient></defs><path d="M24 5C13.5 5 5 13.5 5 24s8.5 19 19 19c8.6 0 15.9-5.6 18.3-13.4l-9.4-3.9c-1.2 3.9-4.9 6.8-9.2 6.8-5 0-9-4-9-9s4-9 9-9c2.4 0 4.6.9 6.2 2.5H24V24h14.9c.1-.7.1-1.3.1-2C39 12.6 32.4 5 24 5z" fill="url(#edx-a)"/></svg></span></button>
-              </div>
-              <select id="scrap-cookies" name="cookies" class="sr-only-select" tabindex="-1" aria-hidden="true">
-                <option value="">Nenhum</option>
-                <option value="chrome">chrome</option>
-                <option value="firefox">firefox</option>
-                <option value="edge">edge</option>
-              </select>
-              <p class="auth-note" id="scrap-cookies-hint">Lê a sessão direto do navegador. Falha no Chrome/Edge 127+.</p>
-            </div>
-            <div class="auth-block">
-              <div class="auth-block-head">
-                <label class="field-label" for="scrap-cookies-file">Arquivo cookies.txt</label>
-                <span class="auth-tag">Recomendado</span>
-              </div>
-              <div class="auth-file-row">
-                <input type="text" id="scrap-cookies-file" name="cookies-file"
-                       value=""
-                       placeholder="C:\caminho\cookies.txt"
-                       aria-describedby="scrap-cookies-file-hint" autocomplete="off" spellcheck="false">
-                <button type="button" class="auth-icon-btn pressable" id="btn-cookies-browse" title="Escolher arquivo" aria-label="Escolher arquivo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M3.5 9h17" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
-                <button type="button" class="auth-icon-btn auth-icon-btn--ghost pressable" id="btn-cookies-clear" title="Limpar caminho">✕</button>
-              </div>
-              <input type="file" id="cookies-file-picker" accept=".txt" hidden>
-              <p class="auth-note" id="scrap-cookies-file-hint">Tem precedência sobre o navegador. Necessário no Chrome/Edge 127+, onde os cookies são selados com App-Bound Encryption.</p>
-            </div>
-            <div class="auth-block auth-block--wide">
-              <div class="auth-block-head">
-                <label class="field-label" for="scrap-ig-session">sessionid do Instagram</label>
-                <span class="auth-tag">HttpOnly</span>
-              </div>
-              <div class="auth-file-row">
-                <input type="password" id="scrap-ig-session" name="ig-session"
-                       aria-describedby="scrap-ig-session-hint"
-                       placeholder="12345678%3AAbCdEfGhIjKl%3A12%3AAY..." autocomplete="off" spellcheck="false">
-                <button type="button" class="auth-icon-btn pressable" id="btn-session-reveal"
-                        aria-label="Mostrar o valor" aria-pressed="false" title="Mostrar o valor"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
-                <button type="button" class="auth-icon-btn auth-icon-btn--ghost pressable" id="btn-session-clear"
-                        aria-label="Limpar o campo" title="Limpar o campo">✕</button>
-              </div>
-              <p class="auth-note" id="scrap-ig-session-hint">
-                Este cookie é <strong>HttpOnly</strong>: o export não consegue vê-lo, e sem ele o
-                Instagram responde como se ninguém estivesse logado. Abra DevTools (<kbd>F12</kbd>) →
-                <em>Application</em> → <em>Cookies</em> → <code>https://www.instagram.com</code> →
-                linha <code>sessionid</code> → copie a coluna <em>Value</em>.
-                Fica gravado no cookies.txt, então a busca e o download usam a mesma sessão.
-              </p>
-            </div>
-          </div>
-        </div>
       </section>
 
       <section class="card" aria-labelledby="h-resultados">
@@ -357,6 +290,80 @@
         </div>
       </section>
     </aside>
+    <!-- ---------- ACESSO E SESSÃO: card próprio, recolhido ----------
+         Era um sub-card DENTRO do card de busca: 750px (61% da coluna) de um
+         formulário que se preenche uma vez, no meio do caminho de quem só quer
+         colar um link. Virou um card irmão, FECHADO por padrão, com o estado
+         visível no resumo — a divulgação progressiva que o mercado de
+         referência usa para o que se configura uma vez. Os campos continuam no
+         DOM: é o mesmo formulário, só atrás de uma dobra. -->
+    <details class="card auth-card" id="auth-card">
+      <summary class="auth-head">
+        <span class="auth-title">Acesso e sessão</span>
+        <span class="auth-status" id="auth-status" data-state="none" role="status" aria-live="polite">Sem sessão</span>
+      </summary>
+      <div class="auth-body">
+        <p class="auth-sub">Configure cookies quando uma plataforma exigir login. No Instagram, isso também pode ser necessário para reels públicos.</p>
+        <div class="auth-grid">
+          <div class="auth-block">
+            <div class="auth-block-head">
+              <span class="field-label" id="scrap-cookies-label">Navegador</span>
+            </div>
+            <div class="seg" role="radiogroup" aria-labelledby="scrap-cookies-label" aria-describedby="scrap-cookies-hint" id="cookies-seg">
+              <button type="button" class="seg-btn pressable" role="radio" data-value="" aria-checked="true" aria-label="Nenhum" title="Nenhum"><span class="seg-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="15" fill="none" stroke="currentColor" stroke-width="5"/><path d="M13.4 34.6 34.6 13.4" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></span></button>
+              <button type="button" class="seg-btn pressable" role="radio" data-value="chrome" aria-checked="false" tabindex="-1" aria-label="Google Chrome" title="Google Chrome"><span class="seg-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="#fff"/><circle cx="24" cy="24" r="15" fill="none" stroke="#EA4335" stroke-width="8" stroke-dasharray="30 64.25" transform="rotate(210 24 24)"/><circle cx="24" cy="24" r="15" fill="none" stroke="#FBBC05" stroke-width="8" stroke-dasharray="30 64.25" transform="rotate(330 24 24)"/><circle cx="24" cy="24" r="15" fill="none" stroke="#34A853" stroke-width="8" stroke-dasharray="30 64.25" transform="rotate(90 24 24)"/><circle cx="24" cy="24" r="11.5" fill="#fff"/><circle cx="24" cy="24" r="7.5" fill="#4285F4"/></svg></span></button>
+              <button type="button" class="seg-btn pressable" role="radio" data-value="firefox" aria-checked="false" tabindex="-1" aria-label="Mozilla Firefox" title="Mozilla Firefox"><span class="seg-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><defs><linearGradient id="ffx-a" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFDD5C"/><stop offset=".55" stop-color="#FF9E3D"/><stop offset="1" stop-color="#FF7139"/></linearGradient></defs><circle cx="24" cy="24" r="17" fill="url(#ffx-a)"/><path d="M24 7c4 5 6 9 6 14a6 6 0 0 1-12 0c0-5 2-9 6-14z" fill="#FFE9A8" opacity=".85"/><circle cx="17" cy="29" r="9.5" fill="#0060DF"/><path d="M10.5 26.5c2-1.5 5-1.5 7 0" stroke="#73A7FD" stroke-width="2" fill="none" stroke-linecap="round"/></svg></span></button>
+              <button type="button" class="seg-btn pressable" role="radio" data-value="edge" aria-checked="false" tabindex="-1" aria-label="Microsoft Edge" title="Microsoft Edge"><span class="seg-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><defs><linearGradient id="edx-a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4FD6DE"/><stop offset=".5" stop-color="#0C88C1"/><stop offset="1" stop-color="#17468B"/></linearGradient></defs><path d="M24 5C13.5 5 5 13.5 5 24s8.5 19 19 19c8.6 0 15.9-5.6 18.3-13.4l-9.4-3.9c-1.2 3.9-4.9 6.8-9.2 6.8-5 0-9-4-9-9s4-9 9-9c2.4 0 4.6.9 6.2 2.5H24V24h14.9c.1-.7.1-1.3.1-2C39 12.6 32.4 5 24 5z" fill="url(#edx-a)"/></svg></span></button>
+            </div>
+            <select id="scrap-cookies" name="cookies" class="sr-only-select" tabindex="-1" aria-hidden="true">
+              <option value="">Nenhum</option>
+              <option value="chrome">chrome</option>
+              <option value="firefox">firefox</option>
+              <option value="edge">edge</option>
+            </select>
+            <p class="auth-note" id="scrap-cookies-hint">Lê a sessão direto do navegador. Falha no Chrome/Edge 127+.</p>
+          </div>
+          <div class="auth-block">
+            <div class="auth-block-head">
+              <label class="field-label" for="scrap-cookies-file">Arquivo cookies.txt</label>
+              <span class="auth-tag">Recomendado</span>
+            </div>
+            <div class="auth-file-row">
+              <input type="text" id="scrap-cookies-file" name="cookies-file"
+                     value=""
+                     placeholder="C:\caminho\cookies.txt"
+                     aria-describedby="scrap-cookies-file-hint" autocomplete="off" spellcheck="false">
+              <button type="button" class="auth-icon-btn pressable" id="btn-cookies-browse" title="Escolher arquivo" aria-label="Escolher arquivo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M3.5 9h17" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
+              <button type="button" class="auth-icon-btn auth-icon-btn--ghost pressable" id="btn-cookies-clear" title="Limpar caminho">✕</button>
+            </div>
+            <input type="file" id="cookies-file-picker" accept=".txt" hidden>
+            <p class="auth-note" id="scrap-cookies-file-hint">Tem precedência sobre o navegador. Necessário no Chrome/Edge 127+, onde os cookies são selados com App-Bound Encryption.</p>
+          </div>
+          <div class="auth-block auth-block--wide">
+            <div class="auth-block-head">
+              <label class="field-label" for="scrap-ig-session">sessionid do Instagram</label>
+              <span class="auth-tag">HttpOnly</span>
+            </div>
+            <div class="auth-file-row">
+              <input type="password" id="scrap-ig-session" name="ig-session"
+                     aria-describedby="scrap-ig-session-hint"
+                     placeholder="12345678%3AAbCdEfGhIjKl%3A12%3AAY..." autocomplete="off" spellcheck="false">
+              <button type="button" class="auth-icon-btn pressable" id="btn-session-reveal"
+                      aria-label="Mostrar o valor" aria-pressed="false" title="Mostrar o valor"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
+              <button type="button" class="auth-icon-btn auth-icon-btn--ghost pressable" id="btn-session-clear"
+                      aria-label="Limpar o campo" title="Limpar o campo">✕</button>
+            </div>
+            <p class="auth-note" id="scrap-ig-session-hint">
+              Este cookie é <strong>HttpOnly</strong>: o export não consegue vê-lo, e sem ele o
+              Instagram responde como se ninguém estivesse logado. Abra DevTools (<kbd>F12</kbd>) →
+              <em>Application</em> → <em>Cookies</em> → <code>https://www.instagram.com</code> →
+              linha <code>sessionid</code> → copie a coluna <em>Value</em>.
+              Fica gravado no cookies.txt, então a busca e o download usam a mesma sessão.
+            </p>
+          </div>
+        </div>
+      </div>
+    </details>
   </div>
 
 </main>

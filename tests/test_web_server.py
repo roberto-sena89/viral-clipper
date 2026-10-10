@@ -4956,6 +4956,55 @@ class PickScrollsWithThePageTests(unittest.TestCase):
         self.assertIn("position: static", bloco)
 
 
+class SessionCardIsAClosedDisclosureTests(unittest.TestCase):
+    """O "acesso e sessão" saiu de dentro do card de busca (M2).
+
+    Ele media 750px — 61% da coluna de trabalho — para um formulário que se
+    preenche uma vez, e abaixo de 980px vinha ANTES dos resultados: quem estava
+    no celular rolava a configuração inteira antes de ver um vídeo. Virou um
+    card irmão, RECOLHIDO por padrão, com o estado visível no resumo.
+
+    Estes testes travam o que faz a dobra valer: é um <details> fechado, fora
+    do card de busca, com o selo DENTRO do <summary> — e os campos continuam no
+    DOM, porque a dobra esconde, não remove.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = page_source("scrap.html")
+
+    def test_it_is_a_details_that_starts_closed(self):
+        tag = re.search(r"<details\b[^>]*\bid=\"auth-card\"[^>]*>", self.html)
+        self.assertIsNotNone(tag, "o card de sessão deixou de ser um <details>")
+        self.assertIsNone(
+            re.search(r"\bopen\b", tag.group(0)),
+            "o card de sessão nasce aberto — a dobra não estaria fazendo nada")
+
+    def test_it_left_the_search_card(self):
+        busca = self.html.index('class="card search-card"')
+        fim_da_busca = self.html.index("</section>", busca)
+        sessao = self.html.index('id="auth-card"')
+        self.assertGreater(
+            sessao, fim_da_busca,
+            "a sessão voltou para dentro do card de busca — era o defeito D2")
+
+    def test_the_state_shows_while_collapsed(self):
+        # Recolhido, o selo e' a UNICA informacao visivel: se ele ficar no
+        # corpo, a dobra esconde justamente o que diz se da' para autenticar.
+        inicio = self.html.index('id="auth-card"')
+        resumo = self.html[inicio:self.html.index("</summary>", inicio)]
+        self.assertIn('id="auth-status"', resumo,
+                      "o selo de estado saiu do resumo")
+        self.assertIn('class="auth-title"', resumo)
+
+    def test_the_fields_stay_in_the_dom(self):
+        # A dobra esconde, nao remove: o payload continua lendo os mesmos ids.
+        for campo in ('id="cookies-seg"', 'id="scrap-cookies"',
+                      'id="scrap-cookies-file"', 'id="scrap-ig-session"'):
+            with self.subTest(campo=campo):
+                self.assertIn(campo, self.html)
+
+
 class BackendReadinessTests(unittest.TestCase):
     """A pagina diz se ela mesma consegue falar com o servidor.
 

@@ -1289,3 +1289,58 @@ header .nav-actions .btn { min-height: 42px; }
   .search-mode-group .tab,
   .search-card .tabs[aria-label="Plataforma"] .tab { min-height: 44px; }
 }
+
+/* ---------- ACESSO E SESSÃO: card próprio, recolhido por padrão ----------
+   Ele vivia DENTRO do card de busca e media 750px — 61% da coluna de trabalho
+   — para um formulário que se preenche uma vez. Aqui ele é um card irmão,
+   fechado por padrão, com o estado visível no resumo: o que a pessoa veio usar
+   (colar um link) para de dividir a tela com App-Bound Encryption e o caminho
+   do DevTools. Os campos continuam no DOM — é o mesmo formulário, atrás de uma
+   dobra; o que muda é quem paga o espaço.
+
+   `grid-column: 1` o mantém na coluna da Busca nos três regimes, e é o
+   suficiente porque no DOM ele é a ÚLTIMA filha da grade: o auto-placement
+   preenche a linha 1 com Busca, Resultados e Escolha e joga a sessão para a
+   linha 2 da coluna 1. Repetir aqui a posição dos outros dois seria uma
+   segunda fonte para a mesma coisa. Ordem de DOM igual à ordem visual também
+   mantém a tabulação na sequência que a tela mostra. */
+.scrap-grid > .auth-card {
+  grid-column: 1;
+  /* `display:flex` e `margin-top` são de quando ele era um sub-card dentro da
+     Busca; num <details> o flex quebra a relação summary/conteúdo. */
+  display: block;
+  margin-top: 0;
+  padding: 0;
+  overflow: hidden; /* o resumo encosta na borda arredondada do card */
+}
+/* O resumo É o cabeçalho que já existia (`.auth-head`): mesmas classes, mesmo
+   título e mesmo selo. O selo subiu para cá porque recolhido ele seria a única
+   informação visível — e `justify-content` volta a `flex-start` para o caret e
+   o título ficarem juntos (o `space-between` do `.auth-head` centraria o
+   título entre os três itens). */
+.scrap-grid > .auth-card > summary.auth-head {
+  justify-content: flex-start;
+  align-items: center;
+  gap: 10px;
+  padding: 15px 20px;
+  cursor: pointer;
+  list-style: none; /* tira o triângulo nativo; o caret e' desenhado abaixo */
+  user-select: none;
+}
+.scrap-grid > .auth-card > summary::-webkit-details-marker { display: none; }
+.scrap-grid > .auth-card > summary::before {
+  content: ""; flex: 0 0 auto;
+  width: 0; height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform var(--transition);
+}
+.scrap-grid > .auth-card[open] > summary::before { transform: rotate(90deg); }
+.scrap-grid > .auth-card > summary:hover { color: var(--text-primary); }
+.scrap-grid > .auth-card > summary:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+.scrap-grid > .auth-card > summary .auth-status { margin-left: auto; }
+.scrap-grid > .auth-card > .auth-body { padding: 0 20px 18px; }

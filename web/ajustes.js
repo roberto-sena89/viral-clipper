@@ -310,7 +310,7 @@
 
     if (!state.canSave) {
       setSaveState('error', 'Não salvo',
-        'O servidor ainda não expõe /ajustes.json nem POST /ajustes. ' +
+        'O servidor ainda não expõe GET nem PUT /api/ajustes. ' +
         'Nada está sendo gravado: os valores abaixo são só os padrões do formulário.');
       if (!silent) {
         toast('O servidor não tem a rota de ajustes ainda. Nada foi salvo.', 'err');
@@ -356,7 +356,7 @@
       // HTML e diz isso, em vez de mostrar um "salvo" que nunca aconteceu.
       state.canSave = false;
       setSaveState('error', 'Sem rota',
-        'O servidor ainda não expõe /ajustes.json. Os valores abaixo são os padrões ' +
+        'O servidor ainda não expõe /api/ajustes. Os valores abaixo são os padrões ' +
         'do formulário e nada será gravado até a rota existir.');
       renderSummary();
       return;

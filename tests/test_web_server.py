@@ -5386,7 +5386,7 @@ class RenderSectionOwnershipTests(unittest.TestCase):
     do loudness (`lufs`, que o servidor so aceitava por um alias de
     compatibilidade). O index.js lia os 11 campos do DOM e mandava no POST /run.
 
-    Agora o Estudio le state.ajustes, carregado de /ajustes.json no boot -- o
+    Agora o Estudio le state.ajustes, carregado de /api/ajustes no boot -- o
     mesmo padrao que Selecao e Transcricao ja usavam. Estes testes travam as
     duas metades do contrato: o markup saiu de la, e a coleta le do estado.
     """
@@ -8673,7 +8673,7 @@ class ApiNamespaceTests(unittest.TestCase):
         """`GET /api/ajustes` e `PUT /api/ajustes` sao o par ler/escrever.
 
         E' o que o PUT compra: o mesmo caminho, o verbo dizendo o que a
-        chamada faz, sem precisar de `/ajustes.json` para desambiguar.
+        chamada faz, sem precisar de um sufixo `.json` para desambiguar.
         """
         do_get = self.rotas("do_GET")
         self.assertIn("/api/ajustes", do_get)

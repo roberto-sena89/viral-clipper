@@ -32,7 +32,7 @@
     curatorPromptExists: false,
     // As secoes "Selecao", "Transcricao" e "Renderizacao" nao vivem mais nesta
     // pagina: as tres moram so em /ajustes. O que fica aqui e a copia do que
-    // esta em ajustes.toml, lida de /ajustes.json no load. Os valores abaixo sao
+    // esta em ajustes.toml, lida de /api/ajustes no load. Os valores abaixo sao
     // os defaults do formulario de Ajustes e valem enquanto ninguem salvou nada.
     ajustes: {
       // Selecao
@@ -2701,7 +2701,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   // direito de ver o link dele intacto na barra.
   lerEndereco();
 
-  // Os 6 parametros de selecao vem de /ajustes.json; sem esperar por eles, um
+  // Os 6 parametros de selecao vem de /api/ajustes; sem esperar por eles, um
   // clique em Rodar logo apos o load mandaria os defaults do HTML em vez do
   // que esta salvo. A leitura e rapida (arquivo local) e nao bloqueia a tela.
   renderSelectionSummary();

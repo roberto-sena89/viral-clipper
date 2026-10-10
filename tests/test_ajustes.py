@@ -815,7 +815,7 @@ class StudioTranscriptTests(unittest.TestCase):
 
 
 class AjustesPayloadTests(unittest.TestCase):
-    """What GET /ajustes.json hands to the Cortes page."""
+    """What GET /api/ajustes hands to the Cortes page."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())

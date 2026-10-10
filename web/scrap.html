@@ -68,65 +68,79 @@
 
   <div class="scrap-grid">
 
-    <!-- ---------- COLUNA ESQUERDA: busca ---------- -->
+    <!-- ---------- BARRA DE IMPORTAÇÃO: uma faixa, no topo ----------
+         Era um card vertical de 1220px com os dois grupos de abas EMPILHADOS
+         (plataforma em cima, modo embaixo), depois o campo de URL e o botão —
+         e, até o M2, a sessão dentro. Plataforma, modo, URL e Buscar são QUATRO
+         faces de uma decisão só ("o que eu quero buscar"), e estavam empilhadas
+         como se fossem quatro etapas. Agora são uma faixa: cabe numa linha de
+         1270px para cima; abaixo disso o campo de URL desce inteiro, que é a
+         ordem de leitura. O título fica FORA da faixa, como cabeçalho do card
+         (o mesmo desenho do card de Resultados): dentro dela os três controles
+         somam 876px e o título levaria o total a 1260px, acima dos 1090px que
+         a faixa tem a 1440 — ou seja, era o título que empurrava a URL para a
+         segunda linha em toda tela. O ganho é o que sai do caminho: a coluna da
+         esquerda some, e os Resultados deixam de dividir a largura com um
+         formulário. -->
       <section class="card search-card" aria-labelledby="h-busca">
         <div class="search-card-heading">
-          <div>
-            <p class="search-kicker">ENCONTRE SUA PRÓXIMA FONTE</p>
-            <h2 id="h-busca"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m15.5 15.5 4.2 4.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span> Buscar conteúdo</h2>
-          </div>
+          <h2 id="h-busca"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m15.5 15.5 4.2 4.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span> Buscar conteúdo</h2>
           <span class="search-step" aria-label="Etapa 1 de 3">01</span>
         </div>
         <p class="card-sub">Cole o link de um vídeo ou explore as publicações de um perfil.</p>
 
-        <!-- Plataforma: o arquivamento de perfil (reels/ + posts/) só existe
-             no Instagram, então ele mora nesta aba. TikTok e YouTube usam a
-             mesma busca e o mesmo "Baixar selecionados". -->
-        <div class="search-control-group">
-          <p class="search-control-label">Plataforma</p>
-          <div class="tabs" role="tablist" aria-label="Plataforma">
-            <button class="tab" type="button" role="tab" id="tab-instagram"
-                    aria-selected="true"
-                    data-platform="instagram">
-              <span class="platform-monogram" aria-hidden="true">IG</span> Instagram
-            </button>
-            <button class="tab" type="button" role="tab" id="tab-tiktok"
-                    aria-selected="false" tabindex="-1"
-                    data-platform="tiktok">
-              <span class="platform-monogram" aria-hidden="true">TT</span> TikTok
-            </button>
-            <button class="tab" type="button" role="tab" id="tab-youtube"
-                    aria-selected="false" tabindex="-1"
-                    data-platform="youtube">
-              <span class="platform-monogram" aria-hidden="true">YT</span> YouTube
-            </button>
+        <div class="search-bar">
+          <!-- Plataforma: o arquivamento de perfil (reels/ + posts/) só existe
+               no Instagram, então ele mora nesta aba. TikTok e YouTube usam a
+               mesma busca e o mesmo "Baixar selecionados". -->
+          <div class="search-control-group">
+            <p class="search-control-label">Plataforma</p>
+            <div class="tabs" role="tablist" aria-label="Plataforma">
+              <button class="tab" type="button" role="tab" id="tab-instagram"
+                      aria-selected="true"
+                      data-platform="instagram">
+                <span class="platform-monogram" aria-hidden="true">IG</span> Instagram
+              </button>
+              <button class="tab" type="button" role="tab" id="tab-tiktok"
+                      aria-selected="false" tabindex="-1"
+                      data-platform="tiktok">
+                <span class="platform-monogram" aria-hidden="true">TT</span> TikTok
+              </button>
+              <button class="tab" type="button" role="tab" id="tab-youtube"
+                      aria-selected="false" tabindex="-1"
+                      data-platform="youtube">
+                <span class="platform-monogram" aria-hidden="true">YT</span> YouTube
+              </button>
+            </div>
+          </div>
+
+          <div class="search-control-group search-mode-group">
+            <p class="search-control-label">O que deseja buscar?</p>
+            <div class="tabs" role="tablist" aria-label="Tipo de busca">
+              <button class="tab" type="button" role="tab" id="tab-link"
+                      aria-selected="true" aria-controls="scrap-url"
+                      data-mode="link">
+                <span class="search-mode-symbol" aria-hidden="true">↗</span> Link de vídeo
+              </button>
+              <button class="tab" type="button" role="tab" id="tab-perfil"
+                      aria-selected="false" aria-controls="scrap-url" tabindex="-1"
+                      data-mode="profile">
+                <span class="search-mode-symbol" aria-hidden="true">@</span> Perfil
+              </button>
+            </div>
+          </div>
+
+          <div class="search-bar-url">
+            <label class="field-label search-url-label" for="scrap-url">Link do vídeo ou perfil</label>
+            <form class="scrap-form" id="scrap-form" novalidate>
+              <input type="url" id="scrap-url" name="url" autocomplete="off"
+                     aria-describedby="scrap-hint"
+                     placeholder="https://www.instagram.com/reel/..."
+                     required>
+              <button class="btn pressable btn-primary" type="submit" id="btn-scrap">Buscar</button>
+            </form>
           </div>
         </div>
-
-        <div class="search-control-group search-mode-group">
-          <p class="search-control-label">O que deseja buscar?</p>
-          <div class="tabs" role="tablist" aria-label="Tipo de busca">
-            <button class="tab" type="button" role="tab" id="tab-link"
-                    aria-selected="true" aria-controls="scrap-url"
-                    data-mode="link">
-              <span class="search-mode-symbol" aria-hidden="true">↗</span> Link de vídeo
-            </button>
-            <button class="tab" type="button" role="tab" id="tab-perfil"
-                    aria-selected="false" aria-controls="scrap-url" tabindex="-1"
-                    data-mode="profile">
-              <span class="search-mode-symbol" aria-hidden="true">@</span> Perfil
-            </button>
-          </div>
-        </div>
-
-        <label class="field-label search-url-label" for="scrap-url">Link do vídeo ou perfil</label>
-        <form class="scrap-form" id="scrap-form" novalidate>
-          <input type="url" id="scrap-url" name="url" autocomplete="off"
-                 aria-describedby="scrap-hint"
-                 placeholder="https://www.instagram.com/reel/... ou https://www.tiktok.com/@.../video/..."
-                 required>
-          <button class="btn pressable btn-primary" type="submit" id="btn-scrap">Buscar</button>
-        </form>
 
         <p class="field-hint" id="scrap-hint">
           Modo <strong>Link</strong>: aceita um post, reel ou vídeo.

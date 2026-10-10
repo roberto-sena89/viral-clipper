@@ -2632,12 +2632,9 @@ class BreakpointScaleTests(unittest.TestCase):
         920: "rail -> gaveta (body), etapa-list, action-bar",
         960: "hero, brand, header-context",
         980: "ajustes-abertura, scrap-grid (empilhado)",
-        981: "scrap-grid (faixa do meio)",
         1100: "etapa-list (escada das etapas)",
-        1150: "scrap tablist",
         1160: "studio-welcome, main-grid (gap)",
-        1180: "scrap-grid",
-        1279: "scrap-grid (teto da faixa do meio)",
+        1180: "scrap-grid (largura do rail)",
         1280: "main-grid do ajustes, scrap-grid (faixa larga)",
     }
 
@@ -5018,11 +5015,23 @@ class PickScrollsWithThePageTests(unittest.TestCase):
     def test_the_wide_columns_have_no_hard_floor(self):
         """Piso fixo somava 1030px num container de 972px: a grade vazava.
 
-        Nada a ver com o sticky -- o conserto veio junto e FICA.
+        Nada a ver com o sticky -- o conserto veio junto e FICA. O que o teste
+        guarda e' o PISO, e nao o valor exato das colunas: ele nasceu contra o
+        `minmax(340px, …)` que somava 1030px, e o M1 trocou a grade de tres
+        colunas por duas. Travar `minmax(0, 1.05fr)` faria o teste reprovar por
+        uma mudanca de DESENHO, que nao e' o defeito dele.
         """
         bloco = self.sem_comentario(self.bloco(self.css(), "(min-width: 1280px)"))
         self.assertNotIn("minmax(340px", bloco)
-        self.assertIn("minmax(0, 1.05fr)", bloco)
+        colunas = re.search(r"grid-template-columns:\s*([^;]+);", bloco)
+        self.assertIsNotNone(colunas, "o bloco de 1280 perdeu a grade")
+        faixas = [f for f in colunas.group(1).split() if f.startswith("minmax(")]
+        self.assertTrue(faixas, "a grade larga deixou de usar minmax")
+        for faixa in faixas:
+            with self.subTest(faixa=faixa):
+                self.assertTrue(
+                    faixa.startswith("minmax(0"),
+                    f"{faixa} tem piso fixo: a grade volta a vazar em 1280")
 
     def test_the_removal_did_not_touch_the_header(self):
         """A barra de navegacao segue fixa: a remocao foi do card, so'."""
@@ -5201,6 +5210,110 @@ class HeroDropsTheFlowCardTests(unittest.TestCase):
         """O card dizia "Arquivos salvos neste computador"; isso e' o selo."""
         comum = (server.WEB_DIR / "comum.js").read_text(encoding="utf-8")
         self.assertIn("Downloads neste PC", comum)
+
+
+class ImportBarIsOneStripTests(unittest.TestCase):
+    """Plataforma, modo, URL e Buscar sao UMA faixa, e nao quatro blocos (M1).
+
+    Antes eles eram dois grupos de abas EMPILHADOS dentro de um card de 1220px,
+    seguidos do campo de URL e do botao -- como se fossem quatro etapas. Sao
+    quatro faces de uma decisao so': "o que eu quero buscar".
+
+    O defeito que o desenho antigo causava esta' medido: com a busca ocupando a
+    coluna inteira, os Resultados ficavam com 469px a 1440 e os outros dois
+    paineis somavam 341 e 186px de altura, deixando ~880px de vazio a' direita
+    (D1). Com a faixa atravessando a grade, os Resultados ficam com 756px a 1440.
+
+    Estes testes travam a FORMA, e nao pixels: a faixa e' um flex que quebra
+    pelo conteudo, o titulo mora FORA dela (dentro, os 384px do titulo levavam o
+    total a 1260px e a URL caia para a segunda linha em toda largura), e a URL e'
+    o unico item elastico.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = (server.WEB_DIR / "scrap.html").read_text(encoding="utf-8")
+        cls.css = re.sub(
+            r"/\*.*?\*/", "",
+            (server.WEB_DIR / "scrap.css").read_text(encoding="utf-8"), flags=re.S)
+
+    def elemento(self, html: str, abertura: str) -> str:
+        """O miolo de um `<div ...>`, ate' o `</div>` que CASA com ele.
+
+        Procurar o primeiro `</div>` acharia o fim do primeiro filho, nao o do
+        elemento: o que fecha e' o que zera a profundidade.
+        """
+        i = html.index(abertura)
+        j = html.index(">", i) + 1
+        nivel, k = 1, j
+        while nivel:
+            abre = html.find("<div", k)
+            fecha = html.find("</div>", k)
+            self.assertNotEqual(fecha, -1, f"{abertura} nao fecha")
+            if abre != -1 and abre < fecha:
+                nivel, k = nivel + 1, abre + 4
+            else:
+                nivel, k = nivel - 1, fecha + 6
+        return html[j:k - 6]
+
+    def test_the_strip_holds_the_three_control_groups(self):
+        """As tres pecas da decisao estao DENTRO da faixa."""
+        faixa = self.elemento(self.html, '<div class="search-bar">')
+        self.assertIn('aria-label="Plataforma"', faixa)
+        self.assertIn('aria-label="Tipo de busca"', faixa)
+        self.assertIn('id="scrap-form"', faixa)
+
+    def test_the_title_stays_out_of_the_strip(self):
+        """O titulo e' o cabecalho do card, nao uma peca da faixa.
+
+        Foi o que fez a faixa caber: medidos, os tres controles somam 876px e o
+        titulo levaria o total a 1260px -- mais que os 1090px da faixa a 1440.
+        """
+        faixa = self.elemento(self.html, '<div class="search-bar">')
+        self.assertNotIn("h-busca", faixa,
+                         "o titulo voltou para dentro da faixa: a URL volta a "
+                         "cair para a segunda linha em toda largura de desktop")
+        cabeca = self.elemento(self.html, '<div class="search-card-heading">')
+        self.assertIn('id="h-busca"', cabeca)
+        self.assertIn("search-step", cabeca)
+
+    def test_the_strip_wraps_by_content_and_not_by_columns(self):
+        m = re.search(r"(?:^|\n)\.search-bar\s*\{([^}]*)\}", self.css)
+        self.assertIsNotNone(m, ".search-bar perdeu a regra base")
+        corpo = m.group(1)
+        self.assertIn("display: flex", corpo)
+        self.assertIn("flex-wrap: wrap", corpo)
+        self.assertNotIn("grid-template-columns", corpo,
+                         "a faixa virou grid de colunas fixas: a quebra tem de "
+                         "depender do conteudo, nao de um numero de colunas")
+
+    def test_the_url_is_the_only_elastic_item(self):
+        m = re.search(r"\.search-bar-url\s*\{([^}]*)\}", self.css)
+        self.assertIsNotNone(m, ".search-bar-url perdeu a regra")
+        self.assertRegex(m.group(1), r"flex:\s*1\s+1\s",
+                         "a URL deixou de ser o item que cresce")
+
+    def test_the_stacked_blocks_left_no_separator(self):
+        """O `margin-top` que separava os blocos empilhados sai: quem separa
+        agora e' o `gap` da faixa."""
+        m = re.search(r"\.search-bar\s+\.search-control-group\s*\{([^}]*)\}",
+                      self.css)
+        self.assertIsNotNone(m, "sumiu a regra que zera o margin-top dos grupos")
+        self.assertIn("margin-top: 0", m.group(1))
+
+    def test_the_dead_classes_are_gone(self):
+        """`.search-bar-id` e `.search-bar-title` eram o titulo dentro da faixa:
+        markup e regra saem juntos."""
+        for nome in ("search-bar-id", "search-bar-title"):
+            with self.subTest(classe=nome):
+                self.assertNotIn(nome, self.html)
+                self.assertNotIn(nome, self.css)
+
+    def test_the_search_card_crosses_the_grid(self):
+        """A faixa nao pertence a' coluna do canvas nem a' do rail."""
+        m = re.search(r"\.scrap-grid\s*>\s*\.search-card[^{]*\{([^}]*)\}", self.css)
+        self.assertIsNotNone(m, "o .search-card perdeu o posicionamento na grade")
+        self.assertRegex(m.group(1), r"grid-column:\s*1\s*/\s*-1")
 
 
 class BackendReadinessTests(unittest.TestCase):

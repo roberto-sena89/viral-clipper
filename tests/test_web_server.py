@@ -5985,8 +5985,9 @@ class UserProviderCardTests(unittest.TestCase):
         A lista e derivada do proprio JS para nao envelhecer.
         """
         for name in ("prov-name", "prov-label", "prov-base-url", "prov-model",
-                     "prov-api-key-env", "prov-note", "prov-requires-key",
+                     "prov-models", "prov-api-key-env", "prov-note", "prov-requires-key",
                      "prov-list", "prov-empty", "prov-status", "prov-result",
+                     "ranker-model-list",
                      "btn-prov-test", "btn-prov-save", "btn-prov-clear"):
             self.assertIn(f'id="{name}"', self.html, f"falta o controle {name}")
 
@@ -6094,6 +6095,37 @@ class UserProviderCardTests(unittest.TestCase):
 
     def test_the_card_reads_the_user_route_on_load(self):
         self.assertIn("/providers/user", self.js)
+
+    def test_the_extras_field_feeds_the_save_payload(self):
+        """O textarea de extras e lido no save, nao so desenhado.
+
+        Um campo que ninguem le e um campo que mente: a pessoa digita tres
+        modelos, salva, e o arquivo guarda um.
+        """
+        salvar = fn_body(self.js, "providerFormPayload")
+        self.assertIn("parseModelList", salvar,
+                      "o payload nao passa pelos extras digitados")
+
+    def test_applying_a_provider_offers_its_models(self):
+        """Escolher o provedor sugere os modelos dele no campo Modelo.
+
+        Sem isso os extras salvos seriam inalcançaveis: existiriam no arquivo
+        e em nenhum controle. O datalist sugere sem apagar o que foi digitado
+        a mao — trocar de provedor nao pode comer o texto do campo.
+        """
+        aplicar = fn_body(self.js, "applyProvider")
+        self.assertIn("ranker-model-list", aplicar,
+                      "escolher o provedor nao atualiza as sugestoes de modelo")
+
+    def test_the_providers_payload_carries_the_full_model_list(self):
+        """O Curador precisa da lista cheia, padrao primeiro.
+
+        So o `model` chegaria ao painel como antes, e os extras continuariam
+        invisiveis para quem executa.
+        """
+        fonte = (server.REPO_ROOT / "web" / "routes_providers.py").read_text(encoding="utf-8")
+        self.assertIn('"models"', fonte,
+                      "o payload nao carrega a lista de modelos")
 
     def test_saving_refuses_to_shadow_a_built_in_name(self):
         """O servidor recusa; este teste trava a recusa no lugar.

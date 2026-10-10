@@ -63,6 +63,9 @@ def _providers_payload() -> dict:
                 "label": provider.label,
                 "base_url": provider.base_url,
                 "model": provider.model,
+                # A lista cheia, padrao primeiro: o Curador oferece cada modelo
+                # no campo Modelo sem trocar de provedor.
+                "models": list(dict.fromkeys([provider.model, *provider.models])),
                 "api_key_env": provider.api_key_env,
                 # Whether a key is already saved, never the key itself. The
                 # browser needs to say "there is one" so the edit form does not

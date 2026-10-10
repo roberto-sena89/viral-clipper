@@ -80,6 +80,10 @@ class Provider:
     #: Measured latency and the reason to pick or avoid this one. Shown in the
     #: panel, because a model that takes 73 s per window is a real decision.
     note: str = ""
+    #: Modelos extras no mesmo endpoint e na mesma chave. ``model`` continua o
+    #: padrao (o que o seletor preenche e o que o teste usa); os daqui viram
+    #: sugestao no campo Modelo do Curador. Tupla porque o dataclass e frozen.
+    models: tuple = ()
 
 
 PROVIDERS: dict[str, Provider] = {

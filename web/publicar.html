@@ -10,9 +10,9 @@
      rodape; /index.css, a abertura e os cards. A terceira e' so desta pagina
      (o cartao de legenda) e usa seletores `publicar-`, para nao criar uma
      segunda verdade sobre nada que ja exista. -->
-<link rel="stylesheet" href="/shared.css?v=20261009.4">
-<link rel="stylesheet" href="/index.css?v=20261008">
-<link rel="stylesheet" href="/publicar.css?v=20261009">
+<link rel="stylesheet" href="/shared.css?v=20261010">
+<link rel="stylesheet" href="/index.css?v=20261010">
+<link rel="stylesheet" href="/publicar.css?v=20261010">
 </head>
 <body data-page="publicar">
 
@@ -36,7 +36,9 @@
   <ul class="rail-menu" aria-labelledby="rail-label-paginas" data-rail-list></ul>
 
   <div class="rail-foot">
-    <span>viral-clipper · 9:16 1080×1920</span>
+    <span class="rail-foot-brand"><span class="footer-brand__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m9 6 9 6-9 6V6Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path><path d="M5 5v14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg></span><span class="rail-foot-name">Viral Clipper</span></span>
+    <span class="rail-foot-slogan">Seu conteudo. Novas possibilidades.</span>
+    <span class="rail-foot-credit">Desenvolvido por Roberto Sena</span>
   </div>
 </nav>
 
@@ -66,14 +68,18 @@
     </div>
     <h1 class="section-title" id="publicar-titulo">Publicar</h1>
     <p class="section-sub">
-      Esta página lê o <code>clips.json</code> da última execução e mostra, por
-      clip, a <strong>legenda</strong> e as <strong>hashtags</strong> que o
-      curador escreveu — o texto que vai no campo de descrição do TikTok, do
-      Reels ou do Shorts.
+      Esta página lê o <code>output/clips.json</code> da última execução e
+      mostra, por clip, a <strong>legenda</strong> e as <strong>hashtags</strong>
+      que o curador escreveu — o texto pronto para o campo de descrição do
+      TikTok, do Reels ou do Shorts.
     </p>
-    <p class="section-sub section-sub-muted">
-      As hashtags <strong>não</strong> estão desenhadas no vídeo de propósito:
-      a plataforma lê hashtag como metadado do post e ignora legenda queimada
+
+    <!-- Aviso de escopo, nao segundo paragrafo: a barra de acento diz
+         "ressalva" antes do texto ser lido. O `section-sub-muted` saiu: dois
+         tons de cinza quase iguais, e este avisa em vez de sussurrar. -->
+    <p class="publicar-nota">
+      As hashtags <strong>não</strong> vão queimadas no vídeo de propósito:
+      a plataforma lê hashtag como metadado do post e ignora texto desenhado
       no quadro. Quem publica é você, pela plataforma — esta página não faz
       upload de nada.
     </p>
@@ -94,7 +100,7 @@
   </section>
 
   <section class="card" id="publicar-clips">
-    <h2><span class="ico" aria-hidden="true">✎</span> Clips gerados</h2>
+    <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20l4.5-1L20 7.5a2.1 2.1 0 0 0-3-3L5.5 16 4 20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14.5 7l2.5 2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span> Clips gerados</h2>
 
     <p class="hint" id="publicar-resumo">
       Lendo o relatório da última execução…
@@ -144,8 +150,8 @@
 
 <div class="toast-zone" id="toast-zone" role="status" aria-live="polite"></div>
 
-<script src="/comum.js?v=20261009.3"></script>
-<script src="/publicar.js?v=20261009.2"></script>
+<script src="/comum.js?v=20261010"></script>
+<script src="/publicar.js?v=20261010"></script>
 
 </body>
 </html>

@@ -143,7 +143,7 @@
     trigger.setAttribute('aria-expanded', 'false');
     trigger.innerHTML =
       '<span class="sel-text"><span class="sel-title"></span><span class="sel-desc"></span></span>' +
-      '<span class="sel-arrow" aria-hidden="true">▾</span>';
+      '<span class="sel-arrow" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 
     const panel = document.createElement('div');
     panel.className = 'select-panel';
@@ -399,15 +399,14 @@
      O cabecalho de contexto continua vindo da tabela HC por pagina. Um
      `title`/`long`/`short` novo entra na tabela e o HTML nao muda. */
 
-  //: Nome e slogan da marca, no formato minusculo com hifen. Uma fonte so':
-  //: o rodape e a marca do rail escrevem exatamente estas strings.
-  const MARCA_NOME = 'viral-clipper';
+  //: Nome e slogan da marca. Uma fonte so': o rodape e a marca do rail
+  //: escrevem exatamente estas strings.
+  const MARCA_NOME = 'Viral Clipper';
   const MARCA_SLOGAN = 'Seu conteúdo. Novas possibilidades.';
 
   const BRAND = {
-    //: A variante com maiusculas e' para o leitor de tela: o nome VISUAL e'
-    //: minusculo de proposito, mas "Viral Clipper" dito em voz alta quer
-    //: virar nome proprio, nao uma sigla.
+    //: A variante com maiusculas e' para o leitor de tela: o nome visual
+    //: e o falado sao o mesmo nome proprio, nao uma sigla.
     nome: 'Viral Clipper',
     badge: 'LOCAL',
     badgeTitulo: 'Aplicativo local',

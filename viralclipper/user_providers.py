@@ -79,6 +79,25 @@ def validate(entry: dict) -> tuple[Provider | None, str]:
     if not model:
         return None, "o nome do modelo e obrigatorio"
 
+    # Modelos extras do mesmo provedor: mesmo endpoint, mesma chave. Aceita a
+    # lista do painel e o texto de um arquivo editado a mao (um por linha ou
+    # separados por virgula). O padrao nao se repete aqui: ele ja e `model`.
+    brutos = entry.get("models")
+    if isinstance(brutos, str):
+        candidatos = brutos.replace(",", "\n").splitlines()
+    elif isinstance(brutos, (list, tuple)):
+        candidatos = [str(item) for item in brutos]
+    else:
+        candidatos = []
+    vistos = {model}
+    extras: list[str] = []
+    for candidato in candidatos:
+        nome = str(candidato).strip()
+        if not nome or nome in vistos:
+            continue
+        vistos.add(nome)
+        extras.append(nome)
+
     label = str(entry.get("label") or "").strip() or name
 
     # ``api_key_env`` may be blank: that is a local endpoint that takes any key,
@@ -125,6 +144,7 @@ def validate(entry: dict) -> tuple[Provider | None, str]:
             label=label,
             base_url=base_url,
             model=model,
+            models=tuple(extras),
             api_key_env=api_key_env,
             api_key=api_key,
             requires_key=requires_key,
@@ -200,6 +220,9 @@ def dump(entries: list[Provider]) -> str:
         lines.append(f'label = "{_escape(provider.label)}"')
         lines.append(f'base_url = "{_escape(provider.base_url)}"')
         lines.append(f'model = "{_escape(provider.model)}"')
+        if provider.models:
+            linhas = ", ".join(f'"{_escape(nome)}"' for nome in provider.models)
+            lines.append(f"models = [{linhas}]")
         lines.append(f'api_key_env = "{_escape(provider.api_key_env)}"')
         # Only written when set: a line for every provider would put an empty
         # ``api_key = ""`` in files that never used the field, and a reader

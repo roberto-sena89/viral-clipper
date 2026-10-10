@@ -15,6 +15,38 @@
 .publicar-abertura > .section-sub { max-width: 68ch; }
 .publicar-abertura h1.section-title { margin-bottom: 8px; }
 
+/* O overline vira chip so' nesta abertura: mesma pastilha do Ajustes, sem
+   mexer na base que as quatro paginas compartilham. */
+.publicar-abertura .studio-overline {
+  width: fit-content;
+  margin-bottom: 14px;
+  padding: 5px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Aviso de escopo: barra de acento a esquerda em vez de paragrafo apagado.
+   Mesma funcao do `.ajustes-nota`, com a cor desta pagina. */
+.publicar-nota {
+  max-width: 68ch;
+  margin: 14px 0 0;
+  padding-left: 13px;
+  border-left: 2px solid rgba(255, 79, 174, 0.55);
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+  line-height: 1.55;
+}
+.publicar-nota strong { color: var(--text-primary); }
+.publicar-nota code {
+  padding: 1px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #d7deea;
+  font-size: 0.92em;
+}
+
 /* ---------- cartao de legenda ---------- */
 
 /* O `.card` ja' da' borda, fundo e o `margin-bottom` que separa um cartao do
@@ -57,7 +89,16 @@
   gap: 5px;
   min-width: 0;
 }
-.publicar-meta .hint { margin: 0; }
+.publicar-stats { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0; }
+.publicar-stats > div { display: flex; align-items: baseline; gap: 6px; margin: 0; }
+.publicar-stats dt {
+  margin: 0; color: var(--text-muted); font-size: var(--text-2xs);
+  letter-spacing: 0.07em; text-transform: uppercase;
+}
+.publicar-stats dd {
+  margin: 0; color: var(--text-secondary); font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
 
 .publicar-index {
   margin: 0;
@@ -79,12 +120,24 @@
   font-weight: 500;
 }
 
-.publicar-ganchos {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--text-2xs);
-  line-height: 1.5;
+.publicar-tags {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 0; padding: 0; list-style: none;
 }
+.publicar-tags li {
+  padding: 2px 10px; border: 1px solid var(--border-subtle); border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03); color: var(--text-secondary);
+  font-size: var(--text-2xs); line-height: 1.6; overflow-wrap: anywhere;
+}
+.publicar-aviso {
+  display: flex; gap: 10px; align-items: flex-start;
+  margin: 12px 0 0; padding: 10px 12px;
+  border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 9px;
+  background: rgba(251, 191, 36, 0.06);
+}
+.publicar-aviso svg { flex: none; width: 16px; height: 16px; margin-top: 2px; color: var(--warn); }
+.publicar-aviso p { margin: 0; color: var(--text-secondary); font-size: var(--text-caption); line-height: 1.55; }
+.publicar-aviso a { color: var(--accent-soft); text-underline-offset: 3px; }
 
 /* A legenda e' texto para copiar, nao para digitar: monoespacada e menor que
    o corpo, para caber a headline e as hashtags sem empurrar os botoes para

@@ -483,5 +483,51 @@ class HttpReasonTests(unittest.TestCase):
         self.assertIn("Cloudflare", result["reason"])
 
 
+class MultiModelTests(_TempStore):
+    """Um provedor com varios modelos: mesmo endpoint, mesma chave.
+
+    Provedores gratuitos empilham modelos no mesmo base_url (Groq, OpenRouter
+    :free, NIM). Obrigar um arquivo por modelo duplicaria endpoint e chave, e
+    as copias divergiriam no primeiro rotate de segredo. `model` continua o
+    padrao; `models` sao os extras.
+    """
+
+    def test_extra_models_come_from_lines_or_commas(self):
+        provider, reason = user_providers.validate(
+            _valid(model="m1", models="m1, m2\nm3\n\nm2 ,  ")
+        )
+        self.assertEqual(reason, "")
+        self.assertEqual(provider.model, "m1")
+        self.assertEqual(list(provider.models), ["m2", "m3"])
+
+    def test_a_list_payload_is_accepted_too(self):
+        provider, reason = user_providers.validate(
+            _valid(models=["m2", "m3"])
+        )
+        self.assertEqual(reason, "")
+        self.assertEqual(list(provider.models), ["m2", "m3"])
+
+    def test_the_default_model_is_still_required(self):
+        _, reason = user_providers.validate(_valid(model="   ", models=["m2"]))
+        self.assertIn("modelo", reason)
+
+    def test_models_survive_a_round_trip(self):
+        provider, _ = user_providers.validate(_valid(models=["m2", "m3"]))
+        user_providers.save([provider], self.path)
+        (back,) = user_providers.load(self.path)
+        self.assertEqual(back.model, "modelo-1")
+        self.assertEqual(list(back.models), ["m2", "m3"])
+
+    def test_an_old_file_without_models_still_loads(self):
+        self.path.write_bytes(
+            b'[[provider]]\nname = "x"\nlabel = "X"\n'
+            b'base_url = "https://a.test/v1"\nmodel = "m1"\n'
+            b'api_key_env = "K"\nrequires_key = true\ntimeout = 180.0\n'
+            b'note = "n"\n'
+        )
+        (back,) = user_providers.load(self.path)
+        self.assertEqual(tuple(back.models), ())
+
+
 if __name__ == "__main__":
     unittest.main()

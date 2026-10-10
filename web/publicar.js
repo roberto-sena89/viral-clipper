@@ -148,10 +148,14 @@
     const id = 'publicar-legenda-' + indice;
     const legenda = legendaDe(clip);
     const temArquivo = !!clip.rel;
-    const ganchos = (clip.hook_terms || []).filter(Boolean);
+
+    // Resto de pontuacao sozinho ("?" solto em hook_terms) nao e' gancho:
+    // filtra token menor que 2 chars para nao virar chip.
+    const ganchos = (clip.hook_terms || [])
+      .map((t) => String(t || "").trim()).filter((t) => t.length >= 2);
 
     const thumb = clip.poster
-      ? '<img src="' + clipsPath(clip.poster) + '" alt="" loading="lazy" decoding="async">'
+      ? '<img src="' + clipsPath(clip.poster) + '" alt="Prévia do clip ' + esc(clip.index) + '" loading="lazy" decoding="async">'
       : '<span class="publicar-thumb-vazio" aria-hidden="true">9:16</span>';
 
     // Sem headline e sem hashtags o campo fica vazio, e um campo vazio com um
@@ -163,9 +167,12 @@
         + '<textarea id="' + id + '" readonly rows="3" spellcheck="false">'
         + esc(legenda) + '</textarea>'
         + '</div>'
-      : '<p class="hint">O curador não escreveu headline nem hashtags para este '
+      : '<div class="publicar-aviso" role="note">'
+        + '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="8" r="1" fill="currentColor"/></svg>'
+        + '<p>O curador não escreveu headline nem hashtags para este '
         + 'trecho. Ou o modelo não respondeu, ou o prompt atual não pede esse '
-        + 'texto — veja o <a href="/ajustes">Prompt do curador</a>.</p>';
+        + 'texto — veja o <a href="/ajustes">Prompt do curador</a>.</p>'
+        + '</div>';
 
     const acoes = [];
     // O botao de legenda nasce da HEADLINE e nao do `legendaDe`: o campo
@@ -200,11 +207,14 @@
       +     (clip.headline
               ? '<strong class="publicar-titulo">' + esc(clip.headline) + '</strong>'
               : '<strong class="publicar-titulo publicar-titulo-vazio">sem headline</strong>')
-      +     '<p class="hint">nota ' + nota(clip.score)
-      +       ' · ' + esc(clip.start_label || '—') + ' → ' + esc(clip.end_label || '—')
-      +       ' · ' + segundos(clip.duration) + '</p>'
+      +     '<dl class="publicar-stats">'
+      +       '<div><dt>Nota</dt><dd>' + nota(clip.score) + '</dd></div>'
+      +       '<div><dt>Trecho</dt><dd>' + esc(clip.start_label || '—') + ' → ' + esc(clip.end_label || '—') + '</dd></div>'
+      +       '<div><dt>Duração</dt><dd>' + segundos(clip.duration) + '</dd></div>'
+      +     '</dl>'
       +     (ganchos.length
-              ? '<p class="publicar-ganchos">ganchos: ' + esc(ganchos.join(' · ')) + '</p>'
+              ? '<ul class="publicar-tags" aria-label="Ganchos do clip ' + esc(clip.index) + '">'
+                + ganchos.map((g) => '<li>' + esc(g) + '</li>').join('') + '</ul>'
               : '')
       +   '</div>'
       + '</div>'

@@ -1663,6 +1663,7 @@
       badge.dataset.state = "none";
       badge.textContent = "Sem sessão";
     }
+    paintAuthBlocks();
   }
 
   function paintSeg() {
@@ -1675,6 +1676,20 @@
       btn.setAttribute("aria-checked", on ? "true" : "false");
       btn.tabIndex = on ? 0 : -1;
     });
+  }
+
+  // Pinta o bloco ativo: arquivo > navegador > nenhum. Roda dentro do
+  // paintAuthStatus, que ja e chamado no clique do seg, no input do arquivo
+  // e na partida — um gancho so, sem listener novo.
+  function paintAuthBlocks() {
+    const file = document.querySelector("#scrap-cookies-file");
+    const sel = document.querySelector("#scrap-cookies");
+    const fileVal = file ? file.value.trim() : "";
+    const selVal = sel ? sel.value : "";
+    const bFile = document.querySelector('.auth-block[data-method="file"]');
+    const bNav = document.querySelector('.auth-block[data-method="browser"]');
+    if (bFile) bFile.classList.toggle("is-active", !!fileVal);
+    if (bNav) bNav.classList.toggle("is-active", !fileVal && !!selVal);
   }
 
   function setBrowser(value) {

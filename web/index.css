@@ -418,9 +418,11 @@ body { padding-left: var(--rail-w); }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .select-trigger .sel-arrow {
-  flex-shrink: 0; color: var(--text-secondary); font-size: var(--text-caption);
+  flex: none; display: grid; place-items: center; width: 14px; height: 14px;
+  color: var(--text-secondary);
   transition: transform var(--transition);
 }
+.select-trigger .sel-arrow svg { display: block; width: 100%; height: 100%; }
 .select-rich.open .sel-arrow { transform: rotate(180deg); }
 
 .select-panel {
@@ -2214,6 +2216,21 @@ header .nav-actions .btn { min-height: 42px; }
 .ajustes-nota a {
   color: var(--accent-soft);
   text-underline-offset: 3px;
+}
+/* O link vira botao sem deixar de ser link: um `<button>` com JS quebraria
+   abrir-em-nova-guia e o menu de contexto — navegacao e' papel de ancora.
+   O `.btn` ja' nasce compativel com `<a>` (o Publicar usa o mesmo par). */
+.ajustes-nota .btn-nota {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 2px 14px;
+  border-radius: 999px;
+  font-size: var(--text-caption);
+  text-decoration: none;
+}
+@media (pointer: coarse) {
+  .ajustes-nota .btn-nota { min-height: 44px; }
 }
 
 /* ---------- A FICHA ----------

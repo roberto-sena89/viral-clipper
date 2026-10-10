@@ -246,15 +246,32 @@ input::placeholder { color: var(--text-muted); }
   color: var(--warn); border-color: rgba(251, 191, 36, 0.45); background: rgba(251, 191, 36, 0.08);
 }
 .auth-grid {
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 12px; min-width: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 16px; min-width: 0;
 }
 @media (max-width: 720px) { .auth-grid { grid-template-columns: 1fr; } }
 .auth-block {
-  border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.02);
-  padding: 12px; min-width: 0;
-  display: flex; flex-direction: column; gap: 9px;
-  transition: border-color var(--transition);
+  border: 1px solid var(--border-subtle); border-radius: 12px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.035), transparent 55%), rgba(255, 255, 255, 0.018);
+  padding: 16px; min-width: 0;
+  display: flex; flex-direction: column; gap: 12px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.auth-block--primary {
+  border-color: rgba(52, 211, 153, 0.35);
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.15), 0 16px 32px -24px rgba(0, 0, 0, 0.8);
+}
+.auth-step {
+  display: grid; place-items: center; width: 22px; height: 22px; flex: none;
+  border-radius: 7px; background: rgba(255, 255, 255, 0.06); color: #97a2b4;
+  font-family: ui-monospace, monospace; font-size: 11px; font-weight: 700;
+}
+.auth-block--primary .auth-step { background: rgba(52, 211, 153, 0.15); color: #4cd18a; }
+.auth-state-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted);
+  opacity: 0.4; margin-left: auto; flex: none;
+}
+.auth-block.is-active .auth-state-dot {
+  background: var(--accent-primary); opacity: 1; box-shadow: 0 0 8px var(--accent-primary);
 }
 .auth-block:focus-within { border-color: var(--accent-primary); }
 .auth-block-head { display: flex; align-items: center; justify-content: space-between; gap: 6px 8px; flex-wrap: wrap; min-width: 0; }
@@ -265,6 +282,14 @@ input::placeholder { color: var(--text-muted); }
   color: var(--warn); background: rgba(251, 191, 36, 0.10);
   border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 999px; padding: 1px 9px;
   flex: none; align-self: flex-start;
+}
+.auth-tag--rec {
+  color: #4cd18a; background: rgba(52, 211, 153, 0.08);
+  border-color: rgba(52, 211, 153, 0.35);
+}
+.auth-tag--warn {
+  color: var(--warn); background: rgba(251, 191, 36, 0.10);
+  border-color: rgba(251, 191, 36, 0.35);
 }
 /* Controle segmentado: 4 pílulas clicáveis (Nenhum/Chrome/Firefox/Edge).
    Espelha o valor do select de navegador escondido. */
@@ -277,9 +302,11 @@ input::placeholder { color: var(--text-muted); }
 .seg-btn {
   appearance: none; border: 1px solid transparent; background: transparent;
   color: var(--text-muted); font-family: inherit;
-  border-radius: 7px; padding: 8px 4px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 44px;
+  border-radius: 9px; padding: 8px 4px 6px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  min-width: 0; min-height: 56px;
 }
+.seg-label { font-size: 10px; font-weight: 600; letter-spacing: 0.02em; line-height: 1; }
 /* Abaixo de ~110px de celula o icone de 24px nao tem para onde ir: a
    track do grid encolhe ate 10px e o botao vira um fiapo sem area de
    clique (medido navegando pelo CDP em 1024px e 1440px). Duas regras de
@@ -313,9 +340,10 @@ input::placeholder { color: var(--text-muted); }
   font-size: var(--text-caption); font-weight: 600;
   color: var(--text-primary); background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
-  padding: 0 12px; min-height: 40px;
-  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 12px; min-height: 40px; min-width: 44px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
 }
+.auth-icon-btn svg { width: 16px; height: 16px; display: block; }
 .auth-icon-btn:hover { border-color: var(--accent-primary); background: rgba(255, 79, 174, 0.10); }
 .auth-icon-btn--ghost { color: var(--text-muted); }
 .auth-note { font-size: var(--text-caption); color: var(--text-muted); margin: 0; line-height: var(--text-caption-lh); }

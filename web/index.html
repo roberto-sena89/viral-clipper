@@ -6,8 +6,8 @@
 <meta name="description" content="Painel local do Viral Clipper: cole o link de um vídeo longo, revise os cortes 9:16 no Estúdio e gere os clips com legenda pronta.">
 <title>Estúdio — Viral Clipper</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/shared.css?v=20261009.4">
-<link rel="stylesheet" href="/index.css?v=20261009.5">
+<link rel="stylesheet" href="/shared.css?v=20261010">
+<link rel="stylesheet" href="/index.css?v=20261010">
 </head>
 <body>
 
@@ -33,7 +33,9 @@
   <ul class="rail-menu" aria-labelledby="rail-label-paginas" data-rail-list></ul>
 
   <div class="rail-foot">
-    <span>viral-clipper · 9:16 1080×1920</span>
+    <span class="rail-foot-brand"><span class="footer-brand__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m9 6 9 6-9 6V6Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path><path d="M5 5v14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg></span><span class="rail-foot-name">Viral Clipper</span></span>
+    <span class="rail-foot-slogan">Seu conteudo. Novas possibilidades.</span>
+    <span class="rail-foot-credit">Desenvolvido por Roberto Sena</span>
   </div>
 </nav>
 
@@ -506,7 +508,10 @@
                       </div>
                       <div class="field">
                         <label for="ranker-model">Modelo</label>
-                        <input type="text" id="ranker-model" name="ranker-model" value="gpt-4o-mini">
+                        <input type="text" id="ranker-model" name="ranker-model" value="gpt-4o-mini"
+                               list="ranker-model-list" aria-describedby="ranker-model-hint">
+                        <datalist id="ranker-model-list"></datalist>
+                        <span class="hint" id="ranker-model-hint">Sugestões do provedor escolhido; vale digitar outro id.</span>
                       </div>
                     </div>
                     <div class="field-row">
@@ -585,11 +590,20 @@
                       <span class="hint" id="prov-base-url-hint">Precisa terminar antes de <code>/chat/completions</code> — o motor acrescenta.</span>
                     </div>
                     <div class="field">
-                      <label for="prov-model">Modelo</label>
+                      <label for="prov-model">Modelo padrão</label>
                       <input type="text" id="prov-model" name="prov-model" placeholder="nome-do-modelo"
                              aria-describedby="prov-model-hint">
                       <span class="hint" id="prov-model-hint">O id exato que o fornecedor usa, não o nome de exibição.</span>
                     </div>
+                  </div>
+
+                  <div class="field">
+                    <label for="prov-models">Outros modelos (opcional)</label>
+                    <textarea id="prov-models" name="prov-models" rows="3"
+                              placeholder="modelo-gratis-2&#10;modelo-gratis-3"
+                              aria-describedby="prov-models-hint" autocomplete="off"
+                              spellcheck="false"></textarea>
+                    <span class="hint" id="prov-models-hint">Um por linha. Mesmo endpoint e mesma chave; o padrão acima continua o que o seletor preenche.</span>
                   </div>
 
                   <div class="field-row">
@@ -892,8 +906,8 @@
 
 <div class="toast-zone" id="toast-zone" role="status" aria-live="polite"></div>
 
-<script src="/comum.js?v=20261009.3"></script>
-<script src="/index.js?v=20261009.5"></script>
+<script src="/comum.js?v=20261010"></script>
+<script src="/index.js?v=20261010"></script>
 
 </body>
 </html>

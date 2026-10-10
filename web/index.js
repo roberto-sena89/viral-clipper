@@ -908,11 +908,38 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     if (el) el.textContent = message || '';
   }
 
+  // Um modelo por linha ou separado por virgula; vazios, repetidos e o
+  // proprio padrao caem fora. Uma funcao so para o save e o teste lerem o
+  // mesmo texto: dois parsers dariam dois resultados para a mesma digitacao.
+  function parseModelList(texto) {
+    const padrao = (($('#prov-model') && $('#prov-model').value) || '').trim();
+    const vistos = new Set([padrao]);
+    const modelos = [];
+    String(texto || '').split(/[\n,]/).forEach((parte) => {
+      const nome = parte.trim();
+      if (!nome || vistos.has(nome)) return;
+      vistos.add(nome);
+      modelos.push(nome);
+    });
+    return modelos;
+  }
+
   function applyProvider(provider) {
     if (!provider) return;
     if (provider.base_url) $('#ranker-base-url').value = provider.base_url;
     if (provider.model) $('#ranker-model').value = provider.model;
     if (provider.api_key_env) $('#ranker-api-key-env').value = provider.api_key_env;
+    // A lista cheia (padrao primeiro) vira sugestao do campo Modelo: trocar
+    // de modelo sem trocar de provedor, sem apagar o que foi digitado a mao.
+    const lista = $('#ranker-model-list');
+    if (lista) {
+      lista.innerHTML = '';
+      (provider.models || []).forEach((nome) => {
+        const opcao = document.createElement('option');
+        opcao.value = nome;
+        lista.appendChild(opcao);
+      });
+    }
   }
 
   // A lista viva do seletor de provedor, e se o 'change' ja' foi preso. Ambos no
@@ -949,7 +976,9 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
 
     // Agora sim da para montar o dropdown rico, com a lista de verdade. No
     // init este select estava vazio - foi por isso que ele nasceu com
-    // data-defer-enhance e ficou fora da varredura.
+    // data-defer-enhance e ficou fora da varredura. Numa segunda chamada (todo
+    // save do card reentra aqui) `enhanceSelect` REMONTA os botoes do painel:
+    // sem isso o provedor recem-salvo ficaria no <select> e fora da tela.
     select.removeAttribute('data-defer-enhance');
     enhanceSelect(select);
 
@@ -1058,7 +1087,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   function clearProviderForm() {
     provEditing = '';
     ['#prov-name', '#prov-label', '#prov-base-url', '#prov-model',
-     '#prov-api-key-env', '#prov-api-key', '#prov-note'].forEach((sel) => {
+     '#prov-models', '#prov-api-key-env', '#prov-api-key', '#prov-note'].forEach((sel) => {
       const el = $(sel);
       if (el) el.value = '';
     });
@@ -1081,6 +1110,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     $('#prov-label').value = p.label || '';
     $('#prov-base-url').value = p.base_url || '';
     $('#prov-model').value = p.model || '';
+    $('#prov-models').value = (p.models || []).filter((nome) => nome !== p.model).join('\n');
     $('#prov-api-key-env').value = p.api_key_env || '';
     // A chave salva NAO volta para o campo: o servidor so diz `has_key`. O
     // placeholder avisa que ja existe uma, e deixar o campo vazio mantem a
@@ -1130,7 +1160,8 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
         ? p.label + ' (' + p.name + ')' : p.name;
       const meta = document.createElement('span');
       meta.className = 'prov-item-meta';
-      meta.textContent = p.model + ' · ' + p.base_url
+      const extras = (p.models || []).filter((nome) => nome !== p.model).length;
+      meta.textContent = p.model + (extras ? ' +' + extras : '') + ' · ' + p.base_url
         + (p.requires_key ? ' · chave: ' + (p.api_key_env || '—') : ' · sem chave');
       body.appendChild(nome);
       body.appendChild(meta);
@@ -1188,6 +1219,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
       label: $('#prov-label').value.trim(),
       base_url: $('#prov-base-url').value.trim(),
       model: $('#prov-model').value.trim(),
+      models: parseModelList($('#prov-models').value),
       api_key_env: $('#prov-api-key-env').value.trim(),
       // Vazio significa "nao mexi na chave": numa EDICAO o servidor conserva a
       // que ja esta salva, e na criacao e simplesmente nao haver chave. Sem isso

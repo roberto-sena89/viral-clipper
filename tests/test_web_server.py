@@ -5005,6 +5005,62 @@ class SessionCardIsAClosedDisclosureTests(unittest.TestCase):
                 self.assertIn(campo, self.html)
 
 
+class HeaderClosesWhatItOpensTests(unittest.TestCase):
+    """O header da Biblioteca voltou a fechar todos os <div> que abre.
+
+    `web/scrap.html` abria `<div class="rail-dropdown">` e nunca o fechava: o
+    `</header>` fechava os dois divs de uma vez, e o botao "Abrir Estudio"
+    acabava DENTRO do dropdown. Como `.rail-dropdown` e' `display: none` acima
+    de 920px (shared.css), o CTA primario da pagina ficava INVISIVEL no
+    desktop — medido no navegador antes da correcao: 0x0 em 1440px e em
+    1000px; 148x42 depois. Abaixo de 920px ele reaparecia, mas dentro do menu,
+    que e' o fallback de navegacao.
+
+    O defeito era pre-existente (o HEAD ja' vinha 49/48) e sobreviveu porque
+    `</header>` nao da' erro: o parser fecha os divs pendentes e a pagina
+    "funciona". As outras tres paginas sempre tiveram os dois fechamentos.
+
+    Estes testes travam a forma que as quatro compartilham, e o motivo pelo
+    qual ela importa aqui: a posicao do CTA na arvore decide se ele aparece.
+    """
+
+    PAGINAS = ("index.html", "ajustes.html", "publicar.html", "scrap.html")
+
+    @staticmethod
+    def _header(name: str) -> str:
+        """O bloco <header> da pagina, sem comentarios."""
+        texto = (server.WEB_DIR / name).read_text(encoding="utf-8")
+        texto = re.sub(r"<script.*?</script>", "", texto, flags=re.S)
+        texto = re.sub(r"<!--.*?-->", "", texto, flags=re.S)
+        inicio = texto.index("<header>")
+        return texto[inicio:texto.index("</header>", inicio)]
+
+    @staticmethod
+    def _divs(trecho: str) -> int:
+        """Profundidade de <div> no trecho: abertos menos fechados."""
+        return (len(re.findall(r"<div\b", trecho, re.I))
+                - len(re.findall(r"</div>", trecho, re.I)))
+
+    def test_the_header_closes_every_div_it_opens(self):
+        for pagina in self.PAGINAS:
+            with self.subTest(pagina=pagina):
+                self.assertEqual(
+                    self._divs(self._header(pagina)), 0,
+                    f"{pagina}: sobrou <div> aberto no header — o </header> "
+                    f"esta fechando o que e' do conteudo")
+
+    def test_the_studio_cta_is_not_inside_the_rail_dropdown(self):
+        # O botao mora em .nav-actions, IRMAO do dropdown. Profundidade 2 =
+        # header-inner > nav-actions; dentro do dropdown seriam 3, e a
+        # profundidade e' o que separa "visivel" de "display: none".
+        header = self._header("scrap.html")
+        botao = header.index('id="btn-open-cortes"')
+        self.assertEqual(
+            self._divs(header[:botao]), 2,
+            "o CTA do Estudio caiu dentro de .rail-dropdown, que e' "
+            "display:none acima de 920px — ele some no desktop")
+
+
 class BackendReadinessTests(unittest.TestCase):
     """A pagina diz se ela mesma consegue falar com o servidor.
 

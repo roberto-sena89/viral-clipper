@@ -507,10 +507,19 @@
                       </div>
                       <div class="field">
                         <label for="ranker-model">Modelo</label>
-                        <input type="text" id="ranker-model" name="ranker-model" value="gpt-4o-mini"
-                               list="ranker-model-list" aria-describedby="ranker-model-hint">
+                        <div class="input-com-acao">
+                          <input type="text" id="ranker-model" name="ranker-model" value="gpt-4o-mini"
+                                 list="ranker-model-list" aria-describedby="ranker-model-hint">
+                          <button class="btn pressable" type="button" id="btn-model-list"
+                                  aria-label="Ver modelos do provedor" title="Ver modelos"
+                                  aria-expanded="false" aria-controls="model-pick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                        </div>
                         <datalist id="ranker-model-list"></datalist>
-                        <span class="hint" id="ranker-model-hint">Sugestões do provedor escolhido; vale digitar outro id.</span>
+                        <div class="model-pick" id="model-pick" hidden>
+                          <p class="model-pick-title">Modelos de <span id="model-pick-provider">—</span></p>
+                          <div class="model-pick-list" id="model-pick-list"></div>
+                        </div>
+                        <span class="hint" id="ranker-model-hint">A seta abre o cartão com os modelos do provedor; vale digitar outro id.</span>
                       </div>
                     </div>
                     <div class="field-row">

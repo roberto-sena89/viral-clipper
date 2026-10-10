@@ -2653,6 +2653,37 @@ header .nav-actions .btn { min-height: 42px; }
   gap: 8px;
   align-items: center;
 }
+/* Setinha do campo Modelo: mesmo vocabulario do select rico, sem virar outro
+   componente. O glifo herda a cor do botao. */
+#btn-model-list svg {
+  display: block; width: 16px; height: 16px;
+  transition: transform var(--transition);
+}
+#btn-model-list[aria-expanded="true"] svg { transform: rotate(180deg); }
+/* O datalist desenha a propria seta no Chrome: com o botao dedicado seriam
+   duas setas para a mesma lista. Escondida, o botao e o unico caminho. */
+#ranker-model::-webkit-calendar-picker-indicator { display: none; }
+/* Cartao de modelos: abre na seta, fecha no Esc, no clique fora ou ao escolher.
+   `hidden` sozinho basta para esconder (regra global com `!important`); botoes
+   nativos dao Tab e Enter de graca, sem papel listbox. */
+.model-pick {
+  margin-top: 8px; padding: 8px;
+  border: 1px solid var(--border-subtle); border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+}
+.model-pick-title { margin: 0 0 6px; font-size: var(--text-2xs); color: var(--text-muted); }
+.model-pick-list { display: flex; flex-direction: column; gap: 4px; }
+.model-pick-opt {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  min-height: 44px; padding: 8px 10px;
+  border: 1px solid transparent; border-radius: 8px; background: transparent;
+  color: var(--text-primary); font: inherit; font-size: var(--text-caption);
+  text-align: left; cursor: pointer; overflow-wrap: anywhere;
+}
+.model-pick-opt:hover { background: rgba(255, 255, 255, 0.05); border-color: var(--border-subtle); }
+.model-pick-opt:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 1px; }
+.model-pick-opt.is-atual { border-color: var(--accent-primary); }
+.model-pick-vazio { margin: 0; color: var(--text-muted); font-size: var(--text-caption); }
 
 .prov-actions {
   display: flex;

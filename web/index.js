@@ -931,6 +931,8 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     if (provider.api_key_env) $('#ranker-api-key-env').value = provider.api_key_env;
     // A lista cheia (padrao primeiro) vira sugestao do campo Modelo: trocar
     // de modelo sem trocar de provedor, sem apagar o que foi digitado a mao.
+    // Trocar de provedor invalida o cartao aberto: a lista dele e de outro.
+    esconderModelos(false);
     const lista = $('#ranker-model-list');
     if (lista) {
       lista.innerHTML = '';
@@ -1366,6 +1368,79 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   // "Mostrar"/"Ocultar": conferir uma chave recem-colada antes de salvar e o
   // unico jeito de pegar um espaco a mais ou um caractere trocado, que viram um
   // 401 identico ao de chave errada.
+  // A seta do campo Modelo abre um CARTAO com os modelos do provedor: o
+  // datalist nativo filtra pelo que esta digitado, entao com o padrao no
+  // campo os extras pareciam nao existir. Escolher preenche o campo, que
+  // continua editavel a mao.
+  function modelosDoProvedorAtual() {
+    const sel = $('#ranker-provider');
+    const nome = sel ? sel.value : '';
+    const achado = (provItems || []).find((p) => p.name === nome);
+    if (!achado) return { rotulo: '', modelos: [] };
+    const todos = [achado.model].concat(achado.models || []);
+    return {
+      rotulo: achado.label || achado.name,
+      modelos: todos.filter((m, i) => m && todos.indexOf(m) === i),
+    };
+  }
+  function esconderModelos(devolverFoco) {
+    const cartao = $('#model-pick');
+    const seta = $('#btn-model-list');
+    if (cartao) cartao.hidden = true;
+    if (seta) seta.setAttribute('aria-expanded', 'false');
+    if (devolverFoco && seta) seta.focus();
+  }
+  function mostrarModelos() {
+    const cartao = $('#model-pick');
+    const lista = $('#model-pick-list');
+    const titulo = $('#model-pick-provider');
+    const seta = $('#btn-model-list');
+    const campo = $('#ranker-model');
+    if (!cartao || !lista || !campo) return;
+    const atual = modelosDoProvedorAtual();
+    if (titulo) titulo.textContent = atual.rotulo || '—';
+    lista.innerHTML = '';
+    if (!atual.modelos.length) {
+      const vazio = document.createElement('p');
+      vazio.className = 'model-pick-vazio';
+      vazio.textContent = 'Este provedor não trouxe modelos.';
+      lista.appendChild(vazio);
+    }
+    atual.modelos.forEach((nome) => {
+      const opcao = document.createElement('button');
+      opcao.type = 'button';
+      opcao.className = 'model-pick-opt'
+        + (nome === campo.value.trim() ? ' is-atual' : '');
+      opcao.textContent = nome;
+      opcao.addEventListener('click', () => {
+        campo.value = nome;
+        esconderModelos(false);
+        campo.focus();
+      });
+      lista.appendChild(opcao);
+    });
+    cartao.hidden = false;
+    if (seta) seta.setAttribute('aria-expanded', 'true');
+    const primeira = lista.querySelector('.model-pick-opt');
+    if (primeiro) primeiro.focus();
+  }
+  const btnModelList = $('#btn-model-list');
+  if (btnModelList) btnModelList.addEventListener('click', () => {
+    const cartao = $('#model-pick');
+    if (cartao && !cartao.hidden) esconderModelos(false);
+    else mostrarModelos();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape') return;
+    const cartao = $('#model-pick');
+    if (cartao && !cartao.hidden) esconderModelos(true);
+  });
+  document.addEventListener('click', (ev) => {
+    const cartao = $('#model-pick');
+    if (!cartao || cartao.hidden) return;
+    if (ev.target.closest('#model-pick, #btn-model-list')) return;
+    esconderModelos(false);
+  });
   const btnProvKeyReveal = $('#btn-prov-key-reveal');
   if (btnProvKeyReveal) {
     btnProvKeyReveal.addEventListener('click', () => {

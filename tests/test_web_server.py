@@ -5910,6 +5910,27 @@ class CuradorFieldsFollowTheSwitchTests(unittest.TestCase):
                 self.assertIn(f'id="{cid}"', bloco,
                               f"{cid} ficou fora do <fieldset> e nunca desabilita")
 
+    def test_the_model_field_has_a_list_button(self):
+        """A seta abre um cartao com os modelos; o datalist sozinho filtra.
+
+        Com o padrao no campo, os extras pareciam nao existir: o dropdown
+        nativo so mostra o que casa com o texto. O cartao lista tudo e a
+        escolha preenche o campo. O id e travado porque o JS o procura.
+        """
+        i = self.html.index('id="ranker-fields"')
+        fim = self.html.index("</fieldset>", i)
+        bloco = self.html[i:fim]
+        self.assertIn('id="btn-model-list"', bloco,
+                      "a seta saiu do fieldset e nunca desabilita")
+        self.assertIn('id="model-pick"', bloco,
+                      "o cartao saiu do fieldset e nunca desabilita")
+        mostrar = fn_body(self.js, "mostrarModelos")
+        self.assertIn("model-pick-list", mostrar,
+                      "a seta nao monta a lista de opcoes")
+        esconder = fn_body(self.js, "esconderModelos")
+        self.assertIn("aria-expanded", esconder,
+                      "o estado da seta nao acompanha o cartao")
+
     def test_the_switch_drives_the_fieldset(self):
         """O toggle chama a sincronizacao, e a funcao escreve `disabled`."""
         self.assertIn("if (t.id === 'ranker-llm') syncRankerFields();", self.js)

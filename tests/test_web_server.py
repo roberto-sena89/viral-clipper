@@ -5316,6 +5316,132 @@ class ImportBarIsOneStripTests(unittest.TestCase):
         self.assertRegex(m.group(1), r"grid-column:\s*1\s*/\s*-1")
 
 
+class StickyActionRowTests(unittest.TestCase):
+    """A linha de acoes da lista prende no topo; a config de arquivamento NAO (M3).
+
+    Com 40 itens a pagina passa de 5600px. Medido a 1440px, a 900px de rolagem a
+    linha de selecao estava em `top:-153` -- saia da tela junto com o resto, e
+    quem estava no meio da lista nao alcancava mais nem "Selecionar todos" nem
+    "Baixar selecionados". Agora ela para logo abaixo do header.
+
+    Duas coisas aqui nao sao estilo, sao o que faz o efeito FUNCIONAR:
+
+    * o FUNDO. `--well-bg` e' `rgba(0, 0, 0, 0.35)` -- translucido. Presa com
+      ele, a barra mostraria a lista passando por baixo dela mesma. A cor opaca
+      e' o mesmo `--well-bg` composto sobre o `--bg-card`;
+    * o `z-index`. A linha vem ANTES da lista no DOM, entao sem ele a lista
+      pinta por cima da barra.
+
+    E o que fica de FORA tambem e' decisao: a caixa de arquivamento tem 180px e
+    QUATRO controles de configuracao. Prender isso cobriria um quinto de uma tela
+    de 900px -- e' o D7, que segue para quem for tirar a config de dentro do
+    painel da lista.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.css = re.sub(
+            r"/\*.*?\*/", "",
+            (server.WEB_DIR / "scrap.css").read_text(encoding="utf-8"), flags=re.S)
+
+    def corpo(self, seletor: str) -> str:
+        m = re.search(seletor + r"\s*\{([^}]*)\}", self.css)
+        self.assertIsNotNone(m, f"{seletor} sumiu do scrap.css")
+        return m.group(1)
+
+    def blocos(self, condicao: str) -> list[str]:
+        """Os corpos de TODOS os `@media (condicao) { ... }`."""
+        saida = []
+        for m in re.finditer(re.escape("@media " + condicao) + r"\s*\{", self.css):
+            j = m.end() - 1
+            nivel = 0
+            for k in range(j, len(self.css)):
+                if self.css[k] == "{":
+                    nivel += 1
+                elif self.css[k] == "}":
+                    nivel -= 1
+                    if nivel == 0:
+                        saida.append(self.css[j + 1:k])
+                        break
+        return saida
+
+    def test_the_row_is_pinned(self):
+        corpo = self.corpo(r'\.card\[aria-labelledby="h-resultados"\]\s*>\s*#select-box')
+        self.assertIn("position: sticky", corpo)
+        self.assertRegex(corpo, r"top:\s*\d+px")
+        self.assertRegex(corpo, r"z-index:\s*\d+",
+                         "a barra vem antes da lista no DOM: sem z-index a "
+                         "lista pinta por cima dela")
+
+    def test_the_pinned_background_is_opaque(self):
+        """`--well-bg` e' `rgba(0, 0, 0, 0.35)`: preso com ele, a lista apareceria
+        por baixo da barra. A cor opaca e' o `--well-bg` sobre o `--bg-card`."""
+        corpo = self.corpo(r'\.card\[aria-labelledby="h-resultados"\]\s*>\s*#select-box')
+        self.assertIn("background-color: var(--bg-card)", corpo)
+        self.assertIn("linear-gradient(var(--well-bg)", corpo)
+        self.assertNotRegex(
+            corpo, r"background:\s*var\(--well-bg\)\s*;",
+            "a barra voltou a usar o `--well-bg` cru, que e' translucido")
+
+    def test_only_the_action_row_is_pinned(self):
+        """A config de arquivamento (180px) fica de fora de proposito -- D7.
+
+        A trava e' invertida de proposito: em vez de procurar uma regra da
+        `#arquivar-box` e conferir que ela nao prende, exige que TODO
+        `position: sticky` do `scrap.css` seja da linha de acoes. Assim uma
+        terceira caixa que venha a prender cai aqui tambem.
+        """
+        for seletor, corpo in re.findall(r"([^{}]+)\{([^}]*)\}", self.css):
+            if "position: sticky" not in corpo:
+                continue
+            with self.subTest(seletor=seletor.strip()):
+                self.assertIn(
+                    "#select-box", seletor,
+                    f"{seletor.strip()} prende, e so' a linha de acoes devia: a "
+                    "caixa de arquivamento tem 180px e quatro controles")
+
+    def test_the_offset_is_measured_next_to_the_header_it_follows(self):
+        """O `top` do sticky e' a altura do header -- e mora junto dela.
+
+        O header mede 67px, e 61px abaixo de 640px, onde o `.header-inner`
+        encolhe. Se o override da banda de 640 sair de perto da regra que muda a
+        altura, a barra passa a flutuar abaixo do header (ou a se esconder atras
+        dele) sem ninguem ver.
+        """
+        base = self.corpo(r'\.card\[aria-labelledby="h-resultados"\]\s*>\s*#select-box')
+        topo_base = int(re.search(r"top:\s*(\d+)px", base).group(1))
+        self.assertGreaterEqual(topo_base, 60)
+
+        com_header = [b for b in self.blocos("(max-width: 640px)")
+                      if "header .header-inner" in b]
+        self.assertTrue(com_header, "o bloco de 640 que encolhe o header sumiu")
+        junto = [b for b in com_header if "#select-box" in b]
+        self.assertTrue(
+            junto,
+            "o bloco que encolhe o header em 640px nao ajusta o `top` da barra "
+            "presa: ela passaria a flutuar abaixo do header no celular")
+        topo_celular = int(re.search(r"top:\s*(\d+)px", junto[0]).group(1))
+        self.assertLess(topo_celular, topo_base,
+                        "o header encolhe em 640px; o `top` da barra tem de "
+                        "encolher junto")
+
+    def test_the_keyboard_focus_does_not_land_under_the_bar(self):
+        """O foco rola o alvo ate' a borda; agora ha' mais cromo fixo no topo.
+
+        O `[id] { scroll-margin-top: 84px }` do `shared.css` nao alcanca estes
+        elementos: eles sao gerados pelo `resultCard()` e nao tem id.
+        """
+        achados = [corpo for seletor, corpo
+                   in re.findall(r"([^{}]+)\{([^}]*)\}", self.css)
+                   if "#resultados .result input" in seletor]
+        self.assertEqual(len(achados), 1,
+                         "a regra de scroll-margin dos itens da lista sumiu")
+        self.assertRegex(achados[0], r"scroll-margin-top:\s*\d+px")
+        for alvo in ("input", "a", "button"):
+            with self.subTest(alvo=alvo):
+                self.assertIn(f"#resultados .result {alvo}", self.css)
+
+
 class BackendReadinessTests(unittest.TestCase):
     """A pagina diz se ela mesma consegue falar com o servidor.
 

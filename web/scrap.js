@@ -159,12 +159,18 @@
       tab.setAttribute("aria-selected", String(active));
       tab.tabIndex = active ? 0 : -1;
     });
+    // UM exemplo por plataforma, e nao dois. O campo divide a faixa de
+    // importacao (M1) com a plataforma e o modo, e a 1440px tem 370px uteis:
+    // com dois exemplos (76 caracteres) a SEGUNDA URL ja' aparecia cortada no
+    // meio ali. Com um exemplo (~35) as seis entradas cabem inteiras a 1440 e a
+    // 1366; a 1280 (210px uteis) ainda sobra um corte, mas no fim de UMA URL --
+    // que le como truncamento normal, e nao como duas URLs coladas.
     const placeholders = {
-      "instagram|link": "https://www.instagram.com/reel/... ou https://www.instagram.com/p/...",
+      "instagram|link": "https://www.instagram.com/reel/...",
       "instagram|profile": "https://www.instagram.com/<perfil>/",
       "tiktok|link": "https://www.tiktok.com/@.../video/...",
       "tiktok|profile": "https://www.tiktok.com/@perfil",
-      "youtube|link": "https://www.youtube.com/watch?v=... ou https://youtu.be/...",
+      "youtube|link": "https://www.youtube.com/watch?v=...",
       "youtube|profile": "https://www.youtube.com/@canal",
     };
     const input = $("#scrap-url");

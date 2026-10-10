@@ -831,6 +831,191 @@ class AjustesFormRoundTripTests(unittest.TestCase):
         self.assertEqual(json.loads(proc.stdout.strip()), self.ENTRADA)
 
 
+class AjustesScrollSpyTests(unittest.TestCase):
+    """Qual atalho de /ajustes acende — a REGRA, executada.
+
+    O scroll-spy tinha o markup testado e a regra nenhuma: nenhum teste
+    executava a escolha, entao a regra podia estar errada e a suite passava
+    verde. Estava. O atalho da ULTIMA secao NUNCA acendia.
+
+    Por que a faixa do observer nao resolve sozinha: os cards sao altos. No fim
+    da rolagem o penultimo ainda cruza a faixa e o topo do ultimo nao tem
+    rolagem suficiente para passar do cabecalho fixo. Medido numa viewport de
+    900px: `card-renderizacao` fica com `base=243` (faixa ate' 450, logo cruza)
+    e `card-arquivamento` com `topo=273`; faltariam 159px de rolagem para o
+    penultimo sair, e o `scrollY` ja' esta' no maximo. Sem regra explicita, o
+    `find()` (primeiro visivel na ordem do documento) devolve o penultimo para
+    sempre.
+
+    Duas metades, e as duas EXECUTAM o codigo real do `ajustes.js`:
+
+    * a regra pura (`secaoAtual`), extraida do arquivo por ancora;
+    * a LIGACAO, rodando o `marcarSecaoAtual` inteiro sobre um DOM falso --
+      porque a regra so' vale se alguem a chamar quando a pagina para no fim, e
+      parar no fim NAO muda intersecao nenhuma, logo nao ha' callback do
+      observer: quem entrega esse caso e' o listener de `scroll`.
+    """
+
+    #: As quatro secoes de /ajustes, na ordem do documento. O quinto atalho
+    #: ("Prompt do curador") sai da pagina e o scroll-spy o ignora de proposito:
+    #: o seletor e' `a[href^="#"]`.
+    PARES = ("card-selecao", "card-transcricao", "card-renderizacao",
+             "card-arquivamento")
+
+    #: A ancora do arquivo. Renomear a funcao sem renomear isto faz o teste
+    #: FALHAR (e nao passar vazio), que e' o que se quer.
+    REGRA = r"function secaoAtual\(pares, visiveis, noFim\) \{[\s\S]*?\n  \}"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.js = page_source("ajustes.js")
+
+    def _node(self) -> str:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node nao esta' no PATH")
+        return node
+
+    def _extrai(self, padrao: str, rotulo: str) -> str:
+        m = re.search(padrao, self.js)
+        if m is None:
+            raise AssertionError(
+                f"{rotulo} sumiu do ajustes.js. Se a funcao foi renomeada, "
+                "renomeie esta ancora junto -- um match que devolve None e' um "
+                "teste que nao testa nada.")
+        return m.group(0)
+
+    def _roda(self, script: str):
+        proc = subprocess.run([self._node(), "-e", script], capture_output=True,
+                              text=True, encoding="utf-8", timeout=30)
+        if proc.returncode != 0:
+            raise AssertionError("o scroll-spy estourou: "
+                                 + proc.stderr.strip()[:400])
+        return json.loads(proc.stdout.strip())
+
+    # ---------- a regra pura ----------
+
+    def _escolhe(self, visiveis, no_fim, pares=None):
+        ids = list(self.PARES if pares is None else pares)
+        script = (
+            "const pares = " + json.dumps([{"alvo": {"id": i}} for i in ids]) + ";\n"
+            # `visiveis` e' um Set de ALVOS (o `.alvo` de cada par), nao de pares
+            # nem de ids: o `secaoAtual` pergunta `visiveis.has(p.alvo)`. Um Set
+            # de ids nunca casaria -- e o ramo "no fim" nao consulta `visiveis`,
+            # entao o teste passaria sem medir nada.
+            "const visiveis = new Set(" + json.dumps(visiveis) + "\n"
+            "  .map((id) => { const p = pares.find((q) => q.alvo.id === id);\n"
+            "                 return p && p.alvo; }));\n"
+            + self._extrai(self.REGRA, "secaoAtual()") + "\n"
+            "console.log(JSON.stringify(secaoAtual(pares, visiveis, "
+            + ("true" if no_fim else "false") + ")));\n"
+        )
+        return self._roda(script)
+
+    def test_at_the_bottom_the_last_section_wins(self):
+        # O defeito que a regra conserta. `visiveis` e' EXATAMENTE o estado
+        # medido no fim da pagina: a penultima e a ultima cruzam a faixa ao
+        # mesmo tempo. Sem a regra, o `find()` devolveria a penultima.
+        self.assertEqual(
+            self._escolhe(["card-renderizacao", "card-arquivamento"], no_fim=True),
+            "card-arquivamento")
+
+    def test_not_at_the_bottom_the_first_visible_wins(self):
+        # Fora do fim nada muda: dois cards na faixa, e a resposta e' o PRIMEIRO
+        # na ordem do documento -- nao o ultimo a cruzar, que dependeria da
+        # ordem em que o navegador entrega os eventos.
+        self.assertEqual(
+            self._escolhe(["card-renderizacao", "card-arquivamento"], no_fim=False),
+            "card-renderizacao")
+
+    def test_at_the_bottom_the_answer_does_not_depend_on_who_is_visible(self):
+        # "No fim, a ultima" nao consulta `visiveis`: com so' a primeira na
+        # faixa (viewport alta), a resposta continua sendo a ultima.
+        self.assertEqual(
+            self._escolhe(["card-selecao"], no_fim=True), "card-arquivamento")
+
+    def test_nothing_visible_off_the_bottom_marks_nothing(self):
+        # `null` e' "nao marque nada": acender um atalho que nao corresponde ao
+        # que se le e' pior do que nao acender nenhum.
+        self.assertIsNone(self._escolhe([], no_fim=False))
+
+    def test_an_empty_nav_marks_nothing(self):
+        # Sem alvo nenhum nao ha' ultima para marcar -- e `pares[-1]` estouraria.
+        self.assertIsNone(self._escolhe([], no_fim=True, pares=[]))
+
+    # ---------- a ligacao (DOM falso, `marcarSecaoAtual` inteiro) ----------
+
+    def _roda_spy(self, scroll_height, scroll_y_final):
+        """Roda o `marcarSecaoAtual` REAL e devolve quem acende ANTES e DEPOIS.
+
+        O DOM falso e' minimo mas tem de ser FIEL nos pontos que a funcao usa:
+        `classList`/atributos de verdade (o `marcar` escreve e apaga), um
+        `IntersectionObserver` que guarda o callback (para poder entrega-lo a'
+        mao) e um `requestAnimationFrame` que roda na hora (senao o `aplicar`
+        do listener de scroll nunca aconteceria dentro do teste).
+        """
+        script = (
+            "const IDS = " + json.dumps(list(self.PARES)) + ";\n"
+            "const links = IDS.map((id) => ({\n"
+            "  hash: '#' + id, attrs: {},\n"
+            "  setAttribute(n, v) { this.attrs[n] = v; },\n"
+            "  removeAttribute(n) { delete this.attrs[n]; },\n"
+            "  addEventListener() {},\n"
+            "}));\n"
+            "const alvos = IDS.map((id) => ({ id, focus() {} }));\n"
+            "const nav = { querySelectorAll: () => links,\n"
+            "              style: { setProperty() {} } };\n"
+            "let cb = null;\n"
+            "class ObserverFalso { constructor(fn) { cb = fn; } observe() {} }\n"
+            "const handlers = {};\n"
+            "const window = {\n"
+            "  innerHeight: 900,\n"
+            "  scrollY: 0,\n"
+            "  addEventListener(t, fn) { handlers[t] = fn; },\n"
+            "};\n"
+            "const document = {\n"
+            "  documentElement: { scrollHeight: " + str(scroll_height) + " },\n"
+            "  querySelector: (s) => (s === '[data-section-nav]' ? nav : null),\n"
+            "  getElementById: (id) => alvos.find((a) => a.id === id) || null,\n"
+            "};\n"
+            "const IntersectionObserver = ObserverFalso;\n"
+            "const requestAnimationFrame = (fn) => fn();\n"
+            "const aceso = () => links.filter((l) => l.attrs['aria-current'])\n"
+            "  .map((l) => l.hash.slice(1));\n"
+            + self._extrai(self.REGRA, "secaoAtual()") + "\n"
+            + self._extrai(r"function marcarSecaoAtual\(\) \{[\s\S]*?\n  \}",
+                           "marcarSecaoAtual()") + "\n"
+            "marcarSecaoAtual();\n"
+            "// O estado medido no fim da pagina: as DUAS ultimas cruzam a faixa.\n"
+            "cb([{ target: alvos[2], isIntersecting: true },\n"
+            "    { target: alvos[3], isIntersecting: true }]);\n"
+            "const antes = aceso();\n"
+            "// Rola ate' o fim SEM callback novo do observer: e' o caso que o\n"
+            "// listener de scroll existe para cobrir.\n"
+            "window.scrollY = " + str(scroll_y_final) + ";\n"
+            "handlers.scroll();\n"
+            "console.log(JSON.stringify({ antes, depois: aceso() }));\n"
+        )
+        return self._roda(script)
+
+    def test_the_scroll_to_the_bottom_lights_the_last_shortcut(self):
+        r = self._roda_spy(scroll_height=2000, scroll_y_final=1100)
+        self.assertEqual(r["antes"], ["card-renderizacao"],
+                         "fora do fim, quem acende e' o primeiro visivel")
+        self.assertEqual(r["depois"], ["card-arquivamento"],
+                         "parar no fim nao gera callback do observer: quem tem "
+                         "de acender a ultima secao e' o listener de scroll")
+
+    def test_a_page_that_fits_does_not_jump_to_the_last_section(self):
+        # A guarda da regra. Numa pagina que CABE inteira, `scrollY` ja' e' o
+        # maximo no topo -- e marcar a ultima secao ali seria mentira: a pessoa
+        # esta' vendo tudo.
+        r = self._roda_spy(scroll_height=900, scroll_y_final=0)
+        self.assertEqual(r["antes"], ["card-renderizacao"])
+        self.assertEqual(r["depois"], ["card-renderizacao"],
+                         "a pagina cabe inteira: nao ha' 'fim' para marcar")
+
+
 class AjustesLufsTests(unittest.TestCase):
     """The loudness field, which never reached the engine before."""
 

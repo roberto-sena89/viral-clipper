@@ -454,6 +454,26 @@
   // `data-section-nav`, `IntersectionObserver` ausente (navegador antigo) ou
   // nenhum alvo encontrado. O atalho ja era um link puro e continua sendo —
   // o que se perde sem o observer e' o estado, nao a funcao.
+
+  // A regra de QUAL secao esta' atual, isolada do DOM. Pura de proposito: e' a
+  // unica parte com caso de borda, e ela e' testada EXECUTANDO (o teste extrai
+  // esta funcao do arquivo e roda no node). `visiveis` e' o Set que o observer
+  // mantem; `noFim` diz se a pagina ja' rolou ate' o fim.
+  function secaoAtual(pares, visiveis, noFim) {
+    // No FIM da pagina a ultima secao nunca vence pela faixa -- e sem esta regra
+    // o atalho dela NUNCA acende. Medido numa viewport de 900px: no fim da
+    // rolagem o card anterior ainda cruza a faixa (base 243, faixa ate' 450) e o
+    // topo da ultima fica em 273; faltariam 159px de rolagem para o anterior
+    // sair, e o scrollY ja' esta' no maximo. No fim, a ultima e' a resposta.
+    // O `length` cobre uma nav sem alvo nenhum (nao ha' ultima para marcar).
+    if (noFim && pares.length) return pares[pares.length - 1].alvo.id;
+    // Fora do fim, o primeiro visivel NA ORDEM DO DOCUMENTO, e nao o ultimo a
+    // cruzar: dois cards cabem na tela ao mesmo tempo (eles sao altos) e o
+    // evento chega na ordem em que o navegador mediu, nao na ordem em que se le.
+    const atual = pares.find((p) => visiveis.has(p.alvo));
+    return atual ? atual.alvo.id : null;
+  }
+
   function marcarSecaoAtual() {
     const nav = document.querySelector('[data-section-nav]');
     if (!nav || typeof IntersectionObserver !== 'function') return;
@@ -484,17 +504,33 @@
 
     const visiveis = new Set();
 
+    // "Ja' rolou ate' o fim". Numa pagina que CABE inteira o scrollY ja' e' o
+    // maximo no topo, e marcar a ultima secao seria mentira -- por isso o
+    // primeiro teste, que exige haver o que rolar.
+    const noFimDaPagina = () => {
+      const doc = document.documentElement;
+      if (doc.scrollHeight <= window.innerHeight + 4) return false;
+      return window.innerHeight + window.scrollY >= doc.scrollHeight - 2;
+    };
+
+    // UM ponto decide, e ele e' chamado tanto pelo observer quanto pela
+    // rolagem: se cada um marcasse por conta propria, o ultimo a rodar venceria
+    // e o resultado dependeria da ordem dos eventos. O `ultimoId` evita
+    // reescrever os atributos dos atalhos a cada evento de rolagem.
+    let ultimoId = null;
+    const aplicar = () => {
+      const id = secaoAtual(pares, visiveis, noFimDaPagina());
+      if (!id || id === ultimoId) return;
+      ultimoId = id;
+      marcar(id);
+    };
+
     const observer = new IntersectionObserver((entradas) => {
       entradas.forEach((e) => {
         if (e.isIntersecting) visiveis.add(e.target);
         else visiveis.delete(e.target);
       });
-      // O primeiro visivel NA ORDEM DO DOCUMENTO, e nao o ultimo a cruzar: dois
-      // cards cabem na tela ao mesmo tempo (eles sao altos) e o evento chega na
-      // ordem em que o navegador mediu, nao na ordem em que se le.
-      const atual = pares.find((p) => visiveis.has(p.alvo));
-      if (!atual) return;
-      marcar(atual.alvo.id);
+      aplicar();
     }, {
       // A faixa e' o que diz "aqui". Sem ela o card que a pessoa esta lendo
       // pode nunca virar o alvo visivel: o topo comeca abaixo da barra sticky
@@ -503,6 +539,23 @@
       rootMargin: '-84px 0px -50% 0px',
       threshold: 0,
     });
+
+    // A rolagem cobre o caso que o observer NAO entrega: PARAR no fim da pagina
+    // nao muda a intersecao de ninguem, entao nao ha' callback -- e e'
+    // justamente no fim que a regra do `secaoAtual` decide. O
+    // `requestAnimationFrame` e' porque `scrollHeight`/`innerHeight` forcam
+    // layout: sem ele, um quadro de rolagem leria o layout uma vez por evento.
+    let agendado = false;
+    const aoRolar = () => {
+      if (agendado) return;
+      agendado = true;
+      requestAnimationFrame(() => {
+        agendado = false;
+        aplicar();
+      });
+    };
+    window.addEventListener('scroll', aoRolar, { passive: true });
+    window.addEventListener('resize', aoRolar, { passive: true });
 
     pares.forEach((p) => {
       observer.observe(p.alvo);
@@ -514,6 +567,9 @@
       // nao de onde chegou. O `preventScroll` e porque o navegador ja rolou
       // (ou vai rolar) ate a ancora -- focar de novo puxaria duas vezes.
       p.link.addEventListener('click', () => {
+        // `ultimoId` junto: senao a rolagem suave que o clique dispara faria o
+        // `aplicar` recomecar a disputa e o rotulo piscaria ate' assentar.
+        ultimoId = p.alvo.id;
         marcar(p.alvo.id);
         p.alvo.focus({ preventScroll: true });
       });

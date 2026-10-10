@@ -8326,10 +8326,11 @@ class StudioToLibraryControlTests(unittest.TestCase):
 class StudioToAjustesControlTests(unittest.TestCase):
     """A ida do Estudio para Ajustes, pela ficha da etapa 2.
 
-    A ficha mostra o que vem de `ajustes.toml` (selecao e render) e nao edita
-    nada -- quem edita e' a pagina de Ajustes. O controle que faz a ponte era
-    um `<a class="etapa-ficha-edit">`; virou `<button class="btn pressable">`,
-    e o destino passou a morar no `index.js`, como o irmao da Biblioteca.
+    A ficha mostra o que vem de `ajustes.toml` -- uma linha por card da pagina
+    de Ajustes (selecao, transcricao, render) -- e nao edita nada: quem edita e'
+    a pagina de Ajustes. O controle que faz a ponte era um
+    `<a class="etapa-ficha-edit">`; virou `<button class="btn pressable">`, e o
+    destino passou a morar no `index.js`, como o irmao da Biblioteca.
 
     Os dois lados sao medidos pelo mesmo motivo do irmao: um `<button>` nao
     navega sozinho, entao um handler removido deixa o botao na tela sem fazer
@@ -8339,8 +8340,17 @@ class StudioToAjustesControlTests(unittest.TestCase):
     #: O id do botao.
     ID = "btn-editar-ajustes"
 
-    #: A pagina de destino. Mora no JS, nao num `href`.
-    ROTA = "/ajustes"
+    #: O destino. Mora no JS, nao num `href`. Leva a ANCORA do primeiro dos tres
+    #: cards que a ficha resume -- o `id` esta no card (e nao no titulo) para o
+    #: cabecalho sticky nao cortar a borda de cima do alvo.
+    ROTA = "/ajustes#card-selecao"
+
+    #: (id do valor na ficha, funcao que o escreve), na ordem de /ajustes.
+    LINHAS = (
+        ("selection-summary-value", "renderSelectionSummary"),
+        ("transcript-summary-value", "renderTranscriptSummary"),
+        ("render-summary-value", "renderRenderSummary"),
+    )
 
     @classmethod
     def setUpClass(cls):
@@ -8386,6 +8396,48 @@ class StudioToAjustesControlTests(unittest.TestCase):
         # E nao pode ter ido parar no rodape, que e' montado por comum.js.
         comum = (server.WEB_DIR / "comum.js").read_text(encoding="utf-8")
         self.assertNotIn(self.ID, comum, "o botao foi para o rodape (comum.js)")
+
+    def test_the_ficha_has_one_line_per_ajustes_section(self):
+        """Paridade: toda secao editavel de /ajustes tem linha na ficha.
+
+        A ficha e' o indice da pagina de Ajustes dentro do Estudio. Uma secao
+        sem linha aqui nao e' detalhe de layout: a pessoa le a ficha, nao acha a
+        Transcricao e conclui que ela nao existe -- foi o que aconteceu ate' a
+        linha ser escrita. A contagem tem de bater nos DOIS sentidos: linha
+        sobrando tambem mente, porque promete uma secao que ninguem edita.
+        """
+        ajustes = (server.WEB_DIR / "ajustes.html").read_text(encoding="utf-8")
+        cards = re.findall(r'<div id="card-[a-z]+" class="card\b', ajustes)
+        self.assertTrue(cards, "os cards de /ajustes sumiram -- o padrao mudou")
+        linhas = re.findall(r'class="etapa-ficha-linha"', self.body)
+        self.assertEqual(
+            len(linhas), len(cards),
+            "a ficha tem %d linhas para %d secoes de /ajustes: o indice "
+            "esta' desatualizado" % (len(linhas), len(cards)))
+
+    def test_every_ficha_line_is_filled_by_the_script(self):
+        """Cada valor da ficha tem escritor -- E o escritor e' chamado.
+
+        O texto no HTML e' o estado inicial, para a ficha nao nascer vazia se o
+        servidor demorar. Uma linha sem escritor, ou com o escritor definido e
+        nunca chamado, fica com ele PARA SEMPRE: mostra o default do dia em que
+        foi escrita, nunca acompanha o `ajustes.toml`, e nao quebra nada
+        visivelmente -- por isso os dois lados sao medidos.
+        """
+        for alvo, funcao in self.LINHAS:
+            self.assertIn('id="' + alvo + '"', self.body,
+                          "a linha de `%s` saiu da ficha" % alvo)
+            self.assertIn("$('#" + alvo + "')", self.js,
+                          "nada no index.js le `%s`" % alvo)
+            self.assertIn(funcao + "();", self.js,
+                          "`%s` existe mas nunca e' chamada: a linha de `%s` "
+                          "congelaria no texto estatico" % (funcao, alvo))
+
+        # E na ordem dos cards de /ajustes: a ficha e' o indice daquela pagina,
+        # e indice fora de ordem faz a pessoa procurar no lugar errado.
+        posicoes = [self.body.index('id="' + alvo + '"') for alvo, _ in self.LINHAS]
+        self.assertEqual(posicoes, sorted(posicoes),
+                         "as linhas da ficha sairam da ordem de /ajustes")
 
 
 class ApiNamespaceTests(unittest.TestCase):

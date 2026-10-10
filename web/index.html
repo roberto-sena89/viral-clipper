@@ -319,14 +319,23 @@
                     sincronizada (Drive, OneDrive, Dropbox) — o botão abre o seletor do
                     computador. Caminho relativo conta a partir de onde o servidor roda.</span>
 
-                  <!-- A ficha do que vem de ajustes.toml. Os dois valores sao
-                       preenchidos pelo JS a partir de `/ajustes.json`; o texto
-                       aqui e' so' o estado inicial, para a ficha nao nascer
-                       vazia se o servidor demorar. -->
+                  <!-- A ficha do que vem de ajustes.toml: UMA linha por card da
+                       pagina de Ajustes, na MESMA ordem em que eles aparecem la'
+                       (selecao, transcricao, render). A ficha e' o indice daquela
+                       pagina, e uma secao sem linha aqui faz a pessoa concluir
+                       que ela nao existe -- foi o que acontecia enquanto a
+                       Transcricao nao tinha a sua. Os valores sao preenchidos
+                       pelo JS a partir de `/api/ajustes`; o texto aqui e' so' o
+                       estado inicial, para a ficha nao nascer vazia se o servidor
+                       demorar, e bate com os defaults de `ajustes.toml`. -->
                   <div class="etapa-ficha" id="selection-summary" aria-live="polite">
                     <p class="etapa-ficha-linha">
                       <span class="etapa-ficha-label">SELEÇÃO</span>
                       <span id="selection-summary-value">30–60 s · alvo 42 s · híbrido</span>
+                    </p>
+                    <p class="etapa-ficha-linha">
+                      <span class="etapa-ficha-label">TRANSCRIÇÃO</span>
+                      <span id="transcript-summary-value">Whisper small · idioma automático</span>
                     </p>
                     <p class="etapa-ficha-linha">
                       <span class="etapa-ficha-label">RENDER</span>

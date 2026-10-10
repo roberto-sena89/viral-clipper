@@ -815,6 +815,32 @@ count: $('#count').value.trim() === ''
     el.textContent = partes.join(' · ');
   }
 
+  // O idioma tem um estado que nao e' um valor: `null` no state (e `""` no
+  // formulario) e' "auto-detectar", entao mostrar "idioma —" descreveria uma
+  // escolha que ninguem fez. Os rotulos pt-BR sao os MESMOS das opcoes do
+  // formulario de Ajustes, pela mesma razao do ENGINE_LABELS: a ficha LE o
+  // ajuste, e ler "pt" aqui contra "Português (pt)" la' faz parecer que sao
+  // duas coisas.
+  const LANGUAGE_WORDS = { pt: 'português', en: 'inglês', es: 'espanhol' };
+
+  function renderTranscriptSummary() {
+    const el = $('#transcript-summary-value');
+    if (!el) return;
+    const a = state.ajustes;
+    // Texto colado substitui o Whisper inteiro. Anunciar o modelo aqui seria
+    // descrever justamente o caminho que o run NAO vai usar -- o oposto do que
+    // a ficha existe para fazer.
+    if (a.transcript_text) {
+      el.textContent = 'texto colado · substitui o Whisper';
+      return;
+    }
+    const partes = ['Whisper ' + (a.whisper_model || '—')];
+    partes.push(a.language
+      ? (LANGUAGE_WORDS[a.language] || a.language)
+      : 'idioma automático');
+    el.textContent = partes.join(' · ');
+  }
+
   // Com `count = 0` ("quantidade automatica"), o curador so consegue escolher
   // entre as janelas que julgou: as demais vao para score -1 e o piso relativo
   // as descarta. Ou seja, `ranker_top_n` deixa de ser um dial de custo e vira o
@@ -840,6 +866,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     if (r.offline || r.error) return;
     applyAjustes(r.settings || {});
     renderSelectionSummary();
+    renderTranscriptSummary();
     renderRenderSummary();
   }
 
@@ -2427,9 +2454,12 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     window.location.href = '/biblioteca';
   });
   // O irmao de cima, na ficha da etapa 2: tambem `<button>`, tambem com o
-  // destino aqui. Leva para Ajustes, que e' onde os valores da ficha se editam.
+  // destino aqui. Leva para Ajustes, que e' onde os valores da ficha se editam
+  // -- e entra pelo PRIMEIRO dos tres cards que a ficha resume, nao pelo topo.
+  // O `id` esta no card (e nao no titulo) exatamente para isso: e' o alvo que
+  // o cabecalho sticky nao corta, entao a ancora assenta com a borda inteira.
   $('#btn-editar-ajustes').addEventListener('click', () => {
-    window.location.href = '/ajustes';
+    window.location.href = '/ajustes#card-selecao';
   });
   // O rodape (marca, navegacao, "Como usar" e o copiar da CLI) saiu daqui
   // para /comum.js. Ele agora vive nas TRES paginas, e um comportamento que so

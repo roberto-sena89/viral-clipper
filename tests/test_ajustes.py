@@ -55,11 +55,10 @@ def control_ids(markup: str) -> set[str]:
 
 #: Control id on the page -> key in ``AJUSTES_KEYS``.
 #:
-#: ``None`` means the control carries no value of its own: either it is a
-#: toggle that *derives* another field (``headline-on`` decides whether
-#: ``headline_seconds`` is 0 or its own number), or it is bookkeeping that does
-#: not live in ``ajustes.toml`` at all (``transcript-url``, which rides beside
-#: ``settings`` in the POST and is kept in a sidecar by the server).
+#: ``None`` means the control carries no value of its own: it is a toggle that
+#: *derives* another field (``headline-on`` decides whether ``headline_seconds``
+#: is 0 or its own number). It used to cover ``transcript-url`` too, but that
+#: control left the page with the pasted transcript.
 CONTROLES = {
     "min-duration": "min_duration",
     "max-duration": "max_duration",
@@ -76,7 +75,6 @@ CONTROLES = {
     "cache-dir": "cache_dir",
     "vad-filter": "vad_filter",
     "transcript-cache": "transcript_cache",
-    "transcript": "transcript_text",
     "layout": "layout",
     "caption-preset": "caption_preset",
     "caption-style": "caption_style",
@@ -100,11 +98,10 @@ CONTROLES = {
     # verdade, so' que agora nao ha nem controle nesta pagina para dizer isso.
     # O contrato de exclusividade esta em `PromptCardSingleOwnerTests`.
     #
-    # O carimbo do video: o texto colado so vale para a URL que o gravou, e o
-    # id do campo e `transcript-url`. Nao mapeia para chave nenhuma porque nao
-    # vive em ajustes.toml -- vai como irmao de `settings` no POST /ajustes e o
-    # servidor o guarda num sidecar (ver TRANSCRIPT_SOURCE_PATH).
-    "transcript-url": None,
+    # Sem `transcript` nem `transcript-url`: o texto colado e' de UM video, e
+    # esta pagina governa o projeto inteiro. Ele foi para o Estudio (etapa 1),
+    # ao lado da URL a que pertence -- e com ele saiu o carimbo de URL que so'
+    # existia porque o texto estava no escopo errado.
 }
 
 
@@ -126,7 +123,6 @@ def sample_settings() -> dict:
         "cache_dir": "output/cache/transcripts",
         "vad_filter": True,
         "transcript_cache": False,
-        "transcript_text": "0:03\nAbertura chocante.",
         "layout": "focus",
         "caption_preset": "karaoke",
         "caption_style": "karaoke",
@@ -260,28 +256,29 @@ class AjustesTomlTests(unittest.TestCase):
         self.path.write_text(server._dump_ajustes(settings), encoding="utf-8")
         self.assertEqual(server._read_ajustes()["engine"], 'we"ird\\path')
 
-    def test_a_multiline_transcript_survives_the_round_trip(self):
+    def test_a_multiline_string_survives_the_round_trip(self):
         # The defect this pins: a raw newline inside a TOML basic string makes
         # the whole file unparseable, and _read_ajustes swallows the parse
-        # error and returns {}. So a pasted transcript did not merely fail to
-        # save -- it silently discarded EVERY other setting in the file.
-        settings = {**sample_settings(), "transcript_text": "0:03\nfala um\n0:09\nfala dois"}
+        # error and returns {}. Any string field can carry one -- `cache_dir` is
+        # a path, but the serialiser must escape whatever it is handed, or a
+        # single bad value silently discards EVERY other setting in the file.
+        settings = {**sample_settings(), "cache_dir": "a\nb\nc"}
         self.path.write_text(server._dump_ajustes(settings), encoding="utf-8")
         volta = server._read_ajustes()
-        self.assertEqual(volta["transcript_text"], "0:03\nfala um\n0:09\nfala dois")
+        self.assertEqual(volta["cache_dir"], "a\nb\nc")
         # The proof that nothing else was lost with it.
         self.assertEqual(volta["min_duration"], 30.0)
         self.assertEqual(volta["target_lufs"], -14.0)
 
     def test_every_control_character_toml_forbids_is_escaped(self):
-        # \r and \t join \n in the forbidden set, and a transcript pasted from
-        # a browser can carry all three: \r from Windows line endings, \t from
-        # an indented fala.
+        # \r and \t join \n in the forbidden set, and a value pasted from a
+        # browser can carry all three: \r from Windows line endings, \t from an
+        # indented line.
         for bruto in ("a\r\nb", "a\tb", "a\nb"):
             with self.subTest(bruto=bruto):
-                settings = {**sample_settings(), "transcript_text": bruto}
+                settings = {**sample_settings(), "cache_dir": bruto}
                 texto = server._dump_ajustes(settings)
-                self.assertEqual(tomllib.loads(texto)["transcript_text"], bruto)
+                self.assertEqual(tomllib.loads(texto)["cache_dir"], bruto)
 
     def test_keys_outside_the_contract_are_ignored(self):
         # A stale file (or one written by a newer version) must not smuggle
@@ -352,29 +349,20 @@ class AjustesPageTests(unittest.TestCase):
         mapeadas = [k for k in CONTROLES.values() if k is not None]
         self.assertEqual(sorted(mapeadas), sorted(server.AJUSTES_KEYS))
 
-    def test_the_transcript_is_writable_but_not_an_ajustes_key(self):
-        # The page now owns the transcript, but `transcript_text` must still be
-        # an AJUSTES_KEYS entry -- it is written through POST /ajustes, not
-        # through a route of its own.
-        self.assertIn("transcript", self.ids)
-        self.assertIn("transcript_text", server.AJUSTES_KEYS)
-        self.assertIn("transcript_text", CONTROLES.values())
-
-    def test_the_transcript_carries_the_video_it_belongs_to(self):
-        # The hazard the old contract was guarding against: persisting a
-        # transcript with nothing tying it to a video means the run of the NEXT
-        # video silently reuses the previous video's text. The tie is now
-        # explicit -- a URL field on the page and a sidecar on the server -- so
-        # the guard moves from "do not persist" to "persist with a stamp".
-        self.assertIn("transcript-url", self.ids)
-
-    def test_the_source_url_is_not_an_ajustes_key(self):
-        # It would break the invariant that makes ajustes.toml a valid
-        # --config: `transcript_source_url` is neither an argparse dest nor a
-        # ClipConfig field, so writing it into the file would make the very
-        # next `--config ajustes.toml` fail.
-        self.assertNotIn("transcript_source_url", server.AJUSTES_KEYS)
-        self.assertNotIn("transcript_source_url", CONTROLES.values())
+    def test_the_transcript_is_not_on_this_page_anymore(self):
+        # A transcricao colada saiu daqui. Ela e' texto de UM video, e esta
+        # pagina governa o projeto inteiro (ajustes.toml): guardar o texto de um
+        # video num arquivo que vale para todos era o escopo errado, e obrigava
+        # a um carimbo de URL so' para ele nao vazar para o run do proximo video.
+        # O campo (e a tabela de conferencia) moram no Estudio, ao lado da URL.
+        self.assertNotIn("transcript", self.ids)
+        self.assertNotIn("transcript-url", self.ids)
+        self.assertNotIn("transcript_text", server.AJUSTES_KEYS)
+        self.assertNotIn("transcript_text", CONTROLES.values())
+        # E a pagina nao tem mais o campo em lugar nenhum: nem o id, nem a
+        # etiqueta que o apresentava.
+        self.assertNotIn('id="transcript"', self.markup)
+        self.assertNotIn("Cole aqui a transcrição", self.markup)
 
     def test_the_page_has_no_duplicate_ids(self):
         todos = re.findall(r"\sid=\"([^\"]+)\"", self.markup)
@@ -669,7 +657,6 @@ class AjustesScriptTests(unittest.TestCase):
                 "#whisper-model": "small", "#language": "",
                 "#cache-dir": "x", "#layout": "focus",
                 "#caption-preset": "karaoke", "#caption-style": "karaoke",
-                "#transcript": "", "#transcript-url": "",
             }) + ";\n"
             "const toggles = " + json.dumps({
                 "#vad-filter": True, "#transcript-cache": True, "#headline-on": False,
@@ -773,56 +760,13 @@ class AjustesAutomaticModeTests(unittest.TestCase):
         self.assertEqual(cfg.hard_max_duration, 90.0)
 
 
-class TranscriptStampTests(unittest.TestCase):
-    """The sidecar that ties a saved transcript to the video it came from.
+class StudioTranscriptTests(unittest.TestCase):
+    """O texto colado e' lido do formulario do Estudio, nao de ajustes.toml.
 
-    Persisting a transcript without this tie is the hazard: the run of the next
-    video would silently reuse the previous video's text. The stamp is what
-    index.js compares the URL against before letting the text into the payload.
-    """
-
-    def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
-        self.path = self.tmp / ".ajustes-transcript-source"
-        self._patch = mock.patch.object(server, "TRANSCRIPT_SOURCE_PATH", self.path)
-        self._patch.start()
-        self.addCleanup(self._patch.stop)
-
-    def test_a_missing_sidecar_reads_as_untracked(self):
-        # Not an error: a file saved by a version that did not stamp its
-        # transcript is exactly the case the panel must treat as stale.
-        self.assertEqual(server._read_transcript_source(), "")
-
-    def test_it_round_trips(self):
-        server._write_transcript_source("https://youtu.be/abc")
-        self.assertEqual(server._read_transcript_source(), "https://youtu.be/abc")
-
-    def test_writing_empty_removes_the_stamp(self):
-        # A cleared transcript must not leave a stamp behind: a later paste of
-        # the same video would inherit a stamp for text nobody re-supplied.
-        server._write_transcript_source("https://youtu.be/abc")
-        server._write_transcript_source("")
-        self.assertEqual(server._read_transcript_source(), "")
-        self.assertFalse(self.path.exists())
-
-    def test_it_does_not_live_in_ajustes_toml(self):
-        # The whole reason the sidecar exists. If the stamp were an
-        # AJUSTES_KEYS entry it would need an argparse dest and a ClipConfig
-        # field; it has neither, so it would break `--config ajustes.toml`.
-        self.assertNotIn("transcript_source_url", server.AJUSTES_KEYS)
-        settings = {**sample_settings(), "transcript_source_url": "https://youtu.be/abc"}
-        texto = server._dump_ajustes(settings)
-        self.assertNotIn("transcript_source_url", texto)
-
-
-class TranscriptRunGuardTests(unittest.TestCase):
-    """A regra que impede o texto de um video vazar para o run do proximo.
-
-    O texto fica extraido do index.js real e chamado com um DOM falso. Nao ha
-    aqui uma copia da logica: se houvesse, o teste passaria com a copia certa e
-    o produto errado -- que e justamente o defeito que este teste existe para
-    pegar. Extrair por regex e a unica forma de exercitar a funcao do arquivo
-    sem um navegador.
+    A funcao e' extraida do index.js real e chamada com um DOM falso -- sem
+    copia da logica, o teste exercita o arquivo que roda no navegador. O que ele
+    trava: o texto do campo entra no payload, e campo vazio vira `null`
+    (Whisper), nunca string vazia.
     """
 
     @classmethod
@@ -837,23 +781,18 @@ class TranscriptRunGuardTests(unittest.TestCase):
             )
         cls.corpo = m.group(0)
 
-    def decide_js(self, texto, origem, url):
-        return self._run({"transcript_text": texto, "transcript_source_url": origem}, url)
-
-    def _run(self, ajustes, url):
+    def le(self, valor):
         # O node faz o papel do navegador: extrai a funcao do disco e a chama.
-        # Sem node, o teste e pulado em vez de virar verde por acidente.
+        # Sem node, o teste e' pulado em vez de virar verde por acidente.
         node = shutil.which("node")
         if not node:
             self.skipTest("node nao esta no PATH")
 
         script = (
-            "const fn = new Function('state', '$', %s + "
+            "const fn = new Function('$', %s + "
             "'\\nreturn transcriptForThisRun();');" % json.dumps(self.corpo)
-            + "\nconst url = %s;" % json.dumps(url)
-            + "\nconst ajustes = %s;" % json.dumps(ajustes)
-            + "\nconst $ = () => ({ value: url });"
-            + "\nconsole.log(JSON.stringify(fn({ ajustes }, $)));"
+            + "\nconst $ = () => ({ value: %s });" % json.dumps(valor)
+            + "\nconsole.log(JSON.stringify(fn($)));"
         )
         proc = subprocess.run(
             [node, "-e", script], capture_output=True, text=True, timeout=30,
@@ -864,38 +803,15 @@ class TranscriptRunGuardTests(unittest.TestCase):
 
     TEXTO = "0:03\nAbertura chocante."
 
-    def test_same_url_reuses_the_text(self):
-        self.assertEqual(
-            self.decide_js(self.TEXTO, "https://youtu.be/a", "https://youtu.be/a"),
-            self.TEXTO,
-        )
+    def test_the_field_goes_into_the_run(self):
+        self.assertEqual(self.le(self.TEXTO), self.TEXTO)
 
-    def test_a_different_url_drops_the_text(self):
-        # O caso que da nome a classe. Sem ele, colar a URL do proximo video
-        # entregaria um corte com a fala do video anterior.
-        self.assertIsNone(
-            self.decide_js(self.TEXTO, "https://youtu.be/a", "https://youtu.be/b")
-        )
-
-    def test_no_stamp_drops_the_text(self):
-        # Um arquivo salvo por uma versao que ainda nao carimbava a transcricao.
-        # Nao da para provar que o texto e deste video, entao nao se usa.
-        self.assertIsNone(self.decide_js(self.TEXTO, "", "https://youtu.be/a"))
-
-    def test_no_text_means_whisper(self):
-        self.assertIsNone(self.decide_js(None, "https://youtu.be/a", "https://youtu.be/a"))
-        self.assertIsNone(self.decide_js("", "https://youtu.be/a", "https://youtu.be/a"))
-
-    def test_an_empty_url_field_drops_the_text(self):
-        self.assertIsNone(self.decide_js(self.TEXTO, "https://youtu.be/a", ""))
-
-    def test_surrounding_whitespace_does_not_defeat_the_match(self):
-        # Colar uma URL arrastando um espaco e comum. Um texto que vale para o
-        # video certo nao pode ser descartado por causa disso.
-        self.assertEqual(
-            self.decide_js(self.TEXTO, " https://youtu.be/a ", "https://youtu.be/a"),
-            self.TEXTO,
-        )
+    def test_an_empty_field_means_whisper(self):
+        # Vazio = `null`, e `null` = o motor transcreve. NUNCA string vazia: ela
+        # viraria uma transcricao de zero falas e faria o pipeline pular o
+        # Whisper em silencio.
+        self.assertIsNone(self.le(""))
+        self.assertIsNone(self.le("   \n  "))
 
 
 class AjustesPayloadTests(unittest.TestCase):
@@ -916,22 +832,14 @@ class AjustesPayloadTests(unittest.TestCase):
         self.assertTrue(payload["curator_prompt_file"].endswith("curador.txt"))
 
     def test_it_is_empty_before_the_first_save(self):
-        # Two keys ride along without being settings: the curator prompt path
-        # and the transcript's video stamp (both absent from AJUSTES_KEYS on
-        # purpose). Everything else is empty until something is saved.
+        # One key rides along without being a setting: the curator prompt path
+        # (absent from AJUSTES_KEYS on purpose). Everything else is empty until
+        # something is saved.
         payload = server._ajustes_payload()
         self.assertEqual(
-            {k: v for k, v in payload.items()
-             if k not in ("curator_prompt_file", "transcript_source_url")},
+            {k: v for k, v in payload.items() if k != "curator_prompt_file"},
             {},
         )
-
-    def test_the_transcript_stamp_is_empty_before_the_first_save(self):
-        # Empty means "no transcript is stamped to a video", which index.js
-        # reads as "do not reuse the saved text". A missing key would be
-        # `undefined` in JS and read the same way, but returning it explicitly
-        # keeps the payload shape stable between an empty and a populated file.
-        self.assertEqual(server._ajustes_payload()["transcript_source_url"], "")
 
     def test_the_saved_values_win_over_the_defaults(self):
         self.path.write_text("min_duration = 12.5\nauto_ceiling = 40\n", encoding="utf-8")

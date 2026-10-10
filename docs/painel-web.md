@@ -85,10 +85,16 @@ O painel de Ajustes lê e escreve `ajustes.toml` (no `.gitignore`). Contrato:
 - **Arquivo malformado não é engolido.** `_load_ajustes` devolve
   `(settings, malformed)`; a resposta de `GET /api/ajustes` traz o motivo em
   `malformed` e a página **avisa** em vez de resetar. Sem isso, a página dizia
-  "nada salvo ainda" e o próximo save sobrescrevia as 27 chaves com os defaults —
+  "nada salvo ainda" e o próximo save sobrescrevia as 26 chaves com os defaults —
   perda silenciosa e permanente.
-- **`AJUSTES_KEYS` = 27 chaves** (a superfície editável do painel). O
+- **`AJUSTES_KEYS` = 26 chaves** (a superfície editável do painel). O
   `ClipConfig` do motor tem 88 campos — o painel expõe um subconjunto.
+- **A transcrição colada NÃO vive aqui.** Ela é texto de *um* vídeo, então mora
+  no Estúdio (etapa 1), ao lado da URL a que pertence — não no `ajustes.toml`,
+  que vale para o projeto inteiro. Antes ela estava neste arquivo e o painel
+  precisava de um sidecar de carimbo de URL (`.ajustes-transcript-source`) só
+  para impedir o texto de vazar para o run do vídeo seguinte; com o campo no
+  escopo certo, o carimbo deixou de existir.
 - **Campo cujo valor só é lido sob condição TEM de desabilitar sob a condição**
   (`<fieldset disabled>`): um controle que parece ativo e não tem efeito é pior
   que um controle ausente. Travado por `CuradorFieldsFollowTheSwitchTests`.

@@ -124,16 +124,6 @@ AJUSTES_PATH = REPO_ROOT / "ajustes.toml"
 #: modulo seria uma segunda fonte de verdade -- e foi exatamente esse o defeito
 #: que o comentario da definicao, la', registra.
 
-#: Which video the saved transcript belongs to. Lives beside ``ajustes.toml``
-#: rather than inside it, and deliberately so: every key in ``AJUSTES_KEYS``
-#: must be both an argparse dest and a ``ClipConfig`` field, because the file
-#: has to stay a valid ``--config``. This is neither -- it is bookkeeping the
-#: panel keeps for itself, the same reasoning that keeps ``curator_prompt_file``
-#: out of the tuple. Persisting a transcript without this tie is the hazard the
-#: old ``test_the_page_does_not_own_the_transcript`` was guarding against: paste
-#: the next video's URL and the run silently reuses the previous video's text.
-TRANSCRIPT_SOURCE_PATH = REPO_ROOT / ".ajustes-transcript-source"
-
 #: Every key the Ajustes page owns. This tuple is the whole contract: the page
 #: may only write these, GET /api/ajustes only returns these, and index.js
 #: merges exactly these into the POST /api/run payload. Spelled out rather than
@@ -544,35 +534,6 @@ def _read_ajustes() -> dict:
 
 
 
-def _read_transcript_source() -> str:
-    """The URL the saved transcript belongs to, or "" when untracked.
-
-    A missing or unreadable sidecar is not an error: it means the transcript
-    was saved by a version that did not track it, which is exactly the case the
-    panel has to treat as "stale, ask before reusing".
-    """
-    try:
-        return TRANSCRIPT_SOURCE_PATH.read_text(encoding="utf-8").strip()
-    except OSError:
-        return ""
-
-
-def _write_transcript_source(url: str) -> None:
-    """Record which video the saved transcript belongs to.
-
-    Best-effort on purpose: failing to write the sidecar must not fail the save
-    that carries the transcript itself. The cost of a miss is one extra clear of
-    a stale transcript, not a lost setting.
-    """
-    try:
-        if url:
-            TRANSCRIPT_SOURCE_PATH.write_text(url.strip(), encoding="utf-8")
-        else:
-            TRANSCRIPT_SOURCE_PATH.unlink(missing_ok=True)
-    except OSError:
-        pass
-
-
 def _ajustes_payload(settings: "dict | None" = None) -> dict:
     """What ``GET /api/ajustes`` returns.
 
@@ -583,19 +544,14 @@ def _ajustes_payload(settings: "dict | None" = None) -> dict:
     ``_handle_save_ajustes`` for the same reason -- the panel must not be able
     to point the curator at an arbitrary file.
 
-    ``transcript_source_url`` rides along for the same reason: the Cortes page
-    needs it to decide whether the persisted transcript still matches the URL
-    about to be run, and it is not a setting either.
-
     ``settings`` lets the caller hand over a read it already did. The handler
     needs the settings AND the parse error, and reading the file twice could in
     principle report one and describe the other; here both come from the same
-    read. A copy is taken because the two extra keys below are added in place.
+    read. A copy is taken because the extra key below is added in place.
     """
     settings = dict(_read_ajustes() if settings is None else settings)
     if CURATOR_PROMPT_PATH.is_file():
         settings["curator_prompt_file"] = str(CURATOR_PROMPT_PATH)
-    settings["transcript_source_url"] = _read_transcript_source()
     return settings
 
 
@@ -1917,16 +1873,6 @@ class Handler(routes_providers.ProviderRoutes, routes_scrap.ScrapRoutes, routes_
         except OSError as exc:
             self._send_json({"error": f"cannot write {AJUSTES_PATH}: {exc}"}, 500)
             return
-
-        # The transcript's own "which video is this" stamp. Sent by the page
-        # next to the transcript rather than derived here, because only the page
-        # knows which URL the text on screen was pasted for. A cleared
-        # transcript drops the stamp with it, so the pair never survives half.
-        if "transcript_text" in incoming:
-            texto = merged.get("transcript_text")
-            _write_transcript_source(
-                str(payload.get("transcript_source_url") or "") if texto else ""
-            )
 
         # Answer with what was actually stored, not with what was sent: the page
         # reapplies this response, so a value dropped or normalised on the way

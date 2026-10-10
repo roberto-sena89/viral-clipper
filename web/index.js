@@ -51,14 +51,6 @@
       cache_dir: 'output/cache/transcripts',
       vad_filter: true,
       transcript_cache: true,
-      // Transcricao pronta. `null` = o motor transcreve com Whisper.
-      transcript_text: null,
-      // A URL do video a que o texto acima pertence. Nao e um ajuste: e a
-      // memoria que impede o run do proximo video de reaproveitar em silencio a
-      // transcricao do anterior. Vem do sidecar `.ajustes-transcript-source`,
-      // nao de `ajustes.toml` -- o arquivo de ajustes tem de continuar sendo um
-      // `--config` valido, e este campo nao existe no ClipConfig.
-      transcript_source_url: '',
       // Renderizacao. Mesmos defaults do formulario de Ajustes.
       layout: 'focus',
       caption_preset: 'karaoke',
@@ -544,24 +536,84 @@
     el.setAttribute('aria-checked', String(Boolean(on)));
   }
 
-  // A transcricao salva so vale para o video para o qual foi colada.
-  //
-  // Tres casos, e o terceiro e o que justifica a funcao existir:
-  //   - nao ha texto salvo        -> null, o Whisper transcreve;
-  //   - a URL bate com a origem   -> usa o texto, e o ganho de nao transcrever;
-  //   - a URL mudou               -> null, e o texto do video anterior nao vaza.
-  //
-  // O caso "origem vazia" (arquivo salvo por uma versao que ainda nao gravava o
-  // sidecar) cai no ramo da troca: nao da para provar que o texto e deste video,
-  // entao nao se usa. Errar para o lado do Whisper custa tempo; errar para o
-  // lado do reaproveitamento entrega um corte com a fala de outro video.
+  // A transcricao colada, lida do proprio formulario do Estudio. Ela e' de UM
+  // video, entao vive ao lado da URL e vale so' para a execucao que sai daqui:
+  // nao ha nada a comparar, porque o par texto/video e' o par campo/campo. Em
+  // branco = null, e null = o motor transcreve com Whisper.
   function transcriptForThisRun() {
-    const texto = state.ajustes.transcript_text;
-    if (!texto) return null;
-    const origem = (state.ajustes.transcript_source_url || '').trim();
-    const url = $('#url').value.trim();
-    if (!origem || !url || origem !== url) return null;
-    return texto;
+    return $('#transcript').value.trim() || null;
+  }
+
+  // A tabela de conferencia da transcricao colada. Sem ela o texto vira uma
+  // caixa preta: a pessoa cola 40 minutos de fala e nao tem como ver se os
+  // minutos ficaram em ordem antes de gastar um render inteiro descobrindo que
+  // nao. Veio junto com o campo quando ele saiu de /ajustes.
+  function renderCueTable(data) {
+    const stats = data.stats || {};
+    const parts = [
+      stats.cues + ' falas',
+      stats.words + ' palavras',
+    ];
+    if (stats.duplicates_removed) parts.push(stats.duplicates_removed + ' repetição(ões) removida(s)');
+    if (stats.fragments_merged) parts.push(stats.fragments_merged + ' fragmento(s) unido(s)');
+    if (stats.reordered) parts.push(stats.reordered + ' fala(s) reordenada(s)');
+    $('#cue-stats').textContent = parts.join(' · ');
+
+    const body = $('#cue-body');
+    body.innerHTML = '';
+    const cues = data.cues || [];
+    // Anunciar o RESULTADO, e nao as 40 linhas: `aria-live` num container que
+    // ganha N filhos dispara uma enxurrada de anuncios. O `#cue-stats` ja' mostra
+    // o resumo na tela, entao a regiao viva repete ELE em vez de montar um
+    // segundo (foi o que evitou o "3 falas alinhadas — 3 falas, ...").
+    const resumo = parts.join(', ') + '.';
+    body.setAttribute('aria-label', cues.length ? 'Conferência: ' + resumo : 'Nenhuma fala na transcrição.');
+    cues.forEach((cue) => {
+      const row = document.createElement('tr');
+      const time = document.createElement('td');
+      time.className = 'cue-time';
+      time.textContent = cue.label;
+      const duration = document.createElement('td');
+      duration.className = 'cue-dur';
+      duration.textContent = Math.round(cue.duration) + 's';
+      const text = document.createElement('td');
+      text.className = 'cue-text';
+      text.textContent = cue.text;
+      row.append(time, duration, text);
+      body.appendChild(row);
+    });
+    $('#cue-preview').hidden = !(data.cues || []).length;
+  }
+
+  async function organizeTranscript(silent) {
+    const raw = $('#transcript').value.trim();
+    if (!raw) {
+      if (!silent) {
+        toast('Cole a transcrição primeiro.', 'err');
+        $('#transcript').focus();
+      }
+      return;
+    }
+    const r = await api('/transcript/normalize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcript: raw }),
+    });
+    if (r.offline) {
+      if (!silent) toast('Backend offline: inicie web/server.py para organizar.', 'err');
+      return;
+    }
+    if (r.error) {
+      if (!silent) toast('Não foi possível organizar: ' + r.error, 'err');
+      return;
+    }
+    $('#transcript').value = r.normalized || '';
+    renderCueTable(r);
+    renderTranscriptSummary();
+    const stats = r.stats || {};
+    if (!silent || stats.duplicates_removed || stats.fragments_merged || stats.reordered) {
+      toast('Transcrição organizada: ' + (stats.cues || 0) + ' falas alinhadas.', 'ok');
+    }
   }
 
   function collectOptions() {
@@ -623,17 +675,10 @@ count: $('#count').value.trim() === ''
         ? state.curatorPromptPath
         : null,
       cache_dir: state.ajustes.cache_dir,
-      // O texto colado vem dos Ajustes, como os outros campos de la. A secao
-      // "Transcricao" migrou inteira: parametros do Whisper e o texto pronto
-      // moram os dois em /ajustes, e aqui so lemos o que foi salvo.
-      //
-      // Mas so enquanto a URL for a mesma. Persistir a transcricao cria um
-      // risco real: cola-se a URL do proximo video e o run reaproveitaria em
-      // silencio o texto do video anterior, porque nada liga um ao outro. A
-      // trava e `transcript_source_url` -- se a URL de agora difere da que
-      // gravou o texto, o texto e do video errado e nao entra no payload. Uso
-      // direto (mesma URL) passa; troca de video cai para o Whisper, que e o
-      // certo, so mais lento.
+      // O texto colado vem do PROPRIO formulario do Estudio, ao lado da URL --
+      // nao de `ajustes.toml`. Ele e' de um video so', entao nao pertence ao
+      // arquivo de ajustes do projeto (que vale para tudo); aqui so' lemos o
+      // campo e o mandamos no payload.
       transcript_text: transcriptForThisRun(),
       // O titulo so e queimado com duracao > 0; o formulario de Ajustes ja
       // grava 0 quando o toggle esta desligado, entao o valor salvo e o que
@@ -737,25 +782,6 @@ count: $('#count').value.trim() === ''
         ? null
         : tamanho;
     }
-
-    // `transcript_text` e `null` quando nao ha transcricao colada -- e null e um
-    // valor legitimo aqui, nao "campo ausente". O filtro de TEXTO_OU_NULO aceita
-    // string vazia por causa do `language`, mas para o texto vazio nao existe
-    // "transcricao vazia": o que vale e null, e `''` viraria uma transcricao de
-    // zero falas que faria o pipeline pular o Whisper em silencio.
-    if ('transcript_text' in settings && settings.transcript_text !== undefined) {
-      const texto = settings.transcript_text;
-      state.ajustes.transcript_text = (typeof texto === 'string' && texto.trim())
-        ? texto
-        : null;
-    }
-
-    // A memoria de qual video a transcricao pertence. Vem de fora de
-    // AJUSTES_KEYS (sidecar), mas chega na mesma resposta de /ajustes.json --
-    // por isso e lida aqui e nao num segundo request.
-    if (typeof settings.transcript_source_url === 'string') {
-      state.ajustes.transcript_source_url = settings.transcript_source_url.trim();
-    }
   }
 
   // O motor de analise e um valor tecnico; na tela ele aparece com o mesmo
@@ -829,8 +855,10 @@ count: $('#count').value.trim() === ''
     const a = state.ajustes;
     // Texto colado substitui o Whisper inteiro. Anunciar o modelo aqui seria
     // descrever justamente o caminho que o run NAO vai usar -- o oposto do que
-    // a ficha existe para fazer.
-    if (a.transcript_text) {
+    // a ficha existe para fazer. A fonte do "colado" e' o CAMPO (o texto e' de
+    // um video e vive no formulario), nao `state.ajustes`.
+    const campo = $('#transcript');
+    if (campo && campo.value.trim()) {
       el.textContent = 'texto colado · substitui o Whisper';
       return;
     }
@@ -2430,10 +2458,22 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     setGalleryQuery('');
     $('#gallery-search').focus();
   });
-  // A transcricao colada nao mora mais aqui: o campo e a tabela de conferencia
-  // foram para /ajustes, e o texto chega no run por state.ajustes. O antigo
-  // `#btn-analyze` disparava um plano com a transcricao fornecida; agora ele
-  // vive na pagina de Ajustes junto do campo que le.
+  // A transcricao colada: o campo mora aqui (etapa 1, ao lado da URL) e o texto
+  // entra no run pelo payload. O colar dispara a organizacao sozinho, num
+  // setTimeout(0) para o valor ja estar no textarea quando o handler roda -- o
+  // evento `paste` acontece ANTES do navegador inserir o texto. O `silent` evita
+  // o toast de "organizada" a cada colagem sem mudanca real.
+  $('#transcript').addEventListener('paste', () => setTimeout(() => organizeTranscript(true), 0));
+  // A ficha da etapa 2 anuncia "texto colado" enquanto o campo tiver texto: sem
+  // este listener ela so' mudaria quando outro resumo fosse redesenhado.
+  $('#transcript').addEventListener('input', renderTranscriptSummary);
+  $('#btn-organize').addEventListener('click', () => organizeTranscript(false));
+  $('#btn-clear-transcript').addEventListener('click', () => {
+    $('#transcript').value = '';
+    $('#cue-preview').hidden = true;
+    renderTranscriptSummary();
+    toast('Campo limpo.', 'ok');
+  });
   $('#btn-batch').addEventListener('click', () => {
     toast('Modo lote: use python -m viralclipper --batch urls.txt -o output');
     log('# modo lote (CLI):\npython -m viralclipper --batch urls.txt -o output --retry-failed');

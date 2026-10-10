@@ -101,7 +101,7 @@ Notas que evitam surpresa:
 ## `ajustes.toml` (o painel) é outro arquivo
 
 O painel de Ajustes tem o **próprio** `ajustes.toml` (no `.gitignore`), com
-**27 chaves** (`AJUSTES_KEYS`) — um subconjunto do motor. Não confunda com
+**26 chaves** (`AJUSTES_KEYS`) — um subconjunto do motor. Não confunda com
 `config.toml`: são arquivos separados, com ciclos de vida separados. O contrato
 de escrita (atômica, malformado avisa em vez de resetar) está em
 [`painel-web.md`](painel-web.md).
@@ -123,4 +123,4 @@ estão em [`modelos-gratuitos.md`](modelos-gratuitos.md) e
 ## Ver também
 
 - [`arquitetura.md`](arquitetura.md) — o pipeline que consome estas chaves.
-- [`painel-web.md`](painel-web.md) — a superfície editável do painel (27 chaves).
+- [`painel-web.md`](painel-web.md) — a superfície editável do painel (26 chaves).

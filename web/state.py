@@ -50,11 +50,12 @@ AJUSTES_KEYS = (
     "auto_margin", "auto_ceiling", "max_duration_grace",
     "whisper_model", "language", "beam_size", "cache_dir",
     "vad_filter", "transcript_cache",
-    # The pasted transcript. It lives here because it is typed once and reused
-    # across runs of the same video; the run payload still carries it (see
-    # ``_options_to_config``), and the Cortes page reads it back from
-    # ``state.ajustes`` instead of owning a second copy of the textarea.
-    "transcript_text",
+    # The pasted transcript is deliberately NOT here. It is text of ONE video,
+    # typed beside that video's URL on the Cortes page and carried straight into
+    # the run payload; ``ajustes.toml`` is project-wide, so storing it there put
+    # a per-video artefact at the wrong scope and forced a URL-stamp sidecar to
+    # stop it leaking into the next video's run. See ``_options_to_config`` for
+    # the run-side handling, which is unchanged.
     "layout", "caption_preset", "caption_style", "font_size",
     "crf", "target_lufs", "workers",
     "headline_seconds", "progress_bar", "jump_cut", "loudnorm",

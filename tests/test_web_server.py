@@ -4689,22 +4689,25 @@ class FirstVisitTests(unittest.TestCase):
         self.assertIn('id="cookies-summary"', html)
         self.assertIn('aria-describedby="cookies-summary-hint"', html)
 
-    def test_the_transcript_card_moved_to_ajustes(self):
-        """O card da transcricao vive em Ajustes, e nao mais no Estudio.
+    def test_the_transcript_field_lives_on_the_studio(self):
+        """O campo da transcricao colada vive no Estudio, ao lado da URL.
 
-        A garantia continua a mesma -- o card diz o que acontece se ficar em
-        branco -- mas ela agora e verificada na pagina que tem o card. Deixar a
-        assercao aqui passaria a travar uma ausencia: o texto nao esta mais em
-        index.html, e um teste que exige o contrario so pode falhar.
+        Ele morou em Ajustes por um tempo, mas o texto e' de UM video e a pagina
+        de Ajustes governa o projeto inteiro -- era o escopo errado, e obrigava
+        a um carimbo de URL so' para o texto nao vazar entre videos. De volta ao
+        Estudio, o par texto/video e' implicito: os dois sao o mesmo formulario.
         """
         html = self.html()
-        self.assertNotIn("Transcrição (só se já tiver uma)", html)
+        self.assertIn('id="transcript"', html)
+        # As duas metades da promessa: da para pular, e o que acontece quando se
+        # pula.
+        self.assertIn("o próprio site transcreve", html)
+        self.assertIn("Só cole aqui se você já tem o texto pronto", html)
 
         ajustes = (server.WEB_DIR / "ajustes.html").read_text(encoding="utf-8")
-        # As duas metades da mesma promessa: da para pular, e o que acontece
-        # quando se pula.
-        self.assertIn("o próprio site transcreve", ajustes)
-        self.assertIn("Só cole aqui se você já tem o texto pronto", ajustes)
+        # E a pagina que governa o projeto nao tem mais o campo: texto de um
+        # video nao pertence a um arquivo que vale para todos.
+        self.assertNotIn('id="transcript"', ajustes)
 
     def test_the_empty_states_tell_the_next_step(self):
         """Estado vazio aponta o proximo passo, e nao um log que nao existe."""

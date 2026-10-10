@@ -96,10 +96,6 @@
       cache_dir: $('#cache-dir').value.trim() || null,
       vad_filter: toggleOn('#vad-filter'),
       transcript_cache: toggleOn('#transcript-cache'),
-      // A transcricao colada. Vazia vira null: string vazia e um valor
-      // legitimo para `language` (auto-detectar), mas para o texto nao existe
-      // "transcricao vazia" -- o motor tem de cair no Whisper.
-      transcript_text: $('#transcript').value.trim() || null,
 
       layout: $('#layout').value,
       caption_preset: $('#caption-preset').value,
@@ -184,25 +180,6 @@
       const on = Number(s.headline_seconds) > 0;
       setToggle('#headline-on', on);
       if (on) setNum('#headline-seconds', s.headline_seconds);
-    }
-
-    // O texto colado e o unico campo em que `null` LIMPA em vez de "nao mexe".
-    // A regra geral (`null` nunca sobrescreve) existe para um ajustes.toml
-    // parcial nao apagar a tela; aqui ela seria um bug, porque nao haveria como
-    // remover uma transcricao ja salva -- o campo ficaria preso no arquivo e
-    // todo run seguinte usaria aquele texto. Quem apaga e a chave AUSENTE (nao
-    // salva ainda), nao a chave nula (salva como "sem transcricao").
-    if ('transcript_text' in s) {
-      $('#transcript').value = s.transcript_text === null || s.transcript_text === undefined
-        ? ''
-        : String(s.transcript_text);
-    }
-    // O carimbo do video, que chega fora de `settings` mas na mesma resposta.
-    // Ausente (arquivo antigo, escrito antes do carimbo existir) vira campo
-    // vazio -- e campo vazio significa "nao da para provar que o texto e deste
-    // video", que e o lado seguro do erro.
-    if (typeof s.transcript_source_url === 'string') {
-      $('#transcript-url').value = s.transcript_source_url;
     }
   }
 
@@ -348,16 +325,7 @@
       // que nao distinguia "salvar" de "criar um ajuste novo".
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      // `transcript_source_url` vai ao lado de `settings`, nao dentro: ele nao
-      // e uma chave de AJUSTES_KEYS e o servidor recusaria (ou pior, gravaria
-      // no ajustes.toml e o arquivo deixaria de ser um --config valido). O
-      // servidor o trata como o carimbo que acompanha a transcricao.
-      body: JSON.stringify({
-        settings: settings,
-        transcript_source_url: settings.transcript_text
-          ? $('#transcript-url').value.trim()
-          : '',
-      }),
+      body: JSON.stringify({ settings: settings }),
     });
     state.saving = false;
 
@@ -418,80 +386,11 @@
   // de `index.html`/`index.js` e nada nesta pagina le `#curator-prompt*`. O
   // atalho "04 Prompt do curador" no topo leva para la.
 
-  // ---------- transcricao colada ----------
-  // A tabela de conferencia mora aqui desde que o campo migrou da pagina
-  // Estúdio. Sem ela o texto salvo vira uma caixa preta: a pessoa cola 40
-  // minutos de fala e nao tem como ver se os minutos ficaram em ordem antes de
-  // gastar um render inteiro descobrindo que nao.
-  function renderCueTable(data) {
-    const stats = data.stats || {};
-    const parts = [
-      stats.cues + ' falas',
-      stats.words + ' palavras',
-    ];
-    if (stats.duplicates_removed) parts.push(stats.duplicates_removed + ' repetição(ões) removida(s)');
-    if (stats.fragments_merged) parts.push(stats.fragments_merged + ' fragmento(s) unido(s)');
-    if (stats.reordered) parts.push(stats.reordered + ' fala(s) reordenada(s)');
-    $('#cue-stats').textContent = parts.join(' · ');
-
-    const body = $('#cue-body');
-    body.innerHTML = '';
-    const cues = data.cues || [];
-    // Anunciar o RESULTADO, e nao as 40 linhas: `aria-live` num container que
-    // ganha N filhos dispara uma enxurrada de anuncios. O `#cue-stats` ja' mostra
-    // o resumo na tela, entao a regiao viva repete ELE em vez de montar um
-    // segundo (foi o que evitou o "3 falas alinhadas — 3 falas, ...").
-    const resumo = parts.join(', ') + '.';
-    body.setAttribute('aria-label', cues.length ? 'Conferência: ' + resumo : 'Nenhuma fala na transcrição.');
-    cues.forEach((cue) => {
-      const row = document.createElement('tr');
-      const time = document.createElement('td');
-      time.className = 'cue-time';
-      time.textContent = cue.label;
-      const duration = document.createElement('td');
-      duration.className = 'cue-dur';
-      duration.textContent = Math.round(cue.duration) + 's';
-      const text = document.createElement('td');
-      text.className = 'cue-text';
-      text.textContent = cue.text;
-      row.append(time, duration, text);
-      body.appendChild(row);
-    });
-    $('#cue-preview').hidden = !(data.cues || []).length;
-  }
-
-  async function organizeTranscript(silent) {
-    const raw = $('#transcript').value.trim();
-    if (!raw) {
-      if (!silent) {
-        toast('Cole a transcrição primeiro.', 'err');
-        $('#transcript').focus();
-      }
-      return;
-    }
-    const r = await api('/transcript/normalize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transcript: raw }),
-    });
-    if (r.offline) {
-      if (!silent) toast('Backend offline: inicie web/server.py para organizar.', 'err');
-      return;
-    }
-    if (r.error) {
-      if (!silent) toast('Não foi possível organizar: ' + r.error, 'err');
-      return;
-    }
-    $('#transcript').value = r.normalized || '';
-    renderCueTable(r);
-    const stats = r.stats || {};
-    if (!silent || stats.duplicates_removed || stats.fragments_merged || stats.reordered) {
-      toast('Transcrição organizada: ' + (stats.cues || 0) + ' falas alinhadas.', 'ok');
-    }
-    // O texto mudou: o autosave grava sozinho, como em qualquer outro campo.
-    renderSummary();
-    scheduleSave();
-  }
+  // A transcricao colada NAO mora mais aqui. Ela e' texto de UM video, entao
+  // foi para o Estudio (etapa 1), ao lado da URL a que pertence: o par
+  // texto/video passou a ser implicito -- mesmo formulario, mesma execucao -- e
+  // o carimbo de URL que existia so' para impedir o texto de vazar entre videos
+  // deixou de ser necessario. A tabela de conferencia (cue-preview) foi junto.
 
   // ---------- ligacao dos controles ----------
   const form = $('#ajustes-form');
@@ -520,38 +419,9 @@
   $('#btn-restore-defaults').addEventListener('click', () => {
     if (!window.confirm('Restaurar todos os campos para os padrões de fábrica?')) return;
     applySnapshot(PADROES);
-    // A tabela de conferencia e' derivada do texto: com a caixa limpa, ela
-    // estaria mostrando falas que nao estao mais la'.
-    $('#cue-preview').hidden = true;
     renderSummary();
     scheduleSave();
     toast('Padrões restaurados.', 'ok');
-  });
-
-  // O colar dispara a organizacao sozinho, num setTimeout(0) para o valor ja
-  // estar no textarea quando o handler roda -- o evento `paste` acontece ANTES
-  // do navegador inserir o texto. O `silent` evita o toast de "organizada" a
-  // cada colagem sem mudanca real.
-  $('#transcript').addEventListener('paste', () => setTimeout(() => organizeTranscript(true), 0));
-
-  $('#btn-organize').addEventListener('click', () => organizeTranscript(false));
-
-  $('#btn-analyze').addEventListener('click', () => {
-    const text = $('#transcript').value.trim();
-    if (!text) {
-      toast('Cole a transcrição primeiro.', 'err');
-      $('#transcript').focus();
-      return;
-    }
-    organizeTranscript(false);
-  });
-
-  $('#btn-clear-transcript').addEventListener('click', () => {
-    $('#transcript').value = '';
-    $('#cue-preview').hidden = true;
-    renderSummary();
-    scheduleSave();
-    toast('Campo limpo. Salve para gravar a remoção.', 'ok');
   });
 
   // ---------- atalhos: a secao que se esta lendo ----------

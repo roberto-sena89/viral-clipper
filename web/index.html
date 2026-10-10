@@ -238,6 +238,61 @@
                     </div>
                   </div>
 
+                  <!-- A transcricao colada. Mora AQUI, e nao em Ajustes, porque
+                       ela e' de UM video: vale para a URL logo acima, e so' para
+                       ela. O `ajustes.toml` e' do projeto inteiro (ver a ficha da
+                       etapa 2), entao guardar o texto de um video la' era o
+                       escopo errado -- e obrigava a um sidecar de carimbo so'
+                       para impedir o texto de vazar para o run do proximo video.
+                       Aqui o par texto/video e' implicito: os dois sao digitados
+                       no mesmo formulario, para a mesma execucao. Recolhido
+                       porque e' o caso RARO -- o normal e' o Whisper transcrever. -->
+                  <details class="avancado" id="transcript-box">
+                    <summary>Já tem a transcrição pronta? (opcional)</summary>
+                    <p class="hint hint-spaced">Em branco = o próprio site transcreve com Whisper, com os ajustes da página Ajustes.
+                      Só cole aqui se você já tem o texto pronto — ele substitui a transcrição automática para este vídeo.</p>
+                    <div class="field-row single">
+                      <div class="field">
+                        <label for="transcript">Cole aqui a transcrição do vídeo</label>
+                        <textarea id="transcript" name="transcript" rows="7" aria-describedby="transcript-hint"
+                          placeholder="0:03&#10;Abertura chocante questionando o vazamento...&#10;0:21&#10;O cara nao e o pica das magias de tecnologia..."></textarea>
+                        <span class="hint" id="transcript-hint">
+                          Aceita SRT, WebVTT, o painel de legendas do YouTube (<code>0:05</code>) ou texto puro.
+                        </span>
+                      </div>
+                    </div>
+                    <div class="row-actions">
+                      <button class="btn pressable" type="button" id="btn-organize" aria-describedby="organize-hint">Organizar transcrição</button>
+                      <button class="btn pressable" type="button" id="btn-clear-transcript">Limpar</button>
+                      <span class="hint" id="organize-hint">Ao colar, o texto é organizado sozinho: minutos em ordem, falas alinhadas à esquerda.</span>
+                    </div>
+                    <div class="cue-preview" id="cue-preview" hidden>
+                      <div class="cue-stats" id="cue-stats"></div>
+                      <div class="cue-table-wrap">
+                        <!-- A tabela e' uma CONFERENCIA: a pessoa cola 40 min de
+                             fala e varre a lista para ver se os minutos ficaram
+                             em ordem antes de gastar um render. Sem nome ela e'
+                             "uma tabela" no leitor de tela; o `<caption>` e' o
+                             nome, e o `.sr-only` o esconde do olho sem tira'-lo
+                             da arvore de acessibilidade. -->
+                        <table class="cue-table">
+                          <caption class="sr-only">Conferência da transcrição — minuto, duração e fala de cada trecho</caption>
+                          <thead>
+                            <!-- `scope="col"`: sem ele o leitor de tela nao
+                                 associa "0:03" a coluna "Minuto". -->
+                            <tr><th scope="col">Minuto</th><th scope="col">Dur.</th><th scope="col">Fala</th></tr>
+                          </thead>
+                          <!-- O corpo e' preenchido pelo `renderCueTable` a cada
+                               organizacao. `aria-live="polite"`: sem ele, quem
+                               usa leitor de tela aperta "Organizar transcrição",
+                               ouve o toast e nao fica sabendo quantas linhas
+                               entraram. -->
+                          <tbody id="cue-body" aria-live="polite"></tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </details>
+
                   <!-- Cookies: atras do disclosure porque quase nenhum video precisa,
                        mas ABERTO: o conteudo e curto e escondido vira o detalhe que a
                        pessoa precisava ter visto. Visivel, e claramente opcional. -->

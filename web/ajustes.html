@@ -94,8 +94,9 @@
       <p class="section-sub">
         Estes valores ficam salvos em <code>ajustes.toml</code>, no projeto — valem
         para toda execução, no painel e na linha de comando, e não dependem do
-        navegador. Sem o servidor no ar, a página abre com os padrões e avisa
-        onde; nada disso é gravado até você clicar em <strong>Salvar ajustes</strong>.
+        navegador. Cada mudança é gravada sozinha, um instante depois de você
+        mexer no campo; o <strong>Salvar ajustes</strong> grava na hora e diz onde.
+        Sem o servidor no ar, a página abre com os padrões e avisa onde.
       </p>
 
       <p class="ajustes-nota">
@@ -204,42 +205,57 @@
             <!-- Modo automatico: os tres numeros que decidem quantos cortes o
                  video rende. Ficam aqui, e nao na pagina Estúdio, porque sao
                  ajuste de uma vez so — o que muda a cada execucao e o campo
-                 "Quantidade de clips", que fica la. -->
-            <div class="field-row triple">
-              <div class="field">
-                <label for="auto-margin">Margem do automático (pontos)</label>
-                <input type="number" id="auto-margin" name="auto-margin" min="0" max="100" step="1" value="15"
-                       aria-describedby="auto-margin-hint">
-                <span class="hint" id="auto-margin-hint">Com a quantidade em branco, entra todo trecho a até esta
-                  distância do melhor do vídeo. Menor = mais exigente.</span>
+                 "Quantidade de clips", que fica la.
+
+                 Atras do disclosure: o caso comum e' nao encostar neles — os
+                 defaults funcionam — e tres numeros de "margem"/"teto" no meio
+                 da decisao de duracao fazem a secao parecer maior do que e'.
+                 O `<details>` e' o disclosure NATIVO: abre por teclado, e' lido
+                 como "expandir" pelo leitor de tela e nao custa uma linha de
+                 JS. O padrao ja' existia na pagina Estudio (`.cookies-box`).
+                 Nada some do formulario: fechado, os campos continuam no DOM,
+                 com os valores que o autosave grava. -->
+            <details class="avancado">
+              <summary>Avançado — quantos cortes o vídeo rende</summary>
+              <div class="field-row triple">
+                <div class="field">
+                  <label for="auto-margin">Margem do automático (pontos)</label>
+                  <input type="number" id="auto-margin" name="auto-margin" min="0" max="100" step="1" value="15"
+                         aria-describedby="auto-margin-hint">
+                  <span class="hint" id="auto-margin-hint">Com a quantidade em branco, entra todo trecho a até esta
+                    distância do melhor do vídeo. Menor = mais exigente.</span>
+                </div>
+                <div class="field">
+                  <label for="auto-ceiling">Teto de segurança</label>
+                  <input type="number" id="auto-ceiling" name="auto-ceiling" min="1" max="500" step="1" value="200"
+                         aria-describedby="auto-ceiling-hint">
+                  <span class="hint" id="auto-ceiling-hint">Trava dura: mesmo num vídeo muito bom, não passa disto.</span>
+                </div>
+                <div class="field">
+                  <label for="max-grace">Passa até (s) para fechar o contexto</label>
+                  <input type="number" id="max-grace" name="max-grace" min="0" max="120" step="5" value="30"
+                         aria-describedby="max-grace-hint">
+                  <span class="hint" id="max-grace-hint">Um trecho que vale a pena pode estourar o máximo acima e
+                    terminar a frase. 0 proíbe qualquer estouro.</span>
+                </div>
               </div>
-              <div class="field">
-                <label for="auto-ceiling">Teto de segurança</label>
-                <input type="number" id="auto-ceiling" name="auto-ceiling" min="1" max="500" step="1" value="200"
-                       aria-describedby="auto-ceiling-hint">
-                <span class="hint" id="auto-ceiling-hint">Trava dura: mesmo num vídeo muito bom, não passa disto.</span>
-              </div>
-              <div class="field">
-                <label for="max-grace">Passa até (s) para fechar o contexto</label>
-                <input type="number" id="max-grace" name="max-grace" min="0" max="120" step="5" value="30"
-                       aria-describedby="max-grace-hint">
-                <span class="hint" id="max-grace-hint">Um trecho que vale a pena pode estourar o máximo acima e
-                  terminar a frase. 0 proíbe qualquer estouro.</span>
-              </div>
-            </div>
+            </details>
           </div>
         </div>
 
-        <!-- Transcricao e Renderizacao lado a lado. Sao os DOIS passos que
-             produzem o corte — o texto que entra e o visual que sai — por isso
-             andam juntos. O terceiro (o prompt do curador) saiu para o Estudio:
-             ele nunca foi um ajuste, mora em `prompts/curador.txt` e ficou com
-             dono unico la'. O nome do wrapper acompanhou — um componente
-             chamado "trio" com dois filhos e' a mentira que sobra depois da
-             mudanca. `.duo` e' uma grade de 2 colunas iguais; abaixo do
-             breakpoint ela empilha e cada card recupera a largura cheia. -->
-        <div class="duo">
+        <!-- Os TRES cards ficam EMPILHADOS numa coluna, e o Resumo e' a coluna
+             ao lado. Ate' 2026-10-09 a Transcricao e a Renderizacao dividiam
+             uma linha (o wrapper `.duo`); o par cabia, mas quebrava a
+             navegacao do topo: os atalhos 02 e 03 levavam ao MESMO pixel e o
+             scroll-spy so' consegue acender um alvo por vez, entao o
+             "03 Renderizacao" NUNCA acendia — medido, ele travava em
+             "02 Transcricao" para sempre. Empilhado, cada card tem a propria
+             altura na pagina: cada atalho cai no proprio lugar e o scroll-spy
+             tem um alvo distinto por secao.
 
+             O terceiro card da era do trio (o prompt do curador) saiu para o
+             Estudio: ele nunca foi um ajuste, mora em `prompts/curador.txt` e
+             ficou com dono unico la'. -->
         <div id="card-transcricao" class="card card-transcricao" tabindex="-1">
           <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 11v2M8 7.5v9M12 4.5v15M16 8.5v7M20 10.5v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span> Transcrição</h2>
           <p class="card-lede">De onde vem o texto que entra no corte — o Whisper ou um texto pronto.</p>
@@ -269,22 +285,30 @@
                 <input type="number" id="beam-size" name="beam-size" min="1" max="10" value="1">
               </div>
             </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="cache-dir">Pasta do cache de transcrição</label>
-                <input type="text" id="cache-dir" name="cache-dir" value="output/cache/transcripts"
-                       aria-describedby="cache-dir-hint">
-                <span class="hint" id="cache-dir-hint">Persiste entre execuções. Deixa vazio para o padrão.</span>
+            <!-- Desempenho e cache: onde o texto transcrito e' guardado, e os
+                 dois interruptores que ligam o VAD e o proprio cache. Sao
+                 ajustes de INFRA, nao de resultado — o corte sai igual com
+                 qualquer combinacao deles — e por isso vao para tras do
+                 disclosure, junto. -->
+            <details class="avancado">
+              <summary>Avançado — desempenho e cache</summary>
+              <div class="field-row">
+                <div class="field">
+                  <label for="cache-dir">Pasta do cache de transcrição</label>
+                  <input type="text" id="cache-dir" name="cache-dir" value="output/cache/transcripts"
+                         aria-describedby="cache-dir-hint">
+                  <span class="hint" id="cache-dir-hint">Persiste entre execuções. Deixa vazio para o padrão.</span>
+                </div>
               </div>
-            </div>
-            <div class="toggle-wrap">
-              <span class="tw-label">Filtro VAD (remover não-fala)</span>
-              <button class="toggle active" type="button" id="vad-filter" role="switch" aria-checked="true" aria-label="Filtro VAD"></button>
-            </div>
-            <div class="toggle-wrap">
-              <span class="tw-label">Cache de transcrição</span>
-              <button class="toggle active" type="button" id="transcript-cache" role="switch" aria-checked="true" aria-label="Cache de transcrição"></button>
-            </div>
+              <div class="toggle-wrap">
+                <span class="tw-label">Filtro VAD (remover não-fala)</span>
+                <button class="toggle active" type="button" id="vad-filter" role="switch" aria-checked="true" aria-label="Filtro VAD"></button>
+              </div>
+              <div class="toggle-wrap">
+                <span class="tw-label">Cache de transcrição</span>
+                <button class="toggle active" type="button" id="transcript-cache" role="switch" aria-checked="true" aria-label="Cache de transcrição"></button>
+              </div>
+            </details>
 
             <!-- Transcricao pronta: o segundo caminho do mesmo card. Os campos
                  acima configuram o Whisper, que roda sozinho; este bloco e para
@@ -432,36 +456,47 @@
                 <label for="target-lufs">Loudness alvo (LUFS)</label>
                 <input type="number" id="target-lufs" name="target-lufs" min="-40" max="0" step="0.5" value="-14"
                        aria-describedby="target-lufs-hint">
-                <span class="hint" id="target-lufs-hint">O painel mandava <code>lufs</code> e o motor espera
-                  <code>target_lufs</code>: até agora este campo não chegava ao vídeo.</span>
+                <span class="hint" id="target-lufs-hint">Alvo do loudness final. −14 LUFS é o padrão das
+                  plataformas; menos negativo soa mais alto.</span>
               </div>
             </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="workers">Workers paralelos</label>
-                <input type="number" id="workers" name="workers" min="1" max="16" value="2"
-                       aria-describedby="workers-hint">
-                <span class="hint" id="workers-hint">Reduza se faltar RAM.</span>
+            <!-- Desempenho e sobreposicoes. O default ja' e' o certo para a
+                 maioria — 2 workers, sem titulo, sem barra, sem jump cut — e
+                 deixar tudo aberto fazia a secao parecer exigir uma decisao que
+                 ela nao exige.
+
+                 "Normalizar loudness" NAO entra no disclosure: ela muda o audio
+                 de TODO corte e e' decisao de resultado, nao de infra. Fica
+                 fora, logo abaixo. -->
+            <details class="avancado">
+              <summary>Avançado — desempenho e sobreposições</summary>
+              <div class="field-row">
+                <div class="field">
+                  <label for="workers">Workers paralelos</label>
+                  <input type="number" id="workers" name="workers" min="1" max="16" value="2"
+                         aria-describedby="workers-hint">
+                  <span class="hint" id="workers-hint">Reduza se faltar RAM.</span>
+                </div>
+                <div class="field">
+                  <label for="headline-seconds">Duração do título no topo (s)</label>
+                  <input type="number" id="headline-seconds" name="headline-seconds" min="0" max="10" step="0.5" value="3"
+                         aria-describedby="headline-seconds-hint">
+                  <span class="hint" id="headline-seconds-hint">Só se aplica com o título ligado acima.</span>
+                </div>
               </div>
-              <div class="field">
-                <label for="headline-seconds">Duração do título no topo (s)</label>
-                <input type="number" id="headline-seconds" name="headline-seconds" min="0" max="10" step="0.5" value="3"
-                       aria-describedby="headline-seconds-hint">
-                <span class="hint" id="headline-seconds-hint">Só se aplica com o título ligado acima.</span>
+              <div class="toggle-wrap">
+                <span class="tw-label">Título do gancho no topo (desligado = só legendas)</span>
+                <button class="toggle" type="button" id="headline-on" role="switch" aria-checked="false" aria-label="Título no topo"></button>
               </div>
-            </div>
-            <div class="toggle-wrap">
-              <span class="tw-label">Título do gancho no topo (desligado = só legendas)</span>
-              <button class="toggle" type="button" id="headline-on" role="switch" aria-checked="false" aria-label="Título no topo"></button>
-            </div>
-            <div class="toggle-wrap">
-              <span class="tw-label">Barra de progresso no topo (desligada = vídeo limpo)</span>
-              <button class="toggle" type="button" id="progress-bar-on" role="switch" aria-checked="false" aria-label="Barra de progresso"></button>
-            </div>
-            <div class="toggle-wrap">
-              <span class="tw-label">Jump cut (remover silêncios internos)</span>
-              <button class="toggle" type="button" id="jump-cut" role="switch" aria-checked="false" aria-label="Jump cut"></button>
-            </div>
+              <div class="toggle-wrap">
+                <span class="tw-label">Barra de progresso no topo (desligada = vídeo limpo)</span>
+                <button class="toggle" type="button" id="progress-bar-on" role="switch" aria-checked="false" aria-label="Barra de progresso"></button>
+              </div>
+              <div class="toggle-wrap">
+                <span class="tw-label">Jump cut (remover silêncios internos)</span>
+                <button class="toggle" type="button" id="jump-cut" role="switch" aria-checked="false" aria-label="Jump cut"></button>
+              </div>
+            </details>
             <div class="toggle-wrap">
               <span class="tw-label">Normalizar loudness</span>
               <button class="toggle active" type="button" id="loudnorm" role="switch" aria-checked="true" aria-label="Normalizar loudness"></button>
@@ -483,12 +518,10 @@
              servidor continua decidindo o caminho. O que mudou foi ONDE ele se
              edita. Quem quiser o editor: Estudio > etapa 3. -->
 
-        </div><!-- /.duo -->
-
       </form>
 
-    <!-- COLUNA LATERAL: o Resumo e a TERCEIRA coluna do grid (ao lado do par),
-         nao mais um aside de metade da pagina. O sticky vive no CSS
+    <!-- COLUNA LATERAL: o Resumo e a coluna ao lado dos cards, nao um aside de
+         metade da pagina. O sticky vive no CSS
          (`[data-page="ajustes"] .card-resumo .card`), e nao num `style=`: uma
          regra de layout escrita no atributo nao sobrevive a media query que a
          desliga nas telas estreitas. Nenhum `style=` sobrevive nesta pagina --
@@ -514,7 +547,19 @@
 
         <div class="summary-list" id="summary-list"></div>
 
-        <button class="btn pressable btn-primary resumo-save" type="button" id="btn-save-side">Salvar ajustes</button>
+        <!-- UM CTA primario por tela, e o desta pagina e' o do CABECALHO. Aqui
+             o Salvar e' secundario: dois botoes primarios identicos na mesma
+             tela nao dizem qual e' o caminho — dizem que os dois sao, e a
+             pessoa para para escolher. O do topo fica com o peso porque e' o
+             que se ve primeiro e o que sobrevive a qualquer rolagem.
+
+             O "Restaurar padroes" e' a saida que faltava: sem ele, voltar aos
+             valores de fabrica so' era possivel editando o `ajustes.toml` a
+             mao. Ele repoe o formulario no que o proprio HTML declara como
+             padrao e NAO grava sozinho — quem grava e' o Salvar, como em
+             qualquer outro campo desta pagina. -->
+        <button class="btn pressable resumo-save" type="button" id="btn-save-side">Salvar ajustes</button>
+        <button class="btn pressable resumo-restore" type="button" id="btn-restore-defaults">Restaurar padrões</button>
       </div>
     </aside>
 

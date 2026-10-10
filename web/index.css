@@ -472,12 +472,92 @@ body { padding-left: var(--rail-w); }
 /* o trigger do select reflete o preset escolhido */
 .select-trigger.cap-trigger .sel-title { letter-spacing: 0.01em; }
 
+/* ---------- GALERIA DE MODELOS DE LEGENDA ----------
+   O preset de legenda e' o unico campo com 36 opcoes, e cada opcao carrega a
+   propria previa. Empilhadas no painel de lista (290px), apareciam TRES por
+   vez; a escolha virava rolagem. A grade poe as 36 lado a lado e transforma a
+   escolha em comparacao — o padrao de Opus Clip e Submagic.
+
+   O painel vira uma coluna (busca fixa no topo, grade rolavel abaixo) e o
+   `max-height` sobe: a grade precisa de altura, nao de um degrau de lista. */
+.select-panel.cap-gallery {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px; max-height: min(72vh, 620px);
+}
+.cap-search {
+  flex: none; width: 100%; font-family: inherit; font-size: var(--text-body-sm);
+  background: rgba(0, 0, 0, 0.4); border: 1px solid var(--border-subtle);
+  color: var(--text-primary); border-radius: var(--radius-sm); padding: 8px 11px;
+}
+.cap-search:focus-visible {
+  border-color: var(--accent-primary); box-shadow: 0 0 0 3px var(--accent-glow);
+  outline: none;
+}
+.cap-list {
+  display: grid; gap: 10px; overflow-y: auto; min-height: 0;
+  /* 168px e' o menor cartao em que a previa ("EXEMPLO DE LEGENDA") ainda cabe
+     numa linha, sem a fonte do preset quebrar em duas. */
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+}
+.select-panel.cap-gallery .select-option {
+  gap: 3px; padding: 8px; border: 1px solid var(--border-subtle);
+  border-radius: 9px; background: rgba(255, 255, 255, 0.02);
+}
+.select-panel.cap-gallery .select-option:hover,
+.select-panel.cap-gallery .select-option:focus-visible {
+  border-color: var(--border-strong); background: rgba(255, 255, 255, 0.06);
+}
+.select-panel.cap-gallery .select-option.selected {
+  border-color: var(--accent-primary); background: rgba(255, 79, 174, 0.14);
+}
+/* O tique do estado escolhido sai do meio e vai para o canto: no cartao da
+   grade ele cairia sobre a previa. */
+.select-panel.cap-gallery .select-option.selected::after {
+  right: 8px; top: 8px; transform: none;
+}
+/* A descricao e' uma frase inteira ("Texto branco sobre caixa escura — legivel
+   em qualquer fundo") e no cartao estreito passaria de quatro linhas, fazendo
+   cada cartao ter uma altura diferente. Duas linhas, e o resto fica no
+   `title`. */
+.select-panel.cap-gallery .select-option .opt-desc {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.select-panel.cap-gallery .cap-stage { margin-top: 4px; padding: 9px 10px; min-height: 50px; }
+.select-panel.cap-gallery .cap-demo { font-size: 0.86rem; }
+
 .toggle-wrap {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 11px 0; border-bottom: 1px solid var(--border-subtle);
 }
 .toggle-wrap:last-child { border-bottom: none; }
 .toggle-wrap .tw-label { font-size: var(--text-body); }
+
+/* ---------- DISCLOSURE "AVANCADO" ----------
+   Um campo de formulario por linha e' o que a secao pede; o que ela NAO pede e'
+   dar aos ajustes de infra (cache de transcricao, workers paralelos,
+   sobreposicoes) o mesmo peso das decisoes editoriais. Eles vao para tras do
+   `<details>` NATIVO: abre por teclado, o leitor de tela o anuncia como
+   "expandir" e nao custa uma linha de JS. O padrao ja' existia no Estudio
+   (`.cookies-box`), e a cara segue a dele.
+
+   Nada sai do formulario: fechado, os campos continuam no DOM com os valores
+   que o autosave le e grava. O disclosure e' de apresentacao.
+
+   O `summary` mede 31px de altura na tela (>= os 24px do WCAG 2.2 2.5.8),
+   com `padding` e nao so' `min-height`: o marcador do disclosure ocupa fluxo de
+   bloco, e com `box-sizing: border-box` a linha inteira fica clicavel. */
+.avancado { margin: 2px 0 14px; }
+.avancado > summary {
+  cursor: pointer; font-size: var(--text-body-sm); font-weight: 600;
+  color: var(--text-secondary); box-sizing: border-box;
+  min-height: 24px; padding: 5px 0;
+}
+.avancado > summary:hover { color: var(--text-primary); }
+.avancado > summary:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
+.avancado[open] > summary { margin-bottom: 10px; }
+/* O ultimo filho nao deixa margem sobrando dentro da caixa fechada. */
+.avancado > :last-child { margin-bottom: 0; }
 .toggle {
   position: relative; width: 44px; height: 24px; background: rgba(255,255,255,0.08);
   border-radius: 999px; cursor: pointer; transition: var(--transition);
@@ -1638,20 +1718,17 @@ main > section > .card { padding: 17px; }
    nenhum — o unico `field-row` dele e' `.single` (a URL). O `.triple` que
    sobrou no painel esta' na etapa 2 e ocupa a largura inteira. */
 
-/* ---------- GRID DA PAGINA AJUSTES: 3 colunas iguais ----------
-   A pagina de Ajustes preenche a largura toda com TRES colunas iguais: Selecao
-   ocupa a faixa de cima (na largura toda) e, abaixo, ficam Transcricao |
-   Renderizacao | Resumo — um card por coluna, tudo do mesmo tamanho. O Resumo
-   deixou de ser um aside de metade da pagina e virou a ultima coluna; o sticky
-   dele continua.
+/* ---------- GRID DA PAGINA AJUSTES: conteudo + Resumo ----------
+   DUAS colunas: os cards numa coluna larga, o Resumo na outra. Os tres cards
+   ficam EMPILHADOS — cada um com a propria altura na pagina.
 
-   Eram QUATRO ate' 2026-10-09, e a quarta era o "Prompt do curador". Ele saiu
-   daqui para o Estudio (etapa 3) por uma razao que nao e' de layout: ele NUNCA
-   foi um ajuste. Nao esta' em `AJUSTES_KEYS` nem em `ajustes.toml` — mora em
-   `prompts/curador.txt`, e o motor o le' pelo caminho que o servidor decide.
-   Manter o editor nas duas paginas era a definicao de duas fontes de verdade, e
-   elas ja' tinham divergido. Com ele fora, o par (Transcricao, Renderizacao)
-   mais o Resumo dividem a largura toda.
+   Ate' 2026-10-09 eram TRES colunas iguais, com a Selecao na faixa de cima e o
+   par (Transcricao | Renderizacao) embaixo, ao lado do Resumo. O par cabia,
+   mas custava a NAVEGACAO: os atalhos 02 e 03 levavam ao MESMO pixel (os dois
+   cards comecavam na mesma linha) e o scroll-spy so' acende UM alvo por vez —
+   entao o "03 Renderizacao" nunca acendia. Medido na instancia viva: ele
+   travava em "02 Transcricao" em qualquer rolagem. Empilhado, cada card tem um
+   topo proprio: cada atalho cai no lugar certo e cada secao acende sozinha.
 
    O `<form id="ajustes-form">` ganha `display: contents`: o box dele some e os
    cards viram itens do grid direto. Sem isso o form seria UM item so e todos os
@@ -1659,17 +1736,19 @@ main > section > .card { padding: 17px; }
 
    Cada track e `minmax(0, 1fr)`: filho de grid tem `min-width: auto` e um
    `<select>`/`<textarea>` mais largo que a coluna empurraria o track alem da
-   tela sem isso.
+   tela sem isso. A coluna do Resumo e' FIXA (300-360px) para o card lateral
+   nao esticar junto com a janela — e' um painel, nao um campo.
 
    ESCOPADO por `[data-page="ajustes"]`: o Estudio usa `.main-grid` com outra
    grade (uma coluna de paineis) e nao pode receber esta. A regra nao-escopada
    (`.main-grid`) continua valendo para a Cortes; esta, por ser mais especifica
    e vir depois, vence na pagina de Ajustes. */
 [data-page="ajustes"] .main-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   grid-template-areas:
-    "selecao selecao selecao"
-    "trans   rend    resumo";
+    "selecao resumo"
+    "trans   resumo"
+    "rend    resumo";
   gap: 16px;
 }
 [data-page="ajustes"] .main-grid > form#ajustes-form { display: contents; }
@@ -1687,36 +1766,24 @@ main > section > .card { padding: 17px; }
    O `top: 92px` e' a barra de 68px mais 24px de folga. */
 [data-page="ajustes"] .card-resumo .card { position: sticky; top: 92px; }
 
-/* ---------- O PAR DE CARDS lado a lado ----------
-   Dois cards andam juntos. Em Ajustes cada um ocupa UMA celula do grid (o
-   `.duo` e `display: contents` la, para nao aninhar grade dentro de grade);
-   solto, ele vira uma grade de duas colunas.
-   `align-items: start` para cada card ter a altura do proprio conteudo.
+/* ---------- O PAR DE CARDS lado a lado: SAIU ----------
+   Havia aqui um `.duo` (grade de 2 colunas) que punha Transcricao e
+   Renderizacao na mesma linha. Ele existia desde o `.trio` original — tres
+   cards, com o Prompt do curador no meio — e sobreviveu quando o Prompt saiu
+   para o Estudio. Saiu em 2026-10-09, junto com o grid de tres colunas: com os
+   cards empilhados, uma grade de duas colunas dentro de uma coluna de grade e'
+   uma caixa a menos para o mesmo resultado. Ver o bloco do grid, acima, para o
+   motivo (os atalhos 02 e 03 caiam no mesmo pixel).
+   As regras de contencao do `.triple` (`.duo .field-row { 1 coluna }`) foram
+   junto: elas existiam porque o card do par media ~272px. O card de agora ocupa
+   a coluna larga do grid, e o `.triple` cabe em tres colunas outra vez. */
 
-   Era `.trio` (tres cards: Transcricao, Renderizacao e o Prompt). O Prompt saiu
-   para o Estudio, e o nome foi junto: um componente chamado "trio" com dois
-   filhos e' a mentira que sobra depois da mudanca e que ninguem revisa. */
-.duo {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  align-items: start;
-}
-[data-page="ajustes"] .duo { display: contents; }
-.duo > .card { margin-bottom: 0; }
-/* Dentro de uma coluna do par, os `.triple` viram UMA coluna. Medido a ~272px
-   de card: as tres colunas ficam com ~80px cada e o rotulo ("Modelo Whisper")
-   ocupa duas linhas enquanto o `select-rich` sobrepoe o texto na seta. Uma
-   coluna por linha e o que o espaco comporta — o campo nao encolhe, so desce. */
-.duo .field-row,
-.duo .field-row.triple,
-.duo .field-row.single { grid-template-columns: minmax(0, 1fr); }
-
-/* Abaixo do breakpoint as colunas empilham: cada card recupera a largura cheia
-   da pagina e o `.triple` volta a caber. O breakpoint foi MEDIDO (sonda
-   `ajustes_4col_probe.js`) com QUATRO colunas: a 1281px os cards ficavam com
-   235px medidos e ainda liam; a 1280px ja' empilhavam. Com tres colunas ha' mais
-   largura por card, entao o corte segue folgado — e' o mesmo valor de antes. */
+/* Abaixo do breakpoint o Resumo desce para baixo dos cards. O breakpoint foi
+   MEDIDO (sonda `ajustes_4col_probe.js`) com QUATRO colunas: a 1281px os cards
+   ficavam com 235px medidos e ainda liam; a 1280px ja' empilhavam. Com DUAS
+   colunas ha' muito mais largura por card, entao o corte segue folgado — e' o
+   mesmo valor de antes, e o mapa de breakpoints (`BreakpointScaleTests`) o
+   registra como "main-grid do ajustes". */
 @media (max-width: 1280px) {
   [data-page="ajustes"] .main-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -1727,11 +1794,6 @@ main > section > .card { padding: 17px; }
       "resumo";
   }
   [data-page="ajustes"] .card-resumo .card { position: static; }
-  .duo { grid-template-columns: minmax(0, 1fr); }
-  .duo > .card { margin-bottom: 14px; }
-  /* Empilhado o card volta a largura cheia: o triple cabe de novo. */
-  .duo .field-row.triple { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .duo .field-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* ---------- CARD DO PROMPT ----------
@@ -2387,6 +2449,19 @@ header .nav-actions .btn { min-height: 42px; }
   overflow-wrap: anywhere;
 }
 .resumo-save { display: flex; width: 100%; justify-content: center; margin-top: 14px; }
+/* O "Restaurar padroes" e' a acao de baixa intencao do card: fica abaixo do
+   Salvar, sem cor de destaque e com o texto em tom secundario. Ele nao pode
+   competir visualmente com o CTA — e' a saida, nao o caminho. O hover devolve
+   o contraste para o alvo ficar claro sem precisar de cor. */
+.resumo-restore {
+  display: flex; width: 100%; justify-content: center; margin-top: 8px;
+  background: transparent; border-color: transparent; color: var(--text-secondary);
+}
+.resumo-restore:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
+}
 
 /* Duas classes que antes eram `style=` no markup. */
 .prompt-status { color: var(--text-muted); font-size: var(--text-caption); }
@@ -2613,4 +2688,5 @@ header .nav-actions .btn { min-height: 42px; }
   .btn { min-height: 44px; }
   .prov-item-actions .btn { min-height: 44px; padding: 8px 12px; }
   .cookies-box > summary { min-height: 44px; }
+  .avancado > summary { min-height: 44px; }
 }

@@ -6359,30 +6359,28 @@ class ManualApiKeyTests(unittest.TestCase):
                       "o formulario repoe a chave salva no campo")
 
 
-class AjustesDuoTests(unittest.TestCase):
-    """Transcricao e Renderizacao dividem a largura da pagina /ajustes.
+class AjustesLayoutTests(unittest.TestCase):
+    """Os tres cards de /ajustes EMPILHAM; o Resumo e' a coluna ao lado.
 
-    Sao os DOIS passos que produzem o corte — o texto que entra e o visual que
-    sai — e por isso ficam lado a lado. O grid da pagina tem TRES colunas
-    iguais: a Selecao ocupa a faixa de cima na largura toda, e abaixo dela o
-    par (Transcricao + Renderizacao) fica ao lado do Resumo.
+    Ate' 2026-10-09 a Transcricao e a Renderizacao dividiam uma linha (o
+    wrapper `.duo`), num grid de tres colunas com a Selecao na faixa de cima. O
+    par cabia, mas custava a NAVEGACAO: os atalhos 02 e 03 levavam ao MESMO
+    pixel — os dois cards comecavam na mesma linha — e o scroll-spy so' acende
+    UM alvo por vez, entao o "03 Renderizacao" NUNCA acendia. Medido na
+    instancia viva antes da mudanca: ele travava em "02 Transcricao" em
+    qualquer rolagem. Empilhado, cada atalho cai na propria altura e cada secao
+    acende.
 
-    Era um TRIO ate' o Prompt do curador sair para o Estudio (etapa 3), onde
-    ganhou dono unico. Um componente chamado "trio" com dois filhos e' a
-    mentira que sobra depois da mudanca — por isso o wrapper virou `.duo` e
-    este teste passou a travar DOIS cards e TRES colunas, nao tres e quatro.
-
-    O que este teste trava e a ARVORE, as AREAS do grid e as regras CSS de
-    contencao — nao a largura (isso e medicao de navegador, feita no
-    `probe_p.js`): uma grade sem as regras de contencao deixa `.field-row.triple`
-    em tres colunas de ~80px e os rotulos quebram — o navegador nao reclama, so
-    fica feio.
+    O que este teste trava e a ARVORE e o MAPA DE AREAS do grid — nao a largura
+    (isso e' medicao de navegador, feita no `sticky-probe/`). A trava do defeito
+    em si e' `test_no_two_content_cards_share_a_row`: enquanto dois cards
+    dividirem uma linha, dois atalhos vao cair no mesmo pixel.
     """
 
-    #: Os DOIS cards que formam o par, na ordem em que aparecem.
-    CARDS = ("Transcrição", "Renderização")
+    #: Os tres cards, na ordem em que aparecem (a mesma dos atalhos).
+    CARDS = ("Seleção", "Transcrição", "Renderização")
 
-    #: As quatro areas do grid: a faixa de cima (largura toda) e a de baixo.
+    #: As quatro areas do grid: um card por linha, o Resumo na coluna lateral.
     AREAS = ("selecao", "trans", "rend", "resumo")
 
     @classmethod
@@ -6393,55 +6391,71 @@ class AjustesDuoTests(unittest.TestCase):
     def _sem_comentarios_css(self):
         return re.sub(r"/\*.*?\*/", "", self.css, flags=re.S)
 
-    def _trecho_duo(self):
-        """O recorte do `.duo`, do abre ao `<!-- /.duo -->`."""
-        if 'class="duo"' not in self.html:
-            raise AssertionError("o `.duo` sumiu de ajustes.html")
-        return self.html[self.html.index('class="duo"'):self.html.index("<!-- /.duo -->")]
+    def _areas(self) -> str:
+        """O valor de `grid-template-areas` do grid de Ajustes.
 
-    def test_the_two_cards_are_inside_the_duo(self):
-        trecho = self._trecho_duo()
-        for card in self.CARDS:
-            self.assertIn(card, trecho, f"o card {card} saiu do par lado a lado")
+        Ancora no seletor completo: o Estudio usa `.main-grid` com outra grade,
+        e um `re.search` solto por `grid-template-areas` acharia a dele.
+        """
+        css = self._sem_comentarios_css()
+        m = re.search(
+            r'\[data-page="ajustes"\]\s+\.main-grid\s*\{[^}]*'
+            r"grid-template-areas:([^;]*);",
+            css,
+        )
+        if m is None:
+            raise AssertionError("o `grid-template-areas` de Ajustes sumiu")
+        return m.group(1)
 
-    def test_the_card_order_is_transcricao_then_renderizacao(self):
-        """A ordem importa: o texto entra, o render sai."""
-        trecho = self._trecho_duo()
-        self.assertLess(trecho.index("Transcrição"), trecho.index("Renderização"))
+    def test_the_three_cards_are_direct_children_of_the_form(self):
+        """Os tres cards sao filhos do form — sem wrapper entre eles.
+
+        O `.duo` que agrupava os dois ultimos saiu: com os cards empilhados,
+        uma grade de duas colunas dentro de uma coluna de grade e' uma caixa a
+        menos para o mesmo resultado — e era ela que punha os dois no mesmo
+        pixel.
+        """
+        self.assertNotIn('class="duo"', self.html,
+                         "o wrapper `.duo` voltou: os cards dividiriam linha de novo")
+        self.assertNotIn("<!-- /.duo -->", self.html, "sobrou o marcador do `.duo`")
+        trecho = self.html[self.html.index('<form id="ajustes-form"'):self.html.index("</form>")]
+        for cid in ("card-selecao", "card-transcricao", "card-renderizacao"):
+            with self.subTest(card=cid):
+                self.assertIn('id="' + cid + '"', trecho,
+                              f"o card {cid} saiu do form de Ajustes")
+
+    def test_the_card_order_is_the_pipeline_order(self):
+        """A ordem importa: seleciona, transcreve, renderiza."""
+        posicoes = [self.html.index(c) for c in self.CARDS]
+        self.assertEqual(posicoes, sorted(posicoes),
+                         "os cards de /ajustes sairam da ordem do pipeline")
 
     def test_the_prompt_card_left_the_page(self):
-        """O terceiro card NAO mora mais aqui — o Estudio e' o dono do prompt.
+        """O quarto card NAO mora mais aqui — o Estudio e' o dono do prompt.
 
-        O que se trava e o CARD, nao a frase: "Prompt do curador" continua na
+        O que se trava e' o CARD, nao a frase: "Prompt do curador" continua na
         pagina como ROTULO do atalho 04, que leva ao Estudio (`/?etapa=3`). O
-        que nao pode voltar e o editor — o `id` que o `ajustes.js` lia e a
-        classe do card. O contrato do dono unico tem testes proprios em
-        `test_ajustes.py` (`PromptCardSingleOwnerTests`); aqui so' se garante
-        que o `.duo` tem DOIS filhos, nao tres.
+        contrato do dono unico tem testes proprios em `test_ajustes.py`
+        (`PromptCardSingleOwnerTests`); aqui so' se garante que o form tem TRES
+        cards, nao quatro.
         """
         self.assertNotIn('id="curator-prompt"', self.html,
                          "o editor do prompt voltou para a pagina de Ajustes")
         self.assertNotIn("card-prompt", self.html,
                          "a classe do card do prompt voltou para Ajustes")
-        self.assertEqual(self._trecho_duo().count('class="card '), 2,
-                         "o `.duo` deixou de ter dois cards")
+        self.assertEqual(self.html.count('class="card card-'), 3,
+                         "o form deixou de ter os tres cards")
 
-    def test_the_duo_opens_and_closes_exactly_once(self):
-        self.assertEqual(self.html.count('class="duo"'), 1,
-                         "o `.duo` foi duplicado")
-        self.assertEqual(self.html.count("<!-- /.duo -->"), 1,
-                         "o marcador de fim do `.duo` sumiu ou duplicou")
+    def test_the_resumo_is_the_side_column(self):
+        """O Resumo e' a coluna ao lado, dentro do `.main-grid`.
 
-    def test_the_resumo_is_the_third_column(self):
-        """O Resumo e' a TERCEIRA coluna do grid, ao lado do par.
-
-        Ele tem de continuar DENTRO do `.main-grid` e ser depois do par — senao
-        nao entra na grade.
+        Ele tem de continuar DENTRO do grid e ser depois dos cards — senao nao
+        entra na grade e vira mais um bloco empilhado.
         """
-        fim_duo = self.html.index("<!-- /.duo -->")
+        fim_cards = self.html.index("</form>")
         fim_grid = self.html.index("</div>", self.html.index("</aside>"))
-        self.assertIn("Resumo", self.html[fim_duo:fim_grid],
-                      "o Resumo nao esta depois do par, dentro do grid")
+        self.assertIn("Resumo", self.html[fim_cards:fim_grid],
+                      "o Resumo nao esta depois dos cards, dentro do grid")
 
     def test_the_resumo_sits_outside_the_form(self):
         """O Resumo e' IRMAO do form, nao filho: o form fecha antes dele.
@@ -6454,11 +6468,11 @@ class AjustesDuoTests(unittest.TestCase):
                         self.html.index('class="card-resumo"'),
                         "o Resumo entrou no form; ele e' coluna, nao campo")
 
-    def test_the_duo_does_not_swallow_what_comes_after_it(self):
-        """A `</form>` fecha o par: nada de card de fora entrar por engano."""
-        fim = self.html.index("<!-- /.duo -->")
-        self.assertIn("</form>", self.html[fim:],
-                      "o `.duo` nao fecha antes do form")
+    def test_the_last_card_closes_before_the_form(self):
+        """A `</form>` fecha os cards: nada de card de fora entrar por engano."""
+        self.assertLess(
+            self.html.index('id="card-renderizacao"'), self.html.index("</form>"),
+            "o ultimo card ficou fora do form")
 
     def test_the_balance_of_divs_is_intact(self):
         """A arvore fechou: -1 em qualquer ponto = `</div>` sobrando.
@@ -6483,30 +6497,50 @@ class AjustesDuoTests(unittest.TestCase):
             "o form de Ajustes perdeu o `display: contents`",
         )
 
-    def test_the_css_declares_three_equal_columns(self):
-        css = self._sem_comentarios_css()
-        self.assertRegex(
-            css,
-            r'\[data-page="ajustes"\]\s+\.main-grid\s*\{[^}]*'
-            r"grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)",
-            "o grid de Ajustes perdeu as tres colunas iguais",
-        )
+    def test_the_css_declares_the_content_column_and_the_side_panel(self):
+        """Conteudo flexivel + painel de largura fixa.
 
-    def test_the_areas_put_selecao_on_top_and_the_pair_beside_the_resumo(self):
-        """A forma do grid: `selecao` na faixa de cima, `trans rend resumo` embaixo.
-
-        A contagem de colunas sozinha nao diz ONDE cada card cai; e' o mapa de
-        areas que garante que a Selecao ocupa a largura toda e o par fica ao
-        lado do Resumo, nao empilhado com ele.
+        A coluna do Resumo tem piso e teto (300-360px): ele e' um PAINEL, e um
+        `1fr` o faria esticar junto com a janela — um painel de 700px numa tela
+        larga.
         """
         css = self._sem_comentarios_css()
         self.assertRegex(
             css,
             r'\[data-page="ajustes"\]\s+\.main-grid\s*\{[^}]*'
-            r'grid-template-areas:\s*'
-            r'"selecao selecao selecao"\s*"trans\s+rend\s+resumo"',
-            "as areas de Ajustes deixaram de ser selecao em cima e o par embaixo",
+            r"grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(300px,\s*360px\)",
+            "o grid de Ajustes perdeu as duas colunas (conteudo + Resumo)",
         )
+
+    def test_the_areas_stack_one_card_per_row(self):
+        """A forma do grid: um card por linha, o Resumo na coluna ao lado.
+
+        A contagem de colunas sozinha nao diz ONDE cada card cai; e' o mapa de
+        areas que garante que cada card tem a propria linha e o Resumo e' a
+        coluna lateral nas tres.
+        """
+        areas = re.findall(r'"([^"]+)"', self._areas())
+        self.assertEqual(
+            [linha.split() for linha in areas],
+            [["selecao", "resumo"], ["trans", "resumo"], ["rend", "resumo"]],
+            "as areas de Ajustes deixaram de ser um card por linha",
+        )
+
+    def test_no_two_content_cards_share_a_row(self):
+        """A trava do defeito que motivou a mudanca.
+
+        Dois cards na MESMA linha comecam no mesmo pixel: os atalhos deles
+        levam ao mesmo lugar e o scroll-spy so' acende um — o outro nunca.
+        Esta e' a assercao que cai se alguem voltar a por dois cards lado a
+        lado.
+        """
+        areas = re.findall(r'"([^"]+)"', self._areas())
+        for i, linha in enumerate(areas):
+            cards = [n for n in linha.split() if n != "resumo"]
+            self.assertLessEqual(
+                len(set(cards)), 1,
+                "a linha %d do grid tem dois cards (%r): os atalhos deles "
+                "cairiam no mesmo pixel" % (i, cards))
 
     def test_every_area_has_an_owner(self):
         """Cada area declarada tem um seletor que a ocupa."""
@@ -6518,23 +6552,15 @@ class AjustesDuoTests(unittest.TestCase):
                 f"a area `{area}` ficou sem dono",
             )
 
-    def test_the_css_containers_the_field_rows_inside_the_narrow_card(self):
-        """Sem isto o `.triple` fica com ~80px por coluna e o rotulo quebra.
+    def test_the_duo_is_gone_from_the_stylesheet(self):
+        """Nao sobrou regra do `.duo` no CSS — nem a de contencao do `.triple`.
 
-        O par de regras e o que faz o card de ~272px funcionar: uma coluna por
-        linha dentro do par, e a volta do `.triple` quando ele empilha.
+        Aquelas regras existiam porque o card do par media ~272px. O card de
+        agora ocupa a coluna larga do grid e o `.triple` cabe em tres colunas
+        outra vez; mantidas, encolheriam os campos sem motivo.
         """
-        sem_comentarios = self._sem_comentarios_css()
-        self.assertRegex(
-            sem_comentarios,
-            r"\.duo\s+\.field-row[^{]*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)",
-            "os `.field-row` dentro do `.duo` nao foram para uma coluna",
-        )
-        self.assertRegex(
-            sem_comentarios,
-            r"\.duo\s+\.field-row\.triple\s*\{[^}]*repeat\(3,",
-            "o `.triple` nao volta a tres colunas quando o par empilha",
-        )
+        self.assertNotIn(".duo", self._sem_comentarios_css(),
+                         "sobrou regra do `.duo` no index.css")
 
     def test_the_css_stacks_below_the_breakpoint(self):
         """Abaixo do limite a grade volta a uma coluna, senao os cards apertam."""

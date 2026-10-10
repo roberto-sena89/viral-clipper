@@ -1066,5 +1066,192 @@ class CuratorPromptSaveTests(unittest.TestCase):
         self.assertTrue(payload["path"])
 
 
+class CaptionGalleryTests(unittest.TestCase):
+    """O preset de legenda e' escolhido numa GALERIA, nao numa lista de 36.
+
+    O campo e' o unico do painel com 36 opcoes, e cada opcao carrega a propria
+    previa — a frase de exemplo desenhada com a fonte, a cor, a caixa e o
+    destaque do preset. Empilhadas no painel de lista (290px de altura), cabiam
+    TRES por vez: escolher era rolar 33 previas as cegas. Em grade, as 36
+    aparecem juntas e a decisao vira COMPARACAO — que e' como o mercado resolve
+    (Opus Clip, Submagic).
+
+    O que NAO mudou: o `<select id="caption-preset">` continua no HTML e
+    continua sendo a FONTE DA VERDADE do valor. O `readSettings()` do
+    `ajustes.js` le `$('#caption-preset').value`, e `AJUSTES_KEYS` nao sabe que
+    existe uma grade. A galeria e' uma camada de apresentacao por cima — e e'
+    por isso que a paridade controle<->chave de `AjustesPageTests` continua
+    valendo sem uma linha de excecao.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.comum = page_source("comum.js")
+        cls.css = page_source("index.css")
+        cls.html = page_source("ajustes.html")
+
+    @staticmethod
+    def _sem_comentarios_css(texto: str) -> str:
+        return re.sub(r"/\*.*?\*/", "", texto, flags=re.S)
+
+    def test_the_caption_field_is_still_a_native_select(self):
+        # A fonte da verdade do valor. Se ele virar um monte de botoes, o
+        # `readSettings()` perde o `$('#caption-preset').value` e a paridade
+        # controle<->chave cai junto.
+        m = re.search(
+            r'<select[^>]*id="caption-preset"[^>]*>(.*?)</select>', self.html, re.S)
+        self.assertIsNotNone(m, "o select do preset de legenda sumiu")
+        opcoes = re.findall(r"<option\b", m.group(1))
+        self.assertEqual(len(opcoes), 36, "o numero de presets mudou")
+
+    def test_the_component_builds_a_gallery_for_that_field(self):
+        # A grade e a busca sao construidas no `enhanceSelect`, e so' para este
+        # campo. Nao ha uma segunda copia da lista de presets em lugar nenhum.
+        self.assertIn("isCaptionPreset", self.comum)
+        self.assertIn("cap-gallery", self.comum)
+        self.assertIn("cap-search", self.comum)
+
+    def test_the_gallery_panel_is_a_dialog_with_a_listbox_inside(self):
+        # `listbox` so' admite filhos `option`/`group` — e a galeria tem um
+        # campo de busca proprio. O painel vira `dialog` e a lista de opcoes
+        # vive num `listbox` DENTRO dele, para o leitor de tela continuar
+        # anunciando "opcao N de 36" na hora de escolher.
+        self.assertIn("'dialog'", self.comum)
+        self.assertIn("'cap-list'", self.comum)
+        self.assertIn("'listbox'", self.comum)
+
+    def test_the_stylesheet_grids_the_gallery(self):
+        folha = self._sem_comentarios_css(self.css)
+        m = re.search(r"\.cap-list\s*\{([^}]*)\}", folha)
+        self.assertIsNotNone(m, "o `.cap-list` sumiu do index.css")
+        self.assertIn("grid-template-columns", m.group(1),
+                      "a galeria voltou a ser uma lista de uma coluna")
+
+    def test_the_gallery_does_not_leak_into_the_other_sheets(self):
+        # A classe e' do componente compartilhado; uma segunda declaracao num
+        # css de pagina seria a copia que diverge.
+        for nome in ("scrap.css", "shared.css"):
+            with self.subTest(sheet=nome):
+                self.assertNotIn(".cap-gallery",
+                                 self._sem_comentarios_css(page_source(nome)))
+
+
+class AjustesResumoActionsTests(unittest.TestCase):
+    """As duas acoes do Resumo: um CTA primario, e o caminho de volta.
+
+    * **UM CTA primario por tela.** O Salvar do Resumo era `btn-primary` como o
+      do cabecalho. Dois botoes primarios identicos na mesma tela nao dizem
+      qual e' o caminho — dizem que os dois sao, e a pessoa para para escolher.
+    * **"Restaurar padroes"** e' a saida que faltava: sem ela, voltar aos
+      valores de fabrica so' era possivel editando o `ajustes.toml` a mao.
+      Os padroes sao lidos do DOM (`snapshotForm`) e nao de uma segunda lista:
+      uma lista paralela divergiria do markup na primeira vez que alguem
+      mexesse num `value=`, e a divergencia so' apareceria no dia do clique.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = page_source("ajustes.html")
+        cls.js = page_source("ajustes.js")
+
+    def test_only_the_header_save_is_primary(self):
+        primarios = re.findall(
+            r'<button[^>]*class="[^"]*\bbtn-primary\b[^"]*"[^>]*id="([^"]+)"', self.html)
+        self.assertEqual(primarios, ["btn-save"],
+                         "a pagina voltou a ter mais de um CTA primario")
+
+    def test_the_side_save_is_still_there(self):
+        self.assertRegex(self.html, r'<button[^>]*id="btn-save-side"',
+                         "o Salvar do Resumo sumiu")
+
+    def test_there_is_a_restore_action(self):
+        self.assertRegex(self.html, r'<button[^>]*id="btn-restore-defaults"',
+                         "o 'Restaurar padroes' sumiu da pagina")
+
+    def test_the_restore_action_has_a_handler(self):
+        # Um `<button>` sem handler fica na tela e nao faz nada — e parece
+        # funcionar. E' o par obrigatorio de todo botao deste projeto.
+        self.assertIn("'#btn-restore-defaults'", self.js,
+                      "o 'Restaurar padroes' nao tem handler no ajustes.js")
+
+    def test_the_defaults_come_from_the_dom_not_from_a_second_list(self):
+        self.assertIn("function snapshotForm()", self.js,
+                      "os padroes deixaram de ser lidos do DOM")
+        self.assertIn("const PADROES = snapshotForm();", self.js,
+                      "o snapshot dos padroes nao e' mais capturado")
+
+
+class AjustesAdvancedDisclosureTests(unittest.TestCase):
+    """Os ajustes de INFRA ficam atras de um disclosure nativo.
+
+    A secao pede uma decisao por linha; dar aos ajustes de infra (cache de
+    transcricao, workers paralelos, sobreposicoes) o mesmo peso das decisoes
+    editoriais faz a pagina parecer exigir escolhas que ela nao exige. Eles vao
+    para tras de um `<details>` — o disclosure NATIVO, que abre por teclado, e'
+    anunciado como "expandir" pelo leitor de tela e nao custa JS.
+
+    O que NAO pode acontecer — e o que este teste trava — e' o disclosure virar
+    um jeito de ESCONDER campo do formulario. Os controles continuam no DOM e
+    continuam no contrato (`CONTROLES`), com os valores que o autosave le. Se
+    alguem trocar o `<details>` por remocao de markup, `AjustesPageTests` cai
+    junto — mas este teste diz por que.
+    """
+
+    #: Os controles que o disclosure guarda.
+    ESCONDIDOS = (
+        "auto-margin", "auto-ceiling", "max-grace",
+        "cache-dir", "vad-filter", "transcript-cache",
+        "workers", "headline-seconds", "headline-on", "progress-bar-on", "jump-cut",
+    )
+
+    #: Os controles que decidem o RESULTADO e ficam a vista.
+    A_VISTA = (
+        "min-duration", "max-duration", "target-duration", "min-score",
+        "min-gap", "engine", "whisper-model", "language", "beam-size",
+        "layout", "caption-preset", "caption-style", "font-size", "crf",
+        "target-lufs", "loudnorm",
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = page_source("ajustes.html")
+
+    def _blocos(self) -> list[str]:
+        """Cada `<details class="avancado">…</details>`, na ordem do documento."""
+        return re.findall(r'<details class="avancado">.*?</details>', self.html, re.S)
+
+    def test_there_is_one_disclosure_per_card(self):
+        self.assertEqual(len(self._blocos()), 3,
+                         "o numero de disclosures mudou (era um por card)")
+
+    def test_every_disclosure_has_a_label(self):
+        for i, bloco in enumerate(self._blocos()):
+            with self.subTest(bloco=i):
+                self.assertRegex(bloco, r"<summary>[^<]+</summary>",
+                                 "disclosure sem rotulo: nao ha como abri-lo")
+
+    def test_the_advanced_controls_are_inside_a_disclosure(self):
+        corpo = "".join(self._blocos())
+        for cid in self.ESCONDIDOS:
+            with self.subTest(id=cid):
+                self.assertIn('id="' + cid + '"', corpo,
+                              f"`{cid}` saiu do disclosure (ou o disclosure saiu da pagina)")
+
+    def test_the_editorial_controls_stay_visible(self):
+        # O outro lado: o que decide o resultado nao pode ir para tras de um
+        # clique. Duracao, motor, legendas e loudness ficam a vista.
+        corpo = "".join(self._blocos())
+        for cid in self.A_VISTA:
+            with self.subTest(id=cid):
+                self.assertNotIn('id="' + cid + '"', corpo,
+                                 f"`{cid}` foi para dentro do disclosure")
+
+    def test_the_disclosure_never_removes_a_field_from_the_contract(self):
+        for cid in self.ESCONDIDOS:
+            with self.subTest(id=cid):
+                self.assertIn(cid, CONTROLES,
+                              f"`{cid}` saiu do contrato: o disclosure virou remocao")
+
+
 if __name__ == "__main__":
     unittest.main()

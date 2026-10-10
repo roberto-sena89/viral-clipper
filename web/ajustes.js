@@ -206,6 +206,41 @@
     }
   }
 
+  // ---------- estado de fabrica ----------
+  // O que o PROPRIO HTML declara como padrao. E' lido do DOM, e nao escrito a
+  // mao numa segunda lista: uma lista paralela divergiria do markup na primeira
+  // vez que alguem mexesse num `value=` — e a divergencia so' apareceria no dia
+  // em que alguem clicasse em "Restaurar padroes", que e' tarde.
+  //
+  // A leitura tem de acontecer ANTES do primeiro `loadSettings()`: quando ele
+  // volta, o formulario ja' carrega o `ajustes.toml` e o padrao nao esta mais
+  // em lugar nenhum para ser lido.
+  function snapshotForm() {
+    const snap = { valores: {}, toggles: {} };
+    $$('select[id], input[id], textarea[id]').forEach((el) => {
+      snap.valores['#' + el.id] = el.value;
+    });
+    // Os interruptores sao `<button class="toggle">` com a classe `active`, e
+    // nao `<input type=checkbox>`: nao tem `value` nem `defaultChecked`, entao
+    // o estado tem de ser lido (e reposto) pela classe.
+    $$('button.toggle[id]').forEach((el) => {
+      snap.toggles['#' + el.id] = el.classList.contains('active');
+    });
+    return snap;
+  }
+
+  function applySnapshot(snap) {
+    Object.keys(snap.valores).forEach((sel) => {
+      const el = $(sel);
+      if (!el) return;
+      el.value = snap.valores[sel];
+      // O select nativo esta escondido atras do componente rico: sem avisar, o
+      // trigger continuaria exibindo a opcao anterior.
+      if (typeof el.syncRichSelect === 'function') el.syncRichSelect();
+    });
+    Object.keys(snap.toggles).forEach((sel) => setToggle(sel, snap.toggles[sel]));
+  }
+
   // ---------- resumo lateral ----------
   // As linhas sao rotulo/valor: o rotulo nunca muda e o valor muda a cada tecla.
   // As duas pontas eram `style=` inline montado no JS, o que tirava a linha do
@@ -477,6 +512,22 @@
   $('#btn-save').addEventListener('click', () => saveSettings(false));
   $('#btn-save-side').addEventListener('click', () => saveSettings(false));
 
+  // "Restaurar padroes": repoe o formulario no que o HTML declara e grava, como
+  // qualquer outro campo desta pagina — o autosave e' o contrato dela. A
+  // confirmacao existe porque ESTA e' a unica acao da pagina que troca TODOS os
+  // valores de uma vez: um clique acidental apagaria a configuracao inteira, e o
+  // `ajustes.toml` nao guarda historico.
+  $('#btn-restore-defaults').addEventListener('click', () => {
+    if (!window.confirm('Restaurar todos os campos para os padrões de fábrica?')) return;
+    applySnapshot(PADROES);
+    // A tabela de conferencia e' derivada do texto: com a caixa limpa, ela
+    // estaria mostrando falas que nao estao mais la'.
+    $('#cue-preview').hidden = true;
+    renderSummary();
+    scheduleSave();
+    toast('Padrões restaurados.', 'ok');
+  });
+
   // O colar dispara a organizacao sozinho, num setTimeout(0) para o valor ja
   // estar no textarea quando o handler roda -- o evento `paste` acontece ANTES
   // do navegador inserir o texto. O `silent` evita o toast de "organizada" a
@@ -572,6 +623,11 @@
   }
 
   // ---------- partida ----------
+  // O padrao de fabrica e' lido AQUI, e nao la' em cima: e' a ultima linha
+  // antes do `loadSettings()`, entao o formulario ainda tem exatamente o que o
+  // HTML declarou. Depois da resposta do servidor, este estado nao existe mais
+  // em lugar nenhum — `applySettings` ja' teria sobrescrito a tela.
+  const PADROES = snapshotForm();
   renderSummary();
   loadSettings();
   marcarSecaoAtual();

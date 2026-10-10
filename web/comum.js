@@ -133,6 +133,53 @@
     panel.setAttribute('role', 'listbox');
     panel.setAttribute('aria-label', select.name || select.id);
 
+    // O preset de legenda nao vira lista: vira GALERIA.
+    //
+    // Ele e' o unico campo do painel com 36 opcoes, e cada opcao tem a propria
+    // cara — a previa desenha a frase de exemplo com a fonte, a cor, a caixa e
+    // o destaque do preset. Empilhadas num painel de 290px, cabiam TRES por
+    // vez e a escolha virava rolagem as cegas por 33 previas. Em grade, as 36
+    // aparecem juntas e a decisao vira COMPARACAO — que e' como o mercado
+    // resolve (Opus Clip, Submagic).
+    //
+    // O papel muda junto: `listbox` so' admite filhos `option`/`group`, e a
+    // galeria tem um campo de busca proprio. O painel vira `dialog` — o papel
+    // certo para um painel com controles — e a lista de opcoes vive num
+    // `listbox` DENTRO dele, para o leitor de tela continuar anunciando
+    // "opcao N de 36" na hora de escolher.
+    let lista = panel;
+    if (isCaptionPreset) {
+      panel.classList.add('cap-gallery');
+      panel.setAttribute('role', 'dialog');
+      panel.removeAttribute('aria-label');
+      trigger.setAttribute('aria-haspopup', 'dialog');
+
+      const busca = document.createElement('input');
+      busca.type = 'search';
+      busca.className = 'cap-search';
+      busca.placeholder = 'Buscar estilo…';
+      busca.setAttribute('aria-label', 'Buscar estilo de legenda');
+      // O filtro esconde a OPCAO (e nao a remove): o `sync()` continua lendo
+      // `select.options[i]` pelo indice, entao a lista nao pode encolher.
+      busca.addEventListener('input', () => {
+        const q = busca.value.trim().toLowerCase();
+        optionEls.forEach((el, i) => {
+          const opt = select.options[i];
+          const alvo = [
+            opt.getAttribute('data-title') || '', opt.getAttribute('data-desc') || '',
+            opt.value,
+          ].join(' ').toLowerCase();
+          el.hidden = !!q && alvo.indexOf(q) === -1;
+        });
+      });
+
+      lista = document.createElement('div');
+      lista.className = 'cap-list';
+      lista.setAttribute('role', 'listbox');
+      lista.setAttribute('aria-label', select.name || select.id);
+      panel.append(busca, lista);
+    }
+
     const optionEls = Array.from(select.options).map((opt) => {
       const item = document.createElement('button');
       item.type = 'button';
@@ -166,12 +213,12 @@
         close();
         trigger.focus();
       });
-      panel.appendChild(item);
+      // `lista` e' o proprio painel nas listas comuns, e o `listbox` interno na
+      // galeria do preset de legenda — um destino so' para as duas formas.
+      lista.appendChild(item);
       return item;
     });
-
-    function sync() {
-      const active = select.options[select.selectedIndex];
+    function sync() {      const active = select.options[select.selectedIndex];
       if (!active) return;
       const titleEl = trigger.querySelector('.sel-title');
       titleEl.textContent =
@@ -195,8 +242,26 @@
     function place() {
       const r = trigger.getBoundingClientRect();
       panel.style.top = (r.bottom + 6) + 'px';
-      panel.style.left = r.left + 'px';
-      panel.style.width = r.width + 'px';
+      // A galeria tem largura propria: uma grade de previas nao cabe na largura
+      // do trigger, que e' uma coluna do `.triple` (~300px). Ela abre alinhada
+      // pela esquerda do campo e, se estourar a direita, encosta na borda — o
+      // `max-width` do `.select-panel` continua sendo a ultima trava.
+      const largura = isCaptionPreset
+        ? Math.min(680, window.innerWidth - 24)
+        : r.width;
+      const left = isCaptionPreset
+        ? Math.max(12, Math.min(r.left, window.innerWidth - largura - 12))
+        : r.left;
+      panel.style.left = left + 'px';
+      panel.style.width = largura + 'px';
+      // A galeria e' alta: se nao couber abaixo do campo, ela ENCOLHE em vez de
+      // sair pela borda de baixo da janela — a lista de previas rola por dentro
+      // (`overflow-y: auto` no `.cap-list`). Sem isto, abrir o campo quando ele
+      // esta' no pe' da tela mostraria so' a primeira fila de cartoes.
+      if (isCaptionPreset) {
+        const disponivel = window.innerHeight - (r.bottom + 6) - 12;
+        panel.style.maxHeight = Math.max(180, Math.min(620, disponivel)) + 'px';
+      }
     }
     function open() {
       place();

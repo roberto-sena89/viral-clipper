@@ -11,7 +11,7 @@
      essa requisição era bloqueada em producao e o navegador ainda pagava o
      preconnect na renderizacao. Mesmo host, zero dependencias externas. -->
 <link rel="stylesheet" href="/shared.css?v=20261009.4">
-<link rel="stylesheet" href="/index.css?v=20261008">
+<link rel="stylesheet" href="/index.css?v=20261010">
 </head>
 <body data-page="ajustes">
 
@@ -51,6 +51,7 @@
         <div data-menu-picker></div>
       </div>
       <button class="btn pressable btn-primary" type="button" id="btn-save">Salvar ajustes</button>
+      <button class="btn pressable" type="button" id="btn-restore-header" title="Restaurar valores padrão">Restaurar</button>
     </div>
   </div>
 </header>
@@ -159,10 +160,7 @@
     <form id="ajustes-form" novalidate>
 
         <div id="card-selecao" class="card card-selecao" tabindex="-1">
-          <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7.25" stroke="currentColor" stroke-width="1.6"/><path d="M12 2.5v3.5M12 18v3.5M2.5 12H6M18 12h3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span> Seleção</h2>
-          <!-- Uma linha por card dizendo o que o bloco DECIDE. O titulo nomeia a
-               secao; esta diz para que serve -- que e' a duvida que faz a pessoa
-               abrir um card so para descobrir que era o card errado. -->
+          <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7.25" stroke="currentColor" stroke-width="1.6"/><path d="M12 2.5v3.5M12 18v3.5M2.5 12H6M18 12h3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span> Seleção <span class="card-badge card-badge--resultado" title="Afeta o resultado final">Resultado</span></h2>
           <p class="card-lede">Quanto tempo cada corte tem, e quando ele vale a pena.</p>
 
           <div class="form-section">
@@ -257,7 +255,7 @@
              Estudio: ele nunca foi um ajuste, mora em `prompts/curador.txt` e
              ficou com dono unico la'. -->
         <div id="card-transcricao" class="card card-transcricao" tabindex="-1">
-          <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 11v2M8 7.5v9M12 4.5v15M16 8.5v7M20 10.5v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span> Transcrição</h2>
+          <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 11v2M8 7.5v9M12 4.5v15M16 8.5v7M20 10.5v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span> Transcrição <span class="card-badge card-badge--infra" title="Afeta performance, não o resultado">Infraestrutura</span></h2>
           <p class="card-lede">Como o Whisper transcreve o áudio do vídeo — modelo, idioma e desempenho.</p>
 
           <div class="form-section">
@@ -313,7 +311,7 @@
         </div>
 
         <div id="card-renderizacao" class="card card-renderizacao" tabindex="-1">
-          <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="3.5" stroke="currentColor" stroke-width="1.6"/><path d="M4.5 15.5 8.75 11l3.5 3.5L15.5 11l4 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Renderização</h2>
+          <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="3.5" stroke="currentColor" stroke-width="1.6"/><path d="M4.5 15.5 8.75 11l3.5 3.5L15.5 11l4 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Renderização <span class="card-badge card-badge--resultado" title="Afeta o resultado final">Resultado</span></h2>
           <p class="card-lede">Como o corte sai: enquadramento, legendas, título no topo e áudio.</p>
 
           <div class="form-section">

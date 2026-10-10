@@ -411,11 +411,20 @@
   $('#btn-save').addEventListener('click', () => saveSettings(false));
   $('#btn-save-side').addEventListener('click', () => saveSettings(false));
 
-  // "Restaurar padroes": repoe o formulario no que o HTML declara e grava, como
-  // qualquer outro campo desta pagina — o autosave e' o contrato dela. A
-  // confirmacao existe porque ESTA e' a unica acao da pagina que troca TODOS os
-  // valores de uma vez: um clique acidental apagaria a configuracao inteira, e o
-  // `ajustes.toml` nao guarda historico.
+  // "Restaurar padroes" no header: mesma acao que o botao do Resumo, mas sem
+  // precisar rolar ate' o final da pagina. O header e' sticky — o botao fica
+  // sempre visivel, e a confirmacao existe porque ESTA e' a unica acao da pagina
+  // que troca TODOS os valores de uma vez: um clique acidental apagaria a
+  // configuracao inteira, e o `ajustes.toml` nao guarda historico.
+  $('#btn-restore-header').addEventListener('click', () => {
+    if (!window.confirm('Restaurar todos os campos para os padrões de fábrica?')) return;
+    applySnapshot(PADROES);
+    renderSummary();
+    scheduleSave();
+    toast('Padrões restaurados.', 'ok');
+  });
+
+  // "Restaurar padroes" no Resumo: mesma acao, mesmo contrato.
   $('#btn-restore-defaults').addEventListener('click', () => {
     if (!window.confirm('Restaurar todos os campos para os padrões de fábrica?')) return;
     applySnapshot(PADROES);
@@ -452,6 +461,14 @@
         if (p.alvo.id === id) p.link.setAttribute('aria-current', 'location');
         else p.link.removeAttribute('aria-current');
       });
+      // Atualiza o indicador de progresso da barra de jump-links.
+      // O progresso e' calculado como: (indice do card atual + 1) / total * 100%
+      // Isso mostra "quanto da pagina ja foi lido" na barra de progresso visual.
+      const idx = pares.findIndex((p) => p.alvo.id === id);
+      const progresso = pares.length > 1
+        ? Math.round(((idx + 1) / pares.length) * 100)
+        : 0;
+      nav.style.setProperty('--progresso', `${progresso}%`);
     };
 
     const visiveis = new Set();

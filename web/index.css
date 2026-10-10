@@ -2140,42 +2140,24 @@ header .nav-actions .btn { min-height: 42px; }
    da regra antiga para os 40px do `.btn`. Mantida, seria uma regra casando
    ZERO elementos. */
 /* ---------- AJUSTES: ABERTURA, FICHA E ATALHOS ----------
-   A abertura continua sem imagem (cabecalho de ferramenta, nao hero de
-   landing), mas a ficha virou CARD -- legenda, tres pares rotulo/valor e
-   hairline separando a abertura do form. A logica em tres coisas da
-   versao anterior se mantem, com a estrutura nova:
+    Design System: Dark Mode OLED + Minimalism para ferramenta de desenvolvedor.
+    Paleta Developer Tool / IDE (code dark + run green), tipografia Inter (300–700),
+    espaçamento 8dp rhythm, motion subtle (200–300ms).
 
-   1. o H1 continua com escala de titulo de pagina. `main > section
-      .section-title` limita a 1.25rem porque ali a regra serve o titulo de
-      um bloco qualquer; num H1 isso ficava MENOR que o `h2` dos cards,
-      que e hierarquia ao contrario. Duas classes no seletor continuam
-      obrigatorias para vencer a cascata por tag;
-   2. a prosa continua sendo dado: `<dl>` com um `<div>` por par (unico
-      agrupamento valido para dt/dd). A legenda do card mora FORA do dl,
-      como `<p class="ajustes-ficha__cap">` -- filho de `<dl>` so' pode
-      ser dt/dd;
-   3. a nota de escopo (`.ajustes-nota`) anda junto com o texto, nao em
-      linha propria da grade: ela e' pos-piede do paragrafo acima, e a
-      barra de acento a esquerda diz "isto e' uma ressalva" antes do
-      texto ser lido.
-
-   O `minmax(0, 1fr)` no eixo da esquerda continua obrigatorio: sem ele o
-   `<code>` e o paragrafo longo empurram a track alem da tela. Os atalhos
-   continuam sendo a INSTANCIA do `.jump-links` do shared.css, marcada pelo
-   `data-section-nav` -- o gancho que o scroll-spy do ajustes.js le. */
+    O scroll-spy do ajustes.js le `data-section-nav` e marca `aria-current` —
+    esta instância pinta o estado visível. O componente `.jump-links` mora no
+    shared.css; aqui só a INSTANCIA da página. */
 .ajustes-abertura {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(268px, 0.42fr);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.42fr);
   align-items: end;
   column-gap: clamp(24px, 3.5vw, 56px);
   row-gap: 16px;
   padding: clamp(26px, 3.6vw, 42px) 0 clamp(18px, 2.2vw, 26px);
   border-bottom: 1px solid var(--border-subtle);
 }
-/* A pastilha do overline: a base (`.studio-overline`) e' uma linha de
-   texto com ponto verde, usada tambem pelo Estudio, Biblioteca e
-   Publicar; aqui ela ganha corpo de chip -- borda, fundo e cantos de
-   pilula -- so' dentro da abertura, sem mexer na base. */
+
+/* Overline: chip com borda, fundo e cantos de pílula — só dentro da abertura */
 .ajustes-abertura .studio-overline {
   width: fit-content;
   margin-bottom: 14px;
@@ -2184,19 +2166,26 @@ header .nav-actions .btn { min-height: 42px; }
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.03);
 }
-/* O titulo da pagina. Duas classes no seletor de proposito: `main > section
-   .section-title` e' mais especifico em tag do que em classe, entao uma
-   classe so perderia a cascata. */
+
+/* H1: escala de título de página, duas classes para vencer cascata por tag */
 .ajustes-abertura h1.section-title {
   margin: 0 0 10px;
   color: #f5f7fb;
-  font-size: clamp(1.85rem, 3.4vw, 2.55rem);
+  font-size: clamp(2rem, 3.4vw, 2.75rem);
   font-weight: 700;
   letter-spacing: -0.04em;
   line-height: 1.08;
   text-wrap: balance;
 }
-.ajustes-abertura .section-sub { max-width: 62ch; margin: 0; font-size: var(--text-cta); line-height: 1.62; }
+
+/* Prosa principal */
+.ajustes-abertura .section-sub {
+  max-width: 62ch;
+  margin: 0;
+  font-size: var(--text-cta);
+  line-height: 1.62;
+}
+
 .ajustes-abertura .section-sub code {
   padding: 1px 5px;
   border: 1px solid rgba(255,255,255,.1);
@@ -2205,9 +2194,13 @@ header .nav-actions .btn { min-height: 42px; }
   color: #d7deea;
   font-size: 0.92em;
 }
-.ajustes-abertura .section-sub strong { color: #e8ecf4; font-weight: 600; }
-/* A nota de escopo: barra de acento a esquerda em vez de mais um
-   paragrafo cinza -- a forma diz "ressalva" antes do texto ser lido. */
+
+.ajustes-abertura .section-sub strong {
+  color: #e8ecf4;
+  font-weight: 600;
+}
+
+/* Nota de escopo: barra de acento a esquerda — "ressalva" antes do texto */
 .ajustes-nota {
   max-width: 74ch;
   margin: 15px 0 0;
@@ -2217,13 +2210,15 @@ header .nav-actions .btn { min-height: 42px; }
   font-size: var(--text-caption);
   line-height: 1.55;
 }
-.ajustes-nota a { color: var(--accent-soft); text-underline-offset: 3px; }
+
+.ajustes-nota a {
+  color: var(--accent-soft);
+  text-underline-offset: 3px;
+}
 
 /* ---------- A FICHA ----------
-   Card de especificacao: legenda em versalete, tres pares rotulo/valor e
-   hairlines entre elas. O alinhamento continua na LINHA DE BASE do rotulo,
-   e nao no centro da caixa -- com dois digitos e uma palavra curta lado a
-   lado, centralizar faz o parecer desalinhado. */
+   Card de especificação: legenda em versalete, três pares rótulo/valor com
+   hairlines. Alinhamento na linha de base do rótulo. */
 .ajustes-ficha {
   align-self: end;
   overflow: hidden;
@@ -2234,6 +2229,7 @@ header .nav-actions .btn { min-height: 42px; }
     rgba(255, 255, 255, 0.014);
   box-shadow: 0 20px 44px -30px rgba(0, 0, 0, 0.9);
 }
+
 .ajustes-ficha__cap {
   margin: 0;
   padding: 10px 15px;
@@ -2244,11 +2240,13 @@ header .nav-actions .btn { min-height: 42px; }
   letter-spacing: 0.11em;
   text-transform: uppercase;
 }
+
 .ajustes-fatos {
   display: grid;
   margin: 0;
   padding: 3px 0;
 }
+
 .ajustes-fatos__linha {
   display: flex;
   align-items: baseline;
@@ -2257,7 +2255,9 @@ header .nav-actions .btn { min-height: 42px; }
   padding: 9px 15px;
   border-top: 1px solid rgba(218, 226, 243, 0.07);
 }
+
 .ajustes-fatos__linha:first-child { border-top: 0; }
+
 .ajustes-fatos dt {
   flex: none;
   color: var(--text-muted);
@@ -2266,6 +2266,7 @@ header .nav-actions .btn { min-height: 42px; }
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
+
 .ajustes-fatos dd {
   min-width: 0;
   margin: 0;
@@ -2274,6 +2275,7 @@ header .nav-actions .btn { min-height: 42px; }
   font-weight: 550;
   text-align: right;
 }
+
 .ajustes-fatos code {
   padding: 2px 7px;
   border: 1px solid rgba(255, 79, 174, 0.24);
@@ -2285,19 +2287,13 @@ header .nav-actions .btn { min-height: 42px; }
   letter-spacing: -0.01em;
 }
 
-/* ---------- ATALHOS: A INSTANCIA DESTA PAGINA ----------
-   O componente (`.jump-links`) e' das quatro paginas e mora no shared.css,
-   e nenhuma regra aqui o redefine -- `test_the_component_lives_in_the_shared_sheet`
-   recusa `.jump-links {` em css de pagina, e ele esta certo. O que muda e' a
-   INSTANCIA, marcada pelo `data-section-nav`: o mesmo gancho que o scroll-spy
-   do ajustes.js le. Aqui a barra e' uma faixa segmentada de quatro botoes de
-   mesma largura (a ordem dos botoes e a ordem da pagina, que o grid de quatro
-   colunas faz ser verdade), cada um com numero de leitura 01-04.
+/* ---------- ATALHOS: A INSTÂNCIA DESTA PÁGINA ----------
+   O componente (`.jump-links`) é das quatro páginas e mora no shared.css.
+   Aqui só a INSTÂNCIA, marcada pelo `data-section-nav`. Faixa segmentada
+   de quatro botões de mesma largura, cada um com número de leitura 01-04.
 
-   Os estados sao todos ARIA, nao CSS decorativo: `aria-current` e' o que o
-   scroll-spy escreve e o que pinta a secao visivel -- a barra sem JS continua
-   com o mesmo desenho, so que sem destaque. `location` (nao `true`) diz que o
-   estado e' aposicao na pagina, que e' o que este e'. */
+   Os estados são todos ARIA: `aria-current` é o que o scroll-spy escreve
+   e o que pinta a seção visível. */
 [data-section-nav] {
   grid-column: 1 / -1;
   display: grid;
@@ -2307,6 +2303,7 @@ header .nav-actions .btn { min-height: 42px; }
   padding-top: 16px;
   border-top: 1px solid var(--border-subtle);
 }
+
 [data-section-nav] a {
   display: inline-flex;
   align-items: center;
@@ -2326,11 +2323,18 @@ header .nav-actions .btn { min-height: 42px; }
     color var(--motion-fast) ease,
     background-color var(--motion-fast) ease;
 }
+
 [data-section-nav] a:hover {
   border-color: rgba(255, 79, 174, 0.4);
   background: rgba(255, 79, 174, 0.07);
   color: var(--accent-soft);
 }
+
+[data-section-nav] a:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
 .jump-num {
   display: grid;
   place-items: center;
@@ -2346,43 +2350,40 @@ header .nav-actions .btn { min-height: 42px; }
   letter-spacing: 0.02em;
   transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease;
 }
+
 [data-section-nav] a[aria-current] {
   border-color: rgba(255, 79, 174, 0.42);
   background: var(--active-tint);
   color: var(--accent-soft);
 }
+
 [data-section-nav] a[aria-current] .jump-num {
   background: var(--accent-primary);
   color: var(--grad-ink);
 }
 
-/* Abaixo de ~980px a ficha perde o sentido de coluna: sao tres pares
-   curtos e a leitura vira tres linhas na largura toda, que e' o mesmo
-   texto com menos cola. A esquerda encolhe depois, porque quem decide o
-   breakpoint e' o `code` do paragrafo, e nao a ficha. Os atalhos saem do
-   grid de quatro e viram fila quebravel -- quatro colunas de ~180px ainda
-   cabem, mas nao em telas de 768px. */
+/* Responsivo: abaixo de ~980px a ficha perde o sentido de coluna.
+   Os atalhos saem do grid de quatro e viram fila quebrável. */
 @media (max-width: 980px) {
   .ajustes-abertura { grid-template-columns: minmax(0, 1fr); row-gap: 18px; }
   .ajustes-ficha { align-self: stretch; }
   .ajustes-fatos__linha { padding: 7px 15px; }
 }
+
 @media (max-width: 768px) {
   [data-section-nav] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
 @media (max-width: 640px) {
   .ajustes-abertura .section-sub { font-size: var(--text-body-sm); }
   .ajustes-nota { font-size: var(--text-caption); }
   [data-section-nav] { grid-template-columns: minmax(0, 1fr); }
   [data-section-nav] a { justify-content: flex-start; padding: 0 14px; }
 }
-/* O movimento reduzido precisa do seletor do ELEMENTO, nao de um curinga:
+
+/* Reduced motion: seletor do ELEMENTO, não curinga.
    `[data-section-nav] *` tem especificidade menor que `[data-section-nav] a`
-   e perderia na cascata, deixando a transicao de 200ms rodando com o sistema
-   pedindo movimento reduzido. Foi o defeito medido no rodape. E o
-   `html { scroll-behavior: smooth }` do shared.css tambem e movimento: quem
-   pediu menos nao quer a rolagem longa dos atalhos suavizando -- o salto
-   vira imediato, que e' o comportamento nativo. */
+   e perderia na cascata. */
 @media (prefers-reduced-motion: reduce) {
   [data-section-nav] a,
   .jump-num { transition: none; }
@@ -2406,6 +2407,63 @@ header .nav-actions .btn { min-height: 42px; }
    antes era um glifo tipografico — `◎`, `♪`, `▣`, `✎` — que dependia da fonte
    instalada, ocupava a caixa por acidente e nao herdava `currentColor`. */
 .card h2 .ico svg { display: block; width: 15px; height: 15px; }
+
+/* ---------- BADGES DE TIPO DO CARD ----------
+   Cada card da pagina de Ajustes ganha um badge que diz se ele afeta o
+   RESULTADO final do corte ou a INFRAESTUTURA (performance, cache). O badge
+   e' um chip colorido ao lado do H2 — visivel sem precisar ler o card
+   inteiro, e funcional para quem quer saber onde mexer sem abrir tudo.
+   Infraestrutura: card de Transcrição (modelo Whisper, VAD, cache).
+   Resultado: Seleção (duração, motor) e Renderização (reframe, legendas). */
+.card-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.card-badge--resultado {
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+.card-badge--infra {
+  background: rgba(96, 165, 250, 0.12);
+  color: #93c5fd;
+  border: 1px solid rgba(96, 165, 250, 0.25);
+}
+
+/* ---------- INDICADOR DE PROGRESSO DOS JUMP-LINKS ----------
+   Os jump-links recebem uma barra de progresso visual que mostra quantos
+   cards a pessoa já "passou" na rolagem. O scroll-spy atualiza um data
+   attribute no nav, e o CSS pinta a barra via linear-gradient.
+   O indicador e' discreto (2px) e não interfere no clique dos botões. */
+[data-section-nav]::before {
+  content: '';
+  grid-column: 1 / -1;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent-primary) var(--progresso, 0%),
+    rgba(255, 255, 255, 0.08) var(--progresso, 0%)
+  );
+  transition: --progresso var(--motion-fast) ease;
+  order: -1;
+}
+[data-section-nav] {
+  position: relative;
+}
+@media (max-width: 768px) {
+  [data-section-nav]::before {
+    display: none;
+  }
+}
 
 /* ---------- RESUMO: O PAINEL DE ESTADO ----------
    Era uma coluna como as outras tres, com o mesmo card e a mesma hierarquia do

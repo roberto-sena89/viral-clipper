@@ -8215,16 +8215,22 @@ class JumpLinksTests(unittest.TestCase):
         self.assertNotIn(".jump-links", folha)
 
 
-class StudioToLibraryLinkTests(unittest.TestCase):
+class StudioToLibraryControlTests(unittest.TestCase):
     """A volta do Estudio para a Biblioteca.
 
     O unico canal entre as paginas era Biblioteca -> Estudio (o `?url=`). Quem
     estava no Estudio sem o link na mao so chegava na Biblioteca pela rail, no
     topo de uma pagina de scroll longo -- e no celular a rail e' um hamburguer.
 
+    O controle e' um `<button>`, e nao um `<a>`: o destino passou a morar no
+    `index.js` (`window.location.href`), como a navegacao do rodape. Isso parte
+    em DOIS o que antes era uma coisa so -- o HTML guarda o BOTAO, o JS guarda
+    a ROTA -- e por isso os testes medem os dois lados: um botao sem rota fica
+    na tela sem fazer nada, que e' pior que nao existir.
+
     O que os testes travam:
 
-    * o Estudio tem um link para a Biblioteca;
+    * o Estudio tem um `<button>` para a Biblioteca, e a rota existe no JS;
     * ele mora no card FONTE, e nao no rodape: e' o campo que ele alimenta,
       entao e' ali que a pessoa procura quando o campo esta vazio;
     * ele NAO e' `class="hint"`. `.hint` e' o texto que o `aria-describedby` do
@@ -8234,40 +8240,77 @@ class StudioToLibraryLinkTests(unittest.TestCase):
       so o codigo sabia que existia.
     """
 
-    def setUp(self):
-        self.body = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    #: O id do botao. Ancorado nele -- e nao no texto nem no nome da classe --
+    #: porque o que se mede aqui e' a POSICAO e o PAR (botao <-> rota), nao o
+    #: estilo: a classe ja mudou uma vez (`field-alt` -> `field-alt-fora`)
+    #: derrubando testes que nao tinham nada a ver com a mudanca.
+    ID = "btn-buscar-fonte"
 
-    def test_the_studio_links_to_the_library(self):
-        self.assertIn('href="/biblioteca"', self.body)
+    #: A pagina de destino. Mora no JS, nao num `href`.
+    ROTA = "/biblioteca"
 
-    def test_the_link_lives_in_the_source_card(self):
+    @classmethod
+    def setUpClass(cls):
+        cls.body = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        cls.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+
+    def _botao(self) -> str:
+        """A tag `<button>` do controle, lida do proprio HTML."""
+        m = re.search(r'<button[^>]*\bid="' + self.ID + r'"[^>]*>', self.body)
+        if m is None:
+            raise AssertionError("o botao de volta para a Biblioteca sumiu")
+        return m.group(0)
+
+    def test_the_studio_has_a_button_to_the_library(self):
+        """Um `<button>` de verdade, com o `class` de botao do projeto."""
+        tag = self._botao()
+        self.assertIn('type="button"', tag,
+                      "sem `type` o botao dentro do form vira submit")
+        classes = re.search(r'class="([^"]*)"', tag)
+        self.assertIsNotNone(classes, "o botao ficou sem `class`")
+        tokens = classes.group(1).split()
+        self.assertIn("btn", tokens, "perdeu o `class` de botao do projeto")
+        self.assertIn("pressable", tokens, "perdeu o `pressable`")
+
+    def test_the_route_lives_in_the_js(self):
+        """O destino saiu do `href` e passou para o handler.
+
+        Um `<a href>` navega sozinho; um `<button>` nao. Se o handler sumir, o
+        botao fica na tela e nao faz nada -- o pior dos mundos, porque parece
+        funcionar. Por isso a rota e' medida AQUI, e nao so' a existencia do
+        botao.
+        """
+        self.assertNotIn(
+            'href="' + self.ROTA + '"', self.body,
+            "o controle voltou a ser um `<a href>`: o botao virou link")
+        alvo = "$('#" + self.ID + "')"
+        self.assertIn(alvo, self.js, "o botao nao tem handler no index.js")
+        bloco = self.js[self.js.index(alvo):][:400]
+        self.assertIn("window.location.href", bloco,
+                      "o botao nao navega por `window.location.href`")
+        self.assertIn("'" + self.ROTA + "'", bloco,
+                      "o handler nao aponta para a Biblioteca")
+
+    def test_the_button_lives_in_the_source_card(self):
         """Dentro do card Fonte -- o campo que ele alimenta."""
-        # Ancorado no `href`, e nao no nome da classe. O que este teste mede e'
-        # a POSICAO do link, e a classe ja mudou uma vez (`field-alt` ->
-        # `field-alt-fora`) derrubando estes dois testes sem que nada na tela
-        # tivesse se movido. Um teste de posicao nao deveria ter nome de estilo.
         card = self.body.index('class="card card-fonte"')
-        link = self.body.index('href="/biblioteca"')
-        self.assertGreater(link, card, "o link saiu do card Fonte")
+        botao = self.body.index('id="' + self.ID + '"')
+        self.assertGreater(botao, card, "o botao saiu do card Fonte")
         # E nao pode ter ido parar no rodape, que e' montado por comum.js.
         comum = (server.WEB_DIR / "comum.js").read_text(encoding="utf-8")
-        self.assertNotIn('href="/biblioteca"', comum)
+        self.assertNotIn(self.ID, comum, "o botao foi para o rodape (comum.js)")
 
-    def test_the_link_is_not_a_field_hint(self):
-        """Nao usa `.hint`: isto nao descreve o campo, e' uma saida."""
-        # A classe do <p> que envolve o link e' comparada TOKEN a token, e nao
-        # por substring. Um `assertNotIn("hint", bloco)` sobre o texto inteiro
-        # reprovaria por causa de uma palavra que aparece no meio do paragrafo
-        # -- o que se quer e que a CLASSE nao traga `hint`, nao que a frase nao
-        # contenha a letra.
-        ini = self.body.index('href="/biblioteca"')
-        abre = self.body.rindex("<p", 0, ini)
-        m = re.match(r'<p class="([^"]*)"', self.body[abre:])
-        self.assertIsNotNone(m, "o link ficou sem <p class> envolvendo")
-        classes = m.group(1).split()
+    def test_the_button_is_not_a_field_hint(self):
+        """Nao usa `.hint`: isto nao descreve o campo, e' uma saida.
+
+        A classe e' comparada TOKEN a token, e nao por substring: o que se quer
+        e' que a CLASSE nao traga `hint`, nao que a frase nao contenha a letra.
+        """
+        classes = re.search(r'class="([^"]*)"', self._botao())
+        tokens = classes.group(1).split()
         self.assertNotIn(
-            "hint", classes,
-            "o link virou dica do campo: `.hint` e' o texto que o "
+            "hint", tokens,
+            "o controle virou dica do campo: `.hint` e' o texto que o "
             "`aria-describedby` do campo anuncia, e uma saida lida como "
             "requisito do campo e' pior que nenhuma saida")
 

@@ -2418,6 +2418,14 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     window.open('/docs', '_blank');
   };
   $('#btn-docs').addEventListener('click', abrirDocs);
+  // A volta para a Biblioteca, agora um `<button>`: sem `href`, o destino mora
+  // aqui. Mesma aba e mesmo mecanismo do rodape (`window.location.href`) -- a
+  // Biblioteca devolve a URL por `?url=`, entao o ida-e-volta fecha no mesmo
+  // historico. Botao sem esta rota e' botao morto, e ha teste dos DOIS lados
+  // (`StudioToLibraryControlTests`).
+  $('#btn-buscar-fonte').addEventListener('click', () => {
+    window.location.href = '/biblioteca';
+  });
   // O rodape (marca, navegacao, "Como usar" e o copiar da CLI) saiu daqui
   // para /comum.js. Ele agora vive nas TRES paginas, e um comportamento que so
   // o index tinha deixaria Ajustes e Biblioteca com um rodape morto. A

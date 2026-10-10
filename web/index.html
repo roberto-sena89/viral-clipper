@@ -223,11 +223,18 @@
                            era Biblioteca -> Estudio (o `?url=`); quem estava
                            aqui e nao tinha o link na mao so chegava na
                            Biblioteca pela rail, no topo de uma pagina de
-                           scroll longo. O link mora no card FONTE porque e'
-                           exatamente o campo que ele alimenta -- nao e' um
-                           atalho generico de rodape. -->
+                           scroll longo. O controle mora no card FONTE porque
+                           e' exatamente o campo que ele alimenta -- nao e' um
+                           atalho generico de rodape.
+
+                           E' um `<button>`, e nao um `<a>`: o destino passou a
+                           morar no index.js (`window.location.href`), como a
+                           navegacao do rodape. Isso parte em DOIS o que antes
+                           era uma coisa so -- o HTML guarda o botao, o JS
+                           guarda a rota -- e por isso ha teste dos dois lados:
+                           botao sem rota e' botao morto. -->
                       <p class="field-alt">Não tem o link à mão?
-                        <a href="/biblioteca">Buscar uma fonte na Biblioteca</a>.</p>
+                        <button class="btn pressable" type="button" id="btn-buscar-fonte">Buscar uma fonte na Biblioteca</button></p>
                     </div>
                   </div>
 

@@ -1609,7 +1609,14 @@ main > section > .card { padding: 17px; }
    isto nao DESCREVE o campo -- e' uma saida. Marcar como hint faria o leitor
    de tela ler uma alternativa como se fosse requisito do campo. */
 .field-alt { margin: 6px 0 0; font-size: var(--text-caption); color: var(--text-muted); }
-.field-alt a { color: var(--accent-soft); }
+/* O `.field-alt a` morreu com o ultimo `<a>` do paragrafo: a volta para a
+   Biblioteca virou um `<button class="btn pressable">`, e o `.btn` traz a
+   propria cor. Mantida, seria uma regra casando ZERO elementos.
+   O botao tambem nao pede regra propria aqui: medido no navegador,
+   `vertical-align: middle` e `baseline` dao pixel a pixel a mesma linha (o
+   `<p>` fica com 40px nos dois) -- num `inline-flex` a baseline e' a do texto
+   interno do botao, nao a borda de baixo, entao o rotulo da legenda ja' alinha
+   com o rotulo do botao. */
 /* O select de download e o de cookies ficam na mesma coluna visual; o
    disclosure alinha pelo topo da linha seguinte. */
 .cookies-box { margin-top: 4px; }

@@ -87,6 +87,14 @@ CONTROLES = {
     "progress-bar-on": "progress_bar",
     "jump-cut": "jump_cut",
     "loudnorm": "loudnorm",
+    # A secao "Biblioteca": os tres controles do arquivamento de perfil. Eles
+    # SAIRAM do painel da lista de resultados -- que e' refeito a cada busca, e
+    # levava a escolha junto com a lista -- e passaram a ser ajuste persistido
+    # em `ajustes.toml`. Por isso entram no contrato daqui: quem os le' e' o
+    # `scrap.js`, por GET /api/ajustes.
+    "arq-only": "only_kinds",
+    "arq-max": "max_items",
+    "arq-viral": "archive_viral_first",
     # Sem os sete controles `ranker-*`: o card do Curador saiu desta pagina e
     # mora so em Cortes. As chaves correspondentes sairam de AJUSTES_KEYS junto,
     # entao `test_the_controls_cover_every_key_exactly_once` fecha nos dois lados.
@@ -134,6 +142,9 @@ def sample_settings() -> dict:
         "progress_bar": False,
         "jump_cut": False,
         "loudnorm": True,
+        "only_kinds": "reels",
+        "max_items": 20,
+        "archive_viral_first": False,
         # As sete chaves ranker_* NAO entram: o Curador com IA saiu de Ajustes e
         # vive so na pagina Cortes. Continuam sendo campos do ClipConfig e dests
         # da CLI -- so nao sao mais ajuste que este painel persiste.
@@ -657,10 +668,12 @@ class AjustesScriptTests(unittest.TestCase):
                 "#whisper-model": "small", "#language": "",
                 "#cache-dir": "x", "#layout": "focus",
                 "#caption-preset": "karaoke", "#caption-style": "karaoke",
+                "#arq-only": "reels", "#arq-max": "20",
             }) + ";\n"
             "const toggles = " + json.dumps({
                 "#vad-filter": True, "#transcript-cache": True, "#headline-on": False,
                 "#progress-bar-on": False, "#jump-cut": False, "#loudnorm": True,
+                "#arq-viral": False,
             }) + ";\n"
             # Um seletor fora destas listas devolve null: e assim que um acesso
             # remanescente a '#ranker-*' vira erro em vez de passar batido.
@@ -714,6 +727,108 @@ class AjustesScriptTests(unittest.TestCase):
         # existir. Chave ausente em JS nao estoura sozinha, mas o teste tambem
         # cobre o caminho de render inteiro.
         self.assertEqual(self._executa("(renderSummary(), 'ok')"), "ok")
+
+
+class AjustesFormRoundTripTests(unittest.TestCase):
+    """`applySettings` e' a metade que ESCREVE; `readSettings` a que LE.
+
+    O contrato e' a ida-e-volta: aplicar o que veio de `ajustes.toml` e ler de
+    volta tem de devolver o mesmo. Uma chave presente so' num dos lados e' um
+    ajuste que a tela mostra errado -- o arquivo diz uma coisa, o formulario
+    exibe outra, e nada quebra visivelmente. Foi assim que `only_kinds` podia
+    ser salvo e nunca reaparecer no select.
+
+    O `AjustesScriptTests` cobre a LEITURA (as 29 chaves sao coletadas). Aqui
+    se cobre a escrita, que nao tinha teste nenhum: uma chave esquecida na lista
+    de `applySettings` deixava o campo com o padrao do HTML para sempre.
+
+    O DOM falso e' um registro por seletor: `$` cria o no' na primeira leitura,
+    e a escrita fica visivel para a leitura seguinte. Sem estado guardado, um
+    `setNum` num objeto descartavel nao apareceria em lugar nenhum -- e o teste
+    passaria sem testar nada.
+    """
+
+    #: As 29 chaves com valor NAO nulo. `null`/ausente faz `applySettings` pular
+    #: o campo (de proposito), e o que se quer medir aqui e' o caminho cheio.
+    ENTRADA = {
+        "min_duration": 31, "max_duration": 61, "target_duration": 43,
+        "min_score": 5, "min_gap": 7, "engine": "audio",
+        "auto_margin": 16, "auto_ceiling": 201, "max_duration_grace": 31,
+        "whisper_model": "base", "language": "en", "beam_size": 2,
+        "cache_dir": "output/cache/x", "vad_filter": False,
+        "transcript_cache": False, "layout": "blur",
+        "caption_preset": "neon", "caption_style": "block",
+        "font_size": 44, "crf": 21, "target_lufs": -13, "workers": 3,
+        "headline_seconds": 4, "progress_bar": True, "jump_cut": True,
+        "loudnorm": False,
+        "only_kinds": "posts", "max_items": 7, "archive_viral_first": True,
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fonte = (server.WEB_DIR / "ajustes.js").read_text(encoding="utf-8")
+
+    def test_the_sample_covers_every_key(self):
+        # A entrada deste teste tem de acompanhar AJUSTES_KEYS: uma chave nova
+        # que ninguem poem aqui seria uma chave que a ida-e-volta nao mede.
+        self.assertEqual(set(self.ENTRADA), set(server.AJUSTES_KEYS))
+
+    def test_applying_and_reading_back_gives_the_same_values(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node nao esta no PATH")
+
+        ancoras = [
+            r"function num\(sel, fallback\) \{[\s\S]*?\n  \}",
+            r"function toggleOn\(sel\) \{[\s\S]*?\n  \}",
+            r"function setNum\(sel, value\) \{[\s\S]*?\n  \}",
+            r"function setToggle\(sel, on\) \{[\s\S]*?\n  \}",
+            r"function readSettings\(\) \{[\s\S]*?\n  \}",
+            r"function applySettings\(s\) \{[\s\S]*?\n  \}",
+        ]
+        corpo = []
+        for padrao in ancoras:
+            m = re.search(padrao, self.fonte)
+            if m is None:
+                raise AssertionError(f"ancora ausente em ajustes.js: {padrao}")
+            corpo.append(m.group(0))
+
+        script = (
+            # Registro por seletor: o no' nasce na primeira leitura e guarda o
+            # que a escrita depositar nele. `classList` tem de ser de verdade --
+            # `setToggle` usa `toggle(nome, forca)`, e um `contains: () => false`
+            # faria todo interruptor voltar desligado.
+            "const nos = {};\n"
+            "function no(sel) {\n"
+            "  if (!nos[sel]) {\n"
+            "    const classes = new Set();\n"
+            "    nos[sel] = { value: '', type: 'text', classList: {\n"
+            "      contains: (c) => classes.has(c),\n"
+            "      toggle: (c, force) => {\n"
+            "        const on = (force === undefined) ? !classes.has(c) : !!force;\n"
+            "        if (on) classes.add(c); else classes.delete(c);\n"
+            "        return on;\n"
+            "      },\n"
+            "      add: (c) => classes.add(c),\n"
+            "      remove: (c) => classes.delete(c),\n"
+            "    }, setAttribute() {}, getAttribute: () => null };\n"
+            "  }\n"
+            "  return nos[sel];\n"
+            "}\n"
+            "const document = { querySelector: no };\n"
+            "const $ = no;\n"
+            "const $$ = () => [];\n"
+            + "\n".join(corpo) + "\n"
+            "applySettings(" + json.dumps(self.ENTRADA) + ");\n"
+            "console.log(JSON.stringify(readSettings()));\n"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, encoding="utf-8", timeout=30)
+        if proc.returncode != 0:
+            raise AssertionError(
+                "a ida-e-volta do formulario estourou: "
+                + proc.stderr.strip()[:400])
+        self.assertEqual(json.loads(proc.stdout.strip()), self.ENTRADA)
 
 
 class AjustesLufsTests(unittest.TestCase):
@@ -1110,6 +1225,9 @@ class AjustesAdvancedDisclosureTests(unittest.TestCase):
         "auto-margin", "auto-ceiling", "max-grace",
         "cache-dir", "vad-filter", "transcript-cache",
         "workers", "headline-seconds", "headline-on", "progress-bar-on", "jump-cut",
+        # Da secao Biblioteca: o limite e a ordem sao refinamento. O TIPO
+        # ("reels", "posts" ou os dois) e' a escolha da secao e fica a vista.
+        "arq-max", "arq-viral",
     )
 
     #: Os controles que decidem o RESULTADO e ficam a vista.
@@ -1118,6 +1236,10 @@ class AjustesAdvancedDisclosureTests(unittest.TestCase):
         "min-gap", "engine", "whisper-model", "language", "beam-size",
         "layout", "caption-preset", "caption-style", "font-size", "crf",
         "target-lufs", "loudnorm",
+        # O tipo do arquivamento nao decide o corte, mas decide o que a secao
+        # FAZ -- e uma secao com todos os controles escondidos e' uma secao que
+        # parece nao ter nenhum.
+        "arq-only",
     )
 
     @classmethod
@@ -1129,8 +1251,18 @@ class AjustesAdvancedDisclosureTests(unittest.TestCase):
         return re.findall(r'<details class="avancado">.*?</details>', self.html, re.S)
 
     def test_there_is_one_disclosure_per_card(self):
-        self.assertEqual(len(self._blocos()), 3,
-                         "o numero de disclosures mudou (era um por card)")
+        """Um "Avançado" por card -- nem zero, nem dois.
+
+        A contagem e' DERIVADA dos cards em vez de fixada num numero: com o
+        valor escrito a mao, a quarta secao (Biblioteca) teria feito o teste
+        mentir por omissao. O que se trava e' o desenho -- cada secao oferece um
+        lugar para os ajustes de infra sem esconder campo nenhum do contrato.
+        """
+        cards = re.findall(r'<div id="card-[a-z]+" class="card\b', self.html)
+        self.assertTrue(cards, "os cards de /ajustes sumiram -- o padrao mudou")
+        self.assertEqual(len(self._blocos()), len(cards),
+                         "ha' %d disclosures para %d cards de /ajustes"
+                         % (len(self._blocos()), len(cards)))
 
     def test_every_disclosure_has_a_label(self):
         for i, bloco in enumerate(self._blocos()):

@@ -184,7 +184,6 @@ input::placeholder { color: var(--text-muted); }
 .form-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .form-field--narrow { flex: 0 0 84px; }
 .form-field--grow { flex: 1 1 180px; justify-content: flex-end; }
-.form-field--auto { flex: 0 0 auto; justify-content: flex-end; }
 .field-label {
   display: block; font-size: var(--text-caption); color: var(--text-muted);
   line-height: var(--text-caption-lh);

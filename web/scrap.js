@@ -198,11 +198,15 @@
     });
   });
 
-  // ---------- "Mais viralizados" (botões de alternar) ----------
+  // ---------- "Mais viralizados" (botao de alternar) ----------
   // Mesma cara do Buscar: apagado = ordem do feed, aceso (btn-primary) =
   // ranking por views/engajamento. aria-pressed é a fonte da verdade.
+  //
+  // Era um PAR de botoes (busca e arquivamento) e virou um so': o "Em alta
+  // primeiro" do arquivamento saiu daqui para /ajustes, junto com o resto da
+  // configuracao da Biblioteca. Ele nao era um estado de tela -- era um ajuste
+  // persistido, e estava escrito na tela errada.
   var viralOn = false;
-  var arqViralOn = false;
 
   function renderViralButtons() {
     const searchBtn = $("#btn-viral");
@@ -210,11 +214,29 @@
       searchBtn.classList.toggle("btn-primary", viralOn);
       searchBtn.setAttribute("aria-pressed", String(viralOn));
     }
-    const archBtn = $("#btn-arq-viral");
-    if (archBtn) {
-      archBtn.classList.toggle("btn-primary", arqViralOn);
-      archBtn.setAttribute("aria-pressed", String(arqViralOn));
-    }
+  }
+
+  // ---------- configuracao do arquivamento (dona: /ajustes) ----------
+  // Os tres valores (tipo, limite e ordem) moram na secao "Biblioteca" de
+  // /ajustes, que os persiste em `ajustes.toml`. Aqui eles sao LIDOS pela API,
+  // e nao colhidos do DOM: esta caixa e' refeita a cada busca, entao um
+  // controle dentro dela perdia a escolha junto com a lista.
+  //
+  // O default de 20 repete o `value=` do formulario de la': sem ajuste salvo, o
+  // certo e' o padrao da TELA, e nao "sem limite" -- varrer o catalogo inteiro
+  // de um perfil por omissao seria um susto. Um zero EXPLICITO continua sendo
+  // "sem limite", que e' como o servidor le (`int(x) or None`).
+  async function loadArchiveSettings() {
+    const padrao = { only: "", max_items: 20, order: "recent" };
+    const r = await get("/ajustes");
+    if (r.error) return padrao;
+    const s = r.settings || {};
+    const bruto = s.max_items;
+    return {
+      only: s.only_kinds || "",
+      max_items: (bruto === null || bruto === undefined) ? 20 : (Number(bruto) || 0),
+      order: s.archive_viral_first ? "viral" : "recent",
+    };
   }
 
   // ---------- resultados ----------
@@ -1084,12 +1106,8 @@
       btn.disabled = on;
       if (on) btn.textContent = "Baixando…";
     }
-    const only = $("#arq-only");
-    const max = $("#arq-max");
-    const archViral = $("#btn-arq-viral");
-    if (only) only.disabled = on;
-    if (max) max.disabled = on;
-    if (archViral) archViral.disabled = on;
+    // Nao ha mais controle de configuracao para desabilitar junto: o tipo, o
+    // limite e a ordem nao estao nesta pagina.
   }
 
   function stopArchivePolling() {
@@ -1492,16 +1510,17 @@
       return;
     }
 
-    const only = $("#arq-only");
-    const max = $("#arq-max");
+    // Lida na hora do clique, e nao no boot: assim uma edicao feita em /ajustes
+    // com esta pagina aberta ja' vale para o proximo arquivamento.
+    const cfg = await loadArchiveSettings();
     const payload = {
       profile: url,
       cookies_file: cookiesPath,
       ig_session: igSessionValue(),
-      only: only ? only.value : "",
-      max_items: max ? Number(max.value) || 0 : 0,
-      // "Mais viralizados": ordena por plays/likes antes do corte por tipo.
-      order: arqViralOn ? "viral" : "recent",
+      only: cfg.only,
+      max_items: cfg.max_items,
+      // "Em alta primeiro": ordena por plays/likes antes do corte por tipo.
+      order: cfg.order,
     };
 
     const sub = $("#resultados-sub");
@@ -1798,12 +1817,6 @@
   const viralBtn = $("#btn-viral");
   if (viralBtn) viralBtn.addEventListener("click", () => {
     viralOn = !viralOn;
-    renderViralButtons();
-  });
-
-  const arqViralBtn = $("#btn-arq-viral");
-  if (arqViralBtn) arqViralBtn.addEventListener("click", () => {
-    arqViralOn = !arqViralOn;
     renderViralButtons();
   });
 

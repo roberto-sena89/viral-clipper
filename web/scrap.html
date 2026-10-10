@@ -206,38 +206,23 @@
 
         <!-- Arquivar so faz sentido com uma lista na tela, entao o bloco fica
              escondido ate a busca devolver itens: um botao que baixa "tudo" de
-             nada e pior que nenhum botao. -->
+             nada e pior que nenhum botao.
+
+             Aqui ficou so' a ACAO. A CONFIGURACAO (tipo, limite e ordem) saiu
+             para a secao "Biblioteca" de /ajustes, que e' o dono dos ajustes
+             persistidos em `ajustes.toml`. Os tres controles eram lidos do DOM
+             DESTA caixa, que e' refeita a cada busca -- o que a pessoa escolhia
+             sumia junto com a lista. O `archive()` agora le' os valores por
+             `GET /api/ajustes`. A nota aponta o lugar de editar porque um botao
+             que obedece a um ajuste invisivel e' um botao que mente. -->
         <div id="arquivar-box" hidden class="tool-box">
-          <div class="form-field" style="flex:0 0 150px;">
-            <label class="field-label" for="arq-only">
-              O que baixar
-            </label>
-            <select id="arq-only" name="only">
-              <option value="">Reels e posts</option>
-              <option value="reels">Só reels</option>
-              <option value="posts">Só posts</option>
-            </select>
-          </div>
-          <div class="form-field form-field--narrow">
-            <label class="field-label" for="arq-max">
-              Máximo de itens (por tipo)
-            </label>
-            <input type="number" id="arq-max" name="max-items" min="1" value="20">
-          </div>
-          <div class="form-field form-field--auto">
-            <button class="btn pressable" type="button" id="btn-arq-viral"
-                    aria-pressed="false"
-                    title="Baixa primeiro os de mais plays/likes em cada tipo">
-              Em alta primeiro
-            </button>
-          </div>
           <button class="btn pressable btn-primary" type="button" id="btn-arquivar">
             Baixar para o computador
           </button>
           <span class="field-hint tool-note">
-            Salva os vídeos em <code>reels/</code> e <code>posts/</code> — o limite
-            vale por tipo (20 = até 20 reels + até 20 posts). Itens já
-            baixados são pulados, então repetir continua de onde parou.
+            Salva os vídeos em <code>reels/</code> e <code>posts/</code> e pula o
+            que já está lá, então repetir continua de onde parou.
+            <a href="/ajustes#card-arquivamento">Tipo, limite e ordem em Ajustes</a>.
           </span>
           <!-- Progresso do arquivamento. Nasce escondido pelo mesmo motivo da
                barra de download: uma barra parada em 0% antes de qualquer

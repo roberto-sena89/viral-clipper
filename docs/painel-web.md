@@ -85,10 +85,23 @@ O painel de Ajustes lê e escreve `ajustes.toml` (no `.gitignore`). Contrato:
 - **Arquivo malformado não é engolido.** `_load_ajustes` devolve
   `(settings, malformed)`; a resposta de `GET /api/ajustes` traz o motivo em
   `malformed` e a página **avisa** em vez de resetar. Sem isso, a página dizia
-  "nada salvo ainda" e o próximo save sobrescrevia as 26 chaves com os defaults —
-  perda silenciosa e permanente.
-- **`AJUSTES_KEYS` = 26 chaves** (a superfície editável do painel). O
-  `ClipConfig` do motor tem 88 campos — o painel expõe um subconjunto.
+  "nada salvo ainda" e o próximo save sobrescrevia todas as chaves com os
+  defaults — perda silenciosa e permanente.
+- **`AJUSTES_KEYS` = 29 chaves** (a superfície editável do painel). O
+  `ClipConfig` do motor tem 93 campos — o painel expõe um subconjunto.
+- **`PUT /api/ajustes` MESCLA, não substitui.** Uma aba antiga que não renderiza
+  uma chave não pode apagá-la. A consequência prática: para *remover* uma chave
+  do arquivo é preciso mandá-la como `null` (e o `_dump_ajustes` omite `None`) —
+  reenviar o objeto lido não tira nada.
+- **A seção Biblioteca é a dona do arquivamento de perfil.** `only_kinds`,
+  `max_items` e `archive_viral_first` são ajustes persistidos, e é aqui que se
+  editam. A Biblioteca (`/biblioteca`) só tem a AÇÃO — o botão "Baixar para o
+  computador" — e lê os três por `GET /api/ajustes` a cada clique. Antes eles
+  eram três controles no painel da lista de resultados, que é re-montado a cada
+  busca: o que a pessoa escolhia sumia junto com a lista. A caixa da Biblioteca
+  aponta para `/ajustes#card-arquivamento`, porque um botão que obedece a um
+  ajuste invisível é um botão que mente. Travado por
+  `ArchiveConfigSingleOwnerTests`.
 - **A transcrição colada NÃO vive aqui.** Ela é texto de *um* vídeo, então mora
   no Estúdio (etapa 1), ao lado da URL a que pertence — não no `ajustes.toml`,
   que vale para o projeto inteiro. Antes ela estava neste arquivo e o painel

@@ -63,6 +63,13 @@
       progress_bar: false,
       jump_cut: false,
       loudnorm: true,
+      // Biblioteca. A quarta secao de Ajustes, e a unica que nao entra no
+      // render: governa o arquivamento de um perfil em `reels/` e `posts/`.
+      // `only_kinds: null` e "os dois tipos" (o select usa value="" para isso);
+      // `max_items: 20` e' o `value=` do formulario de la'.
+      only_kinds: null,
+      max_items: 20,
+      archive_viral_first: false,
     },
   };
 
@@ -744,15 +751,17 @@ count: $('#count').value.trim() === ''
     // ainda nao conhece um campo) nao pode apagar o que ja esta aqui.
     const NUMERICOS = ['min_duration', 'max_duration', 'target_duration',
                        'min_score', 'min_gap', 'beam_size',
-                       'crf', 'target_lufs', 'workers', 'headline_seconds'];
+                       'crf', 'target_lufs', 'workers', 'headline_seconds',
+                       'max_items'];
     const TEXTOS = ['engine', 'whisper_model', 'layout', 'caption_preset',
                     'caption_style'];
     // Vazio e um valor legitimo aqui: `language: ""` no formulario e
     // "auto-detectar", entao nao se pode descartar string vazia. O motor
-    // recebe `null` nesse caso.
-    const TEXTO_OU_NULO = ['language', 'cache_dir'];
+    // recebe `null` nesse caso. `only_kinds: ""` e' o mesmo caso no select da
+    // Biblioteca -- "reels e posts", que o motor recebe como `null`.
+    const TEXTO_OU_NULO = ['language', 'cache_dir', 'only_kinds'];
     const BOOLEANOS = ['vad_filter', 'transcript_cache', 'progress_bar',
-                       'jump_cut', 'loudnorm'];
+                       'jump_cut', 'loudnorm', 'archive_viral_first'];
 
     NUMERICOS.forEach((chave) => {
       const valor = settings[chave];
@@ -869,6 +878,27 @@ count: $('#count').value.trim() === ''
     el.textContent = partes.join(' · ');
   }
 
+  // A quarta linha da ficha, e a unica que nao descreve o corte: o
+  // arquivamento de um perfil e' outra tarefa. Ela existe porque a ficha e' o
+  // INDICE das secoes de /ajustes -- uma secao sem linha faz a pessoa concluir
+  // que ela nao existe. Os rotulos pt-BR sao os MESMOS das opcoes do formulario
+  // de la', pela razao de sempre: a ficha LE o ajuste, e ler "reels" aqui
+  // contra "Só reels" la' faz parecer que sao duas coisas.
+  const ONLY_WORDS = { reels: 'só reels', posts: 'só posts' };
+
+  function renderArchiveSummary() {
+    const el = $('#archive-summary-value');
+    if (!el) return;
+    const a = state.ajustes;
+    const partes = [ONLY_WORDS[a.only_kinds] || 'reels e posts'];
+    // Zero significa "sem limite" no motor (`int(x) or None`): dizer "até 0 de
+    // cada" descreveria um corte que ninguem pediu.
+    const limite = Number(a.max_items);
+    partes.push(limite > 0 ? 'até ' + limite + ' de cada' : 'sem limite');
+    if (a.archive_viral_first) partes.push('em alta primeiro');
+    el.textContent = partes.join(' · ');
+  }
+
   // Com `count = 0` ("quantidade automatica"), o curador so consegue escolher
   // entre as janelas que julgou: as demais vao para score -1 e o piso relativo
   // as descarta. Ou seja, `ranker_top_n` deixa de ser um dial de custo e vira o
@@ -896,6 +926,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     renderSelectionSummary();
     renderTranscriptSummary();
     renderRenderSummary();
+    renderArchiveSummary();
   }
 
   // ---------- curador: provedores e prompt ----------
@@ -2821,6 +2852,7 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   // que esta salvo. A leitura e rapida (arquivo local) e nao bloqueia a tela.
   renderSelectionSummary();
   renderRenderSummary();
+  renderArchiveSummary();
   loadAjustes();
 
   bindQueueFilters();

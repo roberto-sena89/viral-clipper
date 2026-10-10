@@ -112,6 +112,14 @@
       progress_bar: toggleOn('#progress-bar-on'),
       jump_cut: toggleOn('#jump-cut'),
       loudnorm: toggleOn('#loudnorm'),
+      // A Biblioteca: os tres controles do arquivamento de perfil. Eles moram
+      // AQUI (e nao no painel da lista de resultados) porque `ajustes.toml` e'
+      // do projeto, enquanto aquele painel e' refeito a cada busca -- o que a
+      // pessoa escolhia la' sumia junto com a lista. `""` no <select> e' "os
+      // dois tipos", que vira `null` no ClipConfig (e em `--only`).
+      only_kinds: $('#arq-only').value || null,
+      max_items: num('#arq-max', 20),
+      archive_viral_first: toggleOn('#arq-viral'),
       // O Curador com IA saiu desta pagina: o card inteiro mora so no Estúdio
       // (que ja o tinha). As chaves ranker_* deixaram AJUSTES_KEYS junto --
       // elas continuam no ClipConfig e na CLI, so nao sao mais um ajuste
@@ -140,6 +148,7 @@
       ['crf', '#crf'],
       ['target_lufs', '#target-lufs'],
       ['workers', '#workers'],
+      ['max_items', '#arq-max'],
     ];
     numbers.forEach(([key, sel]) => {
       if (s[key] !== undefined && s[key] !== null) setNum(sel, s[key]);
@@ -153,6 +162,7 @@
       ['layout', '#layout'],
       ['caption_preset', '#caption-preset'],
       ['caption_style', '#caption-style'],
+      ['only_kinds', '#arq-only'],
     ];
     texts.forEach(([key, sel]) => {
       if (s[key] === undefined || s[key] === null) return;
@@ -169,6 +179,7 @@
       ['progress_bar', '#progress-bar-on'],
       ['jump_cut', '#jump-cut'],
       ['loudnorm', '#loudnorm'],
+      ['archive_viral_first', '#arq-viral'],
     ];
     toggles.forEach(([key, sel]) => {
       if (s[key] !== undefined) setToggle(sel, s[key]);

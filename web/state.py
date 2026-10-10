@@ -59,6 +59,13 @@ AJUSTES_KEYS = (
     "layout", "caption_preset", "caption_style", "font_size",
     "crf", "target_lufs", "workers",
     "headline_seconds", "progress_bar", "jump_cut", "loudnorm",
+    # O arquivamento de perfil (a Biblioteca). Estes tres sairam do painel da
+    # lista de resultados -- que nao e' lugar de formulario de configuracao -- e
+    # passaram a viver aqui. O `scrap.js` os le' por GET /api/ajustes em vez de
+    # ler `#arq-only`/`#arq-max`/`#btn-arq-viral` do DOM. Os nomes sao os mesmos
+    # dests que a CLI ja' tinha (`--only`, `--max-items`) mais o novo
+    # `--archive-viral-first`: um nome por conceito, nos dois lados.
+    "only_kinds", "max_items", "archive_viral_first",
     # The seven ranker_* keys are deliberately absent: the AI curator is
     # configured on the Cortes page, which owns the card and sends its values
     # in the run payload. They are still real ClipConfig fields and real CLI

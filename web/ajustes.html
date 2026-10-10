@@ -136,19 +136,25 @@
          um. A classe e' a do shared.css, sem nome novo; o que diferencia esta
          instancia e' o `data-section-nav` -- o gancho que o scroll-spy do
          ajustes.js le, e que troca os botoes por botoes com ordem de
-         leitura (01-04) e estado da secao visivel.
+         leitura (01-05) e estado da secao visivel.
 
-         O quarto atalho e' o unico que SAI da pagina: o editor do prompt do
+         UM atalho por card, na ordem do documento: a secao sem atalho e' a
+         secao que a pessoa nao alcanca sem rolar a pagina inteira -- e a
+         Biblioteca entrou como quarta secao, entao entra como 04.
+
+         O ULTIMO atalho e' o unico que SAI da pagina: o editor do prompt do
          curador mudou de casa (Estudio > etapa 3) e ficou com um dono so. Um
          link para a ancora antiga seria um salto para lugar nenhum -- o
          scroll-spy o descarta em silencio, porque so observa `a[href^="#"]`,
          e o clique nao faria nada. Apontar para a etapa nova mantem o atalho
-         util e a numeracao inteira. -->
+         util. Ele vai por ULTIMO porque nao e' uma parada desta pagina: a
+         numeracao segue a ordem em que as secoes aparecem aqui. -->
     <nav class="jump-links" aria-label="Atalhos desta página" data-section-nav>
       <a href="#card-selecao" aria-current="location"><span class="jump-num" aria-hidden="true">01</span> Seleção</a>
       <a href="#card-transcricao"><span class="jump-num" aria-hidden="true">02</span> Transcrição</a>
       <a href="#card-renderizacao"><span class="jump-num" aria-hidden="true">03</span> Renderização</a>
-      <a href="/?etapa=3"><span class="jump-num" aria-hidden="true">04</span> Prompt do curador</a>
+      <a href="#card-arquivamento"><span class="jump-num" aria-hidden="true">04</span> Biblioteca</a>
+      <a href="/?etapa=3"><span class="jump-num" aria-hidden="true">05</span> Prompt do curador</a>
     </nav>
 
   </section>
@@ -439,6 +445,57 @@
               <span class="tw-label">Normalizar loudness</span>
               <button class="toggle active" type="button" id="loudnorm" role="switch" aria-checked="true" aria-label="Normalizar loudness"></button>
             </div>
+          </div>
+        </div>
+
+        <!-- A QUARTA secao, e a unica que nao alimenta o render: ela governa o
+             ARQUIVAMENTO de um perfil na Biblioteca (`/biblioteca`), que salva o
+             catalogo de uma conta em `reels/` e `posts/`.
+
+             Ela mora aqui porque `/ajustes` e' o dono dos ajustes persistidos em
+             `ajustes.toml`, e o painel da lista de resultados NAO e' lugar de
+             formulario: os tres controles liam o DOM de la' e eram re-montados a
+             cada busca, entao o que a pessoa escolhia sumia junto com a lista.
+             Agora a Biblioteca LE estes valores por `GET /api/ajustes` -- uma
+             secao, um dono.
+
+             Sem `card-badge`: as duas etiquetas que existem classificam a secao
+             como "Resultado" (muda o corte) ou "Infraestrutura" (muda o custo do
+             corte). Esta nao muda nem um nem outro -- ela muda outra tarefa. -->
+        <div id="card-arquivamento" class="card card-arquivamento" tabindex="-1">
+          <h2><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.2l1.6 2h8.2a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 11v5M9.8 13.8 12 16l2.2-2.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Biblioteca</h2>
+          <p class="card-lede">O que a Biblioteca baixa quando você arquiva o perfil de uma conta — em <code>reels/</code> e <code>posts/</code>.</p>
+
+          <div class="form-section">
+            <div class="field-row">
+              <div class="field">
+                <label for="arq-only">O que baixar</label>
+                <select id="arq-only" name="arq-only" aria-describedby="arq-only-hint">
+                  <option value="" selected>Reels e posts</option>
+                  <option value="reels">Só reels</option>
+                  <option value="posts">Só posts</option>
+                </select>
+                <span class="hint" id="arq-only-hint">O limite abaixo vale por tipo: 20 = até 20 reels + até 20 posts.</span>
+              </div>
+            </div>
+            <!-- O limite e a ordem sao refinamento; o TIPO e' a escolha da
+                 secao, e por isso fica a vista. Mesmo padrao dos outros cards:
+                 um disclosure por card, e nada atras dele que decida sozinho. -->
+            <details class="avancado">
+              <summary>Avançado — limite e ordem</summary>
+              <div class="field-row">
+                <div class="field">
+                  <label for="arq-max">Máximo de itens (por tipo)</label>
+                  <input type="number" id="arq-max" name="arq-max" min="1" max="5000" value="20"
+                         aria-describedby="arq-max-hint">
+                  <span class="hint" id="arq-max-hint">Itens já baixados são pulados, então repetir continua de onde parou.</span>
+                </div>
+              </div>
+              <div class="toggle-wrap">
+                <span class="tw-label">Em alta primeiro (ordena por plays/likes antes do corte por tipo)</span>
+                <button class="toggle" type="button" id="arq-viral" role="switch" aria-checked="false" aria-label="Em alta primeiro"></button>
+              </div>
+            </details>
           </div>
         </div>
 

@@ -107,6 +107,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Com --profile, baixar no maximo N itens POR TIPO (os mais recentes de cada: N reels + N posts)",
     )
     parser.add_argument(
+        "--archive-viral-first",
+        dest="archive_viral_first",
+        action="store_true",
+        default=False,
+        help="Com --profile, ordenar por plays/likes ANTES do corte por tipo (em vez da ordem do feed)",
+    )
+    parser.add_argument(
         "--config",
         dest="config_file",
         default=None,
@@ -791,6 +798,7 @@ def run_profile_mode(
     session: str | None = None,
     only: str | None = None,
     max_items: int | None = None,
+    order: str = "recent",
 ) -> int:
     """Baixa o catalogo inteiro de um perfil, separado em reels/ e posts/.
 
@@ -818,6 +826,7 @@ def run_profile_mode(
             session=session,
             only=only,
             max_items=max_items,
+            order=order,
         )
 
 
@@ -830,6 +839,7 @@ def _run_profile_mode_locked(
     session: str | None = None,
     only: str | None = None,
     max_items: int | None = None,
+    order: str = "recent",
 ) -> int:
     """Corpo de :func:`run_profile_mode`, ja com a trava de ``output_dir`` na mao."""
     from . import archive as archive_mod
@@ -855,7 +865,7 @@ def _run_profile_mode_locked(
         logger.warn(str(exc))
         return 1
 
-    chosen = archive_mod.select_items(listing, kinds=kinds, limit=max_items)
+    chosen = archive_mod.select_items(listing, kinds=kinds, limit=max_items, order=order)
     if not chosen:
         logger.warn("O filtro --only/--max-items nao deixou nenhum item para baixar.")
         return 1
@@ -961,6 +971,10 @@ def main(argv: list[str] | None = None) -> int:
             session=args.ig_session,
             only=args.only_kinds,
             max_items=args.max_items,
+            # "Em alta primeiro" da Biblioteca. Vem de `args` (e nao de
+            # `config`) porque `apply_defaults` ja' resolveu a precedencia:
+            # flag vence o `ajustes.toml`, e o arquivo vence o default.
+            order="viral" if args.archive_viral_first else "recent",
         )
 
     if args.batch:

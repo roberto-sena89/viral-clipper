@@ -1750,13 +1750,20 @@ main > section > .card { padding: 17px; }
   grid-template-areas:
     "selecao resumo"
     "trans   resumo"
-    "rend    resumo";
+    "rend    resumo"
+    "arq     resumo";
   gap: 16px;
 }
 [data-page="ajustes"] .main-grid > form#ajustes-form { display: contents; }
 [data-page="ajustes"] .card-selecao   { grid-area: selecao; }
 [data-page="ajustes"] .card-transcricao { grid-area: trans; }
 [data-page="ajustes"] .card-renderizacao { grid-area: rend; }
+/* A Biblioteca nao entra no render, mas entra na PAGINA: ela e' a quarta
+   secao, e a ficha do Estudio lista as quatro na mesma ordem. Por isso ela
+   tem area propria em vez de dividir a linha com outro card -- dois cards na
+   mesma linha poem dois atalhos no mesmo pixel e o scroll-spy so' acende um
+   (foi o defeito do par Transcricao/Renderizacao, em 2026-10-09). */
+[data-page="ajustes"] .card-arquivamento { grid-area: arq; }
 [data-page="ajustes"] .card-resumo    { grid-area: resumo; }
 /* O Resumo gruda no topo enquanto a pagina rola: e' onde mora o estado do
    save, e o estado que se procura no meio da rolagem e' o da ultima gravacao.
@@ -1793,6 +1800,7 @@ main > section > .card { padding: 17px; }
       "selecao"
       "trans"
       "rend"
+      "arq"
       "resumo";
   }
   [data-page="ajustes"] .card-resumo .card { position: static; }

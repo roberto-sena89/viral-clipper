@@ -1412,22 +1412,168 @@ class ArchiveLogPageTests(unittest.TestCase):
 
 
 class ViralOptionPageTests(unittest.TestCase):
-    """O "mais viralizados" existe nos dois paineis e chega ao servidor."""
+    """O "mais viralizados" existe nos dois paineis e chega ao servidor.
+
+    Eram dois botoes na MESMA pagina (busca e arquivamento). O do arquivamento
+    saiu: ele nao era estado de tela, era um ajuste persistido, e foi para a
+    secao "Biblioteca" de /ajustes junto com o tipo e o limite. O que se mede
+    agora e' a PONTE entre os dois -- o botao de busca fica na Biblioteca, o do
+    arquivamento mora em Ajustes, e a Biblioteca LE o valor pela API em vez de
+    colher do proprio DOM (a caixa e' refeita a cada busca, entao um controle
+    dentro dela perdia a escolha junto com a lista).
+    """
 
     @classmethod
     def setUpClass(cls):
         cls.html = page_source("scrap.html")
+        cls.ajustes = page_source("ajustes.html")
 
-    def test_the_option_exists_on_search_and_archive(self):
+    def test_the_search_toggle_still_lives_in_the_library(self):
         for fragment in (
             'id="btn-viral"',
-            'id="btn-arq-viral"',
             "aria-pressed",
             "payload.viral",
-            '"viral"',
             "updateArchiveVisibility",
         ):
             self.assertIn(fragment, self.html, fragment)
+
+    def test_the_archive_toggle_lives_in_ajustes(self):
+        self.assertIn('id="arq-viral"', self.ajustes,
+                      "o 'Em alta primeiro' saiu de Ajustes")
+        self.assertIn("archive_viral_first", self.ajustes,
+                      "o botao de Ajustes nao esta' ligado a chave que o motor le")
+
+    def test_the_library_reads_the_settings_by_api(self):
+        # A ponte: sem ela o botao "Baixar para o computador" obedeceria a um
+        # ajuste que ninguem ve' -- e a nota que aponta /ajustes seria mentira.
+        self.assertIn("loadArchiveSettings", self.html,
+                      "o scrap.js nao le' a configuracao de /ajustes")
+        self.assertIn('get("/ajustes")', self.html,
+                      "a leitura da configuracao nao passa pela API")
+        self.assertNotIn('id="arq-only"', self.html,
+                         "os controles de configuracao voltaram para a Biblioteca")
+
+
+class ArchiveConfigSingleOwnerTests(unittest.TestCase):
+    """A config do arquivamento de perfil tem UM dono: a secao Biblioteca.
+
+    Ate' o D7 ela era colhida do DOM do painel da lista de resultados
+    (`#arq-only`, `#arq-max`, `#btn-arq-viral`). Aquele painel e' refeito a cada
+    busca, entao o que a pessoa escolhia sumia junto com a lista -- e um ajuste
+    que se perde nao e' um ajuste, e' um campo. Agora os tres valores sao
+    ajustes persistidos em `ajustes.toml` (a quarta secao de /ajustes) e a
+    Biblioteca os LE por `GET /api/ajustes`.
+
+    Os tres lados sao medidos: o markup de Ajustes, a AUSENCIA no markup da
+    Biblioteca, e o MAPEAMENTO no `scrap.js` -- o unico ponto onde a chave do
+    motor (`only_kinds`, `max_items`, `archive_viral_first`) vira o campo do
+    payload (`only`, `max_items`, `order`). O mapeamento e' executado, nao
+    greparado: um `||` trocado por `&&` nao muda o texto e muda o resultado.
+    """
+
+    #: Onde a secao mora. A nota da Biblioteca aponta para ca'.
+    ANCORA = "/ajustes#card-arquivamento"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.biblioteca = page_source("scrap.html")
+        cls.ajustes = page_source("ajustes.html")
+        cls.js = (server.WEB_DIR / "scrap.js").read_text(encoding="utf-8")
+
+    # ---------- o markup ----------
+
+    def test_the_section_lives_in_ajustes_with_its_three_controls(self):
+        self.assertIn('id="card-arquivamento"', self.ajustes,
+                      "a secao Biblioteca saiu da pagina de Ajustes")
+        for cid in ("arq-only", "arq-max", "arq-viral"):
+            with self.subTest(id=cid):
+                self.assertIn('id="' + cid + '"', self.ajustes,
+                              f"`{cid}` nao esta' na secao Biblioteca")
+
+    def test_no_config_control_survived_in_the_library(self):
+        # A ausencia E' o ponto. Um controle que continuasse na caixa seria uma
+        # SEGUNDA fonte para o mesmo valor -- e ela venceria, porque e' o DOM
+        # dela que o `archive()` lia.
+        for fragmento in ('id="arq-only"', 'id="arq-max"', 'id="btn-arq-viral"',
+                          "arqViralOn"):
+            with self.subTest(fragmento=fragmento):
+                self.assertNotIn(fragmento, self.biblioteca,
+                                 f"`{fragmento}` voltou para a Biblioteca")
+
+    def test_the_library_points_at_the_section_it_obeys(self):
+        # Um botao que obedece a um ajuste invisivel e' um botao que mente: a
+        # caixa tem de dizer ONDE se edita. E a ancora tem de existir do outro
+        # lado, senao o link cai no topo da pagina em silencio.
+        self.assertIn(self.ANCORA, self.biblioteca,
+                      "a Biblioteca nao aponta para a secao que a governa")
+        self.assertIn('id="card-arquivamento"', self.ajustes,
+                      "a ancora da Biblioteca aponta para um alvo inexistente")
+
+    # ---------- o mapeamento (executado) ----------
+
+    def _mapeia(self, resposta):
+        """Roda o `loadArchiveSettings` REAL do `scrap.js` sobre uma resposta.
+
+        `get` entra como parametro em vez de um fetch de verdade: a funcao e'
+        pura sobre a resposta, e um mock de rede aqui testaria o mock.
+        """
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node nao esta' no PATH")
+        import subprocess
+
+        m = re.search(r"async function loadArchiveSettings\(\) \{[\s\S]*?\n  \}",
+                      self.js)
+        if m is None:
+            raise AssertionError(
+                "loadArchiveSettings() sumiu do scrap.js. Se a funcao foi "
+                "renomeada, renomeie esta ancora junto -- um match que devolve "
+                "None e' um teste que nao testa nada.")
+        script = (
+            "const fn = new Function('get', " + json.dumps(m.group(0)) + " + "
+            "'\\nreturn loadArchiveSettings();');\n"
+            "const resposta = " + json.dumps(resposta) + ";\n"
+            "fn(async () => resposta).then((c) => console.log(JSON.stringify(c)));\n"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, encoding="utf-8", timeout=30)
+        if proc.returncode != 0:
+            raise AssertionError(
+                "loadArchiveSettings estourou: " + proc.stderr.strip()[:400])
+        return json.loads(proc.stdout.strip())
+
+    def test_the_engine_keys_become_the_payload_fields(self):
+        self.assertEqual(
+            self._mapeia({"settings": {"only_kinds": "posts", "max_items": 7,
+                                       "archive_viral_first": True}}),
+            {"only": "posts", "max_items": 7, "order": "viral"},
+        )
+
+    def test_an_unsaved_setting_falls_back_to_the_form_default(self):
+        """`null` e' "nunca salvo", e o padrao da TELA e' 20 -- nao "sem limite".
+
+        Zero significa "sem limite" no motor (`int(x) or None`). Se o ausente
+        virasse zero, quem nunca abriu /ajustes varreria o catalogo inteiro do
+        perfil sem ter pedido: o oposto de um padrao.
+        """
+        self.assertEqual(
+            self._mapeia({"settings": {"only_kinds": None, "max_items": None,
+                                       "archive_viral_first": False}}),
+            {"only": "", "max_items": 20, "order": "recent"},
+        )
+
+    def test_an_explicit_zero_still_means_no_limit(self):
+        # O outro lado do teste acima: o zero DIGITADO nao pode ser "corrigido"
+        # para 20, senao nao ha como pedir o perfil inteiro.
+        self.assertEqual(
+            self._mapeia({"settings": {"max_items": 0}})["max_items"], 0)
+
+    def test_a_server_that_does_not_answer_keeps_the_default(self):
+        """Sem resposta, o arquivamento sai com o padrao -- nunca com lixo."""
+        self.assertEqual(
+            self._mapeia({"error": "offline", "offline": True}),
+            {"only": "", "max_items": 20, "order": "recent"},
+        )
 
 
 class SearchLoadingTests(unittest.TestCase):
@@ -5335,10 +5481,12 @@ class StickyActionRowTests(unittest.TestCase):
     * o `z-index`. A linha vem ANTES da lista no DOM, entao sem ele a lista
       pinta por cima da barra.
 
-    E o que fica de FORA tambem e' decisao: a caixa de arquivamento tem 180px e
-    QUATRO controles de configuracao. Prender isso cobriria um quinto de uma tela
-    de 900px -- e' o D7, que segue para quem for tirar a config de dentro do
-    painel da lista.
+    E o que fica de FORA tambem e' decisao: prender a caixa de arquivamento
+    cobriria um pedaco grande de uma tela de 900px por causa de um botao. Ela
+    ficou mais magra ainda com o D7 -- a configuracao (tipo, limite e ordem)
+    saiu do painel da lista e foi para a secao "Biblioteca" de /ajustes, entao
+    o que resta aqui e' a ACAO. O motivo de nao prender nao mudou: e' uma
+    caixa que se usa uma vez, no fim da lista, e nao enquanto se rola.
     """
 
     @classmethod
@@ -5387,7 +5535,7 @@ class StickyActionRowTests(unittest.TestCase):
             "a barra voltou a usar o `--well-bg` cru, que e' translucido")
 
     def test_only_the_action_row_is_pinned(self):
-        """A config de arquivamento (180px) fica de fora de proposito -- D7.
+        """A caixa de arquivamento fica de fora de proposito.
 
         A trava e' invertida de proposito: em vez de procurar uma regra da
         `#arquivar-box` e conferir que ela nao prende, exige que TODO
@@ -5401,7 +5549,8 @@ class StickyActionRowTests(unittest.TestCase):
                 self.assertIn(
                     "#select-box", seletor,
                     f"{seletor.strip()} prende, e so' a linha de acoes devia: a "
-                    "caixa de arquivamento tem 180px e quatro controles")
+                    "caixa de arquivamento e' uma acao de fim de lista, nao uma "
+                    "barra de trabalho")
 
     def test_the_offset_is_measured_next_to_the_header_it_follows(self):
         """O `top` do sticky e' a altura do header -- e mora junto dela.
@@ -6968,7 +7117,7 @@ class ManualApiKeyTests(unittest.TestCase):
 
 
 class AjustesLayoutTests(unittest.TestCase):
-    """Os tres cards de /ajustes EMPILHAM; o Resumo e' a coluna ao lado.
+    """Os quatro cards de /ajustes EMPILHAM; o Resumo e' a coluna ao lado.
 
     Ate' 2026-10-09 a Transcricao e a Renderizacao dividiam uma linha (o
     wrapper `.duo`), num grid de tres colunas com a Selecao na faixa de cima. O
@@ -6979,17 +7128,36 @@ class AjustesLayoutTests(unittest.TestCase):
     qualquer rolagem. Empilhado, cada atalho cai na propria altura e cada secao
     acende.
 
+    O quarto card (Biblioteca) entrou depois, pelo mesmo motivo: a
+    configuracao do arquivamento de perfil saiu do painel da lista de
+    resultados — onde era refeita a cada busca — e passou a ser ajuste
+    persistido em `ajustes.toml`. Ele e' uma secao a mais na pagina, entao
+    ganha area propria, e nao uma linha dividida com outro card.
+
     O que este teste trava e a ARVORE e o MAPA DE AREAS do grid — nao a largura
     (isso e' medicao de navegador, feita no `sticky-probe/`). A trava do defeito
     em si e' `test_no_two_content_cards_share_a_row`: enquanto dois cards
     dividirem uma linha, dois atalhos vao cair no mesmo pixel.
     """
 
-    #: Os tres cards, na ordem em que aparecem (a mesma dos atalhos).
-    CARDS = ("Seleção", "Transcrição", "Renderização")
+    #: Os quatro cards, na ordem em que aparecem: (id, palavra do <h2>).
+    #:
+    #: O que se MEDE e' o `id`. Medir o TITULO por `html.index("Biblioteca")`
+    #: parecia equivalente e nao e': o texto casa em qualquer lugar, inclusive
+    #: num COMENTARIO acima do card ou no rotulo do atalho -- foi assim que
+    #: este teste passou a ordenar pela escada do topo em vez de pela pagina
+    #: (a palavra "Biblioteca" aparece no comentario do `nav.jump-links`, que
+    #: vem antes de todos os cards). O titulo entra como CONFERENCIA, num
+    #: subteste separado.
+    CARDS = (
+        ("card-selecao", "Seleção"),
+        ("card-transcricao", "Transcrição"),
+        ("card-renderizacao", "Renderização"),
+        ("card-arquivamento", "Biblioteca"),
+    )
 
-    #: As quatro areas do grid: um card por linha, o Resumo na coluna lateral.
-    AREAS = ("selecao", "trans", "rend", "resumo")
+    #: As cinco areas do grid: um card por linha, o Resumo na coluna lateral.
+    AREAS = ("selecao", "trans", "rend", "arq", "resumo")
 
     @classmethod
     def setUpClass(cls):
@@ -7015,8 +7183,8 @@ class AjustesLayoutTests(unittest.TestCase):
             raise AssertionError("o `grid-template-areas` de Ajustes sumiu")
         return m.group(1)
 
-    def test_the_three_cards_are_direct_children_of_the_form(self):
-        """Os tres cards sao filhos do form — sem wrapper entre eles.
+    def test_the_cards_are_direct_children_of_the_form(self):
+        """Os quatro cards sao filhos do form — sem wrapper entre eles.
 
         O `.duo` que agrupava os dois ultimos saiu: com os cards empilhados,
         uma grade de duas colunas dentro de uma coluna de grade e' uma caixa a
@@ -7027,32 +7195,58 @@ class AjustesLayoutTests(unittest.TestCase):
                          "o wrapper `.duo` voltou: os cards dividiriam linha de novo")
         self.assertNotIn("<!-- /.duo -->", self.html, "sobrou o marcador do `.duo`")
         trecho = self.html[self.html.index('<form id="ajustes-form"'):self.html.index("</form>")]
-        for cid in ("card-selecao", "card-transcricao", "card-renderizacao"):
+        for cid, _ in self.CARDS:
             with self.subTest(card=cid):
                 self.assertIn('id="' + cid + '"', trecho,
                               f"o card {cid} saiu do form de Ajustes")
 
     def test_the_card_order_is_the_pipeline_order(self):
-        """A ordem importa: seleciona, transcreve, renderiza."""
-        posicoes = [self.html.index(c) for c in self.CARDS]
+        """A ordem importa: seleciona, transcreve, renderiza — e a Biblioteca.
+
+        As tres primeiras sao o pipeline. A Biblioteca e' a unica que nao entra
+        no render (governa o arquivamento de um perfil), mas entra na pagina e
+        por isso entra aqui: a ordem deste teste e' a mesma das linhas da ficha
+        da etapa 2 e a mesma da escada de atalhos, que sao os dois indices
+        desta pagina.
+        """
+        posicoes = [self.html.index('id="' + cid + '"') for cid, _ in self.CARDS]
         self.assertEqual(posicoes, sorted(posicoes),
                          "os cards de /ajustes sairam da ordem do pipeline")
 
+    def test_every_card_heading_carries_its_name(self):
+        """Cada card tem o `<h2>` com o nome que o indice promete.
+
+        A ficha do Estudio e a escada de atalhos sao construidas a partir do
+        `id`; o que a pessoa LE e' o `<h2>`. Um card que trocasse de titulo sem
+        trocar de `id` deixaria os dois indices apontando para um nome que nao
+        esta mais na tela -- e nada quebraria.
+        """
+        for cid, titulo in self.CARDS:
+            with self.subTest(card=cid):
+                m = re.search(r'<div id="' + cid + r'"[^>]*>\s*<h2>(.*?)</h2>',
+                              self.html, re.S)
+                self.assertIsNotNone(m, f"o card {cid} ficou sem <h2>")
+                limpo = re.sub(r"<[^>]+>", " ", m.group(1))
+                self.assertIn(titulo, limpo,
+                              f"o <h2> de {cid} nao diz '{titulo}'")
+
     def test_the_prompt_card_left_the_page(self):
-        """O quarto card NAO mora mais aqui — o Estudio e' o dono do prompt.
+        """O card do prompt NAO mora mais aqui — o Estudio e' o dono dele.
 
         O que se trava e' o CARD, nao a frase: "Prompt do curador" continua na
-        pagina como ROTULO do atalho 04, que leva ao Estudio (`/?etapa=3`). O
-        contrato do dono unico tem testes proprios em `test_ajustes.py`
-        (`PromptCardSingleOwnerTests`); aqui so' se garante que o form tem TRES
-        cards, nao quatro.
+        pagina como ROTULO do ULTIMO atalho (05), que leva ao Estudio
+        (`/?etapa=3`) -- ele e' o unico que sai desta pagina. O contrato do dono
+        unico tem testes proprios em `test_ajustes.py`
+        (`PromptCardSingleOwnerTests`); aqui so' se garante que o form tem
+        QUATRO cards (Selecao, Transcricao, Renderizacao, Biblioteca), e nao um
+        quinto com o editor do prompt.
         """
         self.assertNotIn('id="curator-prompt"', self.html,
                          "o editor do prompt voltou para a pagina de Ajustes")
         self.assertNotIn("card-prompt", self.html,
                          "a classe do card do prompt voltou para Ajustes")
-        self.assertEqual(self.html.count('class="card card-'), 3,
-                         "o form deixou de ter os tres cards")
+        self.assertEqual(self.html.count('class="card card-'), 4,
+                         "o form deixou de ter os quatro cards")
 
     def test_the_resumo_is_the_side_column(self):
         """O Resumo e' a coluna ao lado, dentro do `.main-grid`.
@@ -7079,8 +7273,26 @@ class AjustesLayoutTests(unittest.TestCase):
     def test_the_last_card_closes_before_the_form(self):
         """A `</form>` fecha os cards: nada de card de fora entrar por engano."""
         self.assertLess(
-            self.html.index('id="card-renderizacao"'), self.html.index("</form>"),
+            self.html.index('id="card-arquivamento"'), self.html.index("</form>"),
             "o ultimo card ficou fora do form")
+
+    def test_every_card_has_a_shortcut(self):
+        """Paridade: cada card de /ajustes tem um atalho na escada do topo.
+
+        Um card sem atalho e' uma secao que so' se alcanca rolando a pagina
+        inteira -- e a escada e' justamente o indice dela. O contrario tambem
+        mente: um atalho para um card que nao existe e' um clique que nao faz
+        nada, porque o scroll-spy so' observa `a[href^="#"]` e um alvo ausente
+        nao gera erro nenhum. Nos dois sentidos, a contagem tem de bater.
+        """
+        nav = re.search(r'<nav class="jump-links".*?</nav>', self.html, re.S)
+        self.assertIsNotNone(nav, "a escada de atalhos de /ajustes sumiu")
+        alvos = set(re.findall(r'href="#(card-[a-z]+)"', nav.group(0)))
+        cards = {cid for cid, _ in self.CARDS}
+        self.assertEqual(
+            alvos, cards,
+            "os atalhos (%s) e os cards (%s) de /ajustes divergiram"
+            % (sorted(alvos), sorted(cards)))
 
     def test_the_balance_of_divs_is_intact(self):
         """A arvore fechou: -1 em qualquer ponto = `</div>` sobrando.
@@ -7125,12 +7337,13 @@ class AjustesLayoutTests(unittest.TestCase):
 
         A contagem de colunas sozinha nao diz ONDE cada card cai; e' o mapa de
         areas que garante que cada card tem a propria linha e o Resumo e' a
-        coluna lateral nas tres.
+        coluna lateral nas quatro.
         """
         areas = re.findall(r'"([^"]+)"', self._areas())
         self.assertEqual(
             [linha.split() for linha in areas],
-            [["selecao", "resumo"], ["trans", "resumo"], ["rend", "resumo"]],
+            [["selecao", "resumo"], ["trans", "resumo"], ["rend", "resumo"],
+             ["arq", "resumo"]],
             "as areas de Ajustes deixaram de ser um card por linha",
         )
 
@@ -8964,8 +9177,8 @@ class StudioToAjustesControlTests(unittest.TestCase):
     """A ida do Estudio para Ajustes, pela ficha da etapa 2.
 
     A ficha mostra o que vem de `ajustes.toml` -- uma linha por card da pagina
-    de Ajustes (selecao, transcricao, render) -- e nao edita nada: quem edita e'
-    a pagina de Ajustes. O controle que faz a ponte era um
+    de Ajustes (selecao, transcricao, render, biblioteca) -- e nao edita nada:
+    quem edita e' a pagina de Ajustes. O controle que faz a ponte era um
     `<a class="etapa-ficha-edit">`; virou `<button class="btn pressable">`, e o
     destino passou a morar no `index.js`, como o irmao da Biblioteca.
 
@@ -8977,7 +9190,7 @@ class StudioToAjustesControlTests(unittest.TestCase):
     #: O id do botao.
     ID = "btn-editar-ajustes"
 
-    #: O destino. Mora no JS, nao num `href`. Leva a ANCORA do primeiro dos tres
+    #: O destino. Mora no JS, nao num `href`. Leva a ANCORA do primeiro dos
     #: cards que a ficha resume -- o `id` esta no card (e nao no titulo) para o
     #: cabecalho sticky nao cortar a borda de cima do alvo.
     ROTA = "/ajustes#card-selecao"
@@ -8987,6 +9200,11 @@ class StudioToAjustesControlTests(unittest.TestCase):
         ("selection-summary-value", "renderSelectionSummary"),
         ("transcript-summary-value", "renderTranscriptSummary"),
         ("render-summary-value", "renderRenderSummary"),
+        # A Biblioteca e' a unica linha que nao descreve o corte -- ela descreve
+        # o arquivamento de um perfil. Fica assim mesmo: a ficha e' o INDICE das
+        # secoes de /ajustes, e indice com buraco faz a pessoa concluir que a
+        # secao nao existe.
+        ("archive-summary-value", "renderArchiveSummary"),
     )
 
     @classmethod

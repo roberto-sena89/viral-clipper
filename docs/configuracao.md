@@ -67,7 +67,7 @@ ali, não no arquivo.
 
 ## Grupos de chaves
 
-Do `config.example.toml` (o motor tem **88 campos** em `ClipConfig`; abaixo, os
+Do `config.example.toml` (o motor tem **93 campos** em `ClipConfig`; abaixo, os
 grupos que importam no dia a dia):
 
 | Grupo          | Chaves-chave                                                                 |
@@ -101,10 +101,17 @@ Notas que evitam surpresa:
 ## `ajustes.toml` (o painel) é outro arquivo
 
 O painel de Ajustes tem o **próprio** `ajustes.toml` (no `.gitignore`), com
-**26 chaves** (`AJUSTES_KEYS`) — um subconjunto do motor. Não confunda com
+**29 chaves** (`AJUSTES_KEYS`) — um subconjunto do motor. Não confunda com
 `config.toml`: são arquivos separados, com ciclos de vida separados. O contrato
 de escrita (atômica, malformado avisa em vez de resetar) está em
 [`painel-web.md`](painel-web.md).
+
+Três dessas chaves não entram no render: `only_kinds`, `max_items` e
+`archive_viral_first` governam o **arquivamento de perfil** (o catálogo de uma
+conta em `reels/` e `posts/`, seção "Biblioteca" da página). Elas moram aqui, e
+não no painel da lista de resultados, porque `ajustes.toml` é do projeto e
+aquele painel é refeito a cada busca — a Biblioteca lê os três por
+`GET /api/ajustes`.
 
 ## Provedores de LLM
 
@@ -123,4 +130,4 @@ estão em [`modelos-gratuitos.md`](modelos-gratuitos.md) e
 ## Ver também
 
 - [`arquitetura.md`](arquitetura.md) — o pipeline que consome estas chaves.
-- [`painel-web.md`](painel-web.md) — a superfície editável do painel (26 chaves).
+- [`painel-web.md`](painel-web.md) — a superfície editável do painel (29 chaves).

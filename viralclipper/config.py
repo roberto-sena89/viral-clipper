@@ -234,6 +234,19 @@ class ClipConfig:
     parallel: bool = True
     workers: int = 2
 
+    # --- arquivamento de perfil (Biblioteca) ----------------------------
+    # Nao entram no render: valem para `--profile`, que baixa o catalogo de uma
+    # conta em reels/ e posts/. Moram aqui porque a pagina de Ajustes os
+    # persiste em `ajustes.toml`, e esse arquivo e' um `--config` valido -- um
+    # valor que a pagina salva e o motor ignora seria um campo que mente.
+    # ``only_kinds`` e ``max_items`` ja' eram dests da CLI (`--only`,
+    # `--max-items`): os nomes sao os mesmos para nao haver dois nomes para a
+    # mesma coisa. ``archive_viral_first`` ordena por plays/likes antes do corte
+    # por tipo, em vez da ordem do feed.
+    only_kinds: str | None = None
+    max_items: int | None = None
+    archive_viral_first: bool = False
+
     @property
     def hard_max_duration(self) -> float:
         """Teto rigido de duracao de um candidato.

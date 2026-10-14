@@ -6023,6 +6023,98 @@ class RenderSectionOwnershipTests(unittest.TestCase):
         self.assertRegex(self.index_html, r"Renderização</strong><small>[^<]*Ajustes")
 
 
+def _extrair_cli_command(js: str) -> str:
+    """Extrai a declaracao `function cliCommand(o) {...}` de index.js.
+
+    A IIFE guarda `cliCommand` no escopo interno: ele nao pode ser invocado por
+    um `require` direto sem montar um DOM inteiro. Em vez disso, recortamos a
+    declaracao de funcao (via `fn_body`, o mesmo corte que os testes de fonte
+    ja usam) e a avaliamos isolada -- a funcao e' pura, nao toca em `window`
+    nem `document`, entao roda em qualquer motor JS.
+    """
+    corpo = fn_body(js, "cliCommand")
+    fim = corpo.find("return parts.join(' ');")
+    if fim < 0:
+        raise AssertionError("cliCommand perdeu o `return parts.join`")
+    fim += len("return parts.join(' ');")
+    resto = corpo[fim:]
+    brace = resto.find("}")
+    if brace < 0:
+        raise AssertionError("cliCommand perdeu o `}` de fechamento")
+    return "function cliCommand(" + corpo[:fim] + resto[:brace + 1]
+
+
+def _rodar_cli_command(js: str, opcoes: dict) -> str:
+    """Avalia `cliCommand` extraida e a invoca com `opcoes`, devolvendo a string.
+
+    Pula quando o node nao esta' no PATH, no mesmo padrao do `_dom_bridge`:
+    a suite tem de rodar sem node sem pintar vermelho por falta de ferramenta.
+    """
+    node = shutil.which("node")
+    if not node:
+        raise unittest.SkipTest("node nao esta no PATH: cliCommand de runtime pulado")
+    import subprocess
+    fonte = _extrair_cli_command(js)
+    script = fonte + "\nprocess.stdout.write(cliCommand(" + json.dumps(opcoes) + "));"
+    proc = subprocess.run(
+        [node, "-e", script],
+        capture_output=True, text=True, encoding="utf-8", timeout=30,
+    )
+    if proc.returncode != 0:
+        raise AssertionError(
+            "cliCommand falhou em runtime:\n" + "\n".join(
+                l for l in proc.stderr.splitlines() if l.strip())[:8])
+    return proc.stdout
+
+
+class CliCommandRuntimeTests(unittest.TestCase):
+    """O comando impresso na tela de resultado, de verdade (nao no fonte).
+
+    O bug original: o card de erro mostrava `--font-size null --lufs undefined`
+    -- `String(null)` vira "null" e o argparse do motor recusa; `o.lufs` nunca
+    existiu (o campo e' `target_lufs`), entao `String(undefined)` virava
+    "undefined". Os testes de fonte (acima) travam a escrita; estes travam a
+    SAIDA da funcao depois de rodar -- e' o que a pessoa copia.
+    """
+
+    #: Opcoes suficientes para cliCommand nao estourar em campo ausente.
+    BASE = {
+        "url": "https://youtu.be/x", "output": "out", "count": 5,
+        "min_duration": 0, "max_duration": 999, "target_duration": 60,
+        "min_score": 0.0, "min_gap": 0, "engine": "whisper",
+        "whisper_model": "small", "language": "pt", "beam_size": 5,
+        "vad_filter": True, "transcript_cache": True, "download_mode": "sections",
+        "cookies_file": "", "cookies_from_browser": "", "layout": "padrao",
+        "transcript_text": "", "caption_style": "burn", "font_size": None,
+        "crf": 20, "target_lufs": -14, "workers": 3, "jump_cut": False,
+        "loudnorm": True, "ranker": "score",
+    }
+
+    def setUp(self):
+        self.index_js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
+
+    def test_null_font_size_is_omitted_not_the_word_null(self):
+        """`font_size: null` e' "herda do preset": o flag some, nao vira `--font-size null`."""
+        out = _rodar_cli_command(self.index_js, self.BASE)
+        self.assertNotIn("--font-size null", out)
+        self.assertNotIn("--font-size undefined", out)
+
+    def test_target_lufs_is_emitted_not_undefined(self):
+        """O flag e' `--lufs` mas o valor vem de `target_lufs`, nao de `o.lufs`.
+
+        Antes o campo inexistente produzia `--lufs undefined`; agora sai `-14`.
+        """
+        out = _rodar_cli_command(self.index_js, self.BASE)
+        self.assertIn("--lufs -14", out)
+        self.assertNotIn("--lufs undefined", out)
+
+    def test_a_real_font_size_is_emitted(self):
+        """O caminho feliz: com `font_size` numerico, o flag aparece com o valor."""
+        opcoes = dict(self.BASE, font_size=44)
+        out = _rodar_cli_command(self.index_js, opcoes)
+        self.assertIn("--font-size 44", out)
+
+
 class CuradorFieldsFollowTheSwitchTests(unittest.TestCase):
     """O bloco do curador so vale quando o interruptor esta ligado.
 

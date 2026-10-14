@@ -2872,4 +2872,14 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   // grade nasce com um `empty-state` solto dentro dela, que e o mesmo texto
   // mas sem contagem, sem regiao viva e sem titulo proprio.
   renderClips();
+
+  // --- seam de teste -----------------------------------------------------
+  // No browser, `module` nao existe: esta linha e' morta. No node (via
+  // `require` ou `new Function` com `module` injetado), expoe `cliCommand`
+  // para um teste de runtime que invoca a funcao de verdade, em vez de
+  // grep no fonte. E' o unico caminho para o teste afirmar que a string
+  // exibida NAO carrega `--font-size null` nem `--lufs undefined`.
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { cliCommand };
+  }
 })();

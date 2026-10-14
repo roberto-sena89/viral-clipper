@@ -30,10 +30,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from collections.abc import Iterator
 from contextlib import ExitStack
 from pathlib import Path
+from typing import IO
 from unittest.mock import patch
 
 from tests._fixtures import make_analysis, make_config
@@ -92,6 +94,32 @@ def holder(directory: Path, seconds: float = 30.0) -> Iterator[tuple[subprocess.
         if process.poll() is None:
             process.kill()
         process.wait(timeout=20)
+
+
+def espera_livre(directory: Path, timeout: float = 10.0) -> IO[str] | None:
+    """Tenta obter a trava ate conseguir; ``None`` se o prazo acabar.
+
+    O detentor morre, mas quem solta a trava e o handle do FILHO fechando, e
+    isso e assincrono no Windows: o ``python.exe`` do venv e um redirector, e
+    matar o stub derruba o trabalhador por job object -- o kernel faz essa
+    desmontagem DEPOIS de ``process.wait()`` retornar, porque o ``wait`` espera
+    o STUB, nao o filho. Exigir a trava livre no mesmo instante virava corrida
+    do sistema operacional no resultado do teste: medido sob carga, o
+    ``acquire()`` seguinte devolvia ``None`` e os dois testes de liberacao
+    caiam sem regressao nenhuma no produto.
+
+    A propriedade que interessa e "a trava cai quando o detentor morre", nao
+    "a trava ja caiu antes de o kernel terminar". O prazo e o que mantem o
+    teste capaz de pegar o caso "nunca solta".
+    """
+    limite = time.monotonic() + timeout
+    while True:
+        handle = lock.acquire(directory)
+        if handle is not None:
+            return handle
+        if time.monotonic() >= limite:
+            return None
+        time.sleep(0.05)
 
 
 class LockTestCase(unittest.TestCase):
@@ -177,9 +205,9 @@ class CrossProcessTests(LockTestCase):
     def test_the_lock_is_free_again_after_the_holder_exits(self):
         with holder(self.tmp, seconds=0.2):
             pass
-        handle = lock.acquire(self.tmp)
+        handle = espera_livre(self.tmp)
         self.addCleanup(lock.release, handle)
-        self.assertIsNotNone(handle)
+        self.assertIsNotNone(handle, "a saida do detentor tem de soltar a trava")
 
     def test_killing_the_holder_releases_the_lock(self):
         """A propriedade que justifica trava do SO em vez de arquivo com pid.
@@ -193,7 +221,7 @@ class CrossProcessTests(LockTestCase):
             process.kill()
             process.wait(timeout=20)
 
-        handle = lock.acquire(self.tmp)
+        handle = espera_livre(self.tmp)
         self.addCleanup(lock.release, handle)
         self.assertIsNotNone(handle, "a morte do detentor tem de soltar a trava")
 

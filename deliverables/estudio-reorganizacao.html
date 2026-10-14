@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estúdio — o caminho do vídeo e a reorganização em etapas</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --panel:#ffffff; --ink:#141a22; --ink-2:#3d4753; --muted:#6b7684;
+    --line:#e3e7ec; --line-2:#cfd6de; --accent:#1f6feb; --accent-soft:#e8f0fe;
+    --ok:#0f7b3f; --ok-soft:#e6f4ec; --warn:#8a5a00; --warn-soft:#fdf3e0;
+    --bad:#a3271f; --bad-soft:#fdeceb; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:15px;line-height:1.62;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1060px;margin:0 auto;padding:40px 24px 80px}
+  header.doc{border-bottom:2px solid var(--ink);padding-bottom:22px;margin-bottom:36px}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+  h1{font-size:31px;line-height:1.22;margin:8px 0 10px;letter-spacing:-.02em}
+  .lead{font-size:16px;color:var(--ink-2);max-width:70ch;margin:0}
+  .meta{margin-top:16px;font-size:12.5px;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap}
+  h2{font-size:22px;margin:52px 0 6px;letter-spacing:-.015em;padding-top:14px;border-top:1px solid var(--line-2)}
+  h2 .num{color:var(--accent);font-variant-numeric:tabular-nums;margin-right:10px;font-weight:800}
+  h3{font-size:16.5px;margin:30px 0 8px}
+  h4{font-size:14px;margin:20px 0 6px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0;padding-left:22px}
+  li{margin:5px 0}
+  code{font-family:var(--mono);font-size:.87em;background:#eef1f5;padding:1.5px 5px;border-radius:4px;color:#22303f}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px;background:var(--panel);
+        border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  th{background:#f0f3f7;text-align:left;padding:9px 11px;font-size:11.5px;text-transform:uppercase;
+     letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--line-2);vertical-align:bottom}
+  td{padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td.mono,th.mono{font-family:var(--mono);font-size:12px;color:#31404f}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:16px 0}
+  .card.tint{background:var(--accent-soft);border-color:#c5dafb}
+  .card.warn{background:var(--warn-soft);border-color:#f0dcae}
+  .card.bad{background:var(--bad-soft);border-color:#f4c9c5}
+  .card.ok{background:var(--ok-soft);border-color:#bfe3ce}
+  .card h3{margin-top:0}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;
+       background:#e8ecf1;color:var(--ink-2);letter-spacing:.03em}
+  .tag.ok{background:var(--ok-soft);color:var(--ok)}
+  .tag.bad{background:var(--bad-soft);color:var(--bad)}
+  .tag.warn{background:var(--warn-soft);color:var(--warn)}
+  .tag.acc{background:var(--accent-soft);color:var(--accent)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .flow{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 0;margin:18px 0}
+  .step{display:grid;grid-template-columns:52px 1fr;gap:14px;padding:14px 20px;position:relative}
+  .step + .step{border-top:1px solid var(--line)}
+  .step .n{width:36px;height:36px;border-radius:50%;background:var(--accent);color:#fff;display:flex;
+           align-items:center;justify-content:center;font-weight:700;font-size:14px;
+           font-variant-numeric:tabular-nums}
+  .step .n.g{background:#0f7b3f}.step .n.o{background:#b06a00}.step .n.d{background:#5b6572}
+  .step h4{margin:0 0 3px;text-transform:none;letter-spacing:0;font-size:15px;color:var(--ink)}
+  .step .where{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:4px 0 6px}
+  .step p{margin:6px 0;font-size:13.5px;color:var(--ink-2)}
+  .step .out{font-size:12.5px;color:var(--muted)}
+  .step .out b{color:var(--ink-2)}
+  pre{background:#1b2430;color:#dbe4ee;border-radius:8px;padding:16px 18px;overflow:auto;
+      font-family:var(--mono);font-size:12.5px;line-height:1.5}
+  pre .c{color:#7f8fa6}
+  pre .k{color:#7ec8ff}
+  pre .s{color:#ffd479}
+  .wire{background:#0f1720;border-radius:10px;padding:20px;font-family:var(--mono);font-size:11.5px;
+        line-height:1.5;color:#c8d4e2;overflow:auto;white-space:pre}
+  .wire b{color:#7ec8ff;font-weight:400}
+  .wire i{color:#ffd479;font-style:normal}
+  .wire u{color:#7ee2a8;text-decoration:none}
+  .kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}
+  @media(max-width:760px){.kpi{grid-template-columns:1fr 1fr}}
+  .kpi div{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px}
+  .kpi b{display:block;font-size:23px;letter-spacing:-.02em;line-height:1.2}
+  .kpi span{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line-2);font-size:12.5px;color:var(--muted)}
+  .strike{color:var(--bad);text-decoration:line-through}
+  .new{color:var(--ok);font-weight:600}
+  .yes{color:var(--ok);font-weight:700}
+  .no{color:var(--bad);font-weight:700}
+  .part{color:var(--warn);font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <div class="eyebrow">Análise de produto · viral-clipper</div>
+  <h1>Estúdio: o caminho do vídeo, o inventário da página e a reorganização em etapas</h1>
+  <p class="lead">Primeiro o que o motor realmente faz entre colar a URL e sair o <code>.mp4</code> — lido no
+  código, não na documentação. Depois cada bloco da página Estúdio e a quem ele pertence. Por fim a
+  proposta: <strong>quatro etapas nomeadas</strong>, com o que entra em cada uma e o que isso custa.</p>
+  <div class="meta">
+    <span>Lido em <code>viralclipper/pipeline.py</code>, <code>score.py</code>, <code>cli.py</code></span>
+    <span><code>web/index.html</code>, <code>ajustes.html</code>, <code>index.js</code>, <code>server.py</code></span>
+    <span>Mercado: Opus Clip · Vizard · Klap · Submagic · Munch</span>
+  </div>
+</header>
+
+<!-- ============================================================ -->
+<h2><span class="num">1</span>O caminho do vídeo — a sequência real</h2>
+
+<p>O pipeline tem <strong>quatro fases</strong> publicadas na escada de progresso
+(<code>_RUN_STAGES</code>, <code>web/state.py:79</code>) e <strong>seis passos</strong> de trabalho real.
+A diferença entre as duas contagens é justamente onde mora a confusão da página.</p>
+
+<div class="flow">
+
+  <div class="step">
+    <div class="n d">0</div>
+    <div>
+      <h4>Preparo</h4>
+      <div class="where">cli.py:918-945 · server.py:669-682</div>
+      <p>Valida o <code>ClipConfig</code>, resolve <code>ffmpeg</code>/<code>ffprobe</code>, checa espaço em
+      disco (<code>MIN_FREE_MB = 512</code>) e <strong>toma a trava do <code>output_dir</code></strong>
+      (<code>lock.hold</code>). Trava ocupada = <code>exit 5</code>, sem tocar em nada.</p>
+      <div class="out">Não aparece na tela como etapa. É o que faz o botão dizer "não deu" rápido.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n">1</div>
+    <div>
+      <h4>Análise <span class="tag acc">etapa publicada</span></h4>
+      <div class="where">pipeline.analyse · pipeline.py:21-81</div>
+      <p><strong>a)</strong> <code>download.fetch_metadata</code> → título, id, duração. Vídeo mais curto que
+      <code>min_duration</code> é recusado aqui, antes de qualquer download.<br>
+      <strong>b)</strong> <code>download.download_audio</code> + <code>audio.extract_audio</code> → o áudio de
+      análise.<br>
+      <strong>c)</strong> <code>audio.analyze_audio</code> → piso de ruído, nível de fala, silêncios, mapa de
+      fala (<code>voiced</code>).<br>
+      <strong>d)</strong> <strong>Transcrição</strong> — quatro caminhos: texto/arquivo fornecido (pula o
+      Whisper), <code>transcript</code> (falha é fatal), <code>hybrid</code> (degrada e avisa),
+      <code>audio</code> (nem tenta). Passa por cache quando ligado.<br>
+      <strong>e)</strong> <code>score.build_units</code> → as <em>unidades</em> (frases). Sem unidades, o run morre.</p>
+      <div class="out">Sai daqui: <b>metadata + AudioAnalysis + Transcript + Unit[]</b></div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n">2</div>
+    <div>
+      <h4>Seleção <span class="tag acc">etapa publicada</span></h4>
+      <div class="where">pipeline.select_windows · pipeline.py:231-283</div>
+      <p><strong>a)</strong> <code>score.build_candidates</code> — toda janela contígua de unidades que caiba
+      em <code>min_duration</code>…<code>hard_max_duration</code>.<br>
+      <strong>b)</strong> <code>score.score_windows</code> — <strong>10 sinais</strong> (gancho de abertura,
+      pico de gancho, densidade de gancho, pergunta, fala, energia, pico de energia, fronteira, duração,
+      limpeza), todos mapeados para <code>[0,1]</code> por regra <em>absoluta</em>; o score é 0–100 e
+      significa a mesma coisa em qualquer vídeo.<br>
+      <strong>c)</strong> <span class="tag acc">Curador com IA entra AQUI</span>
+      <code>ranker.apply</code> reavalia os <code>top-N</code> candidatos com o LLM, reescreve
+      <code>window.score</code> e pode gravar <code>headline</code>, <code>hashtags</code> e as quatro
+      métricas editoriais. <strong>Nunca é fatal:</strong> curador morto deixa o score heurístico de pé.<br>
+      <strong>d)</strong> <code>score.pick_windows</code> — portão de <code>min_score</code>, teto
+      (<code>count</code> fixo, ou <code>auto_ceiling</code> + piso relativo <code>auto_margin</code> no
+      automático) e não-sobreposição por <code>min_gap</code>.</p>
+      <div class="out">Sai daqui: <b>Window[]</b> — as janelas escolhidas, ordenadas por tempo.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n o">3</div>
+    <div>
+      <h4>Relatório <span class="tag acc">etapa publicada</span></h4>
+      <div class="where">pipeline.build_viral_report · pipeline.py:286-313</div>
+      <p>Leitura editorial de cada janela escolhida (gancho, momento mais forte, conclusão, retenção,
+      comentários, compartilhamentos, polêmica) escrita em <code>viral_report.md</code>. Roda
+      <strong>antes</strong> do render de propósito: existe até num run que não renderiza nada.</p>
+      <div class="out">Sai daqui: <b>viral_report.md</b> + as análises que a galeria usa.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n g">4</div>
+    <div>
+      <h4>Renderização <span class="tag acc">etapa publicada</span></h4>
+      <div class="where">pipeline.render_windows · pipeline.py:405-539</div>
+      <p><strong>a)</strong> <code>download_mode = full</code>? baixa o vídeo inteiro uma vez. Senão, baixa
+      cada seção — <em>sequencialmente</em>, de propósito, para não martelar o host com N yt-dlp
+      simultâneos. Se o FFmpeg falhar num corte, cai para o vídeo completo e corta local.<br>
+      <strong>b)</strong> <code>_build_tasks</code> — uma tarefa por <strong>(janela × variante de
+      template)</strong>. Com variações, o mesmo corte é reencodado, nunca rebaixado nem reanalisado.<br>
+      <strong>c)</strong> <code>_render_task</code> em <code>ProcessPoolExecutor</code>
+      (<code>workers</code>) — reframe 9:16, legendas ASS, título do gancho, loudnorm, encode x264.<br>
+      <strong>d)</strong> Pool quebrado? <em>Retribui um por vez</em> em vez de perder os cortes.</p>
+      <div class="out">Sai daqui: <b>ClipRecord[]</b> → os <code>.mp4</code> na pasta de saída.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n d">5</div>
+    <div>
+      <h4>Saída e pós-render</h4>
+      <div class="where">cli.py:641-644 · server.py:707-754</div>
+      <p><code>clips.json</code> + <code>clips.md</code>. No painel, além disso: <strong>poster</strong> de
+      cada corte (<code>_write_poster</code>) e a <strong>revisão de qualidade</strong>
+      (<code>quality.inspect_clip</code>) — que nunca derruba um render já concluído.</p>
+      <div class="out">Sai daqui: <b>clips.json · clips.md · .jpg de poster</b></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="card tint">
+  <h3>Os códigos de saída contam uma história que a tela hoje não conta</h3>
+  <table>
+    <tr><th style="width:70px">Código</th><th>Significado</th></tr>
+    <tr><td class="mono">0</td><td>Sucesso.</td></tr>
+    <tr><td class="mono">1</td><td><code>ClipperError</code> — o motor recusou (vídeo curto demais, sem unidades, nenhuma janela passou o portão).</td></tr>
+    <tr><td class="mono">2</td><td>Configuração inválida ou <code>ffmpeg</code> ausente.</td></tr>
+    <tr><td class="mono">3</td><td>Terminou, mas <strong>algum corte ficou abaixo da duração mínima</strong>.</td></tr>
+    <tr><td class="mono">4</td><td><strong>Degradado:</strong> a transcrição falhou no <code>hybrid</code> → cortes <em>sem legenda queimada</em> e seleção por energia de áudio só. Medido: 39,3 contra 68,3 de score.</td></tr>
+    <tr><td class="mono">5</td><td>Trava do <code>output_dir</code> ocupada — outro run está escrevendo ali.</td></tr>
+    <tr><td class="mono">130</td><td>Interrompido pelo usuário.</td></tr>
+  </table>
+  <p style="margin-bottom:0"><strong>O 4 é o mais importante.</strong> Ele existe porque um run degradado
+  terminava com <code>exit 0</code>, indistinguível de um sucesso — e ninguém descobria que os cortes
+  saíram sem legenda. Uma reorganização que separa <em>configuração</em> de <em>resultado</em> tem um
+  lugar natural para mostrar isso.</p>
+</div>
+
+<h3>Quem controla o quê</h3>
+<p>Todo campo da interface cai em um destes quatro baldes. É essa divisão que decide onde cada coisa
+mora na página nova.</p>
+
+<table>
+  <tr>
+    <th style="width:150px">Balde</th><th>O que é</th><th>Campos</th><th>Onde mora hoje</th>
+  </tr>
+  <tr>
+    <td><span class="tag acc">Por execução</span></td>
+    <td>Muda a cada trabalho. Nunca é gravado.</td>
+    <td class="mono">url · output · count · download-mode · cookies-*</td>
+    <td>Estúdio (card Fonte)</td>
+  </tr>
+  <tr>
+    <td><span class="tag">Do projeto</span></td>
+    <td>Gravado em <code>ajustes.toml</code>. Vale para <strong>toda</strong> execução — painel <em>e</em> CLI (<code>--config ajustes.toml</code>).</td>
+    <td class="mono">27 chaves: seleção, transcrição, renderização</td>
+    <td>Ajustes</td>
+  </tr>
+  <tr>
+    <td><span class="tag warn">Do curador</span></td>
+    <td>Vale por execução e só quando o interruptor está ligado. <strong>Deliberadamente fora do <code>ajustes.toml</code></strong> (ver <code>AJUSTES_KEYS</code>, <code>state.py:44-65</code>).</td>
+    <td class="mono">ranker · provider · model · base-url · key-env · top-n · weight</td>
+    <td>Estúdio (card Curador)</td>
+  </tr>
+  <tr>
+    <td><span class="tag">Cadastro</span></td>
+    <td>Não participa do run. É uma lista que o seletor lê.</td>
+    <td class="mono">provedores-usuario.toml</td>
+    <td>Estúdio (Meus provedores)</td>
+  </tr>
+</table>
+
+<!-- ============================================================ -->
+<h2><span class="num">2</span>O inventário da página Estúdio</h2>
+
+<p>Nove blocos numa coluna só. Lidos na ordem em que aparecem no DOM:</p>
+
+<table>
+  <tr><th style="width:34px">#</th><th style="width:210px">Bloco</th><th>O que tem</th><th style="width:150px">A quem pertence</th></tr>
+  <tr><td>1</td><td><strong>Hero</strong> <span class="tag">estático</span></td>
+      <td>H1, "Colar link do vídeo", Documentação, 3 atalhos internos e o cartão <em>FLUXO DE EDIÇÃO</em> com os passos 01 Fonte / 02 Seleção / 03 Renderização</td>
+      <td>Abertura</td></tr>
+  <tr><td>2</td><td><strong>Cabeça da seção</strong> <span class="tag">estático</span></td>
+      <td>Overline "NOVO PROJETO", H2 "Configuração do corte", selo "Pronto para começar com os padrões"</td>
+      <td>Abertura</td></tr>
+  <tr><td>3</td><td><strong>Fonte</strong> <span class="tag acc">entrada</span></td>
+      <td>URL · Pasta (+Selecionar) · Quantidade · Download · atalho Biblioteca · Cookies (navegador, arquivo)</td>
+      <td>Por execução</td></tr>
+  <tr><td>4</td><td><strong>Execução</strong> <span class="tag bad">motor</span></td>
+      <td>Pílula de estado · Tempo · aviso de backend · barra de progresso · <code>step-list</code> de 4 etapas · resumo de seleção + "Ajustar" · <em>Gerar cortes</em> · <em>Simular sem renderizar</em> · log técnico</td>
+      <td>Ação, não configuração</td></tr>
+  <tr><td>5</td><td><strong>Curador com IA</strong> <span class="tag warn">condicional</span></td>
+      <td>Interruptor + fieldset com Provedor · Modelo · Endpoint · Variável da chave · Top-N · Peso</td>
+      <td>Do curador</td></tr>
+  <tr><td>6</td><td><strong>Meus provedores</strong> <span class="tag">cadastro</span></td>
+      <td>Lista + formulário CRUD de 7 campos → <code>provedores-usuario.toml</code></td>
+      <td>Cadastro</td></tr>
+  <tr><td>7</td><td><strong>Prompt do curador</strong> <span class="tag bad">duplicado</span></td>
+      <td>Textarea + caminho do arquivo + Carregar/Salvar</td>
+      <td>Do curador — <strong>e também de Ajustes</strong></td></tr>
+  <tr><td>8</td><td><strong>Fila de processamento</strong></td>
+      <td>4 contadores, 5 filtros, lista de jobs com tira de prévias</td>
+      <td>Saída</td></tr>
+  <tr><td>9</td><td><strong>Clips gerados</strong> + <strong>Relatório</strong></td>
+      <td>Busca, grade de posters; relatório de viralização (nasce oculto)</td>
+      <td>Saída</td></tr>
+</table>
+
+<h3>Três defeitos de arquitetura que o inventário expõe</h3>
+
+<div class="grid2">
+  <div class="card bad">
+    <h3>A Execução mora no meio da configuração</h3>
+    <p>Ela é o bloco <strong>4 de 9</strong> — vem antes do Curador e antes do Prompt. Quem lê a página
+    de cima para baixo decide os ajustes <em>depois</em> de passar pelo botão que os usa.</p>
+    <p>E não é configurável: o <code>RenderSectionOwnershipTests</code> já documenta que o Estúdio
+    <em>apenas lê</em>. É 100% ação + leitura, ocupando meia tela no caminho da configuração.</p>
+  </div>
+  <div class="card bad">
+    <h3>O prompt do curador tem dois donos</h3>
+    <p>O mesmo bloco — mesmos <code>id</code>, mesmos botões, mesmo arquivo
+    <code>prompts/curador.txt</code> — existe em <code>index.html</code> <strong>e</strong> em
+    <code>ajustes.html</code>.</p>
+    <p>Dois editores para um arquivo é exatamente o padrão que já custou caro neste projeto: duas cópias
+    do mesmo formulário divergem. Aqui elas ainda não divergiram porque nasceram juntas — mas nada
+    impede.</p>
+  </div>
+</div>
+
+<div class="card warn">
+  <h3>E um sintoma que a própria página confessa</h3>
+  <p>O cartão <em>FLUXO DE EDIÇÃO</em> do hero diz, com todas as letras:</p>
+  <ul>
+    <li><strong>02 Seleção</strong> — "Durações e motor, <strong>definidos em Ajustes</strong>"</li>
+    <li><strong>03 Renderização</strong> — "Reframe e legendas, <strong>definidos em Ajustes</strong>"</li>
+  </ul>
+  <p>Ou seja: <strong>dois dos três passos que a página anuncia apontam para fora dela.</strong> E o
+  resumo de seleção dentro do card de Execução tem um link "Ajustar" que leva para
+  <code>/ajustes</code> — a página ensina o usuário a sair dela para conseguir trabalhar.</p>
+  <p style="margin-bottom:0">Isso não é um bug de layout. É a evidência de que a divisão
+  "Estúdio = por execução / Ajustes = do projeto" <strong>não corresponde ao que a pessoa pensa</strong>
+  quando está configurando um corte.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">3</span>Como o mercado organiza a mesma coisa</h2>
+
+<p>Cinco produtos que fazem exatamente isto. O que interessa não é o preço — é <strong>onde cada um
+põe o quê</strong>.</p>
+
+<table>
+  <tr>
+    <th style="width:110px">Produto</th><th>Fluxo do projeto</th>
+    <th style="width:210px">Configurações "de uma vez"</th><th style="width:170px">Onde vive o progresso</th>
+  </tr>
+  <tr>
+    <td><strong>Opus Clip</strong></td>
+    <td>Colar link → escolher <em>clip model</em>, gênero, <em>prompt</em>, preset de legenda, duração → <em>Get clips</em> → página de resultados → editor → publicar</td>
+    <td>Barra lateral: <strong>Brand Templates</strong>, Social Accounts, Team</td>
+    <td><strong>Barra lateral</strong> ("Live Generating Progress") — não bloqueia</td>
+  </tr>
+  <tr>
+    <td><strong>Vizard</strong></td>
+    <td>Upload → transcreve → <em>Get AI clips</em> → editor por texto</td>
+    <td>Brand template, Teams</td>
+    <td>—</td>
+  </tr>
+  <tr>
+    <td><strong>Klap</strong></td>
+    <td>Link → 1 clique → cortes → retoque → exportar</td>
+    <td>—</td>
+    <td>—</td>
+  </tr>
+  <tr>
+    <td><strong>Submagic</strong></td>
+    <td>Upload/link → IA edita → agendar e publicar</td>
+    <td>Workspace e marca</td>
+    <td>—</td>
+  </tr>
+  <tr>
+    <td><strong>Munch</strong></td>
+    <td>Corta como o Opus + camada de análise (hook score, teste A/B de legenda)</td>
+    <td>—</td>
+    <td>—</td>
+  </tr>
+</table>
+
+<h3>Quatro princípios que os cinco compartilham</h3>
+
+<div class="card ok">
+  <ol style="margin-bottom:0">
+    <li><strong>O fluxo do projeto é curto e linear</strong> — 3 a 5 passos, quase sempre numa tela.
+    <em>Nenhum dos cinco usa quatro páginas separadas.</em></li>
+    <li><strong>O que se configura uma vez não entra no fluxo.</strong> Brand kit, contas e time vivem
+    numa área à parte, alcançável pela barra lateral. É o análogo exato do <code>ajustes.toml</code>.</li>
+    <li><strong>O prompt é um campo do passo de gerar, não uma etapa.</strong> No Opus Clip o
+    <em>ClipAnything prompt</em> é digitado na mesma tela em que se escolhe a duração e o preset de
+    legenda.</li>
+    <li><strong>Resultado e progresso são separados da configuração.</strong> Os resultados são uma
+    página própria, e o progresso é <em>não-bloqueante</em>: fica visível enquanto o usuário navega.</li>
+  </ol>
+</div>
+
+<div class="card warn">
+  <h3>O que isso diz sobre a proposta de quatro etapas</h3>
+  <p>Duas coisas, e elas apontam para lados opostos:</p>
+  <ul>
+    <li><span class="yes">A favor:</span> a separação por <em>decisão</em> (o que entra → como sai → quem
+    julga) é exatamente o que o mercado faz. A página de hoje não tem espinha nenhuma — nove blocos
+    empilhados. As quatro etapas dão a espinha que falta.</li>
+    <li><span class="no">Contra:</span> tratar cada etapa como <strong>página própria</strong> não é o que
+    ninguém faz, e aqui custaria caro: o servidor tem uma lista <em>fechada</em> de páginas
+    (<code>ApiNamespaceTests.PAGES</code>), e cada rota nova quebra
+    <code>test_the_pages_are_the_five_plus_the_old_address</code>.</li>
+  </ul>
+  <p style="margin-bottom:0"><strong>A leitura correta da evidência:</strong> o que o usuário quer
+  chama-se <em>etapa</em>, não <em>página</em>. Quatro telas de verdade, sim — mas trocadas por
+  JavaScript na mesma página, não por quatro rotas novas.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">4</span>A proposta</h2>
+
+<div class="card tint">
+  <h3 style="margin-bottom:6px">Uma página, duas vistas, quatro etapas, zero rotas novas.</h3>
+  <p style="margin-bottom:0">A página Estúdio passa a ter dois modos — <strong>Configurar</strong> e
+  <strong>Resultados</strong> — e uma <strong>barra de ação persistente</strong> que atravessa os dois.
+  Dentro de <em>Configurar</em>, as quatro etapas nomeadas, com um painel visível por vez.</p>
+</div>
+
+<h3>O esqueleto</h3>
+
+<div class="wire">
+┌─ <b>RAIL</b> ──────────────┐┌──────────────────────────────────────────────────────────────┐
+│ ▶ Estúdio                  ││  <b>Transforme vídeos longos em cortes prontos.</b>              │
+│ ↥ Publicar                 ││                                                              │
+│ ▦ Ajustes                  ││  ┌ <u>[ Configurar ]</u>  [ Resultados · 3 ] ┐   <i>← vistas</i>          │
+│ ⤓ Biblioteca               ││                                                              │
+│                            ││  ┌─ <i>STEPPER</i> ────────────────────────────────────────┐            │
+│                            ││  │ <u>① Fonte</u> ── ② Ajustes ── ③ Prompt ── ④ Curador      │            │
+│                            ││  │                        <i>opcional</i>  <i>opcional</i>        │            │
+│                            ││  └──────────────────────────────────────────────────┘            │
+│                            ││                                                              │
+│                            ││  ┌─ <i>PAINEL DA ETAPA (um por vez)</i> ────────────────────┐      │
+│                            ││  │                                                      │      │
+│                            ││  │   ▶ URL do vídeo (YouTube)          <i>único obrigatório</i> │      │
+│                            ││  │   ┌──────────────────────────────────────────────┐   │      │
+│                            ││  │   │ https://www.youtube.com/watch?v=...          │   │      │
+│                            ││  │   └──────────────────────────────────────────────┘   │      │
+│                            ││  │                                                      │      │
+│                            ││  │   Não tem o link à mão? → Biblioteca                 │      │
+│                            ││  │                                                      │      │
+│                            ││  │   ▸ Acessar vídeo restrito (opcional)                │      │
+│                            ││  └──────────────────────────────────────────────────────┘      │
+│                            ││                                                              │
+│                            ││                          [ ← Voltar ]  [ Avançar → ]          │
+│                            ││                                                              │
+│                            ││  ┌─ <i>BARRA DE AÇÃO (persistente, nas duas vistas)</i> ─────┐   │
+│                            ││  │ ● Parado    ⏱ —      ▓▓▓▓▓░░░░░░  Escolhendo trechos   │   │
+│                            ││  │ [ ✦ Gerar cortes ]  [ Simular sem renderizar ]  ▸ log  │   │
+│                            ││  └────────────────────────────────────────────────────┘      │
+└────────────────────────────┘└──────────────────────────────────────────────────────────────┘
+</div>
+
+<h3>O que entra em cada etapa</h3>
+
+<table>
+  <tr>
+    <th style="width:190px">Etapa</th><th>Conteúdo</th><th style="width:200px">De onde vem hoje</th>
+  </tr>
+  <tr>
+    <td><strong>① Fonte do vídeo</strong></td>
+    <td>URL (único campo obrigatório) · atalho para a Biblioteca · <em>Acessar vídeo restrito</em>
+        (cookies do navegador / arquivo) atrás de <code>&lt;details&gt;</code></td>
+    <td>Card Fonte, menos pasta/quantidade/download</td>
+  </tr>
+  <tr>
+    <td><strong>② Ajustes do vídeo</strong></td>
+    <td><strong>a)</strong> os três campos por execução: Pasta (+Selecionar) · Quantidade · Download.<br>
+        <strong>b)</strong> a <em>ficha</em> read-only do que está valendo, em três linhas —
+        <code>Seleção</code> · <code>Transcrição</code> · <code>Renderização</code> — com um botão
+        <strong>Editar em Ajustes</strong>.</td>
+    <td>Card Fonte (os 3 campos) + o resumo que hoje vive dentro do card de Execução</td>
+  </tr>
+  <tr>
+    <td><strong>③ Prompt do curador</strong></td>
+    <td>Textarea das regras · caminho do arquivo (read-only) · Carregar / Salvar.
+        <strong>Passa a ser o único dono</strong> — sai de <code>ajustes.html</code>.</td>
+    <td>Card Prompt do Estúdio (absorve o de Ajustes)</td>
+  </tr>
+  <tr>
+    <td><strong>④ Curador com IA</strong> <span class="tag warn">opcional</span></td>
+    <td>Interruptor no topo do painel · Provedor · Modelo · Endpoint · Variável da chave · Top-N ·
+        Peso. <strong>Meus provedores</strong> atrás de um <code>&lt;details&gt;</code> no fim.</td>
+    <td>Cards Curador + Meus provedores</td>
+  </tr>
+</table>
+
+<div class="card">
+  <h3>Cinco regras que a proposta tem de respeitar</h3>
+  <ol style="margin-bottom:0">
+    <li><strong>Navegação livre, sem portão.</strong> O hero promete "só o link é obrigatório" e o selo
+    diz "pronto para começar com os padrões". Um wizard que exige completar as quatro etapas
+    <em>contradiz a própria página</em>. As etapas se visitam em qualquer ordem, e <em>Gerar cortes</em>
+    fica sempre acessível.</li>
+    <li><strong>Etapas ③ e ④ compartilham o interruptor.</strong> Com o curador desligado, as duas ficam
+    inertes. Elas se esmaecem <em>juntas</em> e o stepper marca as duas como <em>opcional</em> — senão a
+    pessoa preenche dois painéis inteiros que o payload vai descartar.</li>
+    <li><strong>A barra de ação não é uma etapa.</strong> Ela é o resultado das quatro. Fica fixa e
+    visível nas duas vistas, com o log recolhível.</li>
+    <li><strong>Fila, Clips e Relatório são a vista <em>Resultados</em></strong>, não blocos abaixo do
+    formulário. É o "results page" do mercado, e é o que separa <em>entrada</em> de <em>saída</em>.</li>
+    <li><strong>Deep-link por query, não por rota.</strong> <code>/?etapa=3</code> e <code>/?vista=resultados</code>.
+    O handler já faz <code>urlparse(self.path).path</code> (<code>server.py:1529</code>), então a query
+    <strong>não cria rota</strong> e a lista fechada de páginas continua intacta.</li>
+  </ol>
+</div>
+
+<h3>A decisão que só você pode tomar: Ajustes é página ou é etapa?</h3>
+
+<p>Esta é a única bifurcação real da proposta, e ela tem consequência arquitetural. A pergunta é o que
+fazer com <code>ajustes.toml</code> — que não é um formulário, é <strong>o arquivo
+<code>--config</code> da CLI</strong>.</p>
+
+<div class="grid2">
+  <div class="card ok">
+    <h3><span class="tag ok">Recomendada</span> Opção A — Ajustes continua página</h3>
+    <p>A Etapa ② mostra os campos <em>por execução</em> e uma <strong>ficha read-only</strong> do que vem
+    do <code>ajustes.toml</code>, com "Editar em Ajustes".</p>
+    <p><strong>Por quê:</strong></p>
+    <ul>
+      <li>Zero duplicação de markup → zero divergência. O projeto já pagou caro por isso.</li>
+      <li><code>ajustes.toml</code> continua com um dono só, e continua sendo <code>--config</code> válido.</li>
+      <li><strong>Reversível:</strong> virar a Opção B depois é trocar a ficha pelos cards, sem mexer
+      em nada mais.</li>
+    </ul>
+    <p style="margin-bottom:0"><strong>Custo:</strong> a Etapa ② fica curta (3 campos + ficha).</p>
+  </div>
+  <div class="card">
+    <h3><span class="tag">Alternativa</span> Opção B — Ajustes vira a Etapa ②</h3>
+    <p>Os cards de Seleção, Transcrição e Renderização passam a ser renderizados dentro do Estúdio;
+    <code>/ajustes</code> redireciona para <code>/?etapa=2</code>.</p>
+    <p><strong>Por quê não por padrão:</strong></p>
+    <ul>
+      <li>Reverte uma consolidação deliberada e coberta por teste
+      (<code>RenderSectionOwnershipTests</code>, 11 controles migrados).</li>
+      <li>Exige um módulo compartilhado que renderize os cards — sem ele, o markup tem dois donos e o
+      defeito volta.</li>
+      <li>Mexe em <code>AjustesHeadingTests</code>, <code>AjustesTrioTests</code>, <code>test_ajustes.py</code>
+      e na lista de páginas.</li>
+    </ul>
+    <p style="margin-bottom:0"><strong>Só vale se</strong> o incômodo de sair da página for o problema
+    principal. Pela sua descrição, o problema é a <em>ordem</em>, não o <em>endereço</em>.</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">5</span>O que isso custa e em que ordem fazer</h2>
+
+<h3>Raio de alcance — os testes que mudam</h3>
+
+<table>
+  <tr><th style="width:290px">Teste</th><th>Por que muda</th><th style="width:120px">Se a Opção for</th></tr>
+  <tr><td class="mono">HeroSectionTests</td><td><code>WORKFLOW = ("Fonte","Seleção","Renderização")</code> — o fluxo do hero vira as quatro etapas</td><td>A e B</td></tr>
+  <tr><td class="mono">RenderSectionOwnershipTests</td><td><code>test_the_step_list_still_names_the_three_steps</code> casa o texto do terceiro passo</td><td>A e B</td></tr>
+  <tr><td class="mono">JumpLinksTests</td><td>Os atalhos <code>#config/#queue/#gallery-title</code> passam a apontar para etapas e vista</td><td>A e B</td></tr>
+  <tr><td class="mono">BodyGridLayoutTests · IndexOverflowTests · BreakpointScaleTests</td><td>O <code>.main-grid</code> foi <strong>medido</strong> para as células atuais; a grade nova exige medição nova</td><td>A e B</td></tr>
+  <tr><td class="mono">test_ajustes.py (5 asserts)</td><td>O card do prompt sai de <code>ajustes.html</code></td><td>A e B</td></tr>
+  <tr><td class="mono">AjustesTrioTests · AjustesHeadingTests</td><td>Só se <code>/ajustes</code> deixar de existir</td><td class="mono">só B</td></tr>
+  <tr><td class="mono">ApiNamespaceTests.PAGES</td><td>Só se nascer rota nova — <strong>evitável</strong> com <code>?etapa=</code></td><td class="mono">nenhuma</td></tr>
+  <tr><td class="mono">FieldDescriptionTests</td><td>Todo controle novo precisa continuar com dica ligada por <code>aria-describedby</code></td><td>A e B</td></tr>
+</table>
+
+<h3>Ordem de execução</h3>
+
+<div class="flow">
+  <div class="step"><div class="n">1</div><div>
+    <h4>Mover o prompt para um dono só</h4>
+    <p>Remover o card de <code>ajustes.html</code> e ajustar os 5 asserts de <code>test_ajustes.py</code>.
+    É a mudança mais barata e a que corrige o defeito mais concreto.</p>
+    <div class="out">Pré-requisito de tudo: sem isso, qualquer etapa nova nasce duplicada.</div>
+  </div></div>
+  <div class="step"><div class="n">2</div><div>
+    <h4>Separar as duas vistas</h4>
+    <p>Fila, Clips e Relatório saem de baixo do formulário e viram a vista <em>Resultados</em>, com
+    <code>?vista=</code>. Sem stepper ainda — só a separação.</p>
+    <div class="out">Sozinho, isso já resolve metade do scroll.</div>
+  </div></div>
+  <div class="step"><div class="n">3</div><div>
+    <h4>Tirar a Execução do meio e transformá-la em barra persistente</h4>
+    <p>O card de Execução vira a barra de ação das duas vistas. O <code>step-list</code> e o log ficam
+    dentro dela.</p>
+    <div class="out">A configuração fica contígua pela primeira vez.</div>
+  </div></div>
+  <div class="step"><div class="n">4</div><div>
+    <h4>Fatiar a configuração em quatro painéis com o stepper</h4>
+    <p>Só agora o CSS novo — e com medição no navegador, não por estimativa. Breakpoint se mede.</p>
+    <div class="out">É aqui que <code>HeroSectionTests</code> e os testes de grade mudam.</div>
+  </div></div>
+</div>
+
+<div class="card bad">
+  <h3>O que <em>não</em> fazer</h3>
+  <ul style="margin-bottom:0">
+    <li><strong>Quatro rotas novas.</strong> Quebra <code>ApiNamespaceTests</code>, multiplica por quatro
+    o rail/header/rodapé e obriga a recarregar <code>state.ajustes</code> a cada troca de etapa.</li>
+    <li><strong>Exigir as quatro etapas para liberar o botão.</strong> Contradiz o selo "pronto para
+    começar com os padrões" e a promessa do hero.</li>
+    <li><strong>Deixar o markup dos ajustes em dois lugares.</strong> É o defeito que já existe com o
+    prompt — não vale criar um segundo.</li>
+    <li><strong>Transformar a Execução numa quinta etapa.</strong> Ela não é uma decisão; é a
+    consequência das quatro. Como etapa, viraria mais um passo para clicar em "avançar".</li>
+  </ul>
+</div>
+
+<div class="foot">
+  <p><strong>Resumo em uma frase:</strong> as quatro etapas estão certas como <em>vocabulário</em> e
+  como <em>espinha</em>; o que muda é o endereço — quatro painéis numa página com duas vistas e uma
+  barra de ação, em vez de quatro rotas. E a primeira coisa a fazer, antes de qualquer layout, é dar
+  ao prompt do curador um dono só.</p>
+</div>
+
+</div>
+</body>
+</html>

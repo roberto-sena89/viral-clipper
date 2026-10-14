@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ajustes — inventário, defeitos medidos e a reorganização</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --panel:#ffffff; --ink:#141a22; --ink-2:#3d4753; --muted:#6b7684;
+    --line:#e3e7ec; --line-2:#cfd6de; --accent:#1f6feb; --accent-soft:#e8f0fe;
+    --ok:#0f7b3f; --ok-soft:#e6f4ec; --warn:#8a5a00; --warn-soft:#fdf3e0;
+    --bad:#a3271f; --bad-soft:#fdeceb; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:15px;line-height:1.62;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1060px;margin:0 auto;padding:40px 24px 80px}
+  header.doc{border-bottom:2px solid var(--ink);padding-bottom:22px;margin-bottom:36px}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+  h1{font-size:31px;line-height:1.22;margin:8px 0 10px;letter-spacing:-.02em}
+  .lead{font-size:16px;color:var(--ink-2);max-width:72ch;margin:0}
+  .meta{margin-top:16px;font-size:12.5px;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap}
+  h2{font-size:22px;margin:52px 0 6px;letter-spacing:-.015em;padding-top:14px;border-top:1px solid var(--line-2)}
+  h2 .num{color:var(--accent);font-variant-numeric:tabular-nums;margin-right:10px;font-weight:800}
+  h3{font-size:16.5px;margin:30px 0 8px}
+  h4{font-size:14px;margin:20px 0 6px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0;padding-left:22px}
+  li{margin:5px 0}
+  code{font-family:var(--mono);font-size:.87em;background:#eef1f5;padding:1.5px 5px;border-radius:4px;color:#22303f}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px;background:var(--panel);
+        border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  th{background:#f0f3f7;text-align:left;padding:9px 11px;font-size:11.5px;text-transform:uppercase;
+     letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--line-2);vertical-align:bottom}
+  td{padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td.mono,th.mono{font-family:var(--mono);font-size:12px;color:#31404f}
+  td.n{text-align:right;font-variant-numeric:tabular-nums}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:16px 0}
+  .card.tint{background:var(--accent-soft);border-color:#c5dafb}
+  .card.warn{background:var(--warn-soft);border-color:#f0dcae}
+  .card.bad{background:var(--bad-soft);border-color:#f4c9c5}
+  .card.ok{background:var(--ok-soft);border-color:#bfe3ce}
+  .card h3{margin-top:0}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;
+       background:#e8ecf1;color:var(--ink-2);letter-spacing:.03em}
+  .tag.ok{background:var(--ok-soft);color:var(--ok)}
+  .tag.bad{background:var(--bad-soft);color:var(--bad)}
+  .tag.warn{background:var(--warn-soft);color:var(--warn)}
+  .tag.acc{background:var(--accent-soft);color:var(--accent)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .wire{background:#0f1720;border-radius:10px;padding:20px;font-family:var(--mono);font-size:11.5px;
+        line-height:1.55;color:#c8d4e2;overflow:auto;white-space:pre}
+  .wire b{color:#7ec8ff;font-weight:400}
+  .wire i{color:#ffd479;font-style:normal}
+  .wire u{color:#7ee2a8;text-decoration:none}
+  .wire s{color:#ff9d9d;text-decoration:none}
+  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}
+  @media(max-width:760px){.kpi{grid-template-columns:1fr 1fr}}
+  .kpi div{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px}
+  .kpi b{display:block;font-size:23px;letter-spacing:-.02em;line-height:1.2}
+  .kpi span{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line-2);font-size:12.5px;color:var(--muted)}
+  .foot a{color:var(--accent);text-decoration:none}
+  .yes{color:var(--ok);font-weight:700}
+  .no{color:var(--bad);font-weight:700}
+  .part{color:var(--warn);font-weight:700}
+  .d{border-left:3px solid var(--bad);padding-left:14px;margin:20px 0}
+  .d h3{margin:0 0 4px;font-size:15.5px}
+  .d .ev{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:6px 0 0}
+  .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <div class="eyebrow">Análise de produto · viral-clipper</div>
+  <h1>Ajustes: o inventário da página, os defeitos medidos e a reorganização</h1>
+  <p class="lead">Primeiro cada bloco da página, contado e medido na instância viva — não lido no código.
+  Depois os nove defeitos, cada um com a medição que o prova. Depois como <strong>seis ferramentas de
+  referência</strong> organizam a mesma decisão. Por fim a proposta: <strong>cinco grupos, metade dos
+  campos visíveis, prévia de legenda</strong> — e o que isso quebra.</p>
+  <div class="meta">
+    <span>Medido com Playwright em <code>127.0.0.1:7755</code></span>
+    <span><code>web/ajustes.html</code>, <code>ajustes.js</code>, <code>index.css</code></span>
+    <span>9 de outubro de 2026</span>
+  </div>
+</header>
+
+<div class="kpi">
+  <div><b>29</b><span>controles num só plano</span></div>
+  <div><b>2.456 px</b><span>a 1440 · 4.800 px a 390</span></div>
+  <div><b>36</b><span>modelos de legenda, sem prévia</span></div>
+  <div><b>2</b><span>botões "Salvar ajustes" primários</span></div>
+  <div><b>2</b><span>atalhos no MESMO pixel (y=920)</span></div>
+  <div><b>775 px</b><span>de coluna vazia no Resumo</span></div>
+</div>
+
+<h2><span class="num">01</span>O inventário, medido</h2>
+
+<p>Quatro blocos. Os três primeiros são formulário; o quarto é leitura.</p>
+
+<table>
+  <tr><th>Bloco</th><th>Controles</th><th class="mono">Altura @1440</th><th>O que ele decide de fato</th></tr>
+  <tr>
+    <td><b>Seleção</b></td><td class="n">9</td><td class="mono">405 px</td>
+    <td>Quanto tempo cada corte tem (mín/máx/alvo), o que vale a pena (nota, silêncio), o motor de análise
+    e os três números do modo automático.</td>
+  </tr>
+  <tr>
+    <td><b>Transcrição</b></td><td class="n">8</td><td class="mono">1191 px</td>
+    <td>Dois caminhos no mesmo card: os parâmetros do Whisper <i>e</i> a transcrição colada à mão, com a
+    tabela de conferência.</td>
+  </tr>
+  <tr>
+    <td><b>Renderização</b></td><td class="n">12</td><td class="mono">1191 px</td>
+    <td>Quatro assuntos sem relação: enquadramento, legendas, codificação (CRF, workers) e áudio
+    (loudness, normalização, jump cut).</td>
+  </tr>
+  <tr>
+    <td><b>Resumo</b> <span class="tag">leitura</span></td><td class="n">0</td><td class="mono">416 px</td>
+    <td>Estado do save e seis valores derivados, dentro de uma coluna de 1.191 px.</td>
+  </tr>
+</table>
+
+<div class="card ok">
+  <h3>O que já está certo — e o mercado confirma</h3>
+  <p><b>A página estar aqui, separada do fluxo, é a decisão certa.</b> Todas as ferramentas de referência
+  põem o que se configura uma vez <b>fora</b> do caminho de criar: o "Brand Template" do Opus Clip e o
+  "Brand Kit" do Submagic vivem na barra lateral, não no meio do upload. O problema desta página não é o
+  lugar — é a forma.</p>
+</div>
+
+<h2><span class="num">02</span>Os nove defeitos, com a prova</h2>
+
+<div class="d">
+  <h3>D1 · A navegação mente: dois atalhos caem no mesmo pixel <span class="tag bad">alto</span></h3>
+  <p>Os atalhos prometem quatro seções em sequência. Como Transcrição e Renderização estão <b>lado a lado</b>
+  na mesma faixa do grid, dois deles param exatamente no mesmo lugar: quem clica em "03 Renderização"
+  aterrissa em "02 Transcrição".</p>
+  <p class="ev">Medido: #card-selecao y=485 · #card-transcricao y=920 · #card-renderizacao y=920</p>
+</div>
+
+<div class="d">
+  <h3>D2 · 29 controles sem nenhuma camada <span class="tag bad">alto</span></h3>
+  <p>Não existe uma dobra nesta página. <code>Beam size</code>, <code>CRF</code>, <code>Loudness alvo</code>,
+  <code>Workers</code>, <code>Margem do automático</code>, <code>Teto de segurança</code> e
+  <code>Passa até</code> têm o mesmo peso visual de "Modelo de legenda" — que é o campo que a pessoa veio
+  mudar. A orientação de plataforma é explícita: a partir de <b>16 ajustes</b>, os de usuário avançado saem
+  para uma tela "Avançado"; e acima de <b>10 itens</b> a lista já custa a escanear (a regra 7±2).</p>
+  <p class="ev">Medido: 29 controles visíveis simultaneamente · fonte: Android Settings, ver §03</p>
+</div>
+
+<div class="d">
+  <h3>D3 · 36 modelos de legenda escolhidos às cegas <span class="tag bad">alto</span></h3>
+  <p>O seletor é uma lista de 36 nomes — <i>Candy</i>, <i>Pop Box</i>, <i>Merriweather</i>,
+  <i>Ultra Impact</i>… O único jeito de saber como cada um fica é renderizar um clipe inteiro e olhar.
+  Todas as referências mostram <b>prévia ao vivo</b> enquanto se escolhe; é o padrão do mercado, não um
+  luxo.</p>
+  <p class="ev">Medido: 36 <code>&lt;option&gt;</code> em <code>#caption-preset</code></p>
+</div>
+
+<div class="d">
+  <h3>D4 · Dois botões primários idênticos <span class="tag warn">médio</span></h3>
+  <p><code>#btn-save</code> (no cabeçalho) e <code>#btn-save-side</code> (no Resumo) são os dois
+  <code>btn-primary</code>, com o mesmo rótulo, na mesma tela. A regra é <b>um CTA primário por tela</b>;
+  dois iguais não ajudam — diluem.</p>
+  <p class="ev">Medido: 2 elementos com <code>#btn-save</code>/<code>#btn-save-side</code></p>
+</div>
+
+<div class="d">
+  <h3>D5 · "Renderização" é etapa do pipeline, não decisão <span class="tag warn">médio</span></h3>
+  <p>O card mistura quatro assuntos que ninguém pensa juntos: <b>enquadramento</b> (reframe),
+  <b>legenda</b> (modelo, estilo, fonte, título, barra), <b>codificação</b> (CRF, workers) e
+  <b>áudio</b> (loudness, normalizar, jump cut). O mercado agrupa por <i>o que isso afeta</i> — o Opus tem
+  "Clip Layout" e "Captions" como grupos separados.</p>
+  <p class="ev">12 controles em 4 assuntos · 2 deles são de hardware, não de gosto</p>
+</div>
+
+<div class="d">
+  <h3>D6 · Um artefato de UM vídeo numa página de PROJETO <span class="tag bad">decisão</span></h3>
+  <p>A abertura diz "valem para toda execução". O bloco de transcrição colada diz "URL do vídeo a que esta
+  transcrição pertence" e "Trocar a URL na aba Estúdio faz este texto ser ignorado". São <b>dois ciclos de
+  vida diferentes no mesmo formulário</b> — e é o único ponto desta página que mexe em rota, contrato de
+  servidor e chaves persistidas. Não é para decidir sozinho.</p>
+  <p class="ev">Texto do próprio bloco, <code>ajustes.html</code> §Transcrição</p>
+</div>
+
+<div class="d">
+  <h3>D7 · Uma nota interna de bug vazou para o usuário <span class="tag warn">trivial</span></h3>
+  <p>O texto de ajuda do <code>Loudness alvo</code> diz: <i>"O painel mandava <code>lufs</code> e o motor
+  espera <code>target_lufs</code>: até agora este campo não chegava ao vídeo."</i> Isso é changelog de
+  correção, não dica de campo — e descreve um bug que já não existe.</p>
+  <p class="ev"><code>ajustes.html</code>, <code>#target-lufs-hint</code></p>
+</div>
+
+<div class="d">
+  <h3>D8 · Sem caminho de volta <span class="tag warn">baixo</span></h3>
+  <p>27 valores de projeto e nenhum "restaurar padrões". Os padrões existem (estão nos comentários do HTML
+  e nos defaults do motor), mas não há como voltar a eles sem editar o <code>ajustes.toml</code> na mão.</p>
+</div>
+
+<div class="d">
+  <h3>D9 · Sem conjuntos nomeados <span class="tag acc">opcional</span></h3>
+  <p>Opus Clip guarda até 2 templates e marca um como padrão; Submagic guarda vários <i>brand kits</i>;
+  Klap salva um <i>style preset</i> e o reaplica por id. Aqui existe <b>um</b> conjunto global. Para uso de
+  uma pessoa só isso pode ser suficiente — fica como pergunta, não como recomendação.</p>
+</div>
+
+<h2><span class="num">03</span>Como as ferramentas de referência organizam</h2>
+
+<table>
+  <tr>
+    <th>Ferramenta</th><th>Onde vive o "configura uma vez"</th><th>Como agrupa</th>
+    <th>Conjuntos nomeados</th><th>Prévia</th>
+  </tr>
+  <tr>
+    <td><b>Opus Clip</b></td>
+    <td>Brand Template, <b>na barra lateral</b>, fora do fluxo</td>
+    <td>Menu próprio dentro da página: Clip Layout · Captions · Logo · Intro/Outro · Emojis · Transições</td>
+    <td class="yes">Sim — até 2 templates + um padrão</td>
+    <td class="yes">Sim, ao vivo enquanto edita</td>
+  </tr>
+  <tr>
+    <td><b>Submagic</b></td>
+    <td>Brand Kit, no painel, barra lateral</td>
+    <td>Baldes de ativos (logos, cores, fundos, overlays)</td>
+    <td class="yes">Sim — vários kits</td>
+    <td class="part">—</td>
+  </tr>
+  <tr>
+    <td><b>Klap</b></td>
+    <td>Editor → "salvar estilo"</td>
+    <td>Legendas, fontes, cores, logo</td>
+    <td class="yes">Sim — <code>style_preset_id</code> reaplicável</td>
+    <td class="yes">Sim, no editor</td>
+  </tr>
+  <tr>
+    <td><b>Vizard</b></td>
+    <td>"Clip Preferences"</td>
+    <td>Lista <b>curta</b> de propósito: duração · proporção · estilos</td>
+    <td class="part">Template padrão vs. custom</td>
+    <td class="part">—</td>
+  </tr>
+  <tr>
+    <td><b>Galerias de preset</b><br><span class="tag">padrão de UI</span></td>
+    <td>—</td>
+    <td>Dois painéis: lateral para navegar, área principal para a prévia</td>
+    <td class="yes">Sim — abas Presets / Personalizar</td>
+    <td class="yes">Sim — player de exemplo</td>
+  </tr>
+  <tr>
+    <td><b>Android Settings</b><br><span class="tag">orientação de plataforma</span></td>
+    <td>Tela de ajustes</td>
+    <td>7±2 itens; <b>16+ → subtelas</b>; usuário avançado → "Avançado"</td>
+    <td class="part">—</td>
+    <td class="part">—</td>
+  </tr>
+</table>
+
+<h3>Os cinco padrões que todos repetem</h3>
+<ol>
+  <li><b>Config-once FORA do fluxo</b>, na barra lateral. <span class="yes">A página já faz isso.</span></li>
+  <li><b>Poucos grupos nomeados</b>, com sub-navegação própria dentro da página de ajustes.</li>
+  <li><b>Prévia ao vivo</b> enquanto se edita o que é visual.</li>
+  <li><b>Conjuntos nomeados e reaplicáveis</b>, com um marcado como padrão.</li>
+  <li><b>Camada "Avançado"</b> — o campo de usuário avançado sai da frente de quem não o procura.</li>
+</ol>
+
+<h2><span class="num">04</span>A proposta</h2>
+
+<h3>4.1 A arquitetura de informação alvo</h3>
+
+<p>O critério deixa de ser <i>etapa do pipeline</i> (Seleção → Transcrição → Renderização) e passa a ser
+<i>o que a decisão afeta</i> — que é como o mercado agrupa. Cinco grupos, cada um com a própria dobra de
+usuário avançado.</p>
+
+<div class="wire"><b>Ajustes do projeto</b>
+<u>[ nav ]</u>  Corte · Aparência · Áudio · Transcrição · Sistema
+
+<b>1. Corte</b>                                       <i>6 visíveis</i>
+   duração mínima · máxima · alvo
+   nota mínima · silêncio entre clips · motor de análise
+   <s>▸ Avançado (3)</s>  margem do automático · teto de segurança · passa até
+
+<b>2. Aparência</b>                                    <i>4 visíveis</i>
+   enquadramento (reframe)
+   modelo de legenda   <u>← galeria com PRÉVIA, não um select de 36</u>
+   estilo da legenda · título no topo
+   <s>▸ Avançado (3)</s>  tamanho da fonte · duração do título · barra de progresso
+
+<b>3. Áudio</b>                                        <i>1 visível</i>
+   normalizar loudness
+   <s>▸ Avançado (2)</s>  loudness alvo · jump cut
+
+<b>4. Transcrição</b>                                  <i>2 visíveis</i>
+   modelo Whisper · idioma
+   <s>▸ Avançado (4)</s>  beam size · filtro VAD · cache · pasta do cache
+   <s>(?) transcrição colada — ver D6</s>
+
+<b>5. Sistema</b>                                      <i>2 visíveis</i>
+   CRF (qualidade) · workers paralelos
+
+                                          <i>15 visíveis contra 29 hoje</i>
+</div>
+
+<h3>4.2 As quatro mudanças, por ordem de valor sobre custo</h3>
+
+<table>
+  <tr><th>#</th><th>Mudança</th><th>Resolve</th><th>Valor</th><th>Custo</th><th>O que quebra</th></tr>
+  <tr>
+    <td class="mono">M1</td>
+    <td><b>Galeria de legendas com prévia.</b> Trocar o <code>&lt;select&gt;</code> de 36 por uma grade de
+    miniaturas; cada uma desenha a <i>mesma</i> frase de exemplo com o estilo aplicado.</td>
+    <td>D3</td><td class="yes">alto</td><td class="part">médio</td>
+    <td><code>CONTROLES</code> em <code>test_ajustes.py</code> (o id deixa de ser <code>select</code>);
+    o teste de paridade controle↔chave. É CSS + JS, não toca o motor.</td>
+  </tr>
+  <tr>
+    <td class="mono">M2</td>
+    <td><b>Dobra "Avançado" por grupo + "Restaurar padrões".</b> Os campos continuam no DOM (só escondidos),
+    com o estado da dobra guardado no navegador.</td>
+    <td>D2, D8</td><td class="yes">alto</td><td class="yes">baixo</td>
+    <td>Pouco: os controles seguem presentes, então os testes de presença continuam passando. Exige um
+    teste novo para a dobra.</td>
+  </tr>
+  <tr>
+    <td class="mono">M3</td>
+    <td><b>Reagrupar por decisão e alinhar a navegação.</b> Os cinco grupos; o nav passa a ter cinco
+    destinos que caem em cinco alturas diferentes.</td>
+    <td>D1, D5</td><td class="yes">alto</td><td class="no">alto</td>
+    <td>O grid do <code>index.css</code> (<code>[data-page="ajustes"] .main-grid</code>), os ids dos cards,
+    <code>AjustesDuoTests</code>, <code>JumpLinksTests</code>, e a medição de breakpoint (1280) precisa
+    ser refeita.</td>
+  </tr>
+  <tr>
+    <td class="mono">M4</td>
+    <td><b>Um CTA primário, e o Resumo enxuto.</b> O botão do cabeçalho continua primário; o do Resumo vira
+    secundário. O Resumo fica com o estado do save e os valores <i>derivados</i> (o teto real, o que o
+    automático vai fazer) em vez de repetir os campos.</td>
+    <td>D4, coluna vazia</td><td class="part">médio</td><td class="yes">baixo</td>
+    <td>Nenhum teste referencia <code>#btn-save-side</code> hoje.</td>
+  </tr>
+  <tr>
+    <td class="mono">—</td>
+    <td><b>Transcrição colada</b> — decidir o dono (fica aqui, ou vai para o Estúdio junto do vídeo).</td>
+    <td>D6</td><td class="part">?</td><td class="no">alto</td>
+    <td>Rota, <code>AJUSTES_KEYS</code>, sidecar do carimbo de URL e o lado do servidor. <b>Decisão sua.</b></td>
+  </tr>
+  <tr>
+    <td class="mono">—</td>
+    <td><b>Limpar a nota de bug</b> do <code>#target-lufs-hint</code>.</td>
+    <td>D7</td><td class="part">baixo</td><td class="yes">trivial</td><td>Nada.</td>
+  </tr>
+</table>
+
+<h3>4.3 Se for para fazer uma coisa só</h3>
+<div class="card tint">
+  <p><b>M1 — a galeria de legendas com prévia.</b> É o único ponto da página onde a pessoa escolhe no escuro
+  e só descobre o resultado depois de um render inteiro; é o que o mercado trata como padrão; e é a mudança
+  que mais aparece para quem usa, sem tocar no motor nem em rota. M2 vem logo depois, porque é barata e
+  derruba quase metade dos campos visíveis.</p>
+</div>
+
+<h2><span class="num">05</span>O que NÃO mexer</h2>
+
+<ul>
+  <li><b>A página continua sendo uma página</b>, fora do fluxo do Estúdio. O mercado valida a colocação; o
+  problema é interno.</li>
+  <li><b><code>ajustes.toml</code> continua a fonte da verdade</b> e um <code>--config</code> válido. Nada de
+  autosave silencioso: o arquivo é lido pela linha de comando, e a gravação explícita é o contrato.</li>
+  <li><b>O prompt do curador continua na etapa 3</b> do Estúdio. Dono único é a regra que já custou caro
+  neste projeto.</li>
+  <li><b>O Resumo continua existindo</b> — mas pelo estado do save e pelos derivados, não por repetir o que
+  já está na tela.</li>
+  <li><b>A classe <code>jump-links</code> continua vindo do <code>shared.css</code></b> (é componente das
+  quatro páginas; uma segunda declaração em CSS de página é recusada por teste).</li>
+</ul>
+
+<h2><span class="num">06</span>Fontes</h2>
+<ul>
+  <li>Opus Clip — <i>Best Practices</i> e <i>How to add a Brand Template</i>: <code>help.opus.pro/docs/article/6219271-best-practices</code></li>
+  <li>Opus Clip — <i>Layout and Reframing</i>: <code>help.opus.pro/docs/article/layout-and-reframing</code></li>
+  <li>Submagic — <i>How To Use Brand Kit</i>: <code>care.submagic.co/en/article/how-to-use-brand-kit-in-submagic</code></li>
+  <li>Vizard — <i>What are Clip Preferences?</i>: <code>help.vizard.ai/en/articles/9188600-what-are-clip-preferences</code></li>
+  <li>Klap — <i>Styling / style_preset_id</i>: <code>docs.klap.app/styling</code></li>
+  <li>Android Developers — <i>Settings</i> (padrão de agrupamento, 7±2, subtelas): <code>developer.android.com/design/patterns/settings</code></li>
+</ul>
+
+<div class="foot">
+  Medições feitas com Playwright contra a instância viva em <code>127.0.0.1:7755</code>, viewport 1440×1000
+  (e 1280, 1024, 390 para o comportamento responsivo). Sondas em
+  <code>sticky-probe/ajustes_geometria_probe.js</code> e <code>sticky-probe/ajustes_espaco_morto.js</code>.
+  Nenhum arquivo do painel foi alterado para produzir este relatório.
+</div>
+
+</div>
+</body>
+</html>

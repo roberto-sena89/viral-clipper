@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>shared.css — a chave que faltava</title>
+<style>
+  :root{
+    --bg:#0b0f16; --card:#141a24; --linha:rgba(255,255,255,.10);
+    --texto:#e8edf5; --suave:#98a4b8; --ok:#3ddc97; --ruim:#ff6b81;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:40px 28px 64px;background:var(--bg);color:var(--texto);
+       font:15px/1.6 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{margin:0 0 6px;font-size:1.5rem;letter-spacing:-.01em}
+  .sub{color:var(--suave);margin:0 0 32px;font-size:.95rem}
+  .caso{background:var(--card);border:1px solid var(--linha);border-radius:14px;
+        padding:22px;margin:0 0 26px}
+  .caso h2{margin:0 0 4px;font-size:1.05rem;display:flex;align-items:center;gap:10px}
+  .selo{font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+        padding:3px 9px;border-radius:999px;border:1px solid}
+  .selo.ruim{color:var(--ruim);border-color:color-mix(in srgb,var(--ruim) 45%,transparent);
+             background:color-mix(in srgb,var(--ruim) 12%,transparent)}
+  .selo.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent);
+           background:color-mix(in srgb,var(--ok) 12%,transparent)}
+  .nota{color:var(--suave);font-size:.86rem;margin:2px 0 16px}
+  img{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--linha)}
+  pre{margin:16px 0 0;background:#0f141d;border:1px solid var(--linha);border-radius:10px;
+      padding:14px 16px;overflow-x:auto;font-size:.82rem;line-height:1.55}
+  .ruimtxt{color:var(--ruim)}
+  .oktxt{color:var(--ok)}
+  table{width:100%;border-collapse:collapse;margin:14px 0 0;font-variant-numeric:tabular-nums}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--linha);font-size:.9rem}
+  th{color:var(--suave);font-weight:600;font-size:.78rem;letter-spacing:.04em;text-transform:uppercase}
+  code{background:#0f141d;border:1px solid var(--linha);border-radius:5px;padding:1px 6px;font-size:.85em}
+  .rodape{color:var(--suave);font-size:.82rem;margin-top:30px;border-top:1px solid var(--linha);padding-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>A chave que faltava no <code>shared.css</code></h1>
+  <p class="sub">Commit <code>0585a68</code> ("A marca do rodapé vira componente…"). A refatoração
+     levou o componente <code>footer-brand</code> para o rail e, no caminho, o bloco
+     <code>.rail-brand&nbsp;{</code> perdeu o <code>}</code> de fechamento.</p>
+
+  <div class="caso">
+    <h2>Quebrado <span class="selo ruim">folha descartada</span></h2>
+    <p class="nota">Um bloco aberto até o fim do arquivo faz o navegador jogar fora a folha
+       inteira: sem rail, sem header, sem layout. O menu vira uma lista de links azuis.</p>
+    <img src="css-quebrado.png" alt="Página sem estilo: menu como lista de links azuis">
+    <pre>}.rail-brand {
+  display: flex; align-items: center; gap: 10px;
+  ...
+  margin-bottom: 14px;
+<span class="ruimtxt">/* ← aqui faltava o `}` */</span>
+.rail-brand .footer-brand { gap: 10px; }</pre>
+    <table>
+      <tr><th>Medida</th><th>Valor</th></tr>
+      <tr><td>Chaves <code>{</code> / <code>}</code></td>
+          <td class="ruimtxt">106 / 105 — desbalanceado</td></tr>
+      <tr><td>Profundidade no fim do arquivo</td><td class="ruimtxt">1 bloco aberto</td></tr>
+      <tr><td>Efeito no navegador</td><td class="ruimtxt">folha inteira descartada</td></tr>
+    </table>
+  </div>
+
+  <div class="caso">
+    <h2>Corrigido <span class="selo ok">folha aplicada</span></h2>
+    <p class="nota">Uma linha: o <code>}</code> que fecha <code>.rail-brand</code>. Rail, header,
+       tipografia e layout voltam.</p>
+    <img src="css-corrigido.png" alt="Página correta: rail com a marca, header e cards">
+    <table>
+      <tr><th>Medida</th><th>Valor</th></tr>
+      <tr><td>Chaves <code>{</code> / <code>}</code></td>
+          <td class="oktxt">106 / 106 — balanceado</td></tr>
+      <tr><td>Profundidade no fim do arquivo</td><td class="oktxt">0</td></tr>
+      <tr><td>Assets do painel (<code>*.css</code>, <code>*.js</code>)</td>
+          <td class="oktxt">9 de 9 balanceados</td></tr>
+    </table>
+  </div>
+
+  <div class="caso">
+    <h2>Por que a suíte não pegou</h2>
+    <p class="nota">Os testes de CSS procuram seletor por regex. Um arquivo cuja chave nunca fecha
+       continua casando com os padrões que eles procuram — a folha quebrada passou verde na suíte
+       inteira. O balanceamento é a única checagem que olha o arquivo <strong>inteiro</strong> em
+       vez de procurar uma agulha nele.</p>
+    <p class="nota">Adicionado <code>StylesheetWellFormedTests</code> em
+       <code>tests/test_web_server.py</code>: percorre toda folha, tira comentários e strings
+       (<code>content: "{"</code> é texto, não chave) e exige que a profundidade termine em zero e
+       nunca fique negativa. A checagem foi validada contra o blob real do commit quebrado —
+       <code>0585a68:web/shared.css</code> → <code>1 bloco aberto</code>, reprova; o atual →
+       <code>0</code>, aprova.</p>
+  </div>
+
+  <p class="rodape">Correção do <code>}</code>: commit <code>007aeb0</code>.
+     Guarda de regressão: <code>tests/test_web_server.py</code>.
+     Suíte: 545 testes + 681 subtestes, sem falhas.
+     Capturas por Playwright contra <code>127.0.0.1:7755</code>; a única diferença entre as duas
+     imagens é o corpo de <code>/shared.css</code>.</p>
+
+</div>
+</body>
+</html>

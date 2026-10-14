@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Biblioteca — inventário, defeitos medidos e a reorganização</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --panel:#ffffff; --ink:#141a22; --ink-2:#3d4753; --muted:#6b7684;
+    --line:#e3e7ec; --line-2:#cfd6de; --accent:#1f6feb; --accent-soft:#e8f0fe;
+    --ok:#0f7b3f; --ok-soft:#e6f4ec; --warn:#8a5a00; --warn-soft:#fdf3e0;
+    --bad:#a3271f; --bad-soft:#fdeceb; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:15px;line-height:1.62;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1060px;margin:0 auto;padding:40px 24px 80px}
+  header.doc{border-bottom:2px solid var(--ink);padding-bottom:22px;margin-bottom:36px}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+  h1{font-size:31px;line-height:1.22;margin:8px 0 10px;letter-spacing:-.02em}
+  .lead{font-size:16px;color:var(--ink-2);max-width:72ch;margin:0}
+  .meta{margin-top:16px;font-size:12.5px;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap}
+  h2{font-size:22px;margin:52px 0 6px;letter-spacing:-.015em;padding-top:14px;border-top:1px solid var(--line-2)}
+  h2 .num{color:var(--accent);font-variant-numeric:tabular-nums;margin-right:10px;font-weight:800}
+  h3{font-size:16.5px;margin:30px 0 8px}
+  h4{font-size:14px;margin:20px 0 6px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0;padding-left:22px}
+  li{margin:5px 0}
+  code{font-family:var(--mono);font-size:.87em;background:#eef1f5;padding:1.5px 5px;border-radius:4px;color:#22303f}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px;background:var(--panel);
+        border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  th{background:#f0f3f7;text-align:left;padding:9px 11px;font-size:11.5px;text-transform:uppercase;
+     letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--line-2);vertical-align:bottom}
+  td{padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td.mono,th.mono{font-family:var(--mono);font-size:12px;color:#31404f}
+  td.n{text-align:right;font-variant-numeric:tabular-nums}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:16px 0}
+  .card.tint{background:var(--accent-soft);border-color:#c5dafb}
+  .card.warn{background:var(--warn-soft);border-color:#f0dcae}
+  .card.bad{background:var(--bad-soft);border-color:#f4c9c5}
+  .card.ok{background:var(--ok-soft);border-color:#bfe3ce}
+  .card h3{margin-top:0}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;
+       background:#e8ecf1;color:var(--ink-2);letter-spacing:.03em}
+  .tag.ok{background:var(--ok-soft);color:var(--ok)}
+  .tag.bad{background:var(--bad-soft);color:var(--bad)}
+  .tag.warn{background:var(--warn-soft);color:var(--warn)}
+  .tag.acc{background:var(--accent-soft);color:var(--accent)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  /* Mock de layout: mostra a PROPORCAO real das colunas e o vazio que sobra. */
+  .mock{display:grid;gap:9px;margin:20px 0}
+  .mock-cap{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+  .mock-hero{border:1px dashed var(--line-2);border-radius:8px;padding:8px 12px;background:#fff;
+             font-size:12px;color:var(--muted);display:flex;justify-content:space-between;
+             gap:14px;align-items:center;flex-wrap:wrap}
+  .mock-cols{display:grid;gap:10px;align-items:stretch}
+  .mock-cols--antes{grid-template-columns:340fr 469fr 291fr;min-height:270px}
+  .mock-cols--depois{grid-template-columns:minmax(0,1fr) 300px}
+  @media(max-width:700px){.mock-cols--antes,.mock-cols--depois{grid-template-columns:1fr;min-height:0}}
+  .mock-col{border:1px solid var(--line-2);border-radius:8px;background:#fff;padding:10px 12px;min-width:0}
+  .mock-col b{display:block;font-size:12.5px;margin:0 0 3px}
+  .mock-col .u{display:block;font-size:11px;color:var(--muted);line-height:1.5}
+  .mock-stack{display:grid;grid-template-rows:auto 1fr;gap:10px;min-width:0}
+  .mock-vazio{border:1px dashed var(--line-2);border-radius:8px;background:repeating-linear-gradient(
+      45deg,#fbfcfd,#fbfcfd 7px,#f1f4f8 7px,#f1f4f8 14px);
+    display:grid;place-items:center;font-size:11px;color:var(--muted);text-align:center;padding:8px}
+  .mock-auth{margin:7px 0;padding:7px 9px;border:1px solid var(--line-2);border-radius:6px;
+             background:#fdf3e0;font-size:11px;color:var(--warn);line-height:1.45}
+  .mock-import{border:1px solid var(--accent);border-radius:8px;background:var(--accent-soft);
+               padding:10px 12px;display:grid;gap:8px}
+  .mock-import .linha{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .pill{font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;background:#fff;
+        border:1px solid var(--line-2);color:var(--ink-2)}
+  .pill--on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .mock-url{flex:1 1 140px;min-width:110px;font-family:var(--mono);font-size:11px;color:var(--muted);
+            background:#fff;border:1px solid var(--line-2);border-radius:6px;padding:4px 8px}
+  .mock-go{font-size:11px;font-weight:700;padding:4px 12px;border-radius:6px;background:var(--accent);color:#fff}
+  .mock-sess{font-size:11px;color:var(--ink-2)}
+  .mock-row{display:grid;grid-template-columns:14px 34px minmax(0,1fr) auto;gap:9px;align-items:center;
+            padding:5px 0;border-bottom:1px solid var(--line)}
+  .mock-row:last-child{border-bottom:0}
+  .mock-th{width:34px;height:20px;border-radius:4px;background:#dfe5ec;border:1px solid var(--line-2)}
+  .mock-num{font-size:11px;font-variant-numeric:tabular-nums;color:var(--ink-2);white-space:nowrap}
+  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}
+  @media(max-width:760px){.kpi{grid-template-columns:1fr 1fr}}
+  .kpi div{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px}
+  .kpi b{display:block;font-size:23px;letter-spacing:-.02em;line-height:1.2}
+  .kpi span{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line-2);font-size:12.5px;color:var(--muted)}
+  .foot a{color:var(--accent);text-decoration:none}
+  .yes{color:var(--ok);font-weight:700}
+  .no{color:var(--bad);font-weight:700}
+  .part{color:var(--warn);font-weight:700}
+  .d{border-left:3px solid var(--bad);padding-left:14px;margin:20px 0}
+  .d h3{margin:0 0 4px;font-size:15.5px}
+  .d .ev{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:6px 0 0}
+  .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+  figure{margin:18px 0}
+  figure img{width:100%;border:1px solid var(--line-2);border-radius:9px;display:block}
+  figcaption{font-size:12.5px;color:var(--muted);margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <div class="eyebrow">Análise de produto · viral-clipper</div>
+  <h1>Biblioteca: o inventário da página, os sete defeitos e a reorganização</h1>
+  <p class="lead">Primeiro cada bloco da página, contado e medido na instância viva. Depois os sete defeitos,
+  cada um com a medição que o prova. Depois como <strong>seis produtos de referência</strong> resolvem a mesma
+  decisão. Por fim a proposta: <strong>uma barra de importação, a sessão fora do caminho, e os resultados como
+  canvas</strong> — e o que isso quebra.</p>
+  <div class="meta">
+    <span>Medido com Playwright em <code>127.0.0.1:7755</code></span>
+    <span><code>web/scrap.html</code>, <code>scrap.js</code>, <code>scrap.css</code></span>
+    <span>10 de outubro de 2026</span>
+  </div>
+</header>
+
+<div class="kpi">
+  <div><b>3</b><span>colunas de 340 / 469 / 291 px</span></div>
+  <div><b>1220 px</b><span>só a coluna da esquerda</span></div>
+  <div><b>750 px</b><span>de sessão — 61% da coluna</span></div>
+  <div><b>879 px</b><span>de vazio sob os Resultados</span></div>
+  <div><b>19</b><span>controles, sem nenhuma dobra</span></div>
+  <div><b>410 px</b><span>antes do primeiro card</span></div>
+</div>
+
+<h2><span class="num">01</span>O inventário, medido</h2>
+
+<p>A página tem <b>um hero</b> e <b>três painéis</b> que se apresentam como simultâneos, mas descrevem uma
+sequência. As alturas foram lidas na instância viva, a 1440×1000.</p>
+
+<table>
+  <tr><th>Bloco</th><th class="mono">Largura</th><th class="mono">Altura</th><th>O que ele decide de fato</th></tr>
+  <tr>
+    <td><b>Hero</b> <span class="tag">chrome</span></td><td class="n">toda</td><td class="mono">410 px</td>
+    <td>O título, uma linha de apoio, dois atalhos — e um card de fluxo que repete, em três itens, o que os
+    selos <code>01/02</code> dos cards já dizem.</td>
+  </tr>
+  <tr>
+    <td><b>Buscar conteúdo</b></td><td class="n">340 px</td><td class="mono">1220 px</td>
+    <td>Plataforma (3 abas) · modo (2 abas) · URL + Buscar · opções de perfil · e a configuração de sessão
+    inteira (navegador, <code>cookies.txt</code>, <code>sessionid</code>).</td>
+  </tr>
+  <tr>
+    <td><b>Resultados</b></td><td class="n">469 px</td><td class="mono">341 px</td>
+    <td>A lista de vídeos, a seleção em lote e o bloco de arquivamento do perfil. Em repouso, só o estado
+    vazio.</td>
+  </tr>
+  <tr>
+    <td><b>Escolha</b> <span class="tag">aside</span></td><td class="n">291 px</td><td class="mono">186 px</td>
+    <td>O item escolhido vira a fonte dos cortes. Em repouso, só o convite para escolher.</td>
+  </tr>
+</table>
+
+<p>Onde a altura é gasta dentro do painel de busca:</p>
+
+<table>
+  <tr><th>Sub-bloco de "Buscar conteúdo"</th><th class="mono">Altura</th><th class="mono">Fatia</th><th>Quando a pessoa usa</th></tr>
+  <tr><td>Plataforma + modo</td><td class="mono">~120 px</td><td class="n">10%</td><td>A cada busca</td></tr>
+  <tr><td>URL + Buscar + dicas</td><td class="mono">~180 px</td><td class="n">15%</td><td>A cada busca</td></tr>
+  <tr><td>Opções de perfil (oculto no modo Link)</td><td class="mono">~90 px</td><td class="n">7%</td><td>Ao explorar um perfil</td></tr>
+  <tr><td><b>Acesso e sessão</b> <code>.auth-card</code></td><td class="mono">750 px</td><td class="n">61%</td><td>Uma vez — e raramente</td></tr>
+</table>
+
+<div class="card ok">
+  <h3>O que já está certo — e não deve ser tocado</h3>
+  <ul>
+    <li><b>As duas abas são um tablist de verdade</b> (Link / Perfil): setas movem, <code>aria-selected</code>
+    diz qual está ativo. É o padrão correto para "dois modos do mesmo formulário".</li>
+    <li><b>As regiões vivas anunciam a contagem, não a lista.</b> <code>#resultados-status</code> existe
+    justamente para a busca não virar vinte anúncios de leitor de tela.</li>
+    <li><b>A seleção e o arquivamento nascem escondidos</b> (<code>#select-box</code>, <code>#arquivar-box</code>):
+    um botão que baixa "tudo" de nada é pior que nenhum botão.</li>
+    <li><b>O estado da sessão é anunciado</b> por <code>#auth-status</code> com <code>role="status"</code>.</li>
+    <li><b>A miniatura vem primeiro na leitura</b> — e o próprio <code>scrap.css</code> explica por quê:
+    <i>"escolher qual vídeo cortar sem ver o quadro é adivinhação"</i>. Isso é uma decisão acertada e vale
+    preservar (§04.2, M6).</li>
+  </ul>
+</div>
+
+<h2><span class="num">02</span>Os sete defeitos, com a prova</h2>
+
+<div class="d">
+  <h3>D1 · A página desperdiça ~880 px de altura à direita <span class="tag bad">alto</span></h3>
+  <p>As três colunas medem 340 / 469 / 291 px de largura com <b>1220 / 341 / 186 px</b> de altura. A coluna da
+  esquerda termina em <code>y=1630</code>; os dois painéis da direita terminam em <code>y=751</code> e
+  <code>y=596</code>. Sobram <b>879 px</b> de vazio sob os Resultados e <b>1034 px</b> sob a Escolha — em toda
+  visita, mesmo com a página cheia.</p>
+  <p class="ev">Medido: .search-card 340×1220 · card[resultados] 469×341 · .pick 291×186 · página 1947 px</p>
+</div>
+
+<div class="d">
+  <h3>D2 · A sessão ocupa 61% da coluna de trabalho <span class="tag bad">alto</span></h3>
+  <p>O <code>.auth-card</code> mede <b>750 px</b> (907 px a 1280) e vive <b>dentro</b> do card "Buscar
+  conteúdo". São três blocos — navegador, arquivo <code>cookies.txt</code>, <code>sessionid</code> do
+  Instagram — mais três notas de 10–11 px explicando App-Bound Encryption e o caminho do DevTools. É
+  configuração de uma vez só, ocupando o lugar mais caro da página, no meio do fluxo de quem só quer colar um
+  link.</p>
+  <p class="ev">Medido: .auth-card 750 px de 1220 px da coluna (61%) · a 1280: 907 px de 1383 px (66%)</p>
+</div>
+
+<div class="d">
+  <h3>D3 · Os passos são sequenciais, mas o layout é paralelo <span class="tag bad">alto</span></h3>
+  <p>O próprio card de fluxo declara a ordem: <b>01 Buscar → 02 Revisar → 03 Enviar ao Estúdio</b>. Mas as três
+  zonas ficam lado a lado, então <b>duas ficam sempre vazias</b> enquanto se usa a terceira. Em repouso, a
+  página mostra 1773 px de painel para 341 px de conteúdo possível.</p>
+  <p class="ev">Medido: #resultados-sub "Nada buscado ainda." · #pick-body em estado vazio</p>
+</div>
+
+<div class="d">
+  <h3>D4 · No celular, a sessão vem ANTES dos resultados <span class="tag bad">alto</span></h3>
+  <p>Abaixo de 980 px o grid vira uma coluna, na ordem do HTML: Buscar (com a sessão dentro) → Resultados →
+  Escolha. Como a sessão está no meio do card de busca, quem está no celular rola <b>a configuração inteira
+  antes de ver um único vídeo</b>.</p>
+  <p class="ev">Medido a 390 px: card de busca 1377 px; os Resultados só começam em <code>y=1917</code>; página 2833 px</p>
+</div>
+
+<div class="d">
+  <h3>D5 · O hero ocupa 410 px antes do primeiro card <span class="tag warn">médio</span></h3>
+  <p>O primeiro card começa em <code>y=410</code>. O <code>.scrap-flow-card</code> repete, em três linhas, o
+  que o rail e os selos <code>01/02</code> já dizem. Em ferramenta de uso repetido, isso é chrome pago em cada
+  visita — e o mercado abre direto na biblioteca (§03).</p>
+  <p class="ev">Medido: primeiro card em y=410; o fluxo aparece 3 vezes (hero, selo do card, atalhos)</p>
+</div>
+
+<div class="d">
+  <h3>D6 · 19 controles na coluna da esquerda, sem nenhuma dobra <span class="tag warn">médio</span></h3>
+  <p>Plataforma (3) + modo (2) + URL + Buscar + sessão (11) = <b>19 controles</b>. Não há hierarquia: o
+  <code>sessionid</code> do Instagram tem o mesmo peso visual do campo que a pessoa veio usar. A orientação de
+  plataforma é explícita — acima de ~16 ajustes, o que é de usuário avançado sai para uma camada própria.</p>
+  <p class="ev">Medido: 19 controles simultâneos (2 condicionais ao modo Perfil)</p>
+</div>
+
+<div class="d">
+  <h3>D7 · O arquivamento traz 4 controles para dentro dos Resultados <span class="tag warn">médio</span></h3>
+  <p>Quando existe lista, o card de Resultados ganha <code>#arq-only</code>, <code>#arq-max</code>,
+  <code>#btn-arq-viral</code> e <code>#btn-arquivar</code> — um segundo formulário de configuração dentro do
+  painel que deveria ser a lista. O mesmo padrão de D2, em escala menor: config no meio do resultado.</p>
+  <p class="ev">Medido: #arquivar-box (hidden→visível com lista) com 4 controles + nota</p>
+</div>
+
+<h2><span class="num">03</span>Como as ferramentas de referência organizam</h2>
+
+<table>
+  <tr>
+    <th>Produto</th><th>Onde mora a importação</th><th>O que é o "home"</th>
+    <th>Onde vive a config/sessão</th><th>Resultados</th>
+  </tr>
+  <tr>
+    <td><b>Opus Clip</b></td>
+    <td>Submissão de um vídeo (Zoom, Drive, YouTube, Rumble)</td>
+    <td><b>"All Content"</b> — todos os projetos num lugar</td>
+    <td><b>Settings</b>, destino próprio na nav; busca global (OmniSearch)</td>
+    <td class="yes">Grade de clips</td>
+  </tr>
+  <tr>
+    <td><b>Vizard</b></td>
+    <td>Upload ou URL, <i>dentro</i> da área Clips/Library</td>
+    <td><b>"Clips/Library"</b> — uploads + clips gerados + Private Library</td>
+    <td><b>Workspace Settings</b> (API key), fora do fluxo</td>
+    <td class="yes">Grade de clips</td>
+  </tr>
+  <tr>
+    <td><b>Klap</b></td>
+    <td>Upload direto ou link do YouTube</td>
+    <td>Projetos</td>
+    <td>Editor → "salvar estilo" (<code>style_preset_id</code>)</td>
+    <td class="yes">Grade</td>
+  </tr>
+  <tr>
+    <td><b>Submagic</b></td>
+    <td>Upload / link</td>
+    <td>Projetos</td>
+    <td><b>Brand Kit</b>, na barra lateral</td>
+    <td class="yes">Grade</td>
+  </tr>
+  <tr>
+    <td><b>YouTube Studio</b><br><span class="tag">referência de lista</span></td>
+    <td>—</td>
+    <td>Lista de conteúdo</td>
+    <td><b>Configurações</b>, destino próprio</td>
+    <td class="yes">Linha com miniatura + colunas</td>
+  </tr>
+  <tr>
+    <td><b>Design de Settings</b><br><span class="tag">orientação</span></td>
+    <td>—</td>
+    <td>—</td>
+    <td>Global → <b>página própria</b> (linkável, com histórico). Modal só para o contextual.</td>
+    <td class="part">—</td>
+  </tr>
+</table>
+
+<h3>Os cinco padrões que todos repetem</h3>
+<ol>
+  <li><b>A importação é um comando de uma linha</b> — colar um link e submeter. Não um painel permanente com
+  19 controles.</li>
+  <li><b>A biblioteca é o home; a config vive fora do fluxo</b> — Settings na navegação, Brand Kit na barra
+  lateral. Nunca dentro do card de busca.</li>
+  <li><b>Os resultados são o canvas principal</b> — a maior área da tela, não uma coluna de 469 px.</li>
+  <li><b>O detalhe é um rail lateral</b> que acompanha a seleção (master–detail), não uma terceira coluna
+  sempre presente.</li>
+  <li><b>A miniatura não se perde.</b> Numa biblioteca de vídeo, reconhecer o quadro é a tarefa — é o que o
+  <code>scrap.css</code> deste projeto já documenta e o que as grades de clips preservam.</li>
+</ol>
+
+<h2><span class="num">04</span>A proposta</h2>
+
+<h3>4.1 A arquitetura alvo</h3>
+
+<p>O critério deixa de ser <i>três painéis simultâneos</i> e passa a ser <b>uma sequência em duas zonas</b>:
+o comando de importação no topo, e o par <b>lista ↔ detalhe</b> abaixo — que é como o mercado organiza.</p>
+
+<figure>
+  <img src="design-review/antes/biblioteca_desktop.png"
+       alt="Biblioteca atual: três colunas desbalanceadas — o card de busca com 1220 px de altura, os Resultados com 341 px e a Escolha com 186 px, deixando quase mil pixels de vazio à direita.">
+  <figcaption>Hoje: a coluna de busca acumula plataforma + modo + URL + sessão em 340 px. Os outros dois
+  painéis terminam em <code>y=751</code> e <code>y=596</code>; a página vai até <code>y=1947</code>.</figcaption>
+</figure>
+
+<div class="mock">
+  <span class="mock-cap">Antes — 3 colunas que descrevem uma sequência</span>
+  <div class="mock-hero">
+    <span>h1 + lead + 2 atalhos</span>
+    <span>FLUXO · 01 Buscar · 02 Revisar · 03 Enviar ao Estúdio</span>
+  </div>
+  <div class="mock-cols mock-cols--antes">
+    <div class="mock-col">
+      <b>Buscar conteúdo</b>
+      <span class="u">plataforma · 3 abas</span>
+      <span class="u">modo · 2 abas</span>
+      <span class="u">url + Buscar</span>
+      <div class="mock-auth">Acesso e sessão — 750 px<br>navegador · cookies.txt · sessionid<br>(61% da coluna)</div>
+      <span class="u">altura total: 1220 px</span>
+    </div>
+    <div class="mock-stack">
+      <div class="mock-col"><b>Resultados</b><span class="u">vazio · 341 px</span></div>
+      <div class="mock-vazio">879 px de vazio</div>
+    </div>
+    <div class="mock-stack">
+      <div class="mock-col"><b>Escolha</b><span class="u">vazio · 186 px</span></div>
+      <div class="mock-vazio">1034 px de vazio</div>
+    </div>
+  </div>
+</div>
+
+<div class="mock">
+  <span class="mock-cap">Depois — o comando em cima, a lista e o detalhe embaixo</span>
+  <div class="mock-hero"><span>h1 + <b>uma</b> linha de apoio</span></div>
+  <div class="mock-import">
+    <div class="linha">
+      <span class="pill">IG</span><span class="pill">TT</span><span class="pill">YT</span>
+      <span class="pill pill--on">Link</span><span class="pill">Perfil</span>
+      <span class="mock-url">https://www.instagram.com/reel/…</span>
+      <span class="mock-go">Buscar</span>
+    </div>
+    <div class="linha">
+      <span class="mock-sess">Sessão: <b>cookies.txt</b></span>
+      <span class="pill" style="margin-left:auto;">Ajustar sessão ▾</span>
+    </div>
+  </div>
+  <div class="mock-cols mock-cols--depois">
+    <div class="mock-col">
+      <b>Resultados — o canvas</b>
+      <div class="mock-row" style="border-top:1px solid var(--line);margin-top:6px;">
+        <span>☐</span><span class="mock-th"></span>
+        <span class="u" style="color:var(--ink-2)">Cx1y2z3 · “o erro que quase me custou…”</span>
+        <span class="mock-num">1,2 M · reel</span>
+      </div>
+      <div class="mock-row">
+        <span>☐</span><span class="mock-th"></span>
+        <span class="u" style="color:var(--ink-2)">Cy4w5v6 · “ninguém te conta isso…”</span>
+        <span class="mock-num">840 mil · reel</span>
+      </div>
+      <div class="mock-row">
+        <span>☐</span><span class="mock-th"></span>
+        <span class="u" style="color:var(--ink-2)">Cz7u8t9 · carrossel sobre produtividade</span>
+        <span class="mock-num">312 mil · post</span>
+      </div>
+      <span class="u" style="margin-top:7px;">toolbar presa ao topo da lista: <b>2 selecionados</b> ·
+        Baixar selecionados · Baixar perfil</span>
+    </div>
+    <div class="mock-col">
+      <b>Escolha — rail sticky</b>
+      <span class="mock-th" style="width:100%;height:56px;display:block;margin:6px 0;"></span>
+      <span class="u">views · duração · tipo</span>
+      <span class="mock-go" style="display:inline-block;margin-top:8px;">Usar como fonte</span>
+      <span class="u" style="margin-top:7px;">acompanha a rolagem; não é uma<br>terceira coluna sempre vazia</span>
+    </div>
+  </div>
+</div>
+
+<h3>4.2 As seis mudanças, por ordem de valor sobre custo</h3>
+
+<table>
+  <tr><th>#</th><th>Mudança</th><th>Resolve</th><th>Valor</th><th>Custo</th><th>O que quebra</th></tr>
+  <tr>
+    <td class="mono">M1</td>
+    <td><b>Barra de importação.</b> Plataforma + modo + URL + Buscar numa faixa de uma linha, no topo, em vez
+    de dois grupos empilhados dentro de um card.</td>
+    <td>D3, D6</td><td class="yes">alto</td><td class="part">médio</td>
+    <td>O grid do <code>scrap.css</code> (os três regimes de <code>.scrap-grid</code>), os ids
+    <code>#h-busca</code>/<code>#h-resultados</code> e os testes que casam o markup de busca.</td>
+  </tr>
+  <tr>
+    <td class="mono">M2</td>
+    <td><b>A sessão sai do card e vira um disclosure.</b> O <code>.auth-card</code> inteiro vai para dentro de
+    um <code>&lt;details&gt;</code> <b>fechado por padrão</b>, na faixa, com o estado visível
+    ("Sessão: cookies.txt"). Os campos continuam no DOM.</td>
+    <td>D2, D4, D6</td><td class="yes">alto</td><td class="yes">baixo</td>
+    <td>Pouco: os campos seguem presentes, então os testes de presença continuam passando. Exige um teste novo
+    para a dobra e para o resumo de estado.</td>
+  </tr>
+  <tr>
+    <td class="mono">M3</td>
+    <td><b>Resultados viram o canvas.</b> A lista ocupa a maior área; a toolbar (selecionar todos · baixar
+    selecionados · baixar perfil) fica presa ao topo da lista, não num bloco acima que rola embora.</td>
+    <td>D1, D3, D7</td><td class="yes">alto</td><td class="part">médio</td>
+    <td>A ordem dos blocos <code>#select-box</code>/<code>#arquivar-box</code>; os testes de layout do card
+    de Resultados.</td>
+  </tr>
+  <tr>
+    <td class="mono">M4</td>
+    <td><b>A Escolha vira rail sticky.</b> Encosta no topo e acompanha a rolagem, ao lado da lista — em vez de
+    uma terceira coluna que passa o tempo vazio.</td>
+    <td>D1, D3</td><td class="part">médio</td><td class="yes">baixo</td>
+    <td>O <code>position: sticky</code> exige o pai com altura definida (o mesmo cuidado que já custou caro
+    neste projeto) — <b>medir no navegador antes de assumir</b>.</td>
+  </tr>
+  <tr>
+    <td class="mono">M5</td>
+    <td><b>Hero enxuto.</b> Fica o <code>h1</code> e uma linha de apoio. O <code>.scrap-flow-card</code> sai —
+    o rail e os selos de etapa já carregam a informação.</td>
+    <td>D5</td><td class="part">médio</td><td class="yes">baixo</td>
+    <td>O <code>#scrap-title</code> permanece (há teste de heading). Sai só o card de fluxo.</td>
+  </tr>
+  <tr>
+    <td class="mono">M6</td>
+    <td><b>Lista de mídia com colunas alinhadas.</b> Mantém a miniatura (a decisão é visual) e alinha os
+    números comparáveis — views, tipo, duração — em colunas com <code>tabular-nums</code>.</td>
+    <td>comparação</td><td class="part">médio</td><td class="yes">baixo</td>
+    <td>O markup de <code>resultCard()</code> em <code>scrap.js</code>. Não toca rota nem contrato.</td>
+  </tr>
+</table>
+
+<h3>4.3 A escolha que importa: tabela de texto ou lista de mídia?</h3>
+
+<div class="card warn">
+  <p>Uma proposta anterior sugeria trocar os cards de resultado por uma <b>tabela de texto</b>, pelo argumento
+  correto de que "comparar é o trabalho". O argumento vale — mas a conclusão não, e o próprio código deste
+  projeto já diz por quê: <i>"escolher qual vídeo cortar sem ver o quadro é adivinhação"</i>
+  (<code>scrap.css</code>, §CARD DE RESULTADO).</p>
+  <p>A recomendação é a <b>lista de mídia</b> (M6): a linha mantém a miniatura <i>e</i> ganha as colunas
+  alinhadas. Isso pega os dois lados — o reconhecimento visual do card e a comparação da tabela — e é
+  exatamente o modelo do YouTube Studio e das grades de clips do Opus Clip e do Vizard. Uma tabela de texto
+  pura <b>regrediria</b> numa decisão que a página já acertou.</p>
+</div>
+
+<h3>4.4 Se for para fazer uma coisa só</h3>
+<div class="card tint">
+  <p><b>M2 — tirar a sessão de dentro do card de busca.</b> É a mudança de maior valor pelo menor custo: devolve
+  <b>750 px</b> da coluna de trabalho, some com o pior caso do celular (D4), derruba quase um terço dos
+  controles visíveis (D6) — e é <b>markup + CSS puro</b>: não toca rota, contrato de servidor nem chaves
+  persistidas. É também o que o mercado trata como padrão: config-once sai do fluxo. M1 e M3 vêm depois,
+  porque são estruturais e mexem no grid.</p>
+</div>
+
+<h2><span class="num">05</span>O que NÃO mexer</h2>
+
+<ul>
+  <li><b>As abas Link/Perfil continuam um tablist</b>, com <code>role="tab"</code> e setas. É semântica
+  correta e testada.</li>
+  <li><b>A miniatura continua vindo primeiro na leitura</b> do item. É a decisão que sustenta M6.</li>
+  <li><b>A região viva continua anunciando a contagem</b>, não a lista — <code>#resultados-status</code> fica
+  como está.</li>
+  <li><b>A seleção e o arquivamento continuam nascendo escondidos.</b> O princípio ("botão que baixa tudo de
+  nada é pior que nenhum botão") segue valendo; muda só onde a toolbar mora.</li>
+  <li><b>O <code>scrap.html</code> continua servindo <code>/biblioteca</code></b>, e o arquivo mantém o nome
+  <code>scrap</code> — é decisão documentada no <code>server.py</code>.</li>
+  <li><b>A página não ganha <code>index.css</code>.</b> Ela carrega <code>shared.css</code> +
+  <code>scrap.css</code> de propósito; trocar a folha mexeria na cascata da página inteira.</li>
+</ul>
+
+<h2><span class="num">06</span>Fontes</h2>
+<ul>
+  <li>Opus Clip — <i>OmniSearch</i> e <i>All Content &amp; Collections</i> (biblioteca como home, Settings
+  separado): <code>opusclip-c3e48c12.mintlify.app/docs/article/opussearch</code></li>
+  <li>Vizard — <i>Quickstart</i> e <i>Private Library</i> (Clips/Library como home; Workspace Settings):
+  <code>docs.vizard.ai/docs/quickstart</code></li>
+  <li>Vizard — walkthrough: <i>AI video editor, private library + auto-tagging</i> (área Clips/Library recebe
+  upload e URL)</li>
+  <li>Klap — <i>Styling / style_preset_id</i>: <code>docs.klap.app/styling</code></li>
+  <li>Submagic — <i>Brand Kit na barra lateral</i>: <code>care.submagic.co</code></li>
+  <li>Design de Settings — global em página própria, modal só para o contextual; config-once fora do fluxo:
+  <code>designpixil.com/blog/saas-settings-page-design</code> · <code>phoenix.studio/blog/saas-settings-page-ux-2026</code></li>
+  <li>Comparativo de interfaces — Opus Clip (layout limpo, edição por transcrição) × Klap (painel esquerdo
+  sobrecarregado): <code>gregpreece.com/articles/opus-clip-vs-klap</code></li>
+</ul>
+
+<div class="foot">
+  Medições feitas com Playwright contra a instância viva em <code>127.0.0.1:7755</code>, viewport 1440×1000
+  (e 1280, 1024, 768, 390 para o comportamento responsivo). Sonda em
+  <code>sticky-probe/biblio_layout.js</code>. Pesquisa de mercado via Exa (agent-reach). Nenhum arquivo do
+  painel foi alterado para produzir este relatório.
+</div>
+
+</div>
+</body>
+</html>

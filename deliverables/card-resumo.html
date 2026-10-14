@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Card da execução — resumo x tira de prévias</title>
+<style>
+  :root{
+    --bg:#0b0f16; --card:#141a24; --linha:rgba(255,255,255,.10);
+    --texto:#e8edf5; --suave:#98a4b8; --acento:#8b7cff;
+    --ok:#3ddc97; --ruim:#ff6b81;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:40px 28px 64px;background:var(--bg);color:var(--texto);
+       font:15px/1.6 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{margin:0 0 6px;font-size:1.5rem;letter-spacing:-.01em}
+  .sub{color:var(--suave);margin:0 0 32px;font-size:.95rem}
+  .caso{background:var(--card);border:1px solid var(--linha);border-radius:14px;
+        padding:22px 22px 18px;margin:0 0 26px}
+  .caso h2{margin:0 0 4px;font-size:1.05rem;display:flex;align-items:center;gap:10px}
+  .selo{font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+        padding:3px 9px;border-radius:999px;border:1px solid}
+  .selo.ruim{color:var(--ruim);border-color:color-mix(in srgb,var(--ruim) 45%,transparent);
+             background:color-mix(in srgb,var(--ruim) 12%,transparent)}
+  .selo.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent);
+           background:color-mix(in srgb,var(--ok) 12%,transparent)}
+  .nota{color:var(--suave);font-size:.86rem;margin:2px 0 16px}
+  img{display:block;width:100%;height:auto;border-radius:10px;
+      border:1px solid var(--linha);background:#090b11}
+  table{width:100%;border-collapse:collapse;margin:16px 0 4px;font-variant-numeric:tabular-nums}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--linha);font-size:.9rem}
+  th{color:var(--suave);font-weight:600;font-size:.78rem;letter-spacing:.04em;
+     text-transform:uppercase}
+  td.n{text-align:right;font-weight:700}
+  .diverge{color:var(--ruim)}
+  .bate{color:var(--ok)}
+  .med{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0 0}
+  .med div{background:#0f141d;border:1px solid var(--linha);border-radius:10px;padding:12px 14px}
+  .med b{display:block;font-size:1.5rem;font-variant-numeric:tabular-nums}
+  .med span{color:var(--suave);font-size:.78rem}
+  code{background:#0f141d;border:1px solid var(--linha);border-radius:5px;
+       padding:1px 6px;font-size:.85em}
+  .rodape{color:var(--suave);font-size:.82rem;margin-top:30px;border-top:1px solid var(--linha);
+          padding-top:16px}
+  @media(max-width:720px){.med{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Card da execução: o resumo e a tira de prévias</h1>
+  <p class="sub">Medido no navegador, contra o painel real, com a pasta <code>output/</code>
+     de verdade: 6 arquivos <code>.mp4</code> — os 5 do <code>clips.json</code> e 1 órfão de uma
+     execução anterior do mesmo vídeo — e 5 pôsteres <code>.jpg</code>.</p>
+
+  <div class="caso">
+    <h2>Antes <span class="selo ruim">divergia</span></h2>
+    <p class="nota">O resumo diz <strong>3 cortes</strong> e a tira mostra <strong>6 figuras</strong>.
+       O órfão entra como "Corte 05" e empurra o clipe 5 de verdade para "Corte 06".</p>
+    <img src="card-resumo-antes.png"
+         alt="Card com 3 chips no resumo e 6 figuras na tira de prévias">
+    <table>
+      <tr><th>Onde</th><th>Valor</th><th>Fonte</th></tr>
+      <tr><td>Resumo</td><td class="n diverge">3 cortes</td>
+          <td><code>job.clips</code>, truncado por <code>clips[:3]</code> no servidor</td></tr>
+      <tr><td>Tira</td><td class="n diverge">6 figuras</td>
+          <td>varredura de <code>output/</code> (<code>/api/saida</code>), sem teto</td></tr>
+      <tr><td>Pôster</td><td class="n diverge">6 prévias prontas</td>
+          <td>a mesma varredura</td></tr>
+    </table>
+  </div>
+
+  <div class="caso">
+    <h2>Depois <span class="selo ok">consistente</span></h2>
+    <p class="nota">Os três contadores saem da <strong>mesma lista</strong> — a lista de clipes da
+       execução — e o órfão não entra na tira.</p>
+    <img src="card-resumo-depois.png"
+         alt="Card com 5 chips no resumo e 5 figuras na tira de prévias">
+    <div class="med">
+      <div><b class="bate">5</b><span>cortes no resumo</span></div>
+      <div><b class="bate">5</b><span>figuras na tira</span></div>
+      <div><b class="bate">5</b><span>prévias no pôster</span></div>
+    </div>
+  </div>
+
+  <div class="caso">
+    <h2>Por que as duas metades eram necessárias</h2>
+    <p class="nota">Consertar só a contagem no servidor deixaria a tira contradizendo o resumo —
+       medido, não suposto.</p>
+    <table>
+      <tr><th>Cenário</th><th>Resumo</th><th>Figuras</th><th>Órfão na tira</th></tr>
+      <tr><td><code>index.js</code> do HEAD + recorte de 3</td>
+          <td class="n">3 cortes</td><td class="n diverge">6</td>
+          <td class="diverge">sim</td></tr>
+      <tr><td><code>index.js</code> do HEAD + lista completa</td>
+          <td class="n">5 cortes</td><td class="n diverge">6</td>
+          <td class="diverge">sim</td></tr>
+      <tr><td><code>index.js</code> novo + lista completa</td>
+          <td class="n">5 cortes</td><td class="n bate">5</td>
+          <td class="bate">não</td></tr>
+    </table>
+  </div>
+
+  <p class="rodape">Commit <code>e4d940c</code> — <code>web/server.py</code>,
+     <code>web/index.js</code>, <code>tests/test_web_server.py</code>.
+     Suíte: 539 testes + 680 subtestes, sem falhas novas.
+     Capturas geradas por Playwright contra o painel em <code>127.0.0.1:7755</code>.</p>
+
+</div>
+</body>
+</html>

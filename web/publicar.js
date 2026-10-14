@@ -154,13 +154,32 @@
     const ganchos = (clip.hook_terms || [])
       .map((t) => String(t || "").trim()).filter((t) => t.length >= 2);
 
-    const thumb = clip.poster
-      ? '<img src="' + clipsPath(clip.poster) + '" alt="Prévia do clip ' + esc(clip.index) + '" loading="lazy" decoding="async">'
-      : '<span class="publicar-thumb-vazio" aria-hidden="true">9:16</span>';
+    // O PLAYER entra no lugar da miniatura. Esta pagina existe para CONFERIR o
+    // corte antes de publicar, e conferir corte com um quadro parado e'
+    // adivinhar: o antigo "Abrir o video" tirava a pessoa da pagina -- e da
+    // legenda -- justamente na hora de decidir se o corte presta.
+    //
+    // `controls` e' o player NATIVO, nao um play/pause desenhado aqui. A
+    // galeria (index.js) usa clique-para-tocar porque la' a previa e'
+    // decorativa: `aria-hidden`, `muted`, `loop`, sem barra. Aqui a pessoa
+    // precisa AVANCAR ate' o segundo do corte, e a barra nativa da' isso --
+    // com teclado, volume, tela cheia e "salvar video como" de graca, sem
+    // reimplementar controle nenhum.
+    //
+    // `preload="metadata"`: cinco clipes sao cinco arquivos de varios MB, e o
+    // `poster` ja' pinta o primeiro quadro sem baixar o video.
+    const preview = temArquivo
+      ? '<video src="' + clipsPath(clip.rel) + '"'
+        + (clip.poster ? ' poster="' + clipsPath(clip.poster) + '"' : '')
+        + ' controls preload="metadata" playsinline'
+        + ' aria-label="Prévia do clip ' + esc(clip.index) + ', de '
+        + esc(clip.start_label || '—') + ' a ' + esc(clip.end_label || '—') + '"></video>'
+      : '<span class="publicar-player-vazio" aria-hidden="true">9:16</span>';
 
     // Sem headline e sem hashtags o campo fica vazio, e um campo vazio com um
     // botao "Copiar" ao lado e' um botao que nao faz nada. Nesse caso o cartao
-    // diz o que houve e so oferece o arquivo.
+    // diz o que houve e nao monta campo nenhum -- o que sobra e' o player, que
+    // e' o que da' para fazer com um clip que nao tem texto.
     const campo = legenda
       ? '<div class="field">'
         + '<label for="' + id + '">Legenda do clip ' + esc(clip.index) + '</label>'
@@ -187,10 +206,9 @@
       acoes.push('<button class="btn pressable" type="button"'
         + ' data-copiar="hashtags" data-indice="' + esc(indice) + '">Copiar hashtags</button>');
     }
-    if (temArquivo) {
-      acoes.push('<a class="btn pressable" href="' + clipsPath(clip.rel) + '"'
-        + ' target="_blank" rel="noopener">Abrir o vídeo</a>');
-    } else {
+    // Sem arquivo nao ha player: o aviso fica no lugar do botao que existia,
+    // para o cartao dizer POR QUE a caixa 9:16 esta' vazia em vez de so' estar.
+    if (!temArquivo) {
       acoes.push('<span class="hint">Sem arquivo: a execução parou na análise.</span>');
     }
 
@@ -199,9 +217,14 @@
         + '<p>' + esc(clip.text) + '</p></details>'
       : '';
 
+    // O topo e' uma GRADE de duas colunas: o player numa, TUDO o que e' do post
+    // na outra. A legenda ao lado do video nao e' arrumacao -- e' a unica
+    // ordem em que da' para conferir o corte e ler o texto que vai junto sem
+    // rolar: o cartao antigo empilhava (miniatura, texto, campo, botoes) e a
+    // caixa de 9:16 sobrava sozinha num vao vazio a' direita.
     return '<article class="card clip-card publicar-clip">'
       + '<div class="publicar-topo">'
-      +   '<div class="publicar-thumb">' + thumb + '</div>'
+      +   '<div class="publicar-player">' + preview + '</div>'
       +   '<div class="publicar-meta">'
       +     '<p class="publicar-index">Clip ' + esc(clip.index) + '</p>'
       +     (clip.headline
@@ -216,11 +239,15 @@
               ? '<ul class="publicar-tags" aria-label="Ganchos do clip ' + esc(clip.index) + '">'
                 + ganchos.map((g) => '<li>' + esc(g) + '</li>').join('') + '</ul>'
               : '')
+      +     campo
+      // A linha de acoes so' existe se houver acao. Antes ela vinha sempre, e o
+      // botao "Abrir o video" garantia que nunca estivesse vazia; sem ele, o
+      // clip sem headline e sem hashtags deixaria uma `.row-actions` vazia --
+      // 12px de `margin-top` de espaco morto entre o aviso e o trecho.
+      +     (acoes.length ? '<div class="row-actions">' + acoes.join('') + '</div>' : '')
+      +     trecho
       +   '</div>'
       + '</div>'
-      + campo
-      + '<div class="row-actions">' + acoes.join('') + '</div>'
-      + trecho
       + '</article>';
   }
 

@@ -55,17 +55,31 @@
 .publicar-clip { padding: 16px 17px; }
 .publicar-clip .field { margin-top: 12px; }
 
+/* Duas colunas: o player a' esquerda, o post inteiro (meta, legenda, acoes,
+   trecho) a' direita. Antes era uma tira de miniatura de 92px ao lado de um
+   texto que continuava embaixo -- com o player de 196px, essa mesma ordem
+   deixaria um vao de ~250px de altura vazia a' direita do video, e o cartao
+   cresceria ~180px por clip sem nada dentro.
+   `align-items: start` porque a coluna de texto quase nunca e' tao alta quanto
+   o 9:16, e o player nao pode esticar (estica-lo desfaz o aspect-ratio). */
 .publicar-topo {
-  display: flex;
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
   gap: 14px;
-  align-items: flex-start;
+  align-items: start;
 }
 
-/* 9:16 e' o formato do arquivo: uma miniatura quadrada mentiria sobre o
-   enquadramento, e o usuario confere o corte justamente por aqui. */
-.publicar-thumb {
-  flex: 0 0 92px;
-  width: 92px;
+/* O quadro do player. 9:16 e' o formato do ARQUIVO, nao do cartao: uma caixa
+   quadrada mentiria sobre o enquadramento, e o usuario confere o corte
+   justamente por aqui -- agora vendo o corte ANDAR, nao um quadro parado.
+   O `background` escuro e' o que aparece antes do poster (ou no lugar dele,
+   quando a execucao nao escreveu jpg). */
+.publicar-player {
+  width: 100%;
+  /* 196px e' o piso pratico da barra nativa de controles: abaixo disso o
+     Chrome recolhe reproducao/volume/tela cheia num menu "⋮" e o player deixa
+     de ser um player. */
+  max-width: 196px;
   aspect-ratio: 9 / 16;
   display: flex;
   align-items: center;
@@ -75,16 +89,20 @@
   border-radius: 9px;
   background: #0b0f16;
 }
-.publicar-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.publicar-thumb-vazio {
+.publicar-player video { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* Estado sem arquivo: a caixa continua no lugar, para o cartao de uma execucao
+   so' de analise nao ter altura diferente dos vizinhos. */
+.publicar-player-vazio {
   color: var(--text-muted);
   font-size: var(--text-2xs);
   letter-spacing: 0.06em;
 }
 
+/* A coluna do post. O `gap` de 5px e' o ritmo do CABECALHO (indice, titulo,
+   estatisticas, ganchos); os blocos grandes que entraram aqui depois -- campo,
+   acoes, trecho -- trazem `margin-top` proprio e por isso nao dependem dele. */
 .publicar-meta {
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
   gap: 5px;
   min-width: 0;
@@ -348,13 +366,17 @@
    inteira: um cartao escondido por `mostrarFalha` nao pode continuar na tela. */
 [data-page="publicar"] [hidden] { display: none; }
 
-/* Abaixo disso a miniatura de 92px ao lado de um titulo de duas linhas deixa
-   o texto numa coluna de ~180px: a headline quebra a cada duas palavras e o
-   cartao fica mais alto do que a versao larga. A miniatura encolhe antes de o
-   texto ceder. */
-@media (max-width: 520px) {
-  .publicar-topo { gap: 11px; }
-  .publicar-thumb { flex-basis: 68px; width: 68px; }
+/* 620px de viewport = ~538px de cartao (o rail ja' virou gaveta em 920px, entao
+   o cartao e' `viewport - 82`). Nessa largura a coluna de texto fica com ~326px
+   -- o piso em que "Nota / Trecho / Duracao" ainda cabe numa linha e o titulo
+   quebra em duas. Abaixo disso as duas colunas viram uma: o player em cima, o
+   post embaixo.
+   O teto de 232px no player existe porque, empilhado, um 9:16 esticado a' 
+   largura do cartao (438px) viraria 779px de altura -- o campo de legenda
+   sairia da dobra e o cartao de "publicar" viraria uma pagina de video. */
+@media (max-width: 620px) {
+  .publicar-topo { grid-template-columns: minmax(0, 1fr); gap: 11px; }
+  .publicar-player { max-width: 232px; }
   /* A ficha nao entra aqui: as colunas dela sao do CONTAINER (regra acima),
      e o rail ja' saiu da conta nessa largura. */
 }

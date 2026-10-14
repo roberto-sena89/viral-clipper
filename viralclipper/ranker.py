@@ -657,7 +657,18 @@ def apply(
         return 0
 
     if provider is None:
-        provider = build_provider(config)
+        # `build_provider` raises when the configured key variable is empty,
+        # and the exception used to escape here and kill the run -- depois que
+        # o download e a transcricao ja tinham sido pagos. Com o curador LIGADO
+        # por padrao (o headline e a entrega do produto), a maquina sem chave e'
+        # o caso comum, nao o exotico: avisa qual variavel falta e segue com a
+        # heuristica, que e o que o `--ranker none` sempre fez.
+        try:
+            provider = build_provider(config)
+        except ClipperError as exc:
+            if logger:
+                logger.warn(str(exc))
+            return 0
     if provider is None:
         return 0
 

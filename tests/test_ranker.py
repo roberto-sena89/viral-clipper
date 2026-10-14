@@ -231,6 +231,25 @@ class ApplyTests(RankerTestCase):
         self.assertEqual(provider.calls, 0)
         self.assertEqual([w.score for w in windows], [50.0, 40.0])
 
+    def test_a_missing_key_degrades_instead_of_killing_the_run(self):
+        """Curador ligado sem chave: avisa e segue, nao levanta excecao.
+
+        Com o curador ON por padrao, a maquina sem chave e' o caso comum, nao
+        o exotico. `build_provider` levanta `ClipperError`, e a excecao
+        escapava do `apply` e matava o run inteiro -- depois de o download e a
+        transcricao ja terem sido pagos. O contrato do `apply` e' falhar macio:
+        a heuristica manda e o curador fica para a proxima.
+        """
+        windows = [_window("a", 50.0), _window("b", 40.0)]
+        config = self.config(
+            ranker_requires_key=True, ranker_api_key_env="CHAVE_QUE_NAO_EXISTE"
+        )
+        with patch.dict("os.environ", {}, clear=True):
+            judged = ranker.apply(windows, config, self.log)
+        self.assertEqual(judged, 0)
+        self.assertEqual([w.score for w in windows], [50.0, 40.0])
+        self.assertFalse(windows[0].headline)
+
     def test_every_candidate_is_judged_and_reweighted(self):
         provider = FakeProvider()
         windows = [_window("a", 50.0), _window("b", 40.0)]

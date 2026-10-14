@@ -381,5 +381,28 @@ class CountArgumentTests(unittest.TestCase):
         self.assertEqual(config.hard_max_duration, config.max_duration + 15.0)
 
 
+class CuratorIsOnByDefaultTests(unittest.TestCase):
+    """O curador nasce ligado: o headline e' a entrega, nao um extra.
+
+    Uma execucao sem curador produz clips sem legenda -- que foi como um run
+    inteiro foi publicado com o campo vazio, porque ninguem ligou o toggle.
+    Ligar por padrao tira a memoria da equacao. Quem quer zero rede ainda
+    pede `--ranker none`, e a falta de chave degrada com aviso, nao com erro.
+    """
+
+    def parse(self, *argv):
+        return cli.build_parser().parse_args(list(argv) + ["https://youtu.be/x"])
+
+    def test_the_flag_defaults_to_llm(self):
+        self.assertEqual(self.parse().ranker, "llm")
+
+    def test_the_config_defaults_to_llm(self):
+        config = cli.config_from_args(self.parse())
+        self.assertEqual(config.ranker, "llm")
+
+    def test_none_is_still_one_flag_away(self):
+        self.assertEqual(self.parse("--ranker", "none").ranker, "none")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

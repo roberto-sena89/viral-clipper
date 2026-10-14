@@ -433,12 +433,14 @@ def build_parser() -> argparse.ArgumentParser:
     execution.add_argument("--no-parallel", dest="parallel", action="store_false", help="Renderiza clips um de cada vez")
     execution.set_defaults(parallel=True)
 
-    semantic = parser.add_argument_group("ranker semantico (opcional)")
+    semantic = parser.add_argument_group("curador com IA")
     semantic.add_argument(
         "--ranker",
         choices=["none", "llm"],
-        default="none",
-        help="llm reavalia os melhores candidatos com um modelo de linguagem",
+        default="llm",
+        help="llm reavalia os melhores candidatos com um modelo de linguagem "
+             "(padrao; sem chave de API, avisa e segue so com a heuristica). "
+             "none desliga de vez: zero rede, zero custo",
     )
     semantic.add_argument("--ranker-model", dest="ranker_model", default="gpt-4o-mini")
     semantic.add_argument(

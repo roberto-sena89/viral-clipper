@@ -72,11 +72,17 @@ class ClipConfig:
     # Write a viralization analysis (viral_report.md) next to the clips.
     viral_report: bool = True
 
-    # --- semantic re-ranking (optional) -----------------------------------
+    # --- semantic re-ranking ----------------------------------------------
     # The heuristic ranks every candidate on cheap signals; the ranker then
-    # re-judges the best few with a language model. Off by default so the
-    # pipeline never needs network access or an API key unless asked.
-    ranker: str = "none"  # none | llm
+    # re-judges the best few with a language model.
+    #
+    # ON by default. The headline and the hashtags ARE the deliverable: a run
+    # without the curator produces clips nobody can publish, and forgetting the
+    # toggle was once how a whole run shipped with an empty caption. The
+    # no-key case is not fatal -- ``ranker.apply`` warns which environment
+    # variable is missing and keeps the heuristic scores, same as ``none``.
+    # Only a config that explicitly wants zero network access sets ``none``.
+    ranker: str = "llm"  # llm | none
     # A named provider from ``viralclipper.providers``. When set, it fills in
     # base_url, model, api_key_env and requires_key, so the panel offers a
     # dropdown instead of two text fields a person has to remember. Empty keeps

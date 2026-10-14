@@ -6130,6 +6130,21 @@ class CuradorFieldsFollowTheSwitchTests(unittest.TestCase):
         self.js = (server.WEB_DIR / "index.js").read_text(encoding="utf-8")
         self.css = (server.WEB_DIR / "index.css").read_text(encoding="utf-8")
 
+    def test_the_toggle_starts_on(self):
+        """O curador nasce LIGADO: o headline e' a entrega do run.
+
+        Um run sem curador gera clips sem legenda, e a pagina /publicar fica
+        com o campo vazio — foi assim que uma execucao inteira foi para a fila
+        de publicacao sem texto. O campo `active` e' o estado que
+        `toggleOn('#ranker-llm')` le (index.js:532), e o `aria-checked` e' o que
+        o leitor de tela anuncia: os dois tem de nascer ligados juntos.
+        """
+        m = re.search(r'<button[^>]*id="ranker-llm"[^>]*>', self.html)
+        self.assertIsNotNone(m, "o interruptor do curador sumiu do markup")
+        self.assertIn("active", m.group(0).split('class="', 1)[1].split('"', 1)[0],
+                      "o toggle do curador tem de comecar ligado")
+        self.assertIn('aria-checked="true"', m.group(0))
+
     def test_the_fields_live_inside_a_fieldset_that_starts_disabled(self):
         """`disabled` no <fieldset> e o que faz a regra valer para os seis.
 

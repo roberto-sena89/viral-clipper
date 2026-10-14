@@ -454,6 +454,43 @@ class ProviderTests(unittest.TestCase):
             self.assertTrue(provider.base_url.startswith("http"))
             self.assertTrue(provider.model)
 
+    def test_the_nim_entries_read_the_nvidia_variable(self):
+        """As chaves nvapi- do build.nvidia.com moram em ``NVIDIA_API_KEY``.
+
+        Os quatro entrys NIM vieram por copy-paste do entry ``openai`` e
+        herdaram ``OPENAI_API_KEY``: com o curador ligado por padrao e apontando
+        para o NIM, uma maquina so' com a chave da NVIDIA veria o aviso de
+        chave faltando em TODA execucao -- e seguiria sem headline, que e'
+        exatamente o defeito que ligar por padrao deveria ter eliminado.
+        """
+        table = providers.PROVIDERS
+        for name in ("nemotron-super", "gemma-4-31b", "kimi-k3", "deepseek-flash"):
+            provider = table[name]
+            self.assertTrue(
+                provider.base_url.startswith("https://integrate.api.nvidia.com"),
+                f"{name}: deixou de ser um entry NIM? base_url mudou.",
+            )
+            self.assertEqual(
+                provider.api_key_env, "NVIDIA_API_KEY",
+                f"{name} le a variavel errada; a chave NVIDIA nao seria lida",
+            )
+
+    def test_the_default_provider_is_the_one_the_environment_key_serves(self):
+        """O provider padrao tem de ser um NIM: e' o que a chave existente abre.
+
+        ``DEFAULT_PROVIDER`` decide o que o dropdown mostra e o que o
+        ``ranker_provider`` do config assume. Se ele apontasse para a OpenAI
+        com ``OPENAI_API_KEY`` ausente, o padrao ligado do curador degradaria
+        para a heuristica em toda execucao -- o toggle ligado sem efeito.
+        """
+        padrao = providers.get_provider(providers.DEFAULT_PROVIDER)
+        self.assertEqual(
+            padrao.api_key_env, "NVIDIA_API_KEY",
+            "o provider padrao le uma variavel que esta maquina nao tem",
+        )
+        self.assertEqual(ClipConfig(url="u").ranker_provider,
+                         providers.DEFAULT_PROVIDER)
+
     def test_apply_to_config_fills_the_three_knobs(self):
         config = providers.apply_to_config(
             ClipConfig(url="u"), "nemotron-super"
@@ -474,7 +511,27 @@ class ProviderTests(unittest.TestCase):
         self.assertFalse(config.ranker_requires_key)
 
     def test_provider_for_config_is_none_when_unnamed(self):
-        self.assertIsNone(providers.provider_for_config(ClipConfig(url="u")))
+        # `ranker_provider=""` explicito: o config agora NASCE com o provider
+        # padrao preenchido, e "sem provider" passou a ser uma escolha, nao o
+        # estado natural. O teste e' justamente do caminho sem provider.
+        self.assertIsNone(
+            providers.provider_for_config(ClipConfig(url="u", ranker_provider=""))
+        )
+
+    def test_a_config_without_a_provider_choice_still_reads_the_nvidia_key(self):
+        """O padrao tem de apontar para a chave que esta maquina tem.
+
+        Com o curador ligado por padrao E um provider padrao, o config recem
+        -criado ja carrega o nome do NIM; `provider_for_config` o resolve e a
+        chave lida e' `NVIDIA_API_KEY`. Se o padrao um dia voltar para a
+        OpenAI, a execucao degrade para a heuristica em toda maquina NVIDIA --
+        o toggle ligado sem efeito, que e' o defeito que este teste trava.
+        """
+        config = ClipConfig(url="u")
+        provider = providers.provider_for_config(config)
+        self.assertEqual(provider.name, "nemotron-super")
+        self.assertEqual(provider.api_key_env, "NVIDIA_API_KEY")
+        self.assertEqual(config.ranker_provider, "nemotron-super")
 
     def test_a_free_tier_provider_costs_nothing(self):
         # The point of the free entries is that a person can turn the curator

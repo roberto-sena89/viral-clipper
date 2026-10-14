@@ -66,11 +66,16 @@ class RankerTestCase(unittest.TestCase):
         self.log = Logger(quiet=True)
 
     def config(self, **overrides) -> ClipConfig:
+        # `ranker_provider=""`: os testes de `apply` injetam um provider falso e
+        # nao devem depender da tabela. Sem isto, o provider padrao do config
+        # (nemotron-super) sobrescreveria o `ranker_api_key_env` que um teste
+        # passa, e a variavel lida seria outra.
         payload = {
             "url": "https://youtu.be/fixture",
             "ranker": "llm",
             "cache_dir": self.tmp,
             "ranker_requires_key": False,
+            "ranker_provider": "",
         }
         payload.update(overrides)
         return ClipConfig(**payload)
@@ -155,7 +160,16 @@ class BuildProviderTests(unittest.TestCase):
         self.assertIsNone(ranker.build_provider(self._config(ranker="none")))
 
     def _config(self, **overrides):
-        payload = {"url": "u", "ranker_requires_key": False}
+        # `ranker_provider=""` de proposito: esta classe mede o caminho MANUAL
+        # (base_url/modelo/env var digitados), e um provider nomeado sobrescreve
+        # os tres campos do config pelos da tabela -- que e' o que um config
+        # recebe agora por padrao, e faria estes testes ler NVIDIA_API_KEY em
+        # vez da variavel que eles mesmos inventam.
+        payload = {
+            "url": "u",
+            "ranker_requires_key": False,
+            "ranker_provider": "",
+        }
         payload.update(overrides)
         return ClipConfig(**payload)
 

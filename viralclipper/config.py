@@ -85,10 +85,15 @@ class ClipConfig:
     ranker: str = "llm"  # llm | none
     # A named provider from ``viralclipper.providers``. When set, it fills in
     # base_url, model, api_key_env and requires_key, so the panel offers a
-    # dropdown instead of two text fields a person has to remember. Empty keeps
-    # the manual fields below authoritative, which is what a TOML file written
-    # by hand already relies on.
-    ranker_provider: str = ""
+    # dropdown instead of two text fields a person has to remember.
+    #
+    # Defaults to the same provider ``providers.DEFAULT_PROVIDER`` names, so the
+    # CLI and the panel agree on day one and a copy-pasted ``cliCommand`` works
+    # on this machine without exporting anything: the NVIDIA key the environment
+    # already carries is the one the NIM entries read. Empty is still valid and
+    # keeps the manual fields below authoritative, which is what a TOML file
+    # written by hand already relies on.
+    ranker_provider: str = "nemotron-super"
     ranker_model: str = "gpt-4o-mini"
     # Any OpenAI-compatible /chat/completions endpoint: OpenAI, DeepSeek,
     # Groq, Together, OpenRouter, or a local Ollama/LM Studio.

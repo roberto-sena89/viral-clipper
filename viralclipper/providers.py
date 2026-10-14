@@ -37,7 +37,7 @@ from .util import ClipperError
 
 #: Every provider here speaks the OpenAI ``/chat/completions`` shape, which is
 #: why one client covers all of them and no vendor SDK is needed.
-DEFAULT_PROVIDER = "openai"
+DEFAULT_PROVIDER = "nemotron-super"
 
 #: The User-Agent both HTTP clients send. Without it, Python's urllib identifies
 #: itself as ``Python-urllib/3.x`` and Cloudflare -- which fronts a number of
@@ -100,7 +100,7 @@ PROVIDERS: dict[str, Provider] = {
         label="NVIDIA NIM - Nemotron 3 Super 120B",
         base_url="https://integrate.api.nvidia.com/v1",
         model="nvidia/nemotron-3-super-120b-a12b",
-        api_key_env="OPENAI_API_KEY",
+        api_key_env="NVIDIA_API_KEY",
         note="O melhor equilibrio medido: 4.9s na legenda, 7.4s nas frases.",
     ),
     "gemma-4-31b": Provider(
@@ -108,7 +108,7 @@ PROVIDERS: dict[str, Provider] = {
         label="NVIDIA NIM - Gemma 4 31B",
         base_url="https://integrate.api.nvidia.com/v1",
         model="google/gemma-4-31b-it",
-        api_key_env="OPENAI_API_KEY",
+        api_key_env="NVIDIA_API_KEY",
         note="4.5s, e o gancho mais curto dos aprovados: cabe na tela sem cortar.",
     ),
     "kimi-k3": Provider(
@@ -116,7 +116,7 @@ PROVIDERS: dict[str, Provider] = {
         label="NVIDIA NIM - Kimi K3",
         base_url="https://integrate.api.nvidia.com/v1",
         model="moonshotai/kimi-k3",
-        api_key_env="OPENAI_API_KEY",
+        api_key_env="NVIDIA_API_KEY",
         note="22.9s. Segue instrucao pelo system, nao pelo user: funciona aqui.",
     ),
     "deepseek-flash": Provider(
@@ -124,7 +124,7 @@ PROVIDERS: dict[str, Provider] = {
         label="NVIDIA NIM - DeepSeek V4.1 Flash",
         base_url="https://integrate.api.nvidia.com/v1",
         model="deepseek-ai/deepseek-v4.1-flash",
-        api_key_env="OPENAI_API_KEY",
+        api_key_env="NVIDIA_API_KEY",
         note="48.8s. Nunca envie max_tokens: o modelo gasta tudo pensando e devolve null.",
     ),
     "local": Provider(

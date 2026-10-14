@@ -699,7 +699,11 @@ count: $('#count').value.trim() === ''
   // ---------- backend ----------
   // A UI conversa com um servidor local opcional (web/server.py).
   // Sem servidor, ela mostra os parâmetros e o comando CLI equivalente.
-  const API = 'http://127.0.0.1:7755';
+  // Origem real da pagina (ex.: http://127.0.0.1:7755 ou :7756 quando o
+  // painel sobe com --port). Absoluta e same-origin, entao o CSP connect-src
+  // 'self' e o _guard_origin do servidor aceitam; e mantem o teste de origem em
+  // baixo (location.origin !== API) correto em qualquer porta.
+  const API = window.location.origin;
   //: Todo dado e acao vive sob /api/. O prefixo entra AQUI, e nao em cada
   //: chamada: sao ~15 call sites, e um esquecido viraria um 404 silencioso --
   //: o `api()` devolve `{error}` e a tela so mostra "servidor fora do ar".

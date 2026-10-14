@@ -7,7 +7,9 @@
   // O servidor local opcional. Sem ele a pagina continua util: mostra os
   // padroes do proprio formulario e diz que nao esta salvando, em vez de
   // fingir que salvou.
-  const API = 'http://127.0.0.1:7755';
+  // Origem real da pagina (ex.: http://127.0.0.1:7755 ou :7756 com --port).
+  // Absoluta e same-origin, entao funciona em qualquer porta do painel.
+  const API = window.location.origin;
   //: Mesmo contrato do index.js: todo dado e acao vive sob /api/, e o prefixo
   //: entra no helper para nao depender de cada call site lembrar dele.
   const API_BASE = API + '/api';

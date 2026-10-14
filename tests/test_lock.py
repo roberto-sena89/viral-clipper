@@ -45,6 +45,14 @@ from viralclipper.util import ClipperError, Logger
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HOLDER = REPO_ROOT / "tests" / "_lock_holder.py"
 
+# O teardown do trabalhador (job object) e' o MESMO evento em dois lugares: o
+# ``wait`` do stub e o prazo do ``espera_livre``. Um teto e um prazo, e o prazo
+# tem de ficar ABAIXO do teto -- se ele passar do teto, o teste volta a ser
+# corrida, so' que mais lenta. Medido com 8 nucleos ocupados, o teardown levou
+# segundos, e nao o instante que o teste antigo exigia.
+TEARDOWN_TIMEOUT = 20.0
+ESPERA_TIMEOUT = 10.0
+
 
 def _child_env() -> dict[str, str]:
     """Ambiente do processo filho, com a raiz do repo no ``PYTHONPATH``.
@@ -84,7 +92,7 @@ def holder(directory: Path, seconds: float = 30.0) -> Iterator[tuple[subprocess.
     try:
         line = process.stdout.readline() if process.stdout else ""
         if "TRAVADO" not in line:
-            process.wait(timeout=20)
+            process.wait(timeout=TEARDOWN_TIMEOUT)
             detail = process.stderr.read() if process.stderr else ""
             raise AssertionError(
                 f"o processo auxiliar nao travou: {line!r} / stderr: {detail!r}"
@@ -93,10 +101,10 @@ def holder(directory: Path, seconds: float = 30.0) -> Iterator[tuple[subprocess.
     finally:
         if process.poll() is None:
             process.kill()
-        process.wait(timeout=20)
+        process.wait(timeout=TEARDOWN_TIMEOUT)
 
 
-def espera_livre(directory: Path, timeout: float = 10.0) -> IO[str] | None:
+def espera_livre(directory: Path, timeout: float = ESPERA_TIMEOUT) -> IO[str] | None:
     """Tenta obter a trava ate conseguir; ``None`` se o prazo acabar.
 
     O detentor morre, mas quem solta a trava e o handle do FILHO fechando, e
@@ -111,6 +119,10 @@ def espera_livre(directory: Path, timeout: float = 10.0) -> IO[str] | None:
     A propriedade que interessa e "a trava cai quando o detentor morre", nao
     "a trava ja caiu antes de o kernel terminar". O prazo e o que mantem o
     teste capaz de pegar o caso "nunca solta".
+
+    O prazo padrao e ``ESPERA_TIMEOUT``, ABAIXO do ``TEARDOWN_TIMEOUT`` dos
+    ``wait``: se o teardown passar do teto, o teste tem de falhar rapido e
+    legivel -- nao esperar para sempre, nem voltar a ser corrida.
     """
     limite = time.monotonic() + timeout
     while True:
@@ -209,6 +221,22 @@ class CrossProcessTests(LockTestCase):
         self.addCleanup(lock.release, handle)
         self.assertIsNotNone(handle, "a saida do detentor tem de soltar a trava")
 
+    def test_espera_livre_desists_at_the_deadline_with_a_live_holder(self):
+        """O prazo e' a UNICA coisa que pega "a trava nunca solta".
+
+        Sem ele o ``espera_livre`` seria laco infinito: a suite TRAVARIA em vez
+        de falhar, e travamento nao diz nada a quem le o resultado. Este teste e'
+        o que torna o prazo CARGA -- sem ele, apagar o prazo nao derruba nada na
+        suite (medido: so' a sonda de fora pegava a mutacao).
+        """
+        with holder(self.tmp):
+            inicio = time.monotonic()
+            handle = espera_livre(self.tmp, timeout=0.5)
+            gasto = time.monotonic() - inicio
+        self.assertIsNone(handle, "com o detentor vivo a trava nao pode ser obtida")
+        self.assertGreaterEqual(gasto, 0.5, "tem de gastar o prazo antes de desistir")
+        self.assertLess(gasto, 5.0, "nao pode passar muito do prazo")
+
     def test_killing_the_holder_releases_the_lock(self):
         """A propriedade que justifica trava do SO em vez de arquivo com pid.
 
@@ -219,7 +247,7 @@ class CrossProcessTests(LockTestCase):
         with holder(self.tmp, seconds=30) as (process, _pid):
             self.assertIsNone(lock.acquire(self.tmp), "deveria estar ocupado")
             process.kill()
-            process.wait(timeout=20)
+            process.wait(timeout=TEARDOWN_TIMEOUT)
 
         handle = espera_livre(self.tmp)
         self.addCleanup(lock.release, handle)

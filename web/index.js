@@ -1509,9 +1509,20 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     parts.push('--layout', o.layout);
     if (o.transcript_text) parts.push('--transcript caminho/da/transcricao.srt');
     parts.push('--caption-style', o.caption_style);
-    parts.push('--font-size', String(o.font_size));
+    // `font_size` tem TRES estados, e `null` e' um deles: "herda do preset".
+    // `String(null)` produz a string "null", e o argparse do motor recusa
+    // ("invalid int value: 'null'"). O comando impresso aqui existe para ser
+    // copiado; um comando que nao roda e' pior que nenhum.
+    if (o.font_size !== null && o.font_size !== undefined) {
+      parts.push('--font-size', String(o.font_size));
+    }
     parts.push('--crf', String(o.crf));
-    parts.push('--lufs', String(o.lufs));
+    // O campo chama-se `target_lufs` -- e' o nome em ClipConfig, e o proprio
+    // `collectOptions` avisa disso. `o.lufs` nunca existiu, entao
+    // `String(undefined)` imprimia `--lufs undefined`, tambem recusado.
+    if (o.target_lufs !== null && o.target_lufs !== undefined) {
+      parts.push('--lufs', String(o.target_lufs));
+    }
     parts.push('--workers', String(o.workers));
     if (o.jump_cut) parts.push('--jump-cut');
     if (!o.loudnorm) parts.push('--no-loudnorm');

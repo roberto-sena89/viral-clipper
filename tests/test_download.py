@@ -723,8 +723,17 @@ class VisibleDownloadFailureTests(unittest.TestCase):
         self.assertIn("--cookies-from-browser chrome", message)
 
     def test_interrupted_download_mentions_retrying(self):
+        """Interrupcao de verdade -- sem 403 na frase.
+
+        O yt-dlp embrulha o 403 na MESMA frase ("unable to download video data:
+        HTTP Error 403"), e `_HINTS` decide pelo PRIMEIRO fragmento que casa. Com
+        o 403 antes do generico, aquela entrada vira um caso de 403 -- o que esta'
+        certo, e ja' tem teste proprio acima -- e nao testa interrupcao nenhuma.
+        Este e' o teste do fragmento generico, entao a entrada nao pode carregar
+        um erro especifico junto.
+        """
         with self.assertRaises(ClipperError) as ctx:
-            self._run_with(1, "ERROR: unable to download video data: HTTP Error 403")
+            self._run_with(1, "ERROR: unable to download video data: IncompleteRead(0 bytes read)")
         self.assertIn("Retry", str(ctx.exception))
 
     def test_unknown_cause_keeps_the_url(self):

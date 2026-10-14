@@ -69,14 +69,21 @@ _HINTS: tuple[tuple[str, str], ...] = (
     ),
     ("http error 429", "YouTube is rate limiting. Wait a few minutes and retry."),
     (
-        "unable to download video data",
-        "The download was interrupted before finishing. Retry; if it keeps "
-        "happening, pass --cookies-from-browser chrome.",
-    ),
-    (
+        # ANTES de "unable to download video data", e nao depois: o yt-dlp
+        # embrulha o 403 nessa frase ("unable to download video data: HTTP Error
+        # 403: Forbidden") e `explain_failure` devolve o PRIMEIRO fragmento que
+        # casa. Com a ordem antiga o generico vencia e a pessoa lia "o download
+        # foi interrompido, tente de novo" -- conselho errado para um 403, que
+        # nao e' transitorio e nao passa sozinho num retry. A regra da lista e'
+        # especifico antes de generico, nao mais longo antes de mais curto.
         "http error 403",
         "YouTube refused the request (403). Wait a few minutes and retry, or pass "
         "--cookies-from-browser chrome.",
+    ),
+    (
+        "unable to download video data",
+        "The download was interrupted before finishing. Retry; if it keeps "
+        "happening, pass --cookies-from-browser chrome.",
     ),
     ("giving up after", "yt-dlp gave up after repeated attempts. Check the connection and retry."),
     ("timed out", "The connection timed out. Check the connection and retry."),

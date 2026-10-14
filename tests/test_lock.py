@@ -30,6 +30,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from collections.abc import Iterator
@@ -68,6 +69,28 @@ def _child_env() -> dict[str, str]:
     return {**os.environ, "PYTHONPATH": joined}
 
 
+def _le_linha(process: subprocess.Popen, timeout: float) -> str:
+    """``readline`` com prazo: sem isto o teste PENDURA se o filho nao falar.
+
+    Dois desfechos sao normais -- o filho imprime ``TRAVADO``, ou morre e o
+    ``readline`` devolve ``""``. O terceiro e' o que trava: filho VIVO e CALADO.
+    Um teste que pendura nao diz nada a quem le o resultado, entao o prazo
+    converte a espera em falha legivel.
+
+    A thread e' daemon de proposito: estourar o prazo deixa um ``read``
+    bloqueado, e o processo morto logo depois faz ela sair sozinha.
+    """
+    saida: list[str] = []
+
+    def ler() -> None:
+        saida.append(process.stdout.readline() if process.stdout else "")
+
+    leitor = threading.Thread(target=ler, daemon=True)
+    leitor.start()
+    leitor.join(timeout)
+    return saida[0] if saida else ""
+
+
 @contextlib.contextmanager
 def holder(directory: Path, seconds: float = 30.0) -> Iterator[tuple[subprocess.Popen, int]]:
     """Sobe um processo que segura a trava, e garante que ele morra no fim.
@@ -90,8 +113,14 @@ def holder(directory: Path, seconds: float = 30.0) -> Iterator[tuple[subprocess.
         errors="replace",
     )
     try:
-        line = process.stdout.readline() if process.stdout else ""
+        line = _le_linha(process, TEARDOWN_TIMEOUT)
         if "TRAVADO" not in line:
+            # `_le_linha` ja' gastou o prazo, entao o filho esta' vivo e calado
+            # (se tivesse morrido, o read teria devolvido "" na hora). Insistir
+            # num `wait` do mesmo tamanho so' adia o mesmo desfecho -- e com um
+            # erro PIOR: `TimeoutExpired` em vez da mensagem que explica.
+            if process.poll() is None:
+                process.kill()
             process.wait(timeout=TEARDOWN_TIMEOUT)
             detail = process.stderr.read() if process.stderr else ""
             raise AssertionError(
@@ -215,8 +244,19 @@ class CrossProcessTests(LockTestCase):
             self.assertIn(str(self.tmp), message, "tem de nomear a pasta ocupada")
 
     def test_the_lock_is_free_again_after_the_holder_exits(self):
-        with holder(self.tmp, seconds=0.2):
-            pass
+        """A saida LIMPA: o detentor termina sozinho, ninguem mata ninguem.
+
+        O ``process.wait()`` aqui e' o que separa este teste do de baixo. Sem
+        ele, o ``holder`` matava o filho no ``finally`` -- o corpo ``pass`` dura
+        microssegundos e o detentor dorme 0.2s -- e os DOIS testes exercitavam o
+        mesmo caminho, a morte a forca, apesar de o nome deste prometer saida
+        limpa. E' a diferenca que importa: o atraso assincrono do teardown so'
+        existe quando o filho e' MORTO (job object); na saida limpa a trava ja'
+        caiu. Medido: ``wait()`` do stub devolveu 1.05s para um filho que dorme
+        1.0s (logo o stub ESPERA o filho) e a trava estava livre 21ms depois.
+        """
+        with holder(self.tmp, seconds=0.2) as (process, _pid):
+            process.wait(timeout=TEARDOWN_TIMEOUT)
         handle = espera_livre(self.tmp)
         self.addCleanup(lock.release, handle)
         self.assertIsNotNone(handle, "a saida do detentor tem de soltar a trava")

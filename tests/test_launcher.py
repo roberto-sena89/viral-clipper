@@ -145,6 +145,19 @@ class LauncherTests(unittest.TestCase):
         """The fix must not have replaced the launch with only a check."""
         self.assertIn(f'call "{VENV_PYTHON}" {SERVER}', launcher_text())
 
+    def test_the_restart_script_kills_before_starting(self) -> None:
+        """Reiniciar sem matar deixa dois servidores e a porta trava.
+
+        O script tem de derrubar quem ouve em 7755 (taskkill) ANTES de subir
+        de novo, e subir minimizado como o atalho.
+        """
+        texto = (REPO_ROOT / "reiniciar_servidor.cmd").read_text(encoding="utf-8")
+        self.assertIn("taskkill", texto.lower())
+        self.assertIn("7755", texto)
+        self.assertIn("web\\server.py", texto)
+        self.assertRegex(texto.lower(), r"start\s.*\/min",
+                         "o restart abre a janela em modo normal")
+
     def test_the_launcher_is_lf(self) -> None:
         """Repo convention: no ``.gitattributes``, ``core.autocrlf=false``.
 

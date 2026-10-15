@@ -879,6 +879,53 @@ def list_library(base: Path, limit: int = 200) -> list[dict]:
     found.sort(key=lambda item: item["modified"], reverse=True)
     return found[:limit]
 
+
+def _declare_browse_prototypes() -> None:
+    """Fixa os protótipos Win32 de que o diálogo de pasta depende.
+
+    Sem ``argtypes`` o ctypes converte todo int Python para um ``int`` de C —
+    32 bits — e levanta ``OverflowError: int too long to convert`` acima disso.
+    O ``SHBrowseForFolderW`` devolve a pasta escolhida como
+    ``PIDLIST_ABSOLUTE``, um ponteiro de 64 bits de verdade (medido nesta
+    máquina: ``0x1713a022910``), e esse valor ia cru para
+    ``SHGetPathFromIDListW`` e ``CoTaskMemFree``. Ou seja: o diálogo abria, a
+    pessoa escolhia a pasta, e o caminho era jogado fora com
+
+        dialogo indisponivel: argument 1: OverflowError: int too long to convert
+
+    O mesmo valia para ``HWND``, que também é ponteiro: sem ``argtypes`` um
+    handle acima de 2^31 estoura, e abaixo disso é truncado em silêncio.
+
+    Idempotente e barato: ``ctypes.windll`` guarda o objeto da DLL por loader
+    (``ctypes.windll.shell32 is ctypes.windll.shell32``), então os ``argtypes``
+    fixados aqui são os que toda chamada seguinte enxerga.
+    """
+    shell32 = ctypes.windll.shell32
+    shell32.SHBrowseForFolderW.argtypes = [ctypes.POINTER(_BROWSEINFOW)]
+    shell32.SHBrowseForFolderW.restype = ctypes.c_void_p
+    shell32.SHGetPathFromIDListW.argtypes = [ctypes.c_void_p, wintypes.LPWSTR]
+    shell32.SHGetPathFromIDListW.restype = wintypes.BOOL
+    ole32 = ctypes.windll.ole32
+    ole32.CoInitialize.argtypes = [ctypes.c_void_p]
+    ole32.CoTaskMemFree.argtypes = [ctypes.c_void_p]
+    ole32.CoTaskMemFree.restype = None
+    user32 = ctypes.windll.user32
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetWindowThreadProcessId.argtypes = [
+        wintypes.HWND,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+    user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+    user32.SetForegroundWindow.restype = wintypes.BOOL
+    user32.BringWindowToTop.argtypes = [wintypes.HWND]
+    user32.BringWindowToTop.restype = wintypes.BOOL
+    user32.FlashWindow.argtypes = [wintypes.HWND, wintypes.BOOL]
+    user32.FlashWindow.restype = wintypes.BOOL
+    ctypes.windll.kernel32.GetCurrentThreadId.restype = wintypes.DWORD
+
+
 def _browse_initialized(hwnd, msg, _lp, _data):
     """Bring the folder dialog forward the moment it opens.
 
@@ -892,6 +939,7 @@ def _browse_initialized(hwnd, msg, _lp, _data):
     if msg != _BFFM_INITIALIZED:
         return 0
     try:
+        _declare_browse_prototypes()
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
         if user32.GetForegroundWindow() != hwnd:
@@ -903,7 +951,11 @@ def _browse_initialized(hwnd, msg, _lp, _data):
                 user32.BringWindowToTop(hwnd)
             finally:
                 user32.AttachThreadInput(cur, ftid, False)
-        user32.FlashWindowW(hwnd, True)
+        # FlashWindow, não FlashWindowW: a função não tem sufixo A/W (não
+        # recebe string) e o user32 não exporta "FlashWindowW" — a chamada
+        # antiga levantava AttributeError, que o except abaixo engolia, então
+        # o pisca-pisca de reserva nunca aconteceu.
+        user32.FlashWindow(hwnd, True)
     except Exception:  # noqa: BLE001 - a missed flash must not kill the dialog
         pass
     return 0
@@ -924,10 +976,13 @@ def _win32_askdirectory() -> str:
     ``ctypes`` is stdlib everywhere, so this needs no install: it calls
     ``SHBrowseForFolderW`` straight from shell32. Empty string = cancelled,
     same contract as the tkinter path above.
+
+    Os protótipos vêm de :func:`_declare_browse_prototypes`, e não são
+    decoração: sem eles o ``pidl`` que o diálogo devolve — ponteiro de 64 bits —
+    estourava na conversão para int de 32 bits e a pasta escolhida era perdida.
     """
+    _declare_browse_prototypes()
     shell32 = ctypes.windll.shell32
-    shell32.SHBrowseForFolderW.restype = ctypes.c_void_p
-    shell32.SHGetPathFromIDListW.restype = wintypes.BOOL
     ole32 = ctypes.windll.ole32
     buf = ctypes.create_unicode_buffer(260)
     info = _browse_info(buf, "Escolher pasta de saída")

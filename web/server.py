@@ -177,6 +177,7 @@ from state import (  # noqa: E402,F401
     _browse_info,
     _browse_initialized,
     _cookies_file_from_args,
+    _declare_browse_prototypes,
     _dedupe_entries,
     _docs_page,
     _download_record,

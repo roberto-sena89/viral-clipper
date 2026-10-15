@@ -4095,6 +4095,100 @@ class BrowseTests(unittest.TestCase):
         self.assertEqual(info.ulFlags, 0x41)
         self.assertTrue(info.lpfn, "sem callback o diálogo abre atrás do navegador")
 
+    @unittest.skipUnless(os.name == "nt", "o diálogo Win32 só existe no Windows")
+    def test_win32_reads_the_path_out_of_a_real_pidl(self):
+        """O pidl que o diálogo devolve é ponteiro de 64 bits, não int de 32.
+
+        O defeito que o usuário viu: o diálogo abria, a pasta era escolhida, e o
+        caminho era jogado fora com "dialogo indisponivel: argument 1:
+        OverflowError: int too long to convert". Sem ``argtypes`` o ctypes
+        converte todo int Python para um ``int`` de C — 32 bits — e estoura
+        acima de 2^31; o ``SHBrowseForFolderW`` devolve a pasta como
+        ``PIDLIST_ABSOLUTE``, e esse ponteiro ia cru para
+        ``SHGetPathFromIDListW`` e ``CoTaskMemFree``.
+
+        Não há mock da função sob teste: ``_win32_askdirectory`` roda de
+        verdade e só o diálogo é substituído. O pidl é REAL — vem do
+        ``SHParseDisplayName`` —, e as duas chamadas que quebravam são as de
+        produção.
+        """
+        import ctypes
+        from ctypes import wintypes
+
+        pasta = tempfile.mkdtemp(prefix="vc-pidl-")
+        self.addCleanup(shutil.rmtree, pasta, True)
+
+        shell32 = ctypes.windll.shell32
+        ole32 = ctypes.windll.ole32
+
+        shell32.SHParseDisplayName.argtypes = [
+            wintypes.LPCWSTR,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+            wintypes.DWORD,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        shell32.SHParseDisplayName.restype = ctypes.c_long
+        pidl = ctypes.c_void_p()
+        flags = wintypes.DWORD()
+        rc = shell32.SHParseDisplayName(
+            pasta, None, ctypes.byref(pidl), 0, ctypes.byref(flags)
+        )
+        self.assertEqual(rc, 0, "SHParseDisplayName nao devolveu o pidl da pasta")
+
+        # `argtypes` mora no objeto da função, e o `ctypes.windll` cacheia a
+        # DLL — então a assinatura é estado GLOBAL e sobrevive de um teste para
+        # o outro. Zerar as duas aqui é o que torna o teste independente de
+        # ordem: quem tem de redeclarar é o código de produção, e é isso que
+        # está sendo medido. (Sem zerar, o teste passaria só porque outro teste
+        # declarou antes — e não provaria nada.)
+        self.addCleanup(server._declare_browse_prototypes)
+        shell32.SHGetPathFromIDListW.argtypes = None
+        ole32.CoTaskMemFree.argtypes = None
+
+        # Controle: sem os argtypes, o MESMO pidl estoura. Sem isto o teste
+        # passaria também no código antigo se o alocador devolvesse um endereço
+        # baixo — ou seja, não provaria nada.
+        with self.assertRaises(ctypes.ArgumentError):
+            shell32.SHGetPathFromIDListW(pidl.value, ctypes.create_unicode_buffer(260))
+
+        with mock.patch.object(shell32, "SHBrowseForFolderW",
+                               lambda _info: pidl.value):
+            escolhida = server._win32_askdirectory()
+
+        self.assertEqual(os.path.normcase(escolhida), os.path.normcase(pasta))
+        self.assertEqual(shell32.SHGetPathFromIDListW.argtypes,
+                         [ctypes.c_void_p, wintypes.LPWSTR],
+                         "sem argtypes o pidl de 64 bits nao sai do ctypes")
+        self.assertEqual(ole32.CoTaskMemFree.argtypes, [ctypes.c_void_p],
+                         "o pidl devolvido pelo dialogo nao pode ser liberado")
+
+    @unittest.skipUnless(os.name == "nt", "o diálogo Win32 só existe no Windows")
+    def test_the_dialog_flash_uses_a_symbol_that_exists(self):
+        """``FlashWindowW`` não existe no user32 — o pisca-pisca estava morto.
+
+        A função não tem sufixo A/W (não recebe string), então o nome certo é
+        ``FlashWindow``. A chamada antiga levantava ``AttributeError``, que o
+        ``except Exception: pass`` do callback engolia: o diálogo abria atrás do
+        navegador e a reserva que devia chamar atenção não piscava nada.
+        """
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        with self.assertRaises(AttributeError):
+            user32.__getattr__("FlashWindowW")
+
+        chamadas = []
+        with mock.patch.object(user32, "FlashWindow",
+                               lambda hwnd, piscar: chamadas.append((hwnd, piscar))), \
+             mock.patch.object(user32, "AttachThreadInput", lambda *a: True), \
+             mock.patch.object(user32, "SetForegroundWindow", lambda *a: True), \
+             mock.patch.object(user32, "BringWindowToTop", lambda *a: True):
+            server._browse_initialized(0x1234, server._BFFM_INITIALIZED, 0, 0)
+
+        self.assertEqual(chamadas, [(0x1234, True)],
+                         "o callback nao piscou a janela do dialogo")
+
 
 class RunProgressTests(unittest.TestCase):
     """GET /run/progress: o record que o painel de Execucao pinta durante o job.

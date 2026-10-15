@@ -1841,7 +1841,13 @@
           }
         }, 1000);
         try {
-          const r = await post("/browse/file", {});
+          // GET, nao POST: /api/browse/native e /api/browse/file existem so
+          // dentro do do_GET do servidor. Com POST o pedido nao acha ramo
+          // nenhum no do_POST e cai no `{"error": "not found"}` dele — que era
+          // exatamente a mensagem que aparecia ao clicar aqui. O `get()` tem o
+          // mesmo contrato de erro do `post()` (inclusive `offline: true`),
+          // entao os ramos abaixo nao mudam.
+          const r = await get("/browse/file");
           if (r.error) {
             toast(
               resumoDoErro(

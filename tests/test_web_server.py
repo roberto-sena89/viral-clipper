@@ -4362,6 +4362,20 @@ class BrowseTests(unittest.TestCase):
             self.assertIn(marcador, page, f"{marcador} fora da pagina")
         self.assertIn('"/browse/file"', script,
                       "o botao nao chama a rota do dialogo nativo de arquivo")
+        # O VERBO era o defeito, nao o caminho: /api/browse/native e
+        # /api/browse/file existem so' dentro do do_GET do servidor. Chamadas
+        # com POST, nao acham ramo nenhum no do_POST e caem no
+        # `{"error": "not found"}` dele -- exatamente a mensagem que aparecia
+        # ao clicar aqui. Por isso a assercao e' sobre o metodo: o caminho ja'
+        # estava certo, e um `assertIn` da string sozinho nunca pegaria isso.
+        chamada = [linha.strip() for linha in script.splitlines()
+                   if '"/browse/file"' in linha]
+        self.assertEqual(len(chamada), 1,
+                         "o botao do cookies.txt sumiu, ou a rota passou a ser "
+                         "chamada em mais de um lugar")
+        self.assertRegex(chamada[0], r"\bget\(",
+                         "o cookies.txt chama /browse/file com POST: essa rota "
+                         "so' existe no do_GET, e o POST cai no not found")
         self.assertNotIn("cookies-file-picker", page,
                          "o <input type=file> voltou: ele so' entrega o nome, "
                          "nunca o caminho que o servidor precisa")

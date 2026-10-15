@@ -1576,6 +1576,164 @@ class ArchiveConfigSingleOwnerTests(unittest.TestCase):
         )
 
 
+class ScrapErrorContractTests(unittest.TestCase):
+    """O corpo do 400 tem de CHEGAR na pagina: `needs` nao pode ser descartado.
+
+    O defeito que esta classe existe para pegar: o servidor responde 400 com
+    ``{"error": ..., "needs": "cookies"}``, mas o ``post()`` do ``scrap.js``
+    reconstruia a resposta como ``{error, code}`` -- e o ``needs`` sumia. A
+    pagina decidia abrir a dobra "Acesso e sessao" por ``r.needs === "cookies"``,
+    entao a instrucao nunca disparava: a mensagem mandava escolher os cookies e
+    o campo ficava atras de uma dobra FECHADA, em outro card.
+
+    O texto do erro sobrevivia, e por isso o defeito era invisivel: quem olhasse
+    a mensagem veria tudo certo. O que faltava era o CAMPO, e a suite media o
+    texto (que estava la') e nunca o campo (que nao estava).
+
+    As funcoes sao as do ``scrap.js`` REAL, extraidas e executadas -- nao ha
+    copia da logica aqui. Uma copia passaria com a copia certa e o produto
+    quebrado.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.js = (server.WEB_DIR / "scrap.js").read_text(encoding="utf-8")
+
+    def _ancora(self, padrao: str) -> str:
+        m = re.search(padrao, self.js)
+        if m is None:
+            raise AssertionError(
+                f"ancora ausente em scrap.js: {padrao}. Se a funcao foi "
+                "renomeada, renomeie esta ancora junto -- um match que devolve "
+                "None e' um teste que nao testa nada.")
+        return m.group(0)
+
+    def _roda(self, script: str):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node nao esta' no PATH")
+        import subprocess
+
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, encoding="utf-8", timeout=30)
+        if proc.returncode != 0:
+            raise AssertionError("o script do scrap.js estourou: "
+                                 + proc.stderr.strip()[:400])
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+
+    def _chama_post(self, status: int, corpo_js: str):
+        """Chama o `post()` real com um `fetch` falso e devolve o que ele deu."""
+        api = self._ancora(r'var API = "[^"]*";')
+        post = self._ancora(r"async function post\(path, body\) \{[\s\S]*?\n  \}")
+        script = (
+            api + "\n"
+            "const visto = [];\n"
+            "async function fetch(url, opts) {\n"
+            "  visto.push({ url: String(url), metodo: (opts || {}).method });\n"
+            "  return { ok: " + ("true" if 200 <= status < 300 else "false")
+            + ", status: " + str(status) + ",\n"
+            "           json: async () => (" + corpo_js + ") };\n"
+            "}\n"
+            + post + "\n"
+            "(async () => {\n"
+            "  const r = await post('/scrap', { url: 'x' });\n"
+            "  console.log(JSON.stringify({ r, visto }));\n"
+            "})();\n"
+        )
+        return self._roda(script)
+
+    # ---------- o corpo do erro ----------
+
+    def test_the_needs_field_survives_the_helper(self):
+        """`needs` e' o CAMPO que a pagina usa; ele nao pode ser reconstruido fora."""
+        saida = self._chama_post(
+            400, '{ error: "exige um cookies.txt", needs: "cookies" }')
+        self.assertEqual(saida["r"].get("needs"), "cookies",
+                         "o post() jogou fora o `needs` do corpo do 400 -- e' "
+                         "por ele que a pagina sabe qual campo revelar")
+        self.assertEqual(saida["r"].get("error"), "exige um cookies.txt")
+
+    def test_any_extra_key_the_server_sends_survives(self):
+        """A regra e' geral, nao um `if` para o `needs`: chave a mais do servidor
+        nao pode virar chave a menos para quem chamou."""
+        saida = self._chama_post(
+            409, '{ error: "ja rodando", job: "abc", needs: "cookies" }')
+        self.assertEqual(saida["r"].get("job"), "abc")
+        self.assertEqual(saida["r"].get("needs"), "cookies")
+
+    def test_the_http_status_still_comes_along(self):
+        """O `code` continua sendo o status HTTP -- ha' quem distinga o 409."""
+        saida = self._chama_post(409, '{ error: "ja rodando" }')
+        self.assertEqual(saida["r"].get("code"), 409)
+
+    def test_a_200_body_passes_through_untouched(self):
+        saida = self._chama_post(200, '{ results: [{ id: 1 }], title: "t" }')
+        self.assertEqual(saida["r"], {"results": [{"id": 1}], "title": "t"})
+
+    def test_the_helper_still_prefixes_the_api_in_one_place(self):
+        saida = self._chama_post(200, "{}")
+        self.assertEqual(saida["visto"][0]["url"], "/api/scrap")
+        self.assertEqual(saida["visto"][0]["metodo"], "POST")
+
+    def test_a_dead_server_is_still_offline_and_not_an_error_text(self):
+        api = self._ancora(r'var API = "[^"]*";')
+        post = self._ancora(r"async function post\(path, body\) \{[\s\S]*?\n  \}")
+        saida = self._roda(
+            api + "\n"
+            "async function fetch() { throw new Error('recusou'); }\n"
+            + post + "\n"
+            "(async () => {\n"
+            "  console.log(JSON.stringify(await post('/scrap', {})));\n"
+            "})();\n"
+        )
+        self.assertTrue(saida.get("offline"), "o offline se perdeu")
+        self.assertIn("error", saida)
+
+    # ---------- o que a pagina FAZ com o campo ----------
+
+    def _condicao_da_dobra(self, needs_js: str):
+        """Roda a condicao REAL que decide revelar o campo."""
+        linha = self._ancora(r'if \(r\.needs === "cookies"\) revelaOCampoDeCookies\(\);')
+        return self._roda(
+            "let chamou = false;\n"
+            "function revelaOCampoDeCookies() { chamou = true; }\n"
+            "const r = " + needs_js + ";\n"
+            + linha + "\n"
+            "console.log(JSON.stringify({ chamou }));\n"
+        )
+
+    def test_the_page_reveals_the_field_when_the_server_names_it(self):
+        self.assertTrue(self._condicao_da_dobra('{ error: "x", needs: "cookies" }')["chamou"],
+                        "a pagina nao abriu a dobra mesmo com needs=cookies")
+
+    def test_the_page_does_not_reveal_it_for_another_field(self):
+        """`needs` de outro campo nao pode roubar o foco para o cookies."""
+        for needs in ('{ error: "x", needs: "session" }', '{ error: "x" }'):
+            with self.subTest(needs=needs):
+                self.assertFalse(self._condicao_da_dobra(needs)["chamou"])
+
+    def test_the_reveal_opens_the_fold_and_focuses_the_field(self):
+        """A funcao e' executada com um DOM falso: abre a dobra E foca.
+
+        Grepar `revelaOCampoDeCookies` no fonte provaria que o nome existe, nao
+        que ela faz o que promete -- e a dobra fechada era metade do defeito.
+        """
+        fonte = self._ancora(r"function revelaOCampoDeCookies\(\) \{[\s\S]*?\n  \}")
+        saida = self._roda(
+            "const card = { open: false };\n"
+            "const campo = { focado: false, rolado: false,\n"
+            "                focus() { this.focado = true; },\n"
+            "                scrollIntoView() { this.rolado = true; } };\n"
+            "const mapa = { '#auth-card': card, '#scrap-cookies-file': campo };\n"
+            "const $ = (s) => mapa[s] || null;\n"
+            + fonte + "\n"
+            "revelaOCampoDeCookies();\n"
+            "console.log(JSON.stringify({ aberto: card.open, focado: campo.focado }));\n"
+        )
+        self.assertTrue(saida["aberto"], "a dobra 'Acesso e sessao' nao foi aberta")
+        self.assertTrue(saida["focado"], "o campo de cookies nao recebeu o foco")
+
+
 class SearchLoadingTests(unittest.TestCase):
     """O "Buscando" é um skeleton animado, não um parágrafo estático."""
 
@@ -4188,6 +4346,172 @@ class BrowseTests(unittest.TestCase):
 
         self.assertEqual(chamadas, [(0x1234, True)],
                          "o callback nao piscou a janela do dialogo")
+
+    # ---------- o diálogo de ARQUIVO (o cookies.txt) ----------
+    #
+    # O <input type="file"> do HTML entrega só `File.name`: o campo ficava com
+    # "cookies.txt", passava na validação da página e só falhava depois, dentro
+    # do yt-dlp — longe do clique que causou. Só um diálogo do lado do servidor
+    # devolve um caminho que o servidor consegue abrir.
+
+    def test_the_cookies_field_asks_the_server_for_a_real_path(self):
+        """O botão do Scrap fala com a rota de arquivo — e o input saiu."""
+        page = page_source("scrap.html")
+        script = (server.WEB_DIR / "scrap.js").read_text(encoding="utf-8")
+        for marcador in ("btn-cookies-browse", "scrap-cookies-file"):
+            self.assertIn(marcador, page, f"{marcador} fora da pagina")
+        self.assertIn('"/browse/file"', script,
+                      "o botao nao chama a rota do dialogo nativo de arquivo")
+        self.assertNotIn("cookies-file-picker", page,
+                         "o <input type=file> voltou: ele so' entrega o nome, "
+                         "nunca o caminho que o servidor precisa")
+
+    def test_the_kind_picks_which_dialog_opens(self):
+        """``kind`` escolhe o diálogo; sem ``kind`` continua sendo pasta."""
+        with mock.patch.object(server, "_native_askopenfilename",
+                               return_value="C:\\cookies.txt") as arq, \
+             mock.patch.object(server, "_native_askdirectory",
+                               return_value="C:\\Clips") as pasta:
+            self.assertEqual(server._browse_native(kind="file"),
+                             {"path": "C:\\cookies.txt"})
+            self.assertEqual(server._browse_native(kind="folder"),
+                             {"path": "C:\\Clips"})
+            self.assertEqual(server._browse_native(), {"path": "C:\\Clips"})
+            arq.assert_called_once_with()
+            self.assertEqual(pasta.call_count, 2,
+                             "o default deixou de ser a pasta de saida")
+
+    def test_the_file_dialog_returns_the_chosen_path(self):
+        self.assertEqual(
+            server._browse_native(kind="file", ask=lambda: "C:\\cookies.txt"),
+            {"path": "C:\\cookies.txt"},
+        )
+
+    def test_a_cancelled_file_dialog_is_not_an_error(self):
+        self.assertEqual(server._browse_native(kind="file", ask=lambda: ""),
+                         {"cancelled": True})
+
+    def test_without_tkinter_falls_back_to_win32_for_the_file_dialog(self):
+        with mock.patch.object(server, "_tk_askopenfilename",
+                               side_effect=ImportError("no tkinter")), \
+             mock.patch.object(server, "_win32_askopenfilename",
+                               return_value="D:\\cookies.txt") as win:
+            self.assertEqual(server._native_askopenfilename(), "D:\\cookies.txt")
+            win.assert_called_once_with()
+
+    def test_the_file_route_asks_for_a_file_dialog(self):
+        import inspect
+
+        src = inspect.getsource(server.Handler.do_GET)
+        self.assertIn("/api/browse/file", src)
+        self.assertIn('_browse_native(kind="file")', src,
+                      "a rota nova nao pediu o dialogo de arquivo")
+
+    @unittest.skipUnless(os.name == "nt", "o diálogo Win32 só existe no Windows")
+    def test_the_openfilename_size_is_the_struct_itself(self):
+        """``lStructSize`` curto faz a chamada voltar ``False`` — igual a cancelar.
+
+        O Windows valida esse campo contra o ``sizeof`` do alvo. Se ficar
+        menor, ele recusa a chamada sem erro nenhum, e o sintoma na tela vira
+        "escolhi o arquivo e o campo continuou vazio" — indistinguível de um
+        cancelamento. Por isso o valor nunca é um literal escrito à mão.
+        """
+        import ctypes
+
+        comdlg32 = ctypes.windll.comdlg32
+        visto = []
+
+        def falso(ref):
+            visto.append(ref._obj)
+            return 0
+
+        with mock.patch.object(comdlg32, "GetOpenFileNameW", falso), \
+             mock.patch.object(comdlg32, "CommDlgExtendedError", lambda: 0):
+            self.assertEqual(server._win32_askopenfilename(), "")
+
+        self.assertEqual(len(visto), 1, "GetOpenFileNameW nao foi chamado")
+        info = visto[0]
+        self.assertEqual(info.lStructSize,
+                         ctypes.sizeof(server._OPENFILENAMEW))
+        if ctypes.sizeof(ctypes.c_void_p) == 8:
+            self.assertEqual(info.lStructSize, 152,
+                             "o OPENFILENAMEW de 64 bits tem 152 bytes — outro "
+                             "valor significa que um campo ficou de fora")
+        # Os quatro campos que só existem na versão de 64 bits: sem eles o
+        # tamanho cai e o Windows recusa a chamada.
+        for campo in ("pvReserved", "dwReserved", "FlagsEx", "lCustData"):
+            self.assertIn(campo, [nome for nome, _ in server._OPENFILENAMEW._fields_])
+        # O filtro precisa existir e o buffer de destino ser grande: com
+        # nMaxFile=0 o Windows recusa, e o caminho não tem onde voltar.
+        self.assertTrue(info.lpstrFilter, "sem filtro o dialogo recusa a chamada")
+        self.assertEqual(info.nMaxFile, 32768)
+        # Ler o campo devolveria "" (o ctypes converte ``c_wchar_p`` na leitura,
+        # e o buffer ainda esta' vazio) — o que se prova aqui e' que o
+        # ENDERECO do buffer foi passado.
+        self.assertTrue(
+            ctypes.c_void_p.from_address(
+                ctypes.addressof(info) + server._OPENFILENAMEW.lpstrFile.offset
+            ).value,
+            "lpstrFile chegou nulo: nao ha' onde o caminho voltar",
+        )
+        for flag in (0x00001000, 0x00000800, 0x00080000, 0x00000008):
+            self.assertTrue(info.Flags & flag,
+                            f"flag {flag:#x} fora: o dialogo aceitaria caminho "
+                            "inexistente ou trocaria o cwd do servidor")
+
+    @unittest.skipUnless(os.name == "nt", "o diálogo Win32 só existe no Windows")
+    def test_a_refused_call_is_not_a_cancellation(self):
+        """Cancelar devolve 0 em ``CommDlgExtendedError`` — defeito não.
+
+        ``GetOpenFileNameW`` devolve ``False`` nos dois casos, então engolir a
+        diferença viraria "cancelou" na cara de quem escolheu um arquivo. Foi
+        exatamente esse o formato do defeito do seletor de pasta.
+        """
+        import ctypes
+
+        comdlg32 = ctypes.windll.comdlg32
+        with mock.patch.object(comdlg32, "GetOpenFileNameW", lambda ref: 0), \
+             mock.patch.object(comdlg32, "CommDlgExtendedError", lambda: 0x3002):
+            with self.assertRaises(OSError) as ctx:
+                server._win32_askopenfilename()
+        self.assertIn("0x3002", str(ctx.exception))
+
+    @unittest.skipUnless(os.name == "nt", "o diálogo Win32 só existe no Windows")
+    def test_the_file_dialog_hands_back_the_buffer_it_wrote(self):
+        """O caminho sai do buffer que a API preenche, não de um retorno.
+
+        ``GetOpenFileNameW`` devolve só ``TRUE``/``FALSE``: o caminho escolhido
+        aparece no ``lpstrFile`` que foi passado. Se a leitura for feita do
+        lugar errado, o diálogo abre, a pessoa escolhe, e nada chega.
+
+        O buffer é escrito pelo endereço cru de propósito: ler ``info.lpstrFile``
+        devolveria um ``str`` (o ctypes converte ``c_wchar_p`` na leitura), e
+        não o ponteiro — que é justamente o que se quer provar que foi passado.
+        """
+        import ctypes
+
+        comdlg32 = ctypes.windll.comdlg32
+        # Caminho neutro de proposito: o repo e' publico e ha' um teste que
+        # recusa o nome da maquina de quem commitou no HTML servido. Aqui so'
+        # se prova que o buffer volta; o dono da pasta nao importa.
+        alvo = "C:\\Users\\fulano\\cookies.txt"
+
+        def preenche(ref):
+            info = ref._obj
+            endereco = ctypes.c_void_p.from_address(
+                ctypes.addressof(info) + server._OPENFILENAMEW.lpstrFile.offset
+            ).value
+            self.assertTrue(endereco, "lpstrFile chegou nulo: nao ha' onde voltar")
+            origem = ctypes.create_unicode_buffer(alvo)
+            ctypes.memmove(
+                endereco,
+                ctypes.addressof(origem),
+                (len(alvo) + 1) * ctypes.sizeof(ctypes.c_wchar),
+            )
+            return 1
+
+        with mock.patch.object(comdlg32, "GetOpenFileNameW", preenche):
+            self.assertEqual(server._win32_askopenfilename(), alvo)
 
 
 class RunProgressTests(unittest.TestCase):

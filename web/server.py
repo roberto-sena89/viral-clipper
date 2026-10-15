@@ -45,6 +45,9 @@ Data (GET):
   /api/providers/user       -> the providers added from the panel
   /api/prompts/curador      -> the curator prompt
   /api/browse/native        -> OS folder dialog on the server machine
+  /api/browse/file          -> OS FILE dialog (the cookies.txt); the browser
+                               never reveals a real path, so this is the only
+                               picker that can fill that field
   /api/thumb/<name>         -> cached thumbnail bytes
   /api/clips/<id>           -> a rendered clip, or its poster
   /api/scrap/thumb          -> a search result thumbnail (fetched on demand)
@@ -201,6 +204,7 @@ from state import (  # noqa: E402,F401
     _toml_scalar,
     _viral_rank,
     _win32_askdirectory,
+    _win32_askopenfilename,
     _with_videos_tab,
     _write_atomically,
     _ytdlp_argv,
@@ -208,6 +212,7 @@ from state import (  # noqa: E402,F401
     list_library,
     resolve_within,
     _BROWSEINFOW,
+    _OPENFILENAMEW,
 )
 
 #: As rotas de /api/providers/*. O modulo e' o dono de ``USER_PROVIDERS_PATH``
@@ -1265,6 +1270,34 @@ def _tk_askdirectory() -> str:
 
 
 
+def _tk_askopenfilename() -> str:
+    """Same as above, but the OS FILE dialog — for the cookies.txt.
+
+    O ``<input type="file">`` da página nunca revela o caminho real (o
+    navegador entrega só ``File.name``), e o servidor precisa de um caminho que
+    ele mesmo consiga abrir. Só um diálogo do lado do servidor resolve isso.
+    """
+    import tkinter
+    from tkinter import filedialog
+
+    root = tkinter.Tk()
+    try:
+        root.withdraw()
+        root.attributes("-topmost", True)
+        return filedialog.askopenfilename(
+            title="Escolher o cookies.txt",
+            filetypes=[
+                ("Arquivos de cookies", "*.txt"),
+                ("Todos os arquivos", "*.*"),
+            ],
+        )
+    finally:
+        try:
+            root.destroy()
+        except Exception:  # noqa: BLE001 - teardown must not mask the choice
+            pass
+
+
 #: Single callback instance: the struct only keeps the address, so a local
 #: would be garbage-collected mid-dialog and the callback would crash it.
 
@@ -1284,14 +1317,37 @@ def _native_askdirectory() -> str:
     return _win32_askdirectory()
 
 
-def _browse_native(ask=None) -> dict:
-    """Run the native folder dialog and answer with the chosen path.
+def _native_askopenfilename() -> str:
+    """O diálogo de ARQUIVO por qualquer meio que este Python tenha.
 
-    ``ask`` is injected by the tests so they never pop a real dialog:
-    production passes nothing and gets :func:`_native_askdirectory`.
+    Mesmo par do :func:`_native_askdirectory` (tkinter, senão Win32) para o
+    caminho do cookies.txt — que é o único campo do painel que precisa de um
+    arquivo, não de uma pasta.
     """
     try:
-        path = (ask or _native_askdirectory)()
+        return _tk_askopenfilename()
+    except ImportError:
+        pass
+    if os.name != "nt":
+        raise ImportError("tkinter indisponivel neste Python")
+    return _win32_askopenfilename()
+
+
+def _browse_native(ask=None, kind: str = "folder") -> dict:
+    """Run a native dialog and answer with the chosen path.
+
+    ``kind`` escolhe o diálogo: ``"folder"`` (pasta de saída, do Estúdio) ou
+    ``"file"`` (o cookies.txt, do Scrap). O contrato da resposta é o mesmo nos
+    dois: ``{"path": ...}``, ``{"cancelled": True}`` ou ``{"error": ...}`` —
+    quem chama não precisa saber qual diálogo abriu.
+
+    ``ask`` is injected by the tests so they never pop a real dialog:
+    production passes nothing and gets the matching ``_native_*``.
+    """
+    if ask is None:
+        ask = _native_askopenfilename if kind == "file" else _native_askdirectory
+    try:
+        path = ask()
     except ImportError:
         return {"error": "nenhum dialogo disponivel neste Python"}
     except Exception as exc:  # noqa: BLE001 - headless server
@@ -1670,6 +1726,12 @@ class Handler(routes_providers.ProviderRoutes, routes_scrap.ScrapRoutes, routes_
             # returns a real local path, since the browser hides them all.
             # The request hangs while the dialog is open — same as /run.
             self._send_json(_browse_native())
+            return
+        if path == "/api/browse/file":
+            # Same reasoning, but for a FILE: the cookies.txt. O
+            # <input type="file"> do HTML só entrega o nome, então o campo
+            # ficava com "cookies.txt" e o yt-dlp falhava depois, longe daqui.
+            self._send_json(_browse_native(kind="file"))
             return
         if path.startswith("/api/clips/"):
             # Serve a rendered clip from the output dir. The UI passes the

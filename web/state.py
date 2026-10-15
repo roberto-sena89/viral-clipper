@@ -99,6 +99,17 @@ _ITEM_SEGMENTS = ("watch", "shorts", "embed", "v", "p", "reel", "tv", "video", "
 
 _BFFM_INITIALIZED = 1
 
+#: ``OPENFILENAMEW.Flags`` do diálogo de ARQUIVO (comdlg32). Os nomes são os do
+#: win32. ``OFN_EXPLORER`` já é implícito nas versões modernas, mas fica
+#: explícito porque é ele que faz o diálogo devolver o caminho completo em
+#: ``lpstrFile`` em vez de só o nome do arquivo.
+_OFN_PATHMUSTEXIST = 0x00000800
+_OFN_FILEMUSTEXIST = 0x00001000
+_OFN_EXPLORER = 0x00080000
+#: Não troca o diretório de trabalho do processo pela pasta escolhida: o
+#: servidor roda na raiz do repositório e o resto do código depende disso.
+_OFN_NOCHANGEDIR = 0x00000008
+
 _LOCAL_HOSTNAMES = frozenset({"127.0.0.1", "localhost", "::1", "[::1]", "0.0.0.0"})
 
 
@@ -120,6 +131,48 @@ class _BROWSEINFOW(ctypes.Structure):
         ("lpfn", ctypes.c_void_p),
         ("lParam", ctypes.c_void_p),
         ("iImage", ctypes.c_int),
+    ]
+
+
+class _OPENFILENAMEW(ctypes.Structure):
+    """Param block for ``GetOpenFileNameW`` — o diálogo nativo de ARQUIVO.
+
+    Espelha ``OPENFILENAMEW`` do commdlg.h, com os quatro campos que a versão
+    de 32 bits não tem (``pvReserved``/``dwReserved``/``FlagsEx``) para o
+    ``lStructSize`` bater com o ``sizeof`` do alvo de 64 bits. O Windows valida
+    esse campo: um valor curto faz a chamada voltar ``False`` sem erro nenhum,
+    que é indistinguível de "o usuário cancelou" — por isso ele é sempre
+    ``ctypes.sizeof(_OPENFILENAMEW)`` e nunca um literal.
+
+    Aqui a lição do seletor de pasta vale igual: sem ``argtypes`` o ctypes
+    converte todo int para 32 bits e o ponteiro de ``lpstrFile`` estoura. A
+    declaração vive em :func:`_declare_browse_prototypes`.
+    """
+
+    _fields_ = [
+        ("lStructSize", wintypes.DWORD),
+        ("hwndOwner", wintypes.HWND),
+        ("hInstance", ctypes.c_void_p),
+        ("lpstrFilter", wintypes.LPCWSTR),
+        ("lpstrCustomFilter", wintypes.LPWSTR),
+        ("nMaxCustFilter", wintypes.DWORD),
+        ("nFilterIndex", wintypes.DWORD),
+        ("lpstrFile", wintypes.LPWSTR),
+        ("nMaxFile", wintypes.DWORD),
+        ("lpstrFileTitle", wintypes.LPWSTR),
+        ("nMaxFileTitle", wintypes.DWORD),
+        ("lpstrInitialDir", wintypes.LPCWSTR),
+        ("lpstrTitle", wintypes.LPCWSTR),
+        ("Flags", wintypes.DWORD),
+        ("nFileOffset", wintypes.WORD),
+        ("nFileExtension", wintypes.WORD),
+        ("lpstrDefExt", wintypes.LPCWSTR),
+        ("lCustData", wintypes.LPARAM),
+        ("lpfnHook", ctypes.c_void_p),
+        ("lpTemplateName", wintypes.LPCWSTR),
+        ("pvReserved", ctypes.c_void_p),
+        ("dwReserved", wintypes.DWORD),
+        ("FlagsEx", wintypes.DWORD),
     ]
 
 
@@ -881,7 +934,7 @@ def list_library(base: Path, limit: int = 200) -> list[dict]:
 
 
 def _declare_browse_prototypes() -> None:
-    """Fixa os protótipos Win32 de que o diálogo de pasta depende.
+    """Fixa os protótipos Win32 de que os diálogos de pasta e de arquivo dependem.
 
     Sem ``argtypes`` o ctypes converte todo int Python para um ``int`` de C —
     32 bits — e levanta ``OverflowError: int too long to convert`` acima disso.
@@ -896,6 +949,10 @@ def _declare_browse_prototypes() -> None:
     O mesmo valia para ``HWND``, que também é ponteiro: sem ``argtypes`` um
     handle acima de 2^31 estoura, e abaixo disso é truncado em silêncio.
 
+    O ``GetOpenFileNameW`` (comdlg32) entra pela mesma porta: ``lpstrFile`` é
+    ponteiro para o buffer onde o caminho escolhido volta, então ele tem o
+    mesmo defeito se ficar sem protótipo.
+
     Idempotente e barato: ``ctypes.windll`` guarda o objeto da DLL por loader
     (``ctypes.windll.shell32 is ctypes.windll.shell32``), então os ``argtypes``
     fixados aqui são os que toda chamada seguinte enxerga.
@@ -905,6 +962,10 @@ def _declare_browse_prototypes() -> None:
     shell32.SHBrowseForFolderW.restype = ctypes.c_void_p
     shell32.SHGetPathFromIDListW.argtypes = [ctypes.c_void_p, wintypes.LPWSTR]
     shell32.SHGetPathFromIDListW.restype = wintypes.BOOL
+    comdlg32 = ctypes.windll.comdlg32
+    comdlg32.GetOpenFileNameW.argtypes = [ctypes.POINTER(_OPENFILENAMEW)]
+    comdlg32.GetOpenFileNameW.restype = wintypes.BOOL
+    comdlg32.CommDlgExtendedError.restype = wintypes.DWORD
     ole32 = ctypes.windll.ole32
     ole32.CoInitialize.argtypes = [ctypes.c_void_p]
     ole32.CoTaskMemFree.argtypes = [ctypes.c_void_p]
@@ -996,6 +1057,70 @@ def _win32_askdirectory() -> str:
             return out.value if shell32.SHGetPathFromIDListW(pidl, out) else ""
         finally:
             ole32.CoTaskMemFree(pidl)
+    finally:
+        ole32.CoUninitialize()
+
+
+def _win32_askopenfilename(
+    title: str = "Escolher o cookies.txt", initialdir: str = ""
+) -> str:
+    """O diálogo nativo de ARQUIVO, via ``GetOpenFileNameW`` (comdlg32).
+
+    Por que existe: o ``<input type="file">`` do navegador entrega só
+    ``File.name`` — nunca o caminho em disco. O campo de cookies precisa de um
+    caminho que o SERVIDOR consiga abrir, e quem está na máquina do servidor é
+    o próprio servidor. Mesmo contrato do :func:`_win32_askdirectory`: string
+    vazia = cancelado.
+
+    Duas armadilhas que este código evita de propósito:
+
+    * ``lStructSize`` = ``ctypes.sizeof``, nunca um número escrito à mão. Se
+      ficar curto, o Windows recusa a chamada e devolve ``False`` — que é
+      exatamente o que ele devolve quando a pessoa cancela. O sintoma seria
+      "escolhi o arquivo e o campo continuou vazio", sem erro nenhum.
+    * ``GetOpenFileNameW`` devolve ``False`` nos dois casos, então quem separa
+      "cancelou" de "falhou" é ``CommDlgExtendedError()``: zero é cancelamento
+      legítimo, qualquer outra coisa é defeito e sobe como exceção.
+    """
+    _declare_browse_prototypes()
+    comdlg32 = ctypes.windll.comdlg32
+    ole32 = ctypes.windll.ole32
+    # O filtro é uma sequência de pares terminada em NUL duplo: rótulo, padrão,
+    # rótulo, padrão, NUL, NUL. Por isso as strings são concatenadas com "\0"
+    # em vez de uma lista — a API quer o bloco cru na memória.
+    filtro = ctypes.create_unicode_buffer(
+        "Arquivos de cookies (cookies.txt)\0cookies.txt\0"
+        "Todos os arquivos (*.*)\0*.*\0\0"
+    )
+    # 32768 é o teto de um caminho para esta API (MAX_PATH não vale aqui: o
+    # buffer aceita caminho longo com "\\?\").
+    caminho = ctypes.create_unicode_buffer(32768)
+    info = _OPENFILENAMEW()
+    info.lStructSize = ctypes.sizeof(_OPENFILENAMEW)
+    info.hwndOwner = None
+    info.lpstrFilter = ctypes.cast(filtro, wintypes.LPCWSTR)
+    info.nFilterIndex = 1
+    info.lpstrFile = ctypes.cast(caminho, wintypes.LPWSTR)
+    info.nMaxFile = len(caminho)
+    info.lpstrInitialDir = initialdir or None
+    info.lpstrTitle = title
+    info.Flags = (
+        _OFN_FILEMUSTEXIST
+        | _OFN_PATHMUSTEXIST
+        | _OFN_EXPLORER
+        | _OFN_NOCHANGEDIR
+    )
+    ole32.CoInitialize(None)
+    try:
+        if comdlg32.GetOpenFileNameW(ctypes.byref(info)):
+            return caminho.value or ""
+        erro = comdlg32.CommDlgExtendedError()
+        if erro:
+            # Cancelar devolve 0. Um código aqui é defeito nosso (struct,
+            # filtro, buffer) — engolir isso viraria "cancelou" na cara do
+            # usuário, e foi assim que o defeito do seletor de pasta passou.
+            raise OSError(f"GetOpenFileNameW falhou (CommDlgExtendedError={erro:#06x})")
+        return ""
     finally:
         ole32.CoUninitialize()
 

@@ -55,6 +55,22 @@ from state import (  # noqa: E402
 )
 
 
+class _CookiesNecessarios(ClipperError):
+    """Erro que a pagina sabe consertar sozinha — ela so' nao sabia que podia.
+
+    ``needs`` viaja no corpo do 400 junto do ``error``, e o /scrap le esse
+    campo para abrir o card "Acesso e sessão" e focar o campo do arquivo, em
+    vez de so' reclamar num toast que a pessoa nao tem como obedecer.
+
+    Por que um campo e nao o texto: casar a MENSAGEM no cliente amarra o
+    front a uma frase que muda quando alguem reescreve o texto aqui. O
+    ``code`` que o ``post()`` do scrap.js ja' le e' o status HTTP (409), entao
+    ele nao serve para isto — precisa de um campo proprio.
+    """
+
+    needs = "cookies"
+
+
 def _ig_profile_results(
     username: str, payload: dict, cookies_file: str, argv: list[str], session: str = ""
 ) -> tuple[list[dict], str, int]:
@@ -74,7 +90,7 @@ def _ig_profile_results(
     travels in memory too so a jar that could not be written still lists.
     """
     if not cookies_file:
-        raise ClipperError(
+        raise _CookiesNecessarios(
             "Listar um perfil do Instagram exige um cookies.txt: o catálogo só é "
             "devolvido para uma sessão autenticada. Escolha os cookies por "
             "arquivo — a opção do navegador não serve para este caminho."
@@ -279,7 +295,14 @@ class ScrapRoutes:
         try:
             results, title, removed = _scrap_results(payload)
         except ClipperError as exc:
-            self._send_json({"error": str(exc)}, 400)
+            # ``needs`` so' entra quando o erro tem conserto do lado da pagina
+            # (hoje: apontar o cookies.txt). Sem ele o corpo fica exatamente o
+            # de antes — uma chave a mais em toda falha seria ruido.
+            corpo = {"error": str(exc)}
+            needs = getattr(exc, "needs", "")
+            if needs:
+                corpo["needs"] = needs
+            self._send_json(corpo, 400)
             return
         except Exception as exc:  # noqa: BLE001 - surface anything to the UI
             self._send_json({"error": f"{exc!r}"}, 400)

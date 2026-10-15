@@ -34,6 +34,46 @@
     }, 4200);
   }
 
+  // O toast nao pode cortar a mensagem no meio da frase. Antes era um
+  // `slice(0, 120)` cego, e a mensagem de 189 caracteres do cookies.txt caia
+  // exatamente em "…Escolha os co" — a instrucao morria na primeira palavra.
+  // O texto completo continua indo para a caixa de resultados; aqui so' se
+  // decide ONDE cortar.
+  function resumoDoErro(msg, limite) {
+    const texto = String(msg == null ? "" : msg);
+    const teto = limite || 120;
+    if (texto.length <= teto) return texto;
+    const trecho = texto.slice(0, teto);
+    // 1) A ultima frase terminada dentro do teto: sai inteira, e sem
+    //    reticencia — o que sobra ja' e' uma frase completa.
+    const fim = Math.max(
+      trecho.lastIndexOf(". "),
+      trecho.lastIndexOf("! "),
+      trecho.lastIndexOf("? ")
+    );
+    if (fim > 0) return trecho.slice(0, fim + 1);
+    // 2) Senao, o ultimo espaco: palavra inteira, com reticencia para ficar
+    //    claro que a mensagem continua.
+    const espaco = trecho.lastIndexOf(" ");
+    if (espaco > 0) return trecho.slice(0, espaco) + "…";
+    // 3) Uma "palavra" so' maior que o teto (URL, hash): corta e reticencia.
+    return trecho + "…";
+  }
+
+  // O servidor diz QUAL campo falta (nao so' que faltou), entao a pagina para
+  // de mandar a pessoa procurar: abre a dobra "Acesso e sessao" e poe o cursor
+  // no campo. A mensagem sozinha pedia "escolha os cookies por arquivo" e
+  // apontava para um campo que estava atras de uma dobra fechada, em outro
+  // card — obedecer era adivinhar onde clicar.
+  function revelaOCampoDeCookies() {
+    const card = $("#auth-card");
+    if (card) card.open = true;
+    const campo = $("#scrap-cookies-file");
+    if (!campo) return;
+    campo.focus();
+    campo.scrollIntoView({ block: "nearest" });
+  }
+
   function fmtDuration(seconds) {
     if (seconds == null) return "—";
     const s = Math.round(Number(seconds));
@@ -80,7 +120,16 @@
         body: JSON.stringify(body || {}),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { error: data.error || ("HTTP " + res.status), code: res.status };
+      // O corpo do 400 nao pode ser jogado fora: o servidor diz QUAL campo
+      // falta em `needs` (ex.: "cookies") e a pagina age por esse CAMPO, sem
+      // adivinhar pelo texto. Reconstruir o objeto com so' `error` e `code`
+      // apagava o `needs` -- e a dobra "Acesso e sessao" nunca abria.
+      if (!res.ok) {
+        return Object.assign({}, data, {
+          error: data.error || ("HTTP " + res.status),
+          code: res.status,
+        });
+      }
       return data;
     } catch (e) {
       return { error: "Servidor local não respondeu. Inicie web/server.py.", offline: true };
@@ -94,7 +143,15 @@
     try {
       const res = await fetch(API + path);
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { error: data.error || ("HTTP " + res.status), code: res.status };
+      // Mesmo contrato do post: o que o servidor mandou sobrevive, e `error`/
+      // `code` entram por cima. Uma chave a mais no corpo nao pode virar uma
+      // chave a menos para quem chamou.
+      if (!res.ok) {
+        return Object.assign({}, data, {
+          error: data.error || ("HTTP " + res.status),
+          code: res.status,
+        });
+      }
       return data;
     } catch (e) {
       return { error: "Servidor local não respondeu. Inicie web/server.py.", offline: true };
@@ -609,7 +666,7 @@
       // O servidor caiu no meio: para de perguntar e devolve o controle.
       stopPolling();
       setBusy(false);
-      toast(String(record.error).slice(0, 120), "err");
+      toast(resumoDoErro(record.error), "err");
       return;
     }
     paintDownload(record);
@@ -618,7 +675,7 @@
     stopPolling();
     setBusy(false);
     if (record.state === "erro") {
-      toast(("Falhou: " + (record.error || "")).slice(0, 120), "err");
+      toast(resumoDoErro("Falhou: " + (record.error || "")), "err");
       return;
     }
     const summary = record.downloaded + " baixado(s), " + record.skipped +
@@ -670,7 +727,7 @@
         await resumeDownload();
         return;
       }
-      toast(String(r.error).slice(0, 120), "err");
+      toast(resumoDoErro(r.error), "err");
       return;
     }
 
@@ -1068,7 +1125,10 @@
       const box = $("#resultados");
       if (box) box.innerHTML = '<p class="empty"><strong>A busca falhou.</strong></p>';
       renderPick();
-      toast(r.error.slice(0, 120), "err");
+      // O erro diz qual campo falta; a pagina abre a dobra e foca o campo em
+      // vez de so' pedir que a pessoa escolha os cookies.
+      if (r.needs === "cookies") revelaOCampoDeCookies();
+      toast(resumoDoErro(r.error), "err");
       const errBox = document.createElement("p");
       errBox.className = "empty";
       errBox.textContent = r.error;
@@ -1438,7 +1498,7 @@
       stopArchivePolling();
       setArchBusy(false);
       restoreArchiveButton();
-      toast(String(record.error).slice(0, 120), "err");
+      toast(resumoDoErro(record.error), "err");
       return;
     }
     paintArchive(record);
@@ -1451,7 +1511,7 @@
     if (record.state === "erro") {
       if (sub) sub.textContent = "O download do perfil falhou.";
       renderArchive(null, record.error || "erro");
-      toast(String(record.error || "falhou").slice(0, 120), "err");
+      toast(resumoDoErro(record.error || "falhou"), "err");
       return;
     }
     if (sub && record.username) {
@@ -1540,7 +1600,7 @@
       }
       if (sub) sub.textContent = "O download do perfil falhou.";
       renderArchive(null, String(r.error));
-      toast(String(r.error).slice(0, 120), "err");
+      toast(resumoDoErro(r.error), "err");
       return;
     }
 
@@ -1726,7 +1786,6 @@
     const file = $("#scrap-cookies-file");
     const browse = $("#btn-cookies-browse");
     const clear = $("#btn-cookies-clear");
-    const picker = $("#cookies-file-picker");
     if (!seg || !sel) return;
     seg.addEventListener("click", (event) => {
       const btn = event.target.closest(".seg-btn");
@@ -1759,17 +1818,54 @@
       file.addEventListener("input", paintAuthStatus);
       file.addEventListener("change", paintAuthStatus);
     }
-    if (browse && picker && file) {
-      browse.addEventListener("click", () => picker.click());
-      picker.addEventListener("change", () => {
-        const picked = picker.files && picker.files[0];
-        if (!picked) return;
-        // O backend recebe um caminho em disco; o picker só revela o nome,
-        // então preenchemos o nome e avisamos — o usuário ajusta a pasta.
-        file.value = picked.name;
-        file.dispatchEvent(new Event("input", { bubbles: true }));
-        toast("Arquivo: " + picked.name + " — confira a pasta.", "ok");
-        file.focus();
+    if (browse && file) {
+      // O <input type="file"> do navegador entrega só `File.name` — nunca o
+      // caminho em disco. Preencher o campo com "cookies.txt" passava na
+      // validação da página e só falhava depois, dentro do yt-dlp, longe do
+      // clique que o causou. Quem conhece o caminho de verdade é o servidor
+      // (ele roda na mesma máquina), então o botão abre o diálogo NATIVO lá —
+      // a mesma rota do seletor de pasta do Estúdio, pedindo arquivo.
+      browse.addEventListener("click", async () => {
+        if (browse.disabled) return;
+        browse.disabled = true;
+        let segundos = 0;
+        // Sem abort: o request vive enquanto o diálogo está aberto, e escolher
+        // com calma é legítimo. O que precisa é mostrar que está vivo — e, se
+        // demorar, dizer onde procurar a janela (o caso real de "travou" é o
+        // diálogo aberto atrás do navegador).
+        const tick = setInterval(() => {
+          segundos += 1;
+          browse.title = "Aguardando o diálogo… " + segundos + "s";
+          if (segundos === 45) {
+            toast("O diálogo segue aberto no servidor. Se a janela não apareceu, ela deve estar atrás de outra — confira também outro monitor.");
+          }
+        }, 1000);
+        try {
+          const r = await post("/browse/file", {});
+          if (r.error) {
+            toast(
+              resumoDoErro(
+                r.offline
+                  ? "Servidor local não respondeu. Inicie web/server.py."
+                  : r.error
+              ),
+              "err"
+            );
+            return;
+          }
+          if (r.cancelled || !r.path) {
+            toast("Nenhum arquivo escolhido.");
+            return;
+          }
+          file.value = r.path;
+          file.dispatchEvent(new Event("input", { bubbles: true }));
+          toast("cookies.txt: " + r.path, "ok");
+          file.focus();
+        } finally {
+          clearInterval(tick);
+          browse.disabled = false;
+          browse.title = "Escolher arquivo";
+        }
       });
     }
     if (clear && file) {

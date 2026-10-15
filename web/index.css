@@ -1050,6 +1050,25 @@ body { padding-left: var(--rail-w); }
 .toast.err { border-left-color: var(--danger); }
 @keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
 
+/* A tarja que leva para /publicar quando o run termina (index.js:
+   `irParaPublicar`). Ela e' um toast COM BOTAO, e o botao e' o ponto: a fila e
+   o registro tecnico desta pagina vivem no estado do cliente e nao sobrevivem
+   a navegacao, entao quem estava lendo a saida tecnica quando o job terminou
+   precisa poder dizer "fico". */
+.toast-ida { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+/* A contagem muda a cada segundo — o `tabular-nums` evita que o texto ao lado
+   dance a cada tique (1 e' mais estreito que 4 na maioria das fontes). */
+.toast-ida-contagem { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+/* `.toast` antes do seletor de proposito: o `.btn` desta folha tem uma segunda
+   regra mais abaixo (min-height 40px, padding 9/13, font caption) e, com a
+   MESMA especificidade, ela venceria pela ordem. O seletor composto fica com
+   especificidade maior e a tarja nao depende da posicao no arquivo.
+   30px ainda passa do alvo de toque de 24px. */
+.toast .toast-ida-ficar {
+  min-height: 30px; padding: 4px 10px; font-size: var(--text-2xs);
+  font-weight: 600; margin-left: auto;
+}
+
 /* ---------- RESPONSIVO ---------- */
 /* Abaixo de 920px nao cabe rail + conteudo: os destinos viram menu no header. */
 @media (max-width: 920px) {

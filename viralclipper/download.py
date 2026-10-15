@@ -23,51 +23,88 @@ SECTION_PADDING = 4.0
 _YTDLP_ERROR = re.compile(r"^ERROR:\s*(.+)$", re.MULTILINE)
 
 # yt-dlp reports the cause; the fix is the tool's job. Each entry is
-# (fragment matched case-insensitively, what to tell the user).
-_HINTS: tuple[tuple[str, str], ...] = (
+# (fragments matched case-insensitively, what to tell the user). More than one
+# fragment per entry because YouTube LOCALIZES the messages it returns: with
+# ``--extractor-args youtube:lang=pt`` — which ``_extra_ytdlp_args`` sets on
+# every call so the titles come back in Portuguese — the bot challenge arrives
+# as "Faça login para confirmar que você não é um bot". Matching only the English
+# spelling left the whole table mute in the panel: the failure reached the user
+# with no instruction attached, which is how the render died at "Baixando as
+# secoes dos clips" with nothing to act on.
+#
+# Only the messages YouTube's own API returns get translated; yt-dlp's own
+# errors ("Requested format is not available", "Unsupported URL", ...) stay in
+# English whatever the language is. The fragments marked "medido" were observed
+# on this machine with ``lang=pt``; the rest were only ever seen in English.
+#
+# The order rule is SPECIFIC BEFORE GENERIC, not longest before shortest:
+# ``explain_failure`` returns the first entry that matches.
+_HINTS: tuple[tuple[tuple[str, ...], str], ...] = (
     (
-        "sign in to confirm your age",
-        "The video is age restricted. Retry with --cookies-from-browser chrome "
-        "(or firefox, edge, ...).",
+        # Só o inglês: a mensagem de restrição de idade em pt-BR não foi medida,
+        # e inventar a tradução seria pior do que não ter o fragmento. Em
+        # português quem cobre este caso é a entrada genérica de login, abaixo.
+        ("sign in to confirm your age",),
+        "O vídeo tem restrição de idade. Exporte um cookies.txt de um navegador "
+        "logado e aponte o campo \"Arquivo cookies.txt\" do painel para ele (ou "
+        "passe --ytdlp-arg --cookies <arquivo>).",
     ),
     (
-        "confirm you're not a bot",
-        "YouTube is challenging the request. Retry with "
-        "--cookies-from-browser chrome.",
+        # Medido (lang=pt): "Faça login para confirmar que você não é um bot".
+        ("confirm you're not a bot", "confirme que você não é um bot"),
+        "O YouTube está desafiando a requisição (o cliente web passou a exigir "
+        "um PO token). Exporte um cookies.txt de um navegador logado e aponte o "
+        "campo \"Arquivo cookies.txt\" do painel para ele (ou passe "
+        "--ytdlp-arg --cookies <arquivo>).",
     ),
     (
-        "unavailable",
+        # Medido (lang=pt): "Este vídeo não está disponível".
+        ("unavailable", "não está disponível"),
         "The video is unavailable: it may be private, deleted, region locked "
         "or a premiere that has not started.",
     ),
     (
-        "private video",
-        "The video is private. Retry with --cookies-from-browser chrome and an "
-        "account that can watch it.",
+        ("private video",),
+        "The video is private. Point the panel's cookie file field at a "
+        "cookies.txt from an account that can watch it (--ytdlp-arg --cookies "
+        "<file>).",
     ),
     (
-        "members-only",
-        "The video is members-only. Retry with --cookies-from-browser chrome "
-        "and a subscribed account.",
+        ("members-only",),
+        "The video is members-only. Point the panel's cookie file field at a "
+        "cookies.txt from a subscribed account (--ytdlp-arg --cookies <file>).",
     ),
     (
-        "this live event has ended",
+        # Rede de segurança para o que NÃO foi medido. O YouTube traduz as
+        # mensagens de "precisa entrar" e só duas foram medidas (o desafio de bot
+        # e o vídeo indisponível). Uma variante não medida — a de idade, por
+        # exemplo — chega aqui em vez de não receber conselho nenhum, e o
+        # conselho é o mesmo em todos esses casos: apontar o campo de cookies
+        # para o arquivo. As entradas específicas vêm ANTES de propósito.
+        ("faça login",),
+        "O YouTube está pedindo login para esta requisição. Exporte um "
+        "cookies.txt de um navegador logado e aponte o campo \"Arquivo "
+        "cookies.txt\" do painel para ele (ou passe --ytdlp-arg --cookies "
+        "<arquivo>).",
+    ),
+    (
+        ("this live event has ended",),
         "The live event has ended and no recording is available.",
     ),
     (
-        "requested format is not available",
+        ("requested format is not available",),
         "The requested format is not offered. Try a lower --max-height.",
     ),
     (
-        "unsupported url",
+        ("unsupported url",),
         "That URL is not supported. Pass a single video URL, not a channel or "
         "playlist page.",
     ),
     (
-        "no video formats found",
+        ("no video formats found",),
         "No downloadable format was found for this URL.",
     ),
-    ("http error 429", "YouTube is rate limiting. Wait a few minutes and retry."),
+    (("http error 429",), "YouTube is rate limiting. Wait a few minutes and retry."),
     (
         # ANTES de "unable to download video data", e nao depois: o yt-dlp
         # embrulha o 403 nessa frase ("unable to download video data: HTTP Error
@@ -76,25 +113,27 @@ _HINTS: tuple[tuple[str, str], ...] = (
         # foi interrompido, tente de novo" -- conselho errado para um 403, que
         # nao e' transitorio e nao passa sozinho num retry. A regra da lista e'
         # especifico antes de generico, nao mais longo antes de mais curto.
-        "http error 403",
-        "YouTube refused the request (403). Wait a few minutes and retry, or pass "
-        "--cookies-from-browser chrome.",
+        ("http error 403",),
+        "YouTube refused the request (403). Wait a few minutes and retry, or "
+        "point the panel's cookie file field at a cookies.txt "
+        "(--ytdlp-arg --cookies <file>).",
     ),
     (
-        "unable to download video data",
+        ("unable to download video data",),
         "The download was interrupted before finishing. Retry; if it keeps "
-        "happening, pass --cookies-from-browser chrome.",
+        "happening, point the panel's cookie file field at a cookies.txt "
+        "(--ytdlp-arg --cookies <file>).",
     ),
-    ("giving up after", "yt-dlp gave up after repeated attempts. Check the connection and retry."),
-    ("timed out", "The connection timed out. Check the connection and retry."),
-    ("connection reset", "The connection was reset mid-download. Retry."),
-    ("no space left", "The disk is full. Free space and retry."),
+    (("giving up after",), "yt-dlp gave up after repeated attempts. Check the connection and retry."),
+    (("timed out",), "The connection timed out. Check the connection and retry."),
+    (("connection reset",), "The connection was reset mid-download. Retry."),
+    (("no space left",), "The disk is full. Free space and retry."),
     (
-        "ffmpeg exited with code",
+        ("ffmpeg exited with code",),
         "yt-dlp failed to cut a section with ffmpeg. Retry, or use "
         "--download-mode full to download the whole video at once.",
     ),
-    ("unable to download webpage", "Could not reach the site. Check the connection."),
+    (("unable to download webpage",), "Could not reach the site. Check the connection."),
     (
         # Chrome 127+ seals cookie values with App-Bound Encryption (the v20
         # prefix). The master key in Local State still unwraps, which is why the
@@ -102,13 +141,13 @@ _HINTS: tuple[tuple[str, str], ...] = (
         # process and cannot be opened from outside it. Telling the user to
         # retry with the --cookies-from-browser flag they already passed is a
         # dead end, so point at the file-based escape hatch instead.
-        "failed to decrypt with dpapi",
+        ("failed to decrypt with dpapi",),
         "Esse navegador usa App-Bound Encryption (Chrome/Edge 127+) e o yt-dlp "
         "não consegue ler os cookies dele. Exporte os cookies para um arquivo "
         "cookies.txt e passe --cookies /caminho/cookies.txt.",
     ),
     (
-        "could not copy chrome cookie database",
+        ("could not copy chrome cookie database",),
         "O navegador está aberto e travando o banco de cookies. Feche-o e "
         "repita, ou exporte os cookies para um arquivo cookies.txt e passe "
         "--cookies /caminho/cookies.txt.",
@@ -118,7 +157,7 @@ _HINTS: tuple[tuple[str, str], ...] = (
         # browser's, and answers with a bare 400 that names nothing. Without
         # curl_cffi yt-dlp cannot impersonate, so the failure looks like a
         # broken extractor instead of a missing optional dependency.
-        "unable to extract data",
+        ("unable to extract data",),
         "Se for Instagram, falta o curl_cffi: pip install \"curl_cffi>=0.7\". "
         "O Instagram recusa requisições cujo TLS não seja de um navegador real.",
     ),
@@ -146,10 +185,13 @@ def explain_failure(output: str, url: str = "") -> str:
         cause = messages[-1]
 
     lowered = cause.lower()
-    for fragment, hint in _HINTS:
-        if fragment in lowered:
-            return f"{cause} {hint}"
     target = f" for {url}" if url else ""
+    for fragments, hint in _HINTS:
+        if any(fragment in lowered for fragment in fragments):
+            # A URL entra nos DOIS caminhos. Antes, casar uma dica a descartava:
+            # a mensagem de uma falha com dica nao dizia QUAL url falhou, e o
+            # unico caso em que isso importa e' justamente o de varias entradas.
+            return f"yt-dlp failed{target}: {cause} {hint}"
     return f"yt-dlp failed{target}: {cause}"
 
 

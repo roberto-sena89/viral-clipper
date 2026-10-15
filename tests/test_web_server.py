@@ -2769,8 +2769,12 @@ class BreakpointScaleTests(unittest.TestCase):
         380: "kv",
         420: "job-card, studio-overline, header-context (marca)",
         480: "seg, pick-kv",
-        520: "publicar-topo",
-        620: "result, search-loading",
+        # O `publicar-topo` empilhava em 520 e passou a empilhar em 620 quando o
+        # card do clip ganhou o player (a coluna de 196px do video mais a coluna
+        # de texto nao cabem lado a lado abaixo disso). A banda de 520 ficou sem
+        # nenhum componente, e o teste do mapa exige tirar a entrada em vez de
+        # deixar uma largura que ninguem declara.
+        620: "result, search-loading, publicar-topo",
         640: "header-inner, field-row, execution-card, footer",
         720: "select-rich, auth-block",
         760: "job-card",

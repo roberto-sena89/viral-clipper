@@ -920,6 +920,29 @@ const automatico = bruto !== '' && (parseInt(bruto, 10) || 0) === 0;
 hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   }
 
+  // ---------- memoria do caminho do cookies.txt ----------
+  // O caminho do arquivo vale por NAVEGADOR, nao por sessao: quem exportou os
+  // cookies uma vez nao deve redigitar a cada carga da pagina. Sem isto, o
+  // campo volta vazio, o run sai sem `--cookies`, e o YouTube barra o download
+  // das secoes no meio do trabalho — que foi exatamente o defeito relatado.
+  //
+  // A chave e' a MESMA que a pagina de Scrap usa (`vc-cookies-file`), entao o
+  // valor e' um so' nas duas telas. O sessionid nao passa por aqui de proposito:
+  // e' segredo e fica so' na memoria. `try/catch` porque storage bloqueado
+  // (modo privado, politica) nao pode derrubar a pagina: sem memoria ela segue
+  // funcionando, so' nao lembra.
+  function ligarMemoriaDoCookies() {
+    const file = $('#cookies-file');
+    if (!file) return;
+    try {
+      const saved = window.localStorage.getItem('vc-cookies-file');
+      if (saved && !file.value) file.value = saved;
+      file.addEventListener('input', () => {
+        try { window.localStorage.setItem('vc-cookies-file', file.value); } catch (_) {}
+      });
+    } catch (_) { /* storage bloqueado: segue sem memoria, sem quebrar */ }
+  }
+
   async function loadAjustes() {
     const r = await api('/ajustes');
     // Servidor fora do ar ou rota ausente: os defaults de state.ajustes ja
@@ -2332,6 +2355,11 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
         const first = state.clips[0];
         log('Relatorio: ' + (first.report_json || 'clips.json'), 'ln-ok');
       }
+      // O run terminou de verdade e o que ele produziu esta' em /publicar. A
+      // decisao sai do payload (o caminho do arquivo), nao de `plan_only`: quem
+      // so' analisou nao tem clip com arquivo, e a checagem cobre os dois casos
+      // com uma regra so'.
+      irParaPublicar(state.clips);
     }
 
     stopTimer();
@@ -2377,6 +2405,10 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   // servidor. A tela voltou a acompanhar pelo poll (startFollowingRun do
   // run()) e estes dois encerramentos sao os unicos destinos possiveis dele.
   function finalizaOrfaoConcluido() {
+    // O job e' lido ANTES de `orphan` ser zerado: e' o `clips` DELE que decide
+    // a ida para /publicar (ver o bloco "ir para Publicar quando o run
+    // termina").
+    const job = runProgress.orphan;
     stopFollowingRun();
     runProgress.orphan = null;
     stopTimer();
@@ -2387,8 +2419,12 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     setProgress(100, 'Concluído no servidor — resultados chegam pela galeria.');
     toast('Execução concluída no servidor.', 'ok');
     // Puxa o /status agora: ele e quem traz os clips e o card terminal da
-    // fila; sem isto a galeria esperaria o proximo tique de 4s.
-    poll();
+    // fila; sem isto a galeria esperaria o proximo tique de 4s. A ida para
+    // /publicar vem DEPOIS do poll porque o orfao nao tem resposta de POST: o
+    // payload dele so' chega pelo /status, no `clips` do proprio job —
+    // `state.clips` seria "os clips da ultima execucao", que poderia ser de um
+    // run anterior.
+    poll().then(() => irParaPublicar(job && job.clips));
   }
 
   function finalizaOrfaoInterrompido() {
@@ -2412,6 +2448,102 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
     const atual = Number(track && track.getAttribute('aria-valuenow')) || 0;
     setProgress(atual, 'Execução interrompida — o servidor parou no meio.');
     toast('O servidor caiu durante a execução.', 'err');
+  }
+
+  // ---------- ir para Publicar quando o run termina ----------
+  // O produto do run — os clips renderizados — vive em OUTRA pagina, e o fim da
+  // execucao e' exatamente o instante em que a pessoa quer ve-lo. Sem isto ela
+  // fica olhando um log que ja' parou e ainda tem de descobrir sozinha que o
+  // resultado esta' em /publicar.
+  //
+  // Nao e' um salto seco, por dois motivos concretos:
+  //   * a fila e o registro tecnico vivem no estado do CLIENTE — navegar os
+  //     perde. Quem estava lendo a saida tecnica quando o job terminou precisa
+  //     de uma saida, e ela e' o botao "Ficar aqui";
+  //   * quem sabe se ha' o que ir ver e' o PAYLOAD, nao a tela: o caminho do
+  //     arquivo so' existe quando o arquivo esta' no disco — `_clip_to_payload`
+  //     devolve `video = None` sem ele. Um `plan_only` — que analisa e nao
+  //     renderiza — devolve clips sem caminho nenhum, entao a mesma checagem
+  //     cobre "nao renderizou" e "renderizou zero" sem olhar a flag.
+  //
+  //     O NOME desse campo depende do recorte: `video` no payload do run e do
+  //     /status (ambos saem de `_clip_to_payload`), `rel` no do /api/publicacao
+  //     (que o renomeia). Ver `temArquivoDoClip`.
+  const idaPublicar = { timer: null, el: null, segundos: 4 };
+
+  function cancelarIdaParaPublicar() {
+    if (idaPublicar.timer) { clearInterval(idaPublicar.timer); idaPublicar.timer = null; }
+    if (idaPublicar.el) { idaPublicar.el.remove(); idaPublicar.el = null; }
+  }
+
+  // Um clip tem ARQUIVO? O caminho relativo mora em `video` no payload que
+  // chega aqui (run e /status, ambos de `_clip_to_payload`); `rel` e' o nome
+  // que `/api/publicacao` da' ao MESMO dado, e existe so' na outra pagina.
+  //
+  // A versao anterior procurava apenas `rel`. Como o payload do run nunca tem
+  // esse campo, a contagem dava zero para um run que renderizou 5 clips e o
+  // redirecionamento nunca disparava -- o defeito nao aparecia em teste porque
+  // a fixtura usava `rel`, o vocabulario errado. Aceitar as duas grafias mantem
+  // o redirecionamento de pe' se um recorte novo escolher a outra.
+  function temArquivoDoClip(clip) {
+    return !!(clip && (clip.video || clip.rel));
+  }
+
+  // Quantos clips da execucao tem ARQUIVO. Zero = nada a mostrar em /publicar.
+  function clipsComArquivo(clips) {
+    return (Array.isArray(clips) ? clips : []).filter(temArquivoDoClip).length;
+  }
+
+  function irParaPublicar(clips) {
+    const quantos = clipsComArquivo(clips);
+    if (!quantos) return;
+    // Um agendamento so': o POST e o poll podem os dois encerrar o mesmo run, e
+    // duas tarjas empilhadas seriam dois `setInterval` correndo para a mesma
+    // navegacao.
+    if (idaPublicar.el) return;
+
+    const el = document.createElement('div');
+    el.className = 'toast ok toast-ida';
+
+    const texto = document.createElement('span');
+    texto.textContent = quantos + (quantos > 1 ? ' clips prontos' : ' clip pronto')
+      + '. Abrindo a página Publicar';
+
+    // A contagem muda a cada segundo. A zona dos toasts ja' e' `aria-live`
+    // (index.html), entao um numero visivel e anunciado repetiria a frase a
+    // cada tique; `aria-hidden` deixa a frase ser ouvida UMA vez e o botao
+    // continua alcancavel por teclado.
+    const contagem = document.createElement('span');
+    contagem.className = 'toast-ida-contagem';
+    contagem.setAttribute('aria-hidden', 'true');
+
+    const ficar = document.createElement('button');
+    ficar.type = 'button';
+    ficar.className = 'btn pressable toast-ida-ficar';
+    ficar.textContent = 'Ficar aqui';
+    ficar.addEventListener('click', () => {
+      cancelarIdaParaPublicar();
+      toast('Certo — você fica nesta página.', 'ok');
+    });
+
+    el.appendChild(texto);
+    el.appendChild(contagem);
+    el.appendChild(ficar);
+    $('#toast-zone').appendChild(el);
+    idaPublicar.el = el;
+
+    let restante = idaPublicar.segundos;
+    const pintar = () => { contagem.textContent = '(' + restante + 's)'; };
+    pintar();
+    idaPublicar.timer = setInterval(() => {
+      restante -= 1;
+      if (restante <= 0) {
+        cancelarIdaParaPublicar();
+        window.location.assign('/publicar');
+        return;
+      }
+      pintar();
+    }, 1000);
   }
 
   // ---------- seletor de pasta de saída ----------
@@ -2794,6 +2926,23 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
         (job.clips || []).map((clip) => clip.video || clip.title || ''),
       ]));
       if (signature !== state.jobSignature) {
+        // Quem estava rodando NESTA tela antes do merge. Um job que passa de
+        // `running` para `done` entre dois polls e' um run que terminou com a
+        // pagina aberta — e isto cobre o caso em que ela foi RECARREGADA no
+        // meio do trabalho (um render leva minutos, e recarregar e' o que se
+        // faz nesse tempo): ali o `run()` desta instancia nunca rodou, entao o
+        // caminho normal do `irParaPublicar` nao passa por aqui. Um run que
+        // esta' `done` desde a carga NAO entra (nao estava em `rodavam`), que
+        // e' o que impede a pagina de saltar sozinha para /publicar toda vez
+        // que alguem abre o Estudio.
+        // Identidade do OBJETO, nao a URL. Duas execucoes do MESMO video tem a
+        // mesma URL, entao um Set de URLs fazia um run recem-comecado encontrar
+        // no merge o job ANTERIOR — ja' `done`, mesma URL — e a pagina saltava
+        // para /publicar aos 22s com os clips da execucao PASSADA, no meio do
+        // trabalho novo. O merge faz `Object.assign(localJob, remoteJob)`, entao
+        // o objeto local que estava `running` e' o MESMO que fica `done`: a
+        // referencia e' a identidade certa, e ela nao colide entre execucoes.
+        const rodavam = new Set(state.jobs.filter((job) => job.status === 'running'));
         const used = new Set();
         const merged = r.jobs.map((remoteJob, index) => {
           let localIndex = index;
@@ -2840,6 +2989,14 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
         state.jobs = merged;
         state.jobSignature = signature;
         renderQueue();
+        // O run terminou enquanto a pagina estava aberta: leva para /publicar.
+        // `irParaPublicar` decide se ha' o que ver (clip com caminho de
+        // arquivo), entao um run que so' analisou nao navega. O guard de tarja
+        // unica la' dentro resolve o caso de o `run()` desta mesma pagina ja'
+        // ter agendado.
+        merged
+          .filter((job) => job.status === 'done' && rodavam.has(job))
+          .forEach((job) => irParaPublicar(job.clips));
       }
       await hydrateQueuePreviews();
     }
@@ -2869,6 +3026,9 @@ hint.hidden = !(automatico && toggleOn('#ranker-llm'));
   renderRenderSummary();
   renderArchiveSummary();
   loadAjustes();
+  // Antes de qualquer run: o campo precisa estar preenchido no primeiro clique,
+  // nao depois de a pessoa lembrar que existe.
+  ligarMemoriaDoCookies();
 
   bindQueueFilters();
   renderQueue();

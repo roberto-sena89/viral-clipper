@@ -20,17 +20,54 @@ from viralclipper.util import ClipperError
 
 
 class ExplainFailureTests(unittest.TestCase):
-    def test_age_gate_points_at_the_cookies_flag(self):
+    def test_age_gate_points_at_the_cookie_file_not_the_browser_flag(self):
         message = download.explain_failure(
             "ERROR: Sign in to confirm your age. This video may be inappropriate "
             "for some users."
         )
-        self.assertIn("age restricted", message)
-        self.assertIn("--cookies-from-browser", message)
+        self.assertIn("restrição de idade", message)
+        self.assertIn("cookies.txt", message)
 
-    def test_bot_challenge_points_at_the_cookies_flag(self):
+    def test_bot_challenge_points_at_the_cookie_file_not_the_browser_flag(self):
+        """O erro que barrava o download das seções no meio do run."""
         message = download.explain_failure("ERROR: Sign in to confirm you're not a bot.")
-        self.assertIn("--cookies-from-browser", message)
+        self.assertIn("cookies.txt", message)
+        self.assertIn("--ytdlp-arg --cookies", message)
+
+    def test_bot_challenge_in_portuguese_also_gets_the_hint(self):
+        """O YouTube localiza esta mensagem, e o painel sempre pede ``lang=pt``.
+
+        Sem o fragmento em pt-BR a tabela inteira ficava muda no painel: o
+        usuário recebia "Faça login para confirmar que você não é um bot" cru,
+        sem a instrução que o próprio código escreve para esse caso. A string
+        abaixo foi MEDIDA nesta máquina, não traduzida no chute.
+        """
+        message = download.explain_failure(
+            "ERROR: [youtube] H_bShgiIL40: Faça login para confirmar que você "
+            "não é um bot",
+            "https://www.youtube.com/watch?v=H_bShgiIL40",
+        )
+        self.assertIn("cookies.txt", message)
+        self.assertIn("H_bShgiIL40", message)
+
+    def test_unavailable_in_portuguese_also_gets_the_hint(self):
+        """Medido: "Este vídeo não está disponível" com ``lang=pt``."""
+        message = download.explain_failure(
+            "ERROR: [youtube] x: Este vídeo não está disponível"
+        )
+        self.assertIn("unavailable", message)
+
+    def test_an_unmeasured_login_variant_still_gets_the_file_advice(self):
+        """A rede de segurança: o que não foi medido não fica sem conselho.
+
+        A mensagem de restrição de idade em pt-BR nunca foi observada, então não
+        há fragmento específico para ela. A entrada genérica de login existe
+        para que ela ainda receba o caminho do arquivo em vez de nada.
+        """
+        message = download.explain_failure(
+            "ERROR: [youtube] x: Faça login para confirmar sua idade"
+        )
+        self.assertIn("cookies.txt", message)
 
     def test_unavailable_video_lists_the_likely_causes(self):
         message = download.explain_failure(
@@ -98,7 +135,7 @@ class ExplainFailureTests(unittest.TestCase):
 
     def test_matching_is_case_insensitive(self):
         self.assertIn(
-            "--cookies-from-browser",
+            "cookies.txt",
             download.explain_failure("error: SIGN IN TO CONFIRM YOUR AGE"),
         )
 
@@ -124,10 +161,40 @@ class ExplainFailureTests(unittest.TestCase):
         self.assertIn("without a message", download.explain_failure("null\n{\n}"))
 
     def test_every_hint_is_reachable(self):
-        """A hint that can never match is dead code."""
-        for fragment, hint in download._HINTS:
-            message = download.explain_failure(f"ERROR: {fragment}")
-            self.assertIn(hint, message)
+        """A hint that can never match is dead code.
+
+        Cada FRAGMENTO tem de alcançar a sua dica, não só o primeiro: uma
+        entrada pode estar viva em inglês e morta em português, que foi
+        exatamente o defeito — e o loop antigo, que olhava um fragmento por
+        entrada, não tinha como enxergar isso.
+        """
+        for fragments, hint in download._HINTS:
+            for fragment in fragments:
+                message = download.explain_failure(f"ERROR: {fragment}")
+                self.assertIn(hint, message)
+
+    def test_no_hint_sends_the_user_to_the_browser_flag(self):
+        """A dica não pode recomendar o que já falhou nesta máquina.
+
+        Medido: ``--cookies-from-browser chrome`` responde "Could not copy
+        Chrome cookie database" (App-Bound Encryption, Chrome/Edge 127+). O único
+        caminho que funciona é o arquivo, então nenhuma dica aponta para a flag —
+        a mesma regra que a dica de DPAPI já seguia sozinha.
+        """
+        for _fragments, hint in download._HINTS:
+            self.assertNotIn("--cookies-from-browser", hint)
+
+    def test_a_hint_keeps_the_url(self):
+        """A URL não pode sumir justamente quando há dica.
+
+        Antes, casar uma dica descartava a URL — e o caso em que saber QUAL url
+        falhou mais importa é o de uma falha que tem conselho a dar.
+        """
+        message = download.explain_failure(
+            "ERROR: Sign in to confirm you're not a bot.", "https://youtu.be/x"
+        )
+        self.assertIn("https://youtu.be/x", message)
+        self.assertIn("cookies.txt", message)
 
 
 class ExtractJsonObjectTests(unittest.TestCase):
@@ -720,7 +787,9 @@ class VisibleDownloadFailureTests(unittest.TestCase):
             self._run_with(1, "ERROR: HTTP Error 403: Forbidden")
         message = str(ctx.exception)
         self.assertIn("403", message)
-        self.assertIn("--cookies-from-browser chrome", message)
+        # O conselho é o ARQUIVO, não a flag do navegador: medido, o seletor
+        # falha no Chrome/Edge 127+ ("Could not copy Chrome cookie database").
+        self.assertIn("cookies.txt", message)
 
     def test_interrupted_download_mentions_retrying(self):
         """Interrupcao de verdade -- sem 403 na frase.

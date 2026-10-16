@@ -662,6 +662,112 @@ class DtsgExtractionTests(unittest.TestCase):
         self.assertEqual(token, "REAL")
 
 
+class UrllibFallbackTests(unittest.TestCase):
+    """O ramo `urllib` (quando o curl_cffi nao esta' instalado) tem de honrar
+    `allow_redirects`, senao a flag significa uma coisa no transporte primario e
+    outra no de reserva — e o de reserva seguiria o mesmo laco, so' com teto 10
+    em vez de 30.
+
+    Offline por construcao: `build_opener` e' substituido, entao nada aqui abre
+    socket. O que se mede e' QUAL handler o ramo instala, e que ele devolve
+    `None` de `redirect_request` — que e' o que faz o urllib levantar o 3xx como
+    `HTTPError` em vez de seguir. A paridade observavel dos dois transportes foi
+    medida a parte, com um servidor local: 302 como dado nos dois, nos dois
+    sentidos da flag.
+    """
+
+    def _run(self, allow_redirects: bool):
+        seen = {}
+
+        class _FakeResponse:
+            status = 302
+
+            def read(self):
+                return b""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        class _FakeOpener:
+            # Assinatura larga de proposito: o `urlopen` real chama
+            # `opener.open(url, data, timeout)` na posicao, entao um fake de
+            # aridade fixa explodiria com TypeError e a sabotagem falharia pelo
+            # motivo errado — em vez de mostrar que `build_opener` nunca foi
+            # chamado com handler nenhum.
+            def open(self, *args, **kwargs):
+                return _FakeResponse()
+
+        def fake_build_opener(*handlers):
+            seen["handlers"] = handlers
+            return _FakeOpener()
+
+        with mock.patch.object(ig_profile, "_curl_requests", None), mock.patch(
+            "urllib.request.build_opener", fake_build_opener
+        ):
+            status, text = ig_profile._send(
+                "GET", "https://x/", allow_redirects=allow_redirects
+            )
+        return seen.get("handlers"), status, text
+
+    def test_the_fallback_installs_a_handler_that_does_not_follow(self):
+        from urllib.request import HTTPRedirectHandler
+
+        handlers, status, _ = self._run(False)
+        self.assertIsNotNone(
+            handlers, "o ramo urllib nao instalou handler nenhum: ignorou a flag"
+        )
+        self.assertEqual(len(handlers), 1)
+        handler = handlers[0]()
+        # Subclasse, e nao o handler padrao: e' assim que `build_opener` troca o
+        # comportamento em vez de empilhar dois.
+        self.assertIsInstance(handler, HTTPRedirectHandler)
+        self.assertIsNone(
+            handler.redirect_request(None, None, 302, "Found", {}, "https://x/#")
+        )
+
+    def test_the_fallback_still_follows_when_asked(self):
+        """`allow_redirects=True` nao pode ser esquecido pelo ramo de reserva."""
+        handlers, _, _ = self._run(True)
+        self.assertIsNotNone(
+            handlers, "o ramo urllib nao passou por build_opener"
+        )
+        self.assertEqual(handlers, ())
+
+
+class RedirectReasonTests(unittest.TestCase):
+    """Um 3xx qualquer nao e' a recusa medida.
+
+    `302`/`303` e' a assinatura que o Instagram da' quando recusa a sessao
+    (corpo vazio, `Location` apontando para `/#`). `301`/`307`/`308` seriam um
+    movimento de verdade, e chama-los de "sessao expirou" mandaria o usuario
+    reexportar cookies que nunca foram o problema.
+    """
+
+    def test_the_measured_refusal_is_reported_as_an_expired_session(self):
+        for status in (302, 303):
+            self.assertIn("expirou", ig_profile._redirect_reason(status))
+
+    def test_another_redirect_is_not_blamed_on_the_session(self):
+        for status in (301, 307, 308):
+            reason = ig_profile._redirect_reason(status)
+            self.assertNotIn("expirou", reason)
+            self.assertIn(str(status), reason)
+
+    def test_the_page_and_the_graphql_call_agree_on_the_same_302(self):
+        """Duas telas do mesmo dado nao podem ter duas fontes."""
+        with mock.patch.object(ig_profile, "_send", return_value=(302, "")):
+            with self.assertRaises(ClipperError) as ctx:
+                ig_profile._fetch_lsd({"sessionid": "s"}, "alvo")
+        self.assertIn("expirou", str(ctx.exception))
+        self.assertIn("expirou", ig_profile._graphql_error(302, "alvo"))
+
+    def test_the_graphql_call_does_not_blame_the_session_on_a_301(self):
+        self.assertNotIn("expirou", ig_profile._graphql_error(301, "alvo"))
+
+
 class PaginationTests(unittest.TestCase):
     """The cursor is not a terminator: Instagram repeats the FIRST one."""
 

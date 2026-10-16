@@ -442,11 +442,29 @@ def profile_username(raw: str) -> str | None:
 #: What a 3xx on an Instagram call actually means, and the only fix there is.
 #: Written once because three sites — the transport, the profile GET and the
 #: GraphQL refusal — have to say exactly the same thing, and a user who reads it
-#: twice must not think they are two different problems.
+#: twice must not think they are two different problems. Carries no final period
+#: on purpose: the two sites that stand alone add one, and the third is quoted
+#: inside a sentence of :func:`_fetch_lsd` that already ends it.
 _SESSION_EXPIRED = (
     "A sessão do Instagram expirou: reexporte os cookies do Instagram "
     "e tente de novo"
 )
+
+
+def _redirect_reason(status: int) -> str:
+    """Say what a 3xx means, without claiming more than was measured.
+
+    ``302``/``303`` is the signature measured when the session is refused: an
+    empty body and a ``Location`` pointing at ``/#``, i.e. at the request
+    itself (see :func:`_send`). Any other 3xx would be a real move — a moved
+    endpoint, a locale redirect — and Instagram does not do that on this call
+    today. Naming the redirect there, instead of blaming the session, is what
+    keeps the message from sending the user to re-export cookies that were
+    never the problem.
+    """
+    if status in (302, 303):
+        return _SESSION_EXPIRED
+    return f"O Instagram redirecionou a chamada (HTTP {status})"
 
 
 def _send(
@@ -503,12 +521,26 @@ def _send(
 
     from urllib.error import HTTPError
     from urllib.parse import urlencode
-    from urllib.request import Request, urlopen
+    from urllib.request import HTTPRedirectHandler, Request, build_opener
 
     body = urlencode(data).encode("utf-8") if data is not None else None
     request = Request(url, data=body, headers=headers, method=method)
+
+    # ``urlopen`` follows redirects on its own and would walk the very loop the
+    # curl branch above now stops on — a different ceiling (10, not 30) and the
+    # same useless ending. Returning ``None`` from ``redirect_request`` makes
+    # urllib raise the 3xx as ``HTTPError`` instead of following it, which is
+    # the arm right below: the status comes back as data, and ``allow_redirects``
+    # ends up meaning the same thing in both transports. ``build_opener`` skips
+    # its default redirect handler when given a subclass of it, so this replaces
+    # the behaviour rather than stacking on top of it.
+    class _StopRedirect(HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    opener = build_opener(_StopRedirect) if not allow_redirects else build_opener()
     try:
-        with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed host
+        with opener.open(request, timeout=timeout) as response:  # noqa: S310 - fixed host
             return response.status, response.read().decode("utf-8", errors="replace")
     except HTTPError as exc:
         return exc.code, exc.read().decode("utf-8", errors="replace")
@@ -535,11 +567,11 @@ def _http(cookies: dict[str, str], username: str) -> tuple[str, Exception | None
     except OSError as exc:
         return "", exc
     if 300 <= status < 400:
-        # A redirect here is never a move: it is Instagram saying "not logged
-        # in", aimed at its own request (see :func:`_send`). Without this arm
-        # the empty body falls through and the user is told the anti-CSRF token
-        # is missing — true, but it names the wrong culprit.
-        return "", ClipperError(_SESSION_EXPIRED)
+        # Without this arm the empty body falls through and the user is told
+        # the anti-CSRF token is missing — true, but it names the wrong
+        # culprit. The sentence is picked by the status, so a 3xx that is not
+        # the measured session refusal is not reported as one.
+        return "", ClipperError(_redirect_reason(status))
     if status >= 400:
         return "", ClipperError(f"HTTP {status}")
     return text, None
@@ -753,8 +785,10 @@ def _graphql_error(status: int, username: str, body: str = "") -> str:
     hint = ""
     if status == 403 or "<!DOCTYPE html>" in body[:200]:
         hint = f" {_refusal_hint()}"
-    elif status == 401 or 300 <= status < 400:
+    elif status == 401:
         hint = f" {_SESSION_EXPIRED}."
+    elif 300 <= status < 400:
+        hint = f" {_redirect_reason(status)}."
     elif status == 429:
         hint = " Muitas requisições: espere alguns minutos e tente de novo."
     return f"O Instagram não devolveu o feed de {username} (HTTP {status or 'HTML'}).{hint}"

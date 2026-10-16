@@ -41,6 +41,30 @@ try:  # pragma: no cover - exercised by the presence or absence of the package
 except ImportError:  # pragma: no cover
     _curl_requests = None
 
+# Guarded on its own, not folded into the block above: the class lives at
+# ``curl_cffi.requests.exceptions`` (``...requests.errors`` is a 0.5.x shim that
+# no longer carries it), and a single shared ``try`` would mean a future move of
+# that name also took ``_curl_requests`` down — reporting "the impersonating
+# client is gone" when only one symbol moved.
+try:  # pragma: no cover - importable only when curl_cffi is
+    from curl_cffi.requests.exceptions import TooManyRedirects as _TooManyRedirects
+except ImportError:  # pragma: no cover
+    _TooManyRedirects = None
+
+#: What the ``except`` in :func:`_send` catches, as a tuple so the arm stays
+#: valid when the class above is missing. ``except None:`` is NOT "catch
+#: nothing": the clause is only evaluated when something is raised, and it then
+#: dies with ``TypeError: catching classes that do not inherit from
+#: BaseException``. That ``TypeError`` replaces the original exception and is
+#: not an ``OSError``, so it would slip past the callers' ``except OSError``
+#: arms and reach the user as an unhandled traceback — worse than the raw curl
+#: text this whole arm exists to hide. An empty tuple catches nothing, which is
+#: the intent: with no class to translate, the original ``OSError`` travels the
+#: path it travelled before.
+_REDIRECT_ERRORS: tuple[type[BaseException], ...] = (
+    (_TooManyRedirects,) if _TooManyRedirects is not None else ()
+)
+
 #: Chrome build ``curl_cffi`` imitates. See :func:`_send` for why it is not
 #: optional in practice.
 _IMPERSONATE = "chrome"
@@ -415,6 +439,16 @@ def profile_username(raw: str) -> str | None:
     return first.lstrip("@") or None
 
 
+#: What a 3xx on an Instagram call actually means, and the only fix there is.
+#: Written once because three sites — the transport, the profile GET and the
+#: GraphQL refusal — have to say exactly the same thing, and a user who reads it
+#: twice must not think they are two different problems.
+_SESSION_EXPIRED = (
+    "A sessão do Instagram expirou: reexporte os cookies do Instagram "
+    "e tente de novo"
+)
+
+
 def _send(
     method: str,
     url: str,
@@ -422,6 +456,7 @@ def _send(
     data: dict[str, str] | None = None,
     headers: dict[str, str] | None = None,
     timeout: int = 30,
+    allow_redirects: bool = False,
 ) -> tuple[int, str]:
     """One HTTP round trip, impersonating Chrome whenever curl_cffi is around.
 
@@ -435,17 +470,35 @@ def _send(
     Falling back to ``urllib`` is deliberate rather than fatal: it still reads
     the profile page, so the failure that reaches the user is the one naming
     curl_cffi instead of an ImportError from three frames down.
+
+    Redirects are **not** followed, and that default is load-bearing rather than
+    stylistic. Instagram answers a dead session with ``302 -> /#``, and a ``#``
+    never reaches the server: on the wire ``GET /#`` is byte-identical to
+    ``GET /``, so the redirect points at its own request and curl walks the loop
+    until it gives up with ``curl: (47) Maximum (30) redirects followed``. That
+    string names no fix and costs thirty round trips before it is even printed.
+    With ``allow_redirects=False`` the 3xx comes back as data, and :func:`_http`
+    turns it into something the user can act on.
     """
     headers = dict(headers or {})
     if _curl_requests is not None:
-        response = _curl_requests.request(
-            method,
-            url,
-            data=data,
-            headers=headers,
-            impersonate=_IMPERSONATE,
-            timeout=timeout,
-        )
+        try:
+            response = _curl_requests.request(
+                method,
+                url,
+                data=data,
+                headers=headers,
+                impersonate=_IMPERSONATE,
+                timeout=timeout,
+                allow_redirects=allow_redirects,
+            )
+        except _REDIRECT_ERRORS as exc:  # pragma: no cover - needs a live loop
+            # Belt and braces: ``allow_redirects=False`` should stop the loop
+            # before curl ever counts to thirty. If a future curl_cffi ignores
+            # it, the raw ``curl: (47)`` text still must not be what the user
+            # reads — ``TooManyRedirects`` is an ``OSError`` subclass, so
+            # without this it would be caught upstream and quoted verbatim.
+            raise ClipperError(f"{_SESSION_EXPIRED}.") from exc
         return response.status_code, response.text
 
     from urllib.error import HTTPError
@@ -481,6 +534,12 @@ def _http(cookies: dict[str, str], username: str) -> tuple[str, Exception | None
         )
     except OSError as exc:
         return "", exc
+    if 300 <= status < 400:
+        # A redirect here is never a move: it is Instagram saying "not logged
+        # in", aimed at its own request (see :func:`_send`). Without this arm
+        # the empty body falls through and the user is told the anti-CSRF token
+        # is missing — true, but it names the wrong culprit.
+        return "", ClipperError(_SESSION_EXPIRED)
     if status >= 400:
         return "", ClipperError(f"HTTP {status}")
     return text, None
@@ -507,7 +566,14 @@ def _fetch_lsd(cookies: dict[str, str], username: str) -> tuple[str, str, str]:
             "Isso acontece quando a sessão expirou ou o Instagram mudou a página. "
             "Reexporte os cookies e tente de novo."
         )
-    dtsg = re.search(r'"DTSGInitialData",\[\],\{"token":"([^"]+)"', text)
+    # The token moved: ``DTSGInitialData`` is still on the page but now ships an
+    # empty object, and the real value rides in ``MRequestConfig`` (measured on
+    # a saved profile page: ``DTSGInitialData`` count 2, both empty; the new
+    # path hit). Both spellings are tried so the old one keeps working if
+    # Instagram ever reverts — ``ig_session_check.py`` still feeds it one.
+    dtsg = re.search(
+        r'"MRequestConfig",\[\],\{"dtsg":\{"token":"([^"]+)"', text
+    ) or re.search(r'"DTSGInitialData",\[\],\{"token":"([^"]+)"', text)
     if not dtsg:
         raise ClipperError(
             "Não encontrei o token 'fb_dtsg' na página do perfil. Ele é exigido "
@@ -609,7 +675,7 @@ def _request_page(
     except OSError as exc:
         raise ClipperError(f"Falha de rede ao ler o feed de {username}: {exc}") from exc
 
-    if status >= 400:
+    if status >= 300:
         raise ClipperError(_graphql_error(status, username, raw))
 
     stripped = _strip_json_guard(raw)
@@ -687,8 +753,8 @@ def _graphql_error(status: int, username: str, body: str = "") -> str:
     hint = ""
     if status == 403 or "<!DOCTYPE html>" in body[:200]:
         hint = f" {_refusal_hint()}"
-    elif status == 401 or status == 302:
-        hint = " A sessão expirou: reexporte os cookies do Instagram."
+    elif status == 401 or 300 <= status < 400:
+        hint = f" {_SESSION_EXPIRED}."
     elif status == 429:
         hint = " Muitas requisições: espere alguns minutos e tente de novo."
     return f"O Instagram não devolveu o feed de {username} (HTTP {status or 'HTML'}).{hint}"

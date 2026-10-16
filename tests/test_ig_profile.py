@@ -504,6 +504,164 @@ class RefusedCallTests(unittest.TestCase):
         self.assertIn("HTTP HTML", str(ctx.exception))
 
 
+class RedirectTests(unittest.TestCase):
+    """Uma sessao morta responde 302, e o 302 aponta para a propria requisicao.
+
+    Medido: com um ``sessionid`` expirado — ou com um deliberadamente falso, que
+    da no mesmo — o Instagram responde ``302`` com ``Location: /#`` e um
+    ``Set-Cookie: sessionid=...; Max-Age=0``. Como ``#`` nunca sai do navegador,
+    ``GET /#`` e ``GET /`` no fio, entao o alvo e a propria requisicao e o curl
+    desiste em ``curl: (47) Maximum (30) redirects followed``. Essa string nao
+    nomeia conserto nenhum, e era ela que o usuario lia.
+    """
+
+    def test_the_transport_does_not_follow_redirects(self):
+        """Sem isto o 3xx nunca chega como dado: vira laco, vira excecao."""
+        seen = {}
+
+        class _Client:
+            @staticmethod
+            def request(method, url, **kwargs):
+                seen.update(kwargs)
+                return mock.Mock(status_code=200, text="ok")
+
+        with mock.patch.object(ig_profile, "_curl_requests", _Client):
+            self.assertEqual(ig_profile._send("GET", "https://x/"), (200, "ok"))
+        self.assertIs(seen.get("allow_redirects"), False)
+
+    def test_a_redirect_loop_becomes_a_sentence_not_curl_text(self):
+        """Se um curl_cffi futuro ignorar ``allow_redirects``, o texto cru
+        ainda nao pode ser o que o usuario le."""
+        if ig_profile._TooManyRedirects is None:
+            self.skipTest("curl_cffi ausente: sem a classe, nao ha o que traduzir")
+
+        class _Client:
+            @staticmethod
+            def request(method, url, **kwargs):
+                raise ig_profile._TooManyRedirects(
+                    "Failed to perform, curl: (47) Maximum (30) redirects followed"
+                )
+
+        with mock.patch.object(ig_profile, "_curl_requests", _Client):
+            with self.assertRaises(ClipperError) as ctx:
+                ig_profile._send("GET", "https://www.instagram.com/alvo/")
+        message = str(ctx.exception)
+        self.assertIn("expirou", message)
+        self.assertNotIn("curl:", message)
+
+    def test_a_missing_error_class_degrades_instead_of_raising_type_error(self):
+        """The class can be gone while the client is still there — the move the
+        comment on the import anticipates. The guard must then catch *nothing*
+        rather than ``None``: ``except None:`` is only evaluated when something
+        is raised, and it dies with ``TypeError``, which replaces the original
+        exception and is not an ``OSError``, so it would escape the callers'
+        ``except OSError`` arms. The test above skips in this state; this one
+        forces it.
+
+        ``_REDIRECT_ERRORS = ()`` is exactly what the import block produces when
+        the class is missing, so patching the derived tuple is the same state
+        without re-running the import. Raising the *real* class (not a bare
+        ``OSError``) is what makes the assertion bite: if ``_send`` went back to
+        naming the class directly, the patch would stop mattering, the loop
+        would be caught and translated, and the ``ClipperError`` would blow out
+        of the ``try`` below.
+        """
+        real = ig_profile._TooManyRedirects
+        if real is None:
+            self.skipTest("curl_cffi ausente: nao ha a classe para forcar o estado")
+        original = real("Failed to perform, curl: (47) Maximum (30) redirects followed")
+
+        class _Client:
+            @staticmethod
+            def request(method, url, **kwargs):
+                raise original
+
+        with mock.patch.object(ig_profile, "_TooManyRedirects", None), mock.patch.object(
+            ig_profile, "_REDIRECT_ERRORS", ()
+        ), mock.patch.object(ig_profile, "_curl_requests", _Client):
+            try:
+                ig_profile._send("GET", "https://www.instagram.com/alvo/")
+            except TypeError as exc:
+                self.fail(f"'except None' virou TypeError: {exc}")
+            except OSError as exc:
+                # No class to translate with, so the original travels the path
+                # it travelled before — degraded, but never a TypeError.
+                self.assertIs(exc, original)
+            else:
+                self.fail("a excecao original sumiu: nada foi levantado")
+
+    def test_the_guard_is_a_tuple_not_a_bare_class(self):
+        """A bare class works today and becomes ``except None`` on the day the
+        import moves — the exact defect this guard closes. Asserted on the
+        module's own value, because the test above patches it and would hide it.
+        """
+        self.assertIsInstance(ig_profile._REDIRECT_ERRORS, tuple)
+
+    def test_the_profile_page_redirect_reads_as_an_expired_session(self):
+        """Sem o ramo de 3xx o corpo vazio passa adiante e o usuario ouve que
+        falta o token anti-CSRF — verdade, mas com o culpado errado."""
+        with mock.patch.object(ig_profile, "_send", return_value=(302, "")):
+            with self.assertRaises(ClipperError) as ctx:
+                ig_profile._fetch_lsd({"sessionid": "s"}, "alvo")
+        message = str(ctx.exception)
+        self.assertIn("instagram.com/alvo/", message)
+        self.assertIn("expirou", message)
+        self.assertNotIn("LSD", message)
+
+    def test_the_graphql_redirect_reads_as_an_expired_session(self):
+        with mock.patch.object(ig_profile, "_send", return_value=(302, "")):
+            with self.assertRaises(ClipperError) as ctx:
+                ig_profile._request_page(
+                    {"csrftoken": "abc", "sessionid": "1%3A2"},
+                    "lsd",
+                    "dtsg",
+                    "alvo",
+                    None,
+                    12,
+                )
+        message = str(ctx.exception)
+        self.assertIn("expirou", message)
+        self.assertIn("302", message)
+
+
+class DtsgExtractionTests(unittest.TestCase):
+    """O token ``fb_dtsg`` mudou de bolso dentro da propria pagina.
+
+    ``DTSGInitialData`` continua na pagina, mas agora vem vazio; o valor de
+    verdade viaja em ``MRequestConfig``. Lendo so o caminho antigo, a busca por
+    perfil falha com "nao encontrei o token" mesmo com a sessao boa — o pior
+    tipo de erro, porque acusa a sessao quando o problema e o extrator.
+    """
+
+    def _dtsg(self, extra: str) -> str:
+        head = '<script>window.__b = {"LSD",[],{"token":"LSDTOKEN"}};</script>'
+        with mock.patch.object(ig_profile, "_send", return_value=(200, head + extra)):
+            return ig_profile._fetch_lsd({"sessionid": "s"}, "alvo")[1]
+
+    def test_the_token_is_read_from_m_request_config(self):
+        token = self._dtsg(
+            '<script>window.__c = {"MRequestConfig",[],'
+            '{"dtsg":{"token":"FROM_MREQUEST"}}};</script>'
+        )
+        self.assertEqual(token, "FROM_MREQUEST")
+
+    def test_the_old_spelling_still_works_as_a_fallback(self):
+        """``ig_session_check.py`` ainda alimenta a grafia antiga."""
+        token = self._dtsg(
+            '<script>window.__b = {"DTSGInitialData",[],{"token":"OLD_TOKEN"}};</script>'
+        )
+        self.assertEqual(token, "OLD_TOKEN")
+
+    def test_an_empty_envelope_does_not_shadow_the_new_path(self):
+        """A ordem importa: o envelope vazio pode vir antes, e uma busca que
+        aceitasse o vazio devolveria ``None``."""
+        token = self._dtsg(
+            '<script>{"DTSGInitialData",[],{}}</script>'
+            '<script>{"MRequestConfig",[],{"dtsg":{"token":"REAL"}}}</script>'
+        )
+        self.assertEqual(token, "REAL")
+
+
 class PaginationTests(unittest.TestCase):
     """The cursor is not a terminator: Instagram repeats the FIRST one."""
 

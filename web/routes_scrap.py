@@ -49,6 +49,7 @@ from state import (  # noqa: E402
     _lock,
     _options_to_config,
     _state,
+    _viral_order,
     _viral_rank,
     _with_videos_tab,
     _ytdlp_argv,
@@ -110,10 +111,22 @@ def _ig_profile_results(
         username, cookies_file, limit=fetch_end, session=session
     )
     items = list(listing.items)
+    cookies = ig_profile_mod.resolve_cookies(cookies_file, session)
     if viral:
-        items.sort(
-            key=lambda item: item.play_count or item.like_count or 0, reverse=True
-        )
+        # The timeline query carries no view count: measured on 2026-10-17,
+        # `view_count` came back null on every node and `play_count` was not in
+        # the payload at all. The ranking used to fall back to likes and the
+        # column called them views — on the sample reel that meant 68k instead
+        # of the real 1.37M. The real number costs one request per item, and it
+        # is only paid when the ranking is asked for.
+        ig_profile_mod.fetch_play_counts(items, cookies)
+        items.sort(key=_viral_order)
+    else:
+        items = items[:limit]
+        # The column says "views", so the rows that are actually shown get the
+        # real count. Bounded by the limit the user asked for: a plain search
+        # does not pay for the 100 that only the ranking needs.
+        ig_profile_mod.fetch_play_counts(items, cookies)
     items = items[:limit]
 
     results = []
@@ -126,11 +139,13 @@ def _ig_profile_results(
                 "url": item.url,
                 "duration": item.duration,
                 "uploader": listing.username,
-                # Reels carry play_count, photo posts only like_count. Sending
-                # whichever exists keeps the row informative instead of blank.
-                "view_count": (
-                    item.play_count if item.play_count is not None else item.like_count
-                ),
+                # Views only, never likes in their place. The two are different
+                # scales (the sample reel had 68k likes against 1.37M views), so
+                # a fallback here is not "informative" — it is a number labelled
+                # as something it is not. A photo has no view count and sends
+                # null; the row then shows its likes under their own name.
+                "view_count": item.play_count,
+                "like_count": item.like_count,
                 # The CDN URL from the GraphQL payload. The row never uses it as
                 # a src (CSP forbids a foreign origin); it is what lets
                 # /scrap/thumb skip a per-item yt-dlp round trip.

@@ -2036,13 +2036,39 @@ class IgProfileListingTests(unittest.TestCase):
     def _listing(self, items, username="alvo"):
         return ProfileListing(username=username, items=items, pages=1)
 
-    def _run(self, items, **payload):
+    def _run(self, items, *, plays=None, **payload):
+        """Run the route with the network replaced.
+
+        ``plays`` is what the enrichment would have read from
+        ``/api/v1/media/<pk>/info/``. ``self.seen["enriched"]`` records the
+        batch it was asked to fill, so a test can assert WHICH items paid the
+        extra request — that is the difference between ranking on views and
+        ranking on the 100-item ceiling.
+        """
+        seen: dict = {"enriched": []}
+
+        def fake_play_counts(batch, cookies, **kwargs):
+            seen["enriched"].append([item.code for item in batch])
+            filled = 0
+            for item in batch:
+                value = (plays or {}).get(item.code)
+                if value is not None:
+                    item.play_count = value
+                    filled += 1
+            return filled
+
         with mock.patch.object(
             server.ig_profile_mod, "list_profile", return_value=self._listing(items)
+        ), mock.patch.object(
+            server.ig_profile_mod, "resolve_cookies", return_value={"sessionid": "s"}
+        ), mock.patch.object(
+            server.ig_profile_mod, "fetch_play_counts", side_effect=fake_play_counts
         ):
-            return routes_scrap._ig_profile_results(
+            results, title, removed = routes_scrap._ig_profile_results(
                 "alvo", payload, "cookies.txt", ["--cookies", "cookies.txt"]
             )
+        self.seen = seen
+        return results, title, removed
 
     def test_a_missing_cookies_file_is_named(self):
         with self.assertRaises(ClipperError) as ctx:
@@ -2061,7 +2087,12 @@ class IgProfileListingTests(unittest.TestCase):
         results, _title, _removed = self._run(items)
         self.assertEqual(results[0]["title"], "A")
 
-    def test_a_reel_reports_plays_and_a_post_reports_likes(self):
+    def test_a_reel_reports_plays_and_a_post_reports_its_likes_separately(self):
+        """Views and likes are two scales; one must not be sent as the other.
+
+        The old mapping sent ``like_count`` as ``view_count`` when ``play_count``
+        was missing, so a photo post with 42 likes claimed 42 views.
+        """
         items = [
             ProfileItem(code="R", url="u", folder="reels", kind="reel",
                         media_type=2, play_count=900, like_count=10),
@@ -2070,7 +2101,58 @@ class IgProfileListingTests(unittest.TestCase):
         ]
         results, _title, _removed = self._run(items)
         self.assertEqual(results[0]["view_count"], 900)
-        self.assertEqual(results[1]["view_count"], 42)
+        self.assertEqual(results[0]["like_count"], 10)
+        self.assertIsNone(results[1]["view_count"])
+        self.assertEqual(results[1]["like_count"], 42)
+
+    def test_viral_orders_by_views_even_when_likes_say_the_opposite(self):
+        """The bug this fixes: 68k likes is not 1.37M views.
+
+        "likes" has 75x the likes of "views" but far fewer plays. Sorting on
+        ``play_count or like_count`` put "likes" first, and the column then
+        printed its like count under the word "views".
+        """
+        items = [
+            ProfileItem(code="likes", url="u", folder="posts", kind="post",
+                        media_type=1, like_count=68000),
+            ProfileItem(code="views", url="u", folder="reels", kind="reel",
+                        media_type=2, like_count=900),
+        ]
+        results, _title, _removed = self._run(
+            items, plays={"views": 1375106}, viral=True
+        )
+        self.assertEqual([r["id"] for r in results], ["views", "likes"])
+
+    def test_viral_asks_for_the_view_count_before_ranking(self):
+        items = [ProfileItem(code="A", url="u", folder="reels", kind="reel",
+                             media_type=2)]
+        self._run(items, plays={"A": 5}, viral=True)
+        self.assertEqual(self.seen["enriched"], [["A"]])
+
+    def test_a_plain_search_enriches_only_the_rows_it_shows(self):
+        """The 100-item ceiling exists for the ranking; a search must not pay it."""
+        items = [ProfileItem(code=f"c{n}", url="u", folder="reels", kind="reel",
+                             media_type=2) for n in range(5)]
+        self._run(items, limit=2)
+        self.assertEqual(self.seen["enriched"], [["c0", "c1"]])
+
+    def test_an_item_without_views_ranks_after_every_item_with_them(self):
+        items = [
+            ProfileItem(code="foto", url="u", folder="posts", kind="post",
+                        media_type=1, like_count=80000),
+            ProfileItem(code="reel", url="u", folder="reels", kind="reel",
+                        media_type=2, like_count=10),
+        ]
+        results, _title, _removed = self._run(items, plays={"reel": 1000}, viral=True)
+        self.assertEqual([r["id"] for r in results], ["reel", "foto"])
+
+    def test_a_failed_enrichment_does_not_put_likes_back_in_the_views_column(self):
+        """No number is better than a number labelled as something else."""
+        items = [ProfileItem(code="P", url="u", folder="posts", kind="post",
+                             media_type=1, like_count=42)]
+        results, _title, _removed = self._run(items)
+        self.assertIsNone(results[0]["view_count"])
+        self.assertEqual(results[0]["like_count"], 42)
 
     def test_a_photo_is_flagged_as_having_no_video(self):
         """The row can say so instead of failing with "no video in this post"."""

@@ -29,7 +29,10 @@ from __future__ import annotations
 import http.cookiejar
 import json
 import re
+import threading
 import time
+from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import quote
@@ -86,6 +89,14 @@ PROFILE_DOC_ID = "28379418928391013"
 APP_ID = "936619743392459"
 
 GRAPHQL_URL = "https://www.instagram.com/graphql/query"
+
+#: One media's own record. The profile timeline query cannot supply what "most
+#: viral first" needs: measured on 2026-10-17, ``view_count`` came back ``null``
+#: on 12 of 12 nodes and ``play_count`` was not in the payload at all, so the
+#: ranking had only likes to sort on. This endpoint does carry it — the same
+#: reel answered ``play_count 1375106`` against ``like_count 68340``, a 20x
+#: difference, which is the size of the error the like fallback was making.
+MEDIA_INFO_URL = "https://www.instagram.com/api/v1/media/{pk}/info/"
 
 #: Friendly name of the operation. Instagram checks it against ``doc_id``.
 FRIENDLY_NAME = "PolarisProfilePostsQuery"
@@ -1033,6 +1044,92 @@ def list_profile(
     return listing
 
 
+def fetch_play_counts(
+    items: Sequence[ProfileItem],
+    cookies: dict[str, str],
+    *,
+    workers: int = 8,
+    timeout: int = 20,
+) -> int:
+    """Fill ``play_count`` on the items that arrived without one.
+
+    One request per item, because Instagram offers no batch shape a web client
+    can use: ``/api/v1/feed/user/<id>/`` answers ``302`` and
+    ``/api/v1/media/info/`` (plural, GET and POST) answers ``404`` — both
+    measured on 2026-10-17. What works is the single-media record, and it is
+    the only place the real view count lives.
+
+    Only items that carry a video are asked. A photo has no play count, so
+    asking would spend a request to learn that; those keep ``play_count is
+    None`` and rank after the ones with a number (see ``_viral_order`` in the
+    web layer).
+
+    ``workers`` is the compromise between a 100-item listing that takes a
+    minute and a burst that gets the session rate limited. Eight is measured
+    rather than guessed: 40 items came back in 3.16 s (12.7 requests/s) with no
+    ``429``, which projects a 100-item ranking at ~8 s. A ``429`` stops the
+    fan-out instead of retrying: the numbers already read stay, the rest fall
+    back to "no number", and the search still answers.
+
+    Returns how many counts were filled.
+    """
+    targets = [i for i in items if i.pk and i.play_count is None and i.has_video]
+    if not targets:
+        return 0
+
+    headers = {
+        "User-Agent": USER_AGENT,
+        "X-IG-App-ID": APP_ID,
+        "Accept": "*/*",
+        "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+        "Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()),
+    }
+    stop = threading.Event()
+    lock = threading.Lock()
+    filled = 0
+
+    def one(item: ProfileItem) -> None:
+        nonlocal filled
+        if stop.is_set():
+            return
+        try:
+            status, raw = _send(
+                "GET",
+                MEDIA_INFO_URL.format(pk=item.pk),
+                headers=headers,
+                timeout=timeout,
+            )
+        except (OSError, ClipperError):
+            return
+        if status == 429:
+            # Rate limited. Asking for the other 90 would deepen the hole, and
+            # the caller can still rank on what came back.
+            stop.set()
+            return
+        if status != 200 or not raw.lstrip().startswith("{"):
+            return
+        try:
+            document = json.loads(raw)
+        except json.JSONDecodeError:
+            return
+        records = document.get("items") if isinstance(document, dict) else None
+        if not isinstance(records, list) or not records:
+            return
+        record = records[0] if isinstance(records[0], dict) else {}
+        value = _as_int(record.get("play_count"))
+        if value is None:
+            value = _as_int(record.get("ig_play_count"))
+        if value is None:
+            return
+        with lock:
+            item.play_count = value
+            filled += 1
+
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(targets)))) as pool:
+        list(pool.map(one, targets))
+    return filled
+
+
 __all__ = [
     "POSTS_DIR",
     "PROFILE_DOC_ID",
@@ -1040,6 +1137,7 @@ __all__ = [
     "SESSION_COOKIE",
     "ProfileItem",
     "ProfileListing",
+    "fetch_play_counts",
     "list_profile",
     "normalise_session",
     "prepare_session",

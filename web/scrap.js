@@ -385,7 +385,15 @@
           '<span class="result-uploader">' +
             (item.uploader ? esc(item.uploader) : "") + "</span>" +
           '<span class="result-views">' +
-            (item.view_count != null ? esc(fmtCount(item.view_count)) + " views" : "") +
+            // Views e curtidas sao escalas diferentes (o reel de amostra tinha
+            // 68k curtidas contra 1,37M views), entao cada numero aparece com o
+            // nome do que ele e'. Foto nao tem view: mostra curtidas, nao um
+            // "views" que mente.
+            (item.view_count != null
+              ? esc(fmtCount(item.view_count)) + " views"
+              : item.like_count != null
+                ? esc(fmtCount(item.like_count)) + " curtidas"
+                : "") +
           "</span>" +
           '<span class="result-badge">' + esc(duration) + "</span>" +
         "</div>" +

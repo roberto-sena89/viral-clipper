@@ -579,6 +579,22 @@ def _viral_rank(entry: dict) -> float:
         return 1.0
     return -views
 
+
+def _viral_order(item) -> tuple[int, int, int]:
+    """Sort key for the Instagram listing: real views first, unknown last.
+
+    Deliberately NOT ``play_count or like_count``. Those are two different
+    scales, and mixing them is what made the ranking wrong: a reel with 68k
+    likes and 1.37M views scored as if the likes were the views, so it could
+    lose to a photo post with 80k likes. Views decide; likes only break the tie
+    between two items that both lack a view count (photos have none).
+    """
+    views = getattr(item, "play_count", None)
+    likes = getattr(item, "like_count", None) or 0
+    if views is None:
+        return (1, 0, -likes)
+    return (0, -views, -likes)
+
 def _as_float(value) -> float | None:
     try:
         return round(float(value), 2)

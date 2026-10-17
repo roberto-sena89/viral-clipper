@@ -6375,6 +6375,112 @@ class HostHeaderGuardTests(unittest.TestCase):
                             f"{nome}: a guarda vem depois do parse do path")
 
 
+class CanonicalOriginTests(unittest.TestCase):
+    """O painel serve pagina por UM nome so': 127.0.0.1.
+
+    `localhost:7755` e `127.0.0.1:7755` sao o mesmo servidor, mas origens
+    DIFERENTES para o navegador, e o `localStorage` -- onde a Biblioteca lembra
+    o caminho do cookies.txt -- e' por origem. Quem abria pelos dois nomes via
+    duas memorias, e o segundo pedia o arquivo outra vez.
+    """
+
+    class _Stub:
+        # Entra como funcao, nao como copia do corpo: se `_send_redirect` mudar
+        # de codigo ou de status, este teste acompanha.
+        _send_redirect = server.Handler._send_redirect
+
+        class _Srv:
+            def __init__(self, port):
+                self.server_address = ("127.0.0.1", port)
+
+        def __init__(self, host, path="/", port=7755):
+            self.headers = {"Host": host}
+            self.path = path
+            self.codes, self.hdrs = [], []
+            self.server = self._Srv(port)
+
+        def send_response(self, code):
+            self.codes.append(code)
+
+        def send_header(self, key, value):
+            self.hdrs.append((key, value))
+
+        def end_headers(self):
+            pass
+
+        @property
+        def location(self):
+            return dict(self.hdrs).get("Location")
+
+    def _run(self, host, path="/", port=7755):
+        stub = self._Stub(host, path, port)
+        return server.Handler._redirect_to_canonical_host(stub), stub
+
+    def test_localhost_is_redirected_to_the_ip(self):
+        answered, stub = self._run("localhost:7755", "/biblioteca?aba=video")
+        self.assertTrue(answered)
+        self.assertEqual(stub.codes, [301])
+        self.assertEqual(stub.location,
+                         "http://127.0.0.1:7755/biblioteca?aba=video")
+        # Corpo vazio: quem segue o Location nunca o le.
+        self.assertEqual(dict(stub.hdrs)["Content-Length"], "0")
+
+    def test_the_canonical_name_is_served_without_a_redirect(self):
+        answered, stub = self._run("127.0.0.1:7755")
+        self.assertFalse(answered, "redirecionou um pedido ja' canonico")
+        self.assertEqual(stub.codes, [], "respondeu algo a um pedido canonico")
+
+    def test_the_port_we_are_bound_to_is_kept(self):
+        """`--port N` troca a porta; um Location cravado em 7755 mentiria."""
+        answered, stub = self._run("localhost:8000", "/", port=8000)
+        self.assertTrue(answered)
+        self.assertEqual(stub.location, "http://127.0.0.1:8000/")
+
+    def test_the_location_is_built_from_the_constant_not_from_the_header(self):
+        """Um Location que repete o nome pedido e' um guarda virado open redirect.
+
+        Basta o atacante escolher o `Host` para o servidor entregar o destino
+        que ele quiser -- e aqui o `Host` chega depois de aprovado pelo guarda,
+        nao antes.
+        """
+        answered, stub = self._run("[::1]:7755", "/ajustes")
+        self.assertTrue(answered)
+        self.assertEqual(stub.location, "http://127.0.0.1:7755/ajustes")
+        self.assertNotIn("::1", stub.location)
+
+    def test_data_routes_are_never_redirected(self):
+        """POST nao e' reenviado depois de um redirect.
+
+        Um 301 sem corpo transformaria a busca num 200 vazio com cara de
+        resposta -- pior que um erro, porque ninguem iria atras.
+        """
+        for path in ("/api/status", "/api/scrap", "/api/browse/native"):
+            answered, stub = self._run("localhost:7755", path)
+            self.assertFalse(answered, path)
+            self.assertEqual(stub.codes, [], path)
+
+    def test_a_path_cannot_smuggle_another_host_into_the_location(self):
+        """`//evil.com` e `\\evil.com` sao lidos pelo navegador como outro host."""
+        answered, stub = self._run("localhost:7755", r"/\evil.com/x")
+        self.assertTrue(answered)
+        self.assertEqual(stub.location, "http://127.0.0.1:7755/evil.com/x")
+        # Forma absoluta: o host estrangeiro sai junto com o resto do netloc.
+        answered, stub = self._run("localhost:7755", "http://evil.com/x")
+        self.assertTrue(answered)
+        self.assertEqual(stub.location, "http://127.0.0.1:7755/x")
+
+    def test_the_redirect_runs_after_the_guard(self):
+        """Depois do guarda: o Location so' sai para um Host ja' aprovado."""
+        import inspect
+
+        src = inspect.getsource(server.Handler.do_GET)
+        self.assertLess(src.index("_guard_origin()"),
+                        src.index("_redirect_to_canonical_host()"))
+        self.assertLess(src.index("_redirect_to_canonical_host()"),
+                        src.index("urlparse"),
+                        "o redirect ficou depois do despacho de rota")
+
+
 class AjustesHeadingTests(unittest.TestCase):
     """A pagina de Ajustes tem um H1, como as outras duas.
 

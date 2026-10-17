@@ -187,6 +187,7 @@ from state import (  # noqa: E402,F401
     _dump_ajustes,
     _export_saved_key,
     _host_is_local,
+    _host_parts,
     _ig_session_from_payload,
     _ig_title,
     _is_profile_url,
@@ -1377,13 +1378,6 @@ class UiServer(http_server.ThreadingHTTPServer):
         super().server_bind()
 
 
-#: Hostnames that mean "this machine". A request whose ``Host`` is one of these
-#: is same-origin by definition, because the listener is bound to ``HOST``
-#: (127.0.0.1) and only a local process could have addressed it.
-
-
-
-
 class Handler(routes_providers.ProviderRoutes, routes_scrap.ScrapRoutes, routes_transcript.TranscriptRoutes, http_server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "ViralClipper/1.0"
@@ -1475,6 +1469,50 @@ class Handler(routes_providers.ProviderRoutes, routes_scrap.ScrapRoutes, routes_
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def _redirect_to_canonical_host(self) -> bool:
+        """Send a page request to ``HOST`` when it arrived under another name.
+
+        ``localhost:7755`` and ``127.0.0.1:7755`` are the same server but two
+        different origins, and the browser keys ``localStorage`` by origin --
+        which is where the panel remembers the cookies file. Whichever name was
+        opened second started with an empty memory and asked for the file
+        again. One canonical name, one memory.
+
+        Returns True when the request has already been answered here and the
+        caller must stop.
+
+        Data routes are deliberately NOT redirected. A ``POST`` is never
+        replayed after a redirect, so a bodyless 301 would turn a search into an
+        empty 200 that looks answered; and the JSON those routes return does not
+        depend on the name the caller used, so serving it is both correct and
+        simpler than an error page.
+
+        The target is built from ``HOST`` and the port we are really bound to,
+        never from the ``Host`` header: a redirect that echoes back the name the
+        caller chose is how a guard becomes an open redirect.
+        """
+        host = self.headers.get("Host") or ""
+        if _host_parts(host)[0].lower() == HOST:
+            return False
+        parts = urlparse(self.path)
+        if parts.path.startswith("/api/"):
+            return False
+        # A leading backslash or a doubled slash is what a browser re-reads as
+        # "another host" (`//evil.com`); no route here contains either, so both
+        # are reduced to a single leading slash.
+        path = (parts.path or "/").replace("\\", "/")
+        while path.startswith("//"):
+            path = path[1:]
+        if parts.query:
+            path = f"{path}?{parts.query}"
+        # Control characters are dropped rather than escaped: none can travel in
+        # a request line unencoded, and a header value is not where one should
+        # discover what a downstream proxy does with them.
+        path = "".join(ch for ch in path if ch >= " " and ch != "\x7f")
+        real_port = self.server.server_address[1]
+        self._send_redirect(f"http://{HOST}:{real_port}{path}")
+        return True
+
     #: Freshness for files whose name never changes (style.css, 1.mp4): five
     #: minutes absorbs a burst of reloads during a session, and a revalidation
     #: via ETag still picks up an edit immediately after.
@@ -1538,6 +1576,8 @@ class Handler(routes_providers.ProviderRoutes, routes_scrap.ScrapRoutes, routes_
 
     def do_GET(self) -> None:  # noqa: N802
         if not self._guard_origin():
+            return
+        if self._redirect_to_canonical_host():
             return
         path = urlparse(self.path).path
         if path == "/" or path == "/index.html":

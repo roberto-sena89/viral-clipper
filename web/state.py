@@ -1140,6 +1140,37 @@ def _win32_askopenfilename(
     finally:
         ole32.CoUninitialize()
 
+
+def _host_parts(value: str) -> tuple[str, str]:
+    """Split ``host[:port]`` into its name and its port text.
+
+    Parsing is deliberately manual instead of ``urlparse``: the value is
+    ``host[:port]`` and nothing else, and IPv6 arrives as ``[::1]:7755``. The
+    name keeps its brackets so a literal can be re-emitted verbatim; the port
+    text is empty when the value carries none.
+
+    This lives apart from ``_host_is_local`` because a second parser would
+    disagree with the first one: the guard approves a name, and the redirect to
+    the canonical name then has to read *that same* name.
+    """
+    text = (value or "").strip()
+    if not text:
+        return "", ""
+    # IPv6 literal: "[::1]" or "[::1]:7755".
+    if text.startswith("["):
+        name, _, tail = text.partition("]")
+        return name + "]", tail.lstrip(":")
+    name, sep, port_text = text.rpartition(":")
+    if not sep:
+        # No colon: bare hostname, no port.
+        return text, ""
+    if ":" in name:
+        # More than one colon and no brackets: a bare IPv6 literal such as
+        # "::1", which has no port.
+        return text, ""
+    return name, port_text
+
+
 def _host_is_local(value: str, port: int | None = None) -> bool:
     """True when a ``Host``/``Origin`` header addresses this machine.
 
@@ -1157,30 +1188,14 @@ def _host_is_local(value: str, port: int | None = None) -> bool:
     survive ``--port``. When None, any port is accepted, because the caller
     could not tell us and refusing would break the panel.
 
-    Parsing is deliberately manual instead of ``urlparse``: the value is
-    ``host[:port]`` and nothing else, and IPv6 arrives as ``[::1]:7755``.
+    Parsing lives in ``_host_parts``, which the canonical-origin redirect
+    reads too -- two parsers would eventually disagree about a name.
 
     Returns False for an empty value — a request with no ``Host`` at all is
     HTTP/1.0 legacy, and refusing it costs nothing since the only client is a
     browser that always sends one.
     """
-    text = (value or "").strip()
-    if not text:
-        return False
-    # IPv6 literal: "[::1]" or "[::1]:7755".
-    if text.startswith("["):
-        name, _, tail = text.partition("]")
-        name = name + "]"
-        port_text = tail.lstrip(":")
-    else:
-        name, sep, port_text = text.rpartition(":")
-        if not sep:
-            # No colon: bare hostname, no port.
-            name, port_text = text, ""
-        elif ":" in name:
-            # More than one colon and no brackets: a bare IPv6 literal such as
-            # "::1", which has no port.
-            name, port_text = text, ""
+    name, port_text = _host_parts(value)
     if name.lower() not in _LOCAL_HOSTNAMES:
         return False
     # An explicit port must be the one we are actually listening on. No port at

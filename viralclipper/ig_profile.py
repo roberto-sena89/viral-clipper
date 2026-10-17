@@ -1044,14 +1044,14 @@ def list_profile(
     return listing
 
 
-def fetch_play_counts(
+def fetch_media_details(
     items: Sequence[ProfileItem],
     cookies: dict[str, str],
     *,
     workers: int = 8,
     timeout: int = 20,
 ) -> int:
-    """Fill ``play_count`` on the items that arrived without one.
+    """Fill ``play_count`` and ``duration`` from each item's media record.
 
     One request per item, because Instagram offers no batch shape a web client
     can use: ``/api/v1/feed/user/<id>/`` answers ``302`` and
@@ -1059,10 +1059,17 @@ def fetch_play_counts(
     measured on 2026-10-17. What works is the single-media record, and it is
     the only place the real view count lives.
 
-    Only items that carry a video are asked. A photo has no play count, so
-    asking would spend a request to learn that; those keep ``play_count is
-    None`` and rank after the ones with a number (see ``_viral_order`` in the
-    web layer).
+    **The same record carries ``video_duration``**, and that is why the
+    duration is filled here instead of costing a second request: the timeline
+    query that lists a profile sends neither ``play_count`` nor
+    ``video_duration`` (measured 2026-10-17), so the row used to show "—" for
+    every reel. Reading one more field from a response already in hand costs
+    nothing; a yt-dlp extraction per row would cost ~1-2 s each and invite 429.
+
+    Only items that carry a video are asked. A photo has neither a play count
+    nor a duration, so asking would spend a request to learn that; those keep
+    ``play_count is None`` and rank after the ones with a number (see
+    ``_viral_order`` in the web layer).
 
     ``workers`` is the compromise between a 100-item listing that takes a
     minute and a burst that gets the session rate limited. Eight is measured
@@ -1071,9 +1078,14 @@ def fetch_play_counts(
     fan-out instead of retrying: the numbers already read stay, the rest fall
     back to "no number", and the search still answers.
 
-    Returns how many counts were filled.
+    Returns how many items were enriched (at least one field filled).
     """
-    targets = [i for i in items if i.pk and i.play_count is None and i.has_video]
+    targets = [
+        item
+        for item in items
+        if item.pk and item.has_video
+        and (item.play_count is None or item.duration is None)
+    ]
     if not targets:
         return 0
 
@@ -1119,11 +1131,20 @@ def fetch_play_counts(
         value = _as_int(record.get("play_count"))
         if value is None:
             value = _as_int(record.get("ig_play_count"))
-        if value is None:
-            return
+        seconds = _as_float(record.get("video_duration"))
         with lock:
-            item.play_count = value
-            filled += 1
+            filled_here = False
+            if value is not None and item.play_count is None:
+                item.play_count = value
+                filled_here = True
+            # `0` nao e' duracao: um video de zero segundo nao existe, e o
+            # Instagram manda 0/ausente quando o item nao tem video. Aceitar
+            # isso faria o selo mostrar "0:00" numa foto.
+            if seconds is not None and seconds > 0 and item.duration is None:
+                item.duration = seconds
+                filled_here = True
+            if filled_here:
+                filled += 1
 
     with ThreadPoolExecutor(max_workers=max(1, min(workers, len(targets)))) as pool:
         list(pool.map(one, targets))
@@ -1137,7 +1158,7 @@ __all__ = [
     "SESSION_COOKIE",
     "ProfileItem",
     "ProfileListing",
-    "fetch_play_counts",
+    "fetch_media_details",
     "list_profile",
     "normalise_session",
     "prepare_session",

@@ -59,7 +59,11 @@
              981-1279 media, <=980 uma coluna). Os quatro valores sao um so'
              desenho; mexer em um desalinha os outros.
      1100/1150/1160/1180  grids de card que ganham/perdem coluna.
-     380/480/520/620/720/760/768  ajustes pontuais de um componente.
+     440px   a linha de metadados do resultado passa a duas linhas
+             (`.result-meta`): abaixo disso o `1fr` do canal fica com ~144px,
+             e a coluna de views (unidade escrita, "999,9 milhões views")
+             precisa de 112px mais os 56px do selo de duracao.
+     380/480/620/720/760/768  ajustes pontuais de um componente.
 
    Regra ao acrescentar uma banda: MEÇA o ponto em que aquele componente
    quebra (as sondas em sticky-probe medem no navegador) e use o valor MEDIDO,

@@ -769,14 +769,16 @@ class RedirectReasonTests(unittest.TestCase):
         self.assertNotIn("expirou", ig_profile._graphql_error(301, "alvo"))
 
 
-class PlayCountTests(unittest.TestCase):
-    """The view count the timeline query does not carry.
+class MediaDetailsTests(unittest.TestCase):
+    """O que a query do perfil NAO traz: views e duracao.
 
-    Measured 2026-10-17: the profile GraphQL answers ``view_count: null`` on
-    every node and omits ``play_count`` entirely, so "most viral first" had
-    only likes to sort on. The real number lives in
-    ``/api/v1/media/<pk>/info/`` — one request per item, because no batch shape
-    a web client can use exists (user feed answers 302, ``media/info`` 404).
+    Medido em 2026-10-17: o GraphQL do perfil responde ``view_count: null`` em
+    todo no' e omite ``play_count`` por completo -- e omite ``video_duration``
+    junto, que e' o que deixava o selo de duracao em "—" em todo reel. Os dois
+    numeros vivem no MESMO registro de midia
+    (``/api/v1/media/<pk>/info/``), entao a busca paga uma requisicao por item e
+    le os dois campos dela. Nao ha forma em lote que um cliente web possa usar
+    (o feed do usuario responde 302, ``media/info`` plural responde 404).
     """
 
     def _items(self, *codes, photo=()):
@@ -825,7 +827,7 @@ class PlayCountTests(unittest.TestCase):
             }
         )
         with mock.patch.object(ig_profile, "_send", side_effect=fake):
-            filled = ig_profile.fetch_play_counts(items, {"sessionid": "s"})
+            filled = ig_profile.fetch_media_details(items, {"sessionid": "s"})
         self.assertEqual(filled, 2)
         self.assertEqual([i.play_count for i in items], [1375106, 77])
         self.assertEqual(len(seen), 2)
@@ -840,30 +842,81 @@ class PlayCountTests(unittest.TestCase):
             return 200, json.dumps({"items": [{"play_count": 1}]})
 
         with mock.patch.object(ig_profile, "_send", side_effect=fake_send):
-            ig_profile.fetch_play_counts(items, {"sessionid": "segredo"})
+            ig_profile.fetch_media_details(items, {"sessionid": "segredo"})
         self.assertIn("sessionid=segredo", captured["headers"]["Cookie"])
         self.assertEqual(captured["headers"]["X-IG-App-ID"], ig_profile.APP_ID)
 
     def test_a_photo_is_not_asked_because_it_has_no_play_count(self):
-        """A request spent to learn "a photo has no views" is a request wasted."""
+        """A request spent to learn "a photo has no views" is a request wasted.
+
+        Vale para a duracao tambem: foto nao tem nem view nem segundo, e o
+        ``has_video`` e' o que barra as duas leituras de uma vez.
+        """
         items = self._items("A", photo=("P",))
         fake, seen = self._answers(
             {"pkA": (200, json.dumps({"items": [{"play_count": 5}]}))}
         )
         with mock.patch.object(ig_profile, "_send", side_effect=fake):
-            ig_profile.fetch_play_counts(items, {"sessionid": "s"})
+            ig_profile.fetch_media_details(items, {"sessionid": "s"})
         self.assertEqual(len(seen), 1)
         self.assertNotIn("pkP", " ".join(seen))
 
     def test_a_count_that_is_already_there_is_not_overwritten(self):
+        """Item completo nao vira requisicao: nem view, nem duracao faltando."""
         items = self._items("A")
         items[0].play_count = 42
+        items[0].duration = 31.0
         fake, seen = self._answers({})
         with mock.patch.object(ig_profile, "_send", side_effect=fake):
-            filled = ig_profile.fetch_play_counts(items, {"sessionid": "s"})
+            filled = ig_profile.fetch_media_details(items, {"sessionid": "s"})
         self.assertEqual(filled, 0)
         self.assertEqual(seen, [])
         self.assertEqual(items[0].play_count, 42)
+
+    def test_the_duration_comes_from_the_same_record(self):
+        """Views e duracao saem da MESMA resposta -- uma requisicao, dois campos.
+
+        Este e' o ponto do desenho: a duracao nao pode custar uma segunda
+        chamada por item (nem uma extracao do yt-dlp, que leva 1-2 s cada e
+        convida o 429). Se alguem separar as duas leituras, o numero de
+        requisicoes dobra e este teste cai.
+        """
+        items = self._items("A")
+        fake, seen = self._answers(
+            {"pkA": (200, json.dumps({"items": [{
+                "play_count": 1375106, "video_duration": 12.5}]}))}
+        )
+        with mock.patch.object(ig_profile, "_send", side_effect=fake):
+            filled = ig_profile.fetch_media_details(items, {"sessionid": "s"})
+        self.assertEqual(filled, 1)
+        self.assertEqual(items[0].play_count, 1375106)
+        self.assertEqual(items[0].duration, 12.5)
+        self.assertEqual(len(seen), 1, "views e duracao custaram duas chamadas")
+
+    def test_a_row_with_views_but_no_duration_is_still_asked(self):
+        """View nao implica duracao: a lista so' e' completa com as duas."""
+        items = self._items("A")
+        items[0].play_count = 42
+        fake, seen = self._answers(
+            {"pkA": (200, json.dumps({"items": [{"video_duration": 7.0}]}))}
+        )
+        with mock.patch.object(ig_profile, "_send", side_effect=fake):
+            filled = ig_profile.fetch_media_details(items, {"sessionid": "s"})
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(items[0].play_count, 42, "a view ja' existia: nao mexe")
+        self.assertEqual(items[0].duration, 7.0)
+        self.assertEqual(filled, 1)
+
+    def test_a_zero_duration_is_not_a_duration(self):
+        """``0`` e' o "nao tem video" do Instagram, nao um video de 0 segundo."""
+        items = self._items("A")
+        fake, _ = self._answers(
+            {"pkA": (200, json.dumps({"items": [{"play_count": 9, "video_duration": 0}]}))}
+        )
+        with mock.patch.object(ig_profile, "_send", side_effect=fake):
+            ig_profile.fetch_media_details(items, {"sessionid": "s"})
+        self.assertIsNone(items[0].duration,
+                          "duracao zero viraria o selo '0:00' numa foto")
 
     def test_a_429_stops_asking_instead_of_deepening_the_hole(self):
         """Rate limited: keep what came back and stop, do not retry 100 times."""
@@ -875,7 +928,7 @@ class PlayCountTests(unittest.TestCase):
             return 429, ""
 
         with mock.patch.object(ig_profile, "_send", side_effect=rate_limited):
-            filled = ig_profile.fetch_play_counts(items, {"sessionid": "s"}, workers=1)
+            filled = ig_profile.fetch_media_details(items, {"sessionid": "s"}, workers=1)
         self.assertEqual(filled, 0)
         self.assertEqual(len(seen), 1)
 
@@ -883,7 +936,7 @@ class PlayCountTests(unittest.TestCase):
         items = self._items("A")
         fake, _ = self._answers({"pkA": (200, "<!DOCTYPE html><html></html>")})
         with mock.patch.object(ig_profile, "_send", side_effect=fake):
-            ig_profile.fetch_play_counts(items, {"sessionid": "s"})
+            ig_profile.fetch_media_details(items, {"sessionid": "s"})
         self.assertIsNone(items[0].play_count)
 
     def test_a_network_error_does_not_take_the_listing_down(self):
@@ -894,7 +947,7 @@ class PlayCountTests(unittest.TestCase):
             raise OSError("sem rede")
 
         with mock.patch.object(ig_profile, "_send", side_effect=boom):
-            filled = ig_profile.fetch_play_counts(items, {"sessionid": "s"})
+            filled = ig_profile.fetch_media_details(items, {"sessionid": "s"})
         self.assertEqual(filled, 0)
         self.assertIsNone(items[0].play_count)
 

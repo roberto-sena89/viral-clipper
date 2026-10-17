@@ -770,19 +770,90 @@ class ScrapCardTests(unittest.TestCase):
         self.assertEqual(escaped("'"), "&#x27;")
 
     def test_the_count_is_written_the_brazilian_way(self):
-        """16.000.000 reads as "16mi", not "16M".
+        """A unidade vai ESCRITA: "2,9 mil", "290 mil", "2,9 milhões".
 
-        The suffix and the decimal comma are the two things a Brazilian reader
-        expects, and "M" is the English spelling of "mi".
+        Era "16mi"/"16k". O sufixo abreviado e' o padrao do mercado, mas esta
+        lista e' lida de cima a baixo para COMPARAR magnitude -- e "k"/"mi"
+        obriga a traduzir a escala em cada card. A virgula decimal continua
+        sendo o que o leitor brasileiro espera, e "M" (ingles) nunca entra.
         """
-        self.assertIn('+ "mi"', self.page)
-        self.assertIn('+ "k"', self.page)
+        self.assertIn('+ " mil"', self.page)
+        self.assertIn('" milhões"', self.page)
         self.assertIn('replace(".", ",")', self.page)
         self.assertNotIn('+ "M"', self.page)
+        self.assertNotIn('+ "k"', self.page,
+                         "o sufixo abreviado voltou: a unidade e' escrita")
 
     def test_the_count_formatter_climbs_out_of_the_thousands_band(self):
-        """``1000k`` is not something anyone writes, so 999.999 becomes "1mi"."""
+        """``1000 mil`` is not something anyone writes: 999.999 becomes "1 milhão"."""
         self.assertIn('thousands === "1000"', self.page)
+
+
+class ViewCountLabelTests(unittest.TestCase):
+    """As formas pedidas para a coluna de views, MEDIDAS executando o formatador.
+
+    Um `assertIn` no fonte prova que a string existe; nao prova que 2.900 vira
+    "2,9 mil views". O formatador e' puro (numero -> texto), entao ele roda no
+    node como o `loadArchiveSettings` do arquivamento roda: sem DOM, sem mock
+    de rede e sem browser.
+
+    A tabela e' a do pedido, na ordem em que foi escrita -- 290, 2,9 mil, 29
+    mil, 290 mil, 2,9 milhoes -- mais os dois casos que o arredondamento pode
+    estragar: 999.999 ("1000 mil" nao e' uma forma que alguem escreve) e o
+    singular de 1.000.000.
+    """
+
+    #: (valor cru, o que o card mostra). O sufixo " views" entra aqui porque e'
+    #: o que a pessoa le; o formatador so' devolve numero + unidade.
+    CASOS = (
+        (290, "290 views"),
+        (2900, "2,9 mil views"),
+        (29000, "29 mil views"),
+        (290000, "290 mil views"),
+        (2900000, "2,9 milhões views"),
+        (1000000, "1 milhão views"),
+        (999999, "1 milhão views"),
+        (None, "—"),
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.js = (server.WEB_DIR / "scrap.js").read_text(encoding="utf-8")
+
+    def _fonte(self, nome: str) -> str:
+        """O texto da funcao inteira, da assinatura ate' a chave de fechamento.
+
+        `fn_body` nao serve aqui: ele corta no proximo `function ` de topo, e
+        depois de `fmtShort` nao ha' nenhum (o que vem e' `async function
+        post`), entao o corpo viria com o arquivo inteiro pendurado.
+        """
+        inicio = self.js.index("function " + nome + "(")
+        fim = self.js.index("\n  }", inicio) + len("\n  }")
+        return self.js[inicio:fim]
+
+    def test_the_labels_are_the_ones_asked_for(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node nao esta' no PATH")
+        import subprocess
+
+        fonte = self._fonte("fmtCount") + "\n" + self._fonte("fmtShort")
+        valores = [valor for valor, _ in self.CASOS]
+        script = (
+            "const fn = new Function('valores', " + json.dumps(fonte) + " + "
+            "'\\nreturn valores.map(function (v) { "
+            "const t = fmtCount(v); "
+            "return v === null ? t : t + \" views\"; });');\n"
+            "console.log(JSON.stringify(fn(" + json.dumps(valores) + ")));\n"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(0, proc.returncode,
+                         "o formatador estourou: " + proc.stderr.strip()[:400])
+        obtido = json.loads(proc.stdout.strip())
+        for (valor, esperado), saida in zip(self.CASOS, obtido):
+            with self.subTest(valor=valor):
+                self.assertEqual(esperado, saida)
 
 
 class ResultRowHasAlignedColumnsTests(unittest.TestCase):
@@ -1437,6 +1508,44 @@ class ViralOptionPageTests(unittest.TestCase):
         ):
             self.assertIn(fragment, self.html, fragment)
 
+    def test_the_viral_toggle_is_on_in_the_markup(self):
+        """A PRIMEIRA pintura ja' vem acesa, sem esperar o `scrap.js`.
+
+        O JS tambem liga o botao no boot, mas entre o HTML e o script existe um
+        quadro: com o markup apagado, quem abre o modo Perfil ve o botao cinza
+        e ele acende sozinho logo depois. Duas verdades sobre o mesmo estado, e
+        a errada aparece primeiro.
+        """
+        m = re.search(r'<button[^>]*id="btn-viral"[^>]*>', self.html)
+        self.assertIsNotNone(m, "o botao 'Em alta primeiro' sumiu da Biblioteca")
+        botao = m.group(0)
+        self.assertIn('aria-pressed="true"', botao,
+                      "o botao nasce apagado: a ordem por views e' o padrao")
+        self.assertIn("btn-primary", botao,
+                      "o markup nao pinta o estado aceso; o `aria-pressed` "
+                      "diria 'ligado' num botao com cara de desligado")
+
+    def test_the_js_boots_with_the_toggle_pressed(self):
+        """Medido no DOM depois do `scrap.js` rodar, nao no arquivo.
+
+        O padrao mora numa variavel (`viralOn`), e uma variavel so' se mede
+        executando: trocar o valor de volta nao muda uma letra do HTML, e um
+        `assertIn` no fonte nao veria nada. Aqui o script da pagina roda de
+        verdade e o atributo e' lido do elemento.
+        """
+        r = pagina_montada("scrap.html", so_comum=False,
+                           seletores_um=("#btn-viral",))
+        self.assertEqual([], r["erros"],
+                         f"o scrap.js estourou ao montar a Biblioteca: {r['erros']}")
+        botao = r["achadoUm"]["#btn-viral"]
+        self.assertIsNotNone(botao, "o botao nao existe depois do JS rodar")
+        self.assertEqual(
+            "true", botao["attrs"].get("aria-pressed"),
+            "o estado inicial do toggle deixou de ser 'ligado': buscar num "
+            "perfil volta a listar na ordem do feed")
+        self.assertIn("btn-primary", botao["classe"],
+                      "o estado aceso nao chega ao CSS (classe `btn-primary`)")
+
     def test_the_archive_toggle_lives_in_ajustes(self):
         self.assertIn('id="arq-viral"', self.ajustes,
                       "o 'Em alta primeiro' saiu de Ajustes")
@@ -1574,6 +1683,68 @@ class ArchiveConfigSingleOwnerTests(unittest.TestCase):
             self._mapeia({"error": "offline", "offline": True}),
             {"only": "", "max_items": 20, "order": "recent"},
         )
+
+
+class ArchiveCtaLabelTests(unittest.TestCase):
+    """O rotulo do CTA de arquivamento e' um no' proprio, e nao o texto do botao.
+
+    O botao carrega DOIS glifos -- a seta do estado normal e o giro do estado
+    ocupado -- e o JS troca o texto duas vezes por execucao ("Baixando…" e de
+    volta). Enquanto o rotulo era o `textContent` do BOTAO, essa troca apagava
+    os dois `<svg>` no primeiro clique: o botao ficava sem icone e sem como
+    recupera-lo, porque o HTML nao e' re-renderizado.
+
+    A regressao e' silenciosa de proposito: o `textContent` continua "certo"
+    (o texto aparece), e o que some e' o desenho. Por isso o alvo do teste e'
+    o NO' do rotulo e a forma como o JS o escreve -- e nao o texto na tela.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = page_source("scrap.html")
+        cls.js = (server.WEB_DIR / "scrap.js").read_text(encoding="utf-8")
+
+    def _botao(self) -> str:
+        m = re.search(r'<button[^>]*id="btn-arquivar"[^>]*>([\s\S]*?)</button>',
+                      self.html)
+        self.assertIsNotNone(m, "o CTA de arquivamento sumiu da Biblioteca")
+        return m.group(0)
+
+    def test_the_label_lives_in_its_own_element(self):
+        self.assertIn(
+            'data-role="label"', self._botao(),
+            "o rotulo do CTA deixou de ser um elemento proprio: o JS que troca "
+            "o texto por 'Baixando…' vai apagar os icones do botao")
+
+    def test_the_button_has_both_glyphs_and_swaps_them(self):
+        """O giro NAO e' um `<svg>`: e' um anel de borda, que gira por CSS.
+
+        O que precisa valer e' a troca -- um glifo escondido e o outro visivel
+        no estado ocupado --, e nao a tecnologia de cada um. Um teste que
+        exigisse dois `<svg>` recusaria a solucao mais barata (o anel) sem que
+        nada de errado estivesse no markup.
+        """
+        botao = self._botao()
+        self.assertIn('class="archive-cta-icon"', botao,
+                      "o CTA perdeu a seta do estado normal")
+        self.assertIn('class="archive-cta-spin"', botao,
+                      "o CTA perdeu o indicador do estado ocupado")
+        css = (server.WEB_DIR / "scrap.css").read_text(encoding="utf-8")
+        self.assertIn(".archive-panel-cta.is-busy .archive-cta-icon { display: none; }",
+                      css,
+                      "os dois glifos aparecem juntos: a troca do estado ocupado "
+                      "depende de esconder a seta")
+
+    def test_the_js_writes_the_label_and_not_the_button(self):
+        # A forma exata da regressao: `btn.textContent = ...` num botao que
+        # tem filhos. O `data-role` sozinho nao basta -- o HTML pode estar
+        # certo e o JS continuar escrevendo no pai.
+        self.assertIn('[data-role="label"]', self.js,
+                      "o scrap.js nao escreve mais no no' do rotulo")
+        self.assertNotRegex(
+            self.js, r'btn\.textContent\s*=\s*"Baixando',
+            "o scrap.js voltou a escrever o texto no BOTAO: os dois icones sao "
+            "apagados no primeiro clique")
 
 
 class ScrapErrorContractTests(unittest.TestCase):
@@ -2036,14 +2207,15 @@ class IgProfileListingTests(unittest.TestCase):
     def _listing(self, items, username="alvo"):
         return ProfileListing(username=username, items=items, pages=1)
 
-    def _run(self, items, *, plays=None, **payload):
+    def _run(self, items, *, plays=None, durations=None, **payload):
         """Run the route with the network replaced.
 
-        ``plays`` is what the enrichment would have read from
-        ``/api/v1/media/<pk>/info/``. ``self.seen["enriched"]`` records the
-        batch it was asked to fill, so a test can assert WHICH items paid the
-        extra request — that is the difference between ranking on views and
-        ranking on the 100-item ceiling.
+        ``plays``/``durations`` sao o que o enriquecimento teria lido de
+        ``/api/v1/media/<pk>/info/`` (os dois campos vem do MESMO registro).
+        ``self.seen["enriched"]`` records the batch it was asked to fill, so a
+        test can assert WHICH items paid the extra request — that is the
+        difference between ranking on views and ranking on the 100-item
+        ceiling.
         """
         seen: dict = {"enriched": []}
 
@@ -2055,6 +2227,10 @@ class IgProfileListingTests(unittest.TestCase):
                 if value is not None:
                     item.play_count = value
                     filled += 1
+                seconds = (durations or {}).get(item.code)
+                if seconds is not None:
+                    item.duration = seconds
+                    filled += 1
             return filled
 
         with mock.patch.object(
@@ -2062,7 +2238,7 @@ class IgProfileListingTests(unittest.TestCase):
         ), mock.patch.object(
             server.ig_profile_mod, "resolve_cookies", return_value={"sessionid": "s"}
         ), mock.patch.object(
-            server.ig_profile_mod, "fetch_play_counts", side_effect=fake_play_counts
+            server.ig_profile_mod, "fetch_media_details", side_effect=fake_play_counts
         ):
             results, title, removed = routes_scrap._ig_profile_results(
                 "alvo", payload, "cookies.txt", ["--cookies", "cookies.txt"]
@@ -2086,6 +2262,26 @@ class IgProfileListingTests(unittest.TestCase):
         items = [ProfileItem(code="A", url="u", folder="reels", kind="reel")]
         results, _title, _removed = self._run(items)
         self.assertEqual(results[0]["title"], "A")
+
+    def test_the_row_carries_the_duration_the_enrichment_found(self):
+        """O selo de duracao do card sai daqui.
+
+        A query do perfil nao manda ``video_duration``, entao o item chega sem
+        ela e o selo mostra "—". O enriquecimento le' a duracao do registro de
+        midia; o que este teste mede e' a PONTE -- que o valor chega ao
+        dicionario que a pagina recebe, e nao morre no objeto do lister.
+        """
+        items = [ProfileItem(code="A", url="u", folder="reels", kind="reel",
+                             media_type=2, pk="pkA")]
+        results, _title, _removed = self._run(items, durations={"A": 12.5})
+        self.assertEqual(results[0]["duration"], 12.5)
+
+    def test_a_row_without_duration_sends_null_and_the_card_shows_a_dash(self):
+        """Ausencia e' ``None``, nunca 0 -- ``0`` viraria o selo "0:00"."""
+        items = [ProfileItem(code="A", url="u", folder="reels", kind="reel",
+                             media_type=2)]
+        results, _title, _removed = self._run(items)
+        self.assertIsNone(results[0]["duration"])
 
     def test_a_reel_reports_plays_and_a_post_reports_its_likes_separately(self):
         """Views and likes are two scales; one must not be sent as the other.
@@ -3008,6 +3204,10 @@ class BreakpointScaleTests(unittest.TestCase):
     MAPA = {
         380: "kv",
         420: "job-card, studio-overline, header-context (marca)",
+        # Medida, nao degrau: em 440 o `1fr` do canal ainda cabe ao lado da
+        # coluna de views escrita por extenso; abaixo disso a linha de
+        # metadados passa a duas linhas.
+        440: "result-meta (duas linhas)",
         480: "seg, pick-kv",
         # O `publicar-topo` empilhava em 520 e passou a empilhar em 620 quando o
         # card do clip ganhou o player (a coluna de 196px do video mais a coluna

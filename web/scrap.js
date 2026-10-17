@@ -87,16 +87,26 @@
     return m + ":" + String(r).padStart(2, "0");
   }
 
-  // Contagem curta em pt-BR: 16, 16k, 16,5k, 16mi. O sufixo e o que o publico
-  // brasileiro le em qualquer plataforma ("mi" de milhao, nao "M") e a casa
-  // decimal usa virgula, como manda o idioma.
+  // Contagem curta em pt-BR com a unidade ESCRITA: "2,9 mil", "29 mil",
+  // "290 mil", "2,9 milhões". A forma abreviada ("2,9k"/"2,9mi") e' a que o
+  // mercado usa, mas aqui a linha e' lida de cima a baixo para COMPARAR
+  // magnitude, e "k"/"mi" obriga a traduzir a escala a cada card -- pedido do
+  // dono do painel, e a razao se sustenta: quem le a lista esta' decidindo
+  // entre 2,9 mil e 290 mil, nao lendo um feed.
+  //
+  // Sem "de" antes de "views": a frase e' montada por quem chama ("2,9 mil"
+  // + " views"), e um "de" aqui viraria "2,9 mil de views" em todo card de
+  // milhar. O plural acompanha o NUMERO ("1 milhão", "2,9 milhões").
   function fmtCount(n) {
     if (n == null) return "—";
-    if (n >= 1e6) return fmtShort(n / 1e6) + "mi";
+    if (n >= 1e6) {
+      const millions = fmtShort(n / 1e6);
+      return millions + (millions === "1" ? " milhão" : " milhões");
+    }
     if (n >= 1e3) {
       const thousands = fmtShort(n / 1e3);
-      // 999.999 arredonda para "1000k", que ninguem escreve: vira "1mi".
-      return thousands === "1000" ? "1mi" : thousands + "k";
+      // 999.999 arredonda para "1000 mil", que ninguem escreve: vira "1 milhão".
+      return thousands === "1000" ? "1 milhão" : thousands + " mil";
     }
     return String(n);
   }
@@ -263,7 +273,15 @@
   // primeiro" do arquivamento saiu daqui para /ajustes, junto com o resto da
   // configuracao da Biblioteca. Ele nao era um estado de tela -- era um ajuste
   // persistido, e estava escrito na tela errada.
-  var viralOn = false;
+  //
+  // ACESO por padrao, e a escolha e' do produto, nao um descuido: quem aponta a
+  // busca para um PERFIL quer o que ja' performou, e a ordem do feed entrega os
+  // posts mais recentes -- frequentemente os de menos views. O default tambem
+  // casa com o teto de 100: o servidor lista ate' 100 e ordena ANTES de cortar
+  // no limite, entao o "Itens a listar" passa a significar "os N melhores", e
+  // nao "os N primeiros". Desligar continua sendo um clique, e a escolha vale
+  // para as buscas seguintes -- e' um padrao, nao uma trava.
+  var viralOn = true;
 
   function renderViralButtons() {
     const searchBtn = $("#btn-viral");
@@ -1167,12 +1185,32 @@
   var archiveTimer = null;
   var archBusy = false;
 
+  // O rotulo do CTA e' o `<span data-role="label">` dentro do botao, e nao o
+  // texto solto dele: o botao carrega dois glifos (a seta e o giro do estado
+  // ocupado) e um `textContent` no botao apagaria os dois na primeira troca de
+  // estado. O fallback fica para o caso de o botao vir sem o span.
+  function setArchiveLabel(text) {
+    const btn = $("#btn-arquivar");
+    if (!btn) return;
+    const label = btn.querySelector('[data-role="label"]');
+    if (label) label.textContent = text;
+    else btn.textContent = text;
+  }
+
+  function setArchiveBusyLook(on) {
+    const btn = $("#btn-arquivar");
+    if (!btn) return;
+    btn.classList.toggle("is-busy", on);
+    btn.setAttribute("aria-busy", on ? "true" : "false");
+  }
+
   function setArchBusy(on) {
     archBusy = on;
     const btn = $("#btn-arquivar");
     if (btn) {
       btn.disabled = on;
-      if (on) btn.textContent = "Baixando…";
+      setArchiveBusyLook(on);
+      if (on) setArchiveLabel("Baixando…");
     }
     // Nao ha mais controle de configuracao para desabilitar junto: o tipo, o
     // limite e a ordem nao estao nesta pagina.
@@ -1546,14 +1584,15 @@
 
   function lockArchiveButton() {
     const btn = $("#btn-arquivar");
-    if (btn) { btn.disabled = true; btn.textContent = "Baixando…"; }
+    if (btn) { btn.disabled = true; setArchiveBusyLook(true); setArchiveLabel("Baixando…"); }
   }
 
   function restoreArchiveButton() {
     const btn = $("#btn-arquivar");
     if (btn && !archBusy) {
       btn.disabled = false;
-      btn.textContent = "Baixar para o computador";
+      setArchiveBusyLook(false);
+      setArchiveLabel("Baixar para o computador");
     }
   }
 

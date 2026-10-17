@@ -118,15 +118,16 @@ def _ig_profile_results(
         # the payload at all. The ranking used to fall back to likes and the
         # column called them views — on the sample reel that meant 68k instead
         # of the real 1.37M. The real number costs one request per item, and it
-        # is only paid when the ranking is asked for.
-        ig_profile_mod.fetch_play_counts(items, cookies)
+        # is only paid when the ranking is asked for. The same record answers
+        # the duration, which the timeline query also omits.
+        ig_profile_mod.fetch_media_details(items, cookies)
         items.sort(key=_viral_order)
     else:
         items = items[:limit]
         # The column says "views", so the rows that are actually shown get the
         # real count. Bounded by the limit the user asked for: a plain search
         # does not pay for the 100 that only the ranking needs.
-        ig_profile_mod.fetch_play_counts(items, cookies)
+        ig_profile_mod.fetch_media_details(items, cookies)
     items = items[:limit]
 
     results = []

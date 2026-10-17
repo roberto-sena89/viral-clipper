@@ -356,8 +356,10 @@ input::placeholder { color: var(--text-muted); }
   position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
 }
 
-/* Caixas de ação (seleção em lote / arquivamento): mesmo cartão interno,
-   mesma fileira, mesmo ritmo — antes eram três inline styles copiados. */
+/* Barra de acoes da selecao em lote: um cartao interno, uma fileira, um ritmo
+   -- antes eram tres inline styles copiados. O painel de arquivamento NAO usa
+   mais esta caixa (ver `.archive-panel`): la' ha' uma acao so', com titulo e
+   destino, e a fileira de pesos iguais nao dava conta disso. */
 .tool-box {
   display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;
   margin: 0 0 14px; padding: 12px 14px;
@@ -525,6 +527,180 @@ input::placeholder { color: var(--text-muted); }
 @media (prefers-reduced-motion: reduce) {
   .dl-fill { animation: none; }
   .dl-phase .dl-spin { animation: none; border-top-color: rgba(255,255,255,0.18); }
+}
+
+/* ---------- PAINEL DE ARQUIVAMENTO ----------
+   Onde mora a acao de baixar o perfil inteiro. Era uma `.tool-box` -- a mesma
+   fileira flex da barra de selecao, com o botao e a dica lado a lado --, e
+   aquela fileira servia mal a esta acao: `align-items: flex-end` alinhava o
+   botao pelo PÉ de um paragrafo de tres linhas, e a unica acao de fim de lista
+   ficava com o mesmo peso de um contador de selecao.
+
+   Agora e' um painel de tres colunas (icone | texto | CTA). Os fatos -- as
+   duas pastas de destino e o link para Ajustes -- descem para uma linha
+   propria, porque sao contexto, e o progresso atravessa a largura toda quando
+   existe.
+
+   A placa sobe 4,5% de branco sobre `--bg-surface` em vez de usar `--well-bg`:
+   um poco escuro aqui leria como "desabilitado", e este e' justamente o
+   controle que comeca uma tarefa longa. */
+.archive-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "icon text cta"
+    "facts facts facts"
+    "prog prog prog";
+  align-items: center;
+  gap: 10px 14px;
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-surface);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  /* `relative` + `hidden` recortam o brilho do icone (que sai da caixa) e o
+     log, que rola dentro do painel. Nao e' `sticky`: a linha de acoes e' a
+     unica coisa que prende nesta pagina, e ha' teste para isso. */
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.archive-panel[hidden] { display: none; }
+/* O brilho da marca atras do icone: diz "isto e' acao" sem pintar a placa
+   inteira de magenta. `z-index: -1` pinta abaixo do conteudo e acima do fundo
+   do proprio painel -- o `isolation` acima e' o que garante esse contexto. */
+.archive-panel::before {
+  content: "";
+  position: absolute; top: -72px; left: -56px;
+  width: 200px; height: 200px; border-radius: 999px;
+  background: radial-gradient(circle, var(--accent-glow), transparent 68%);
+  opacity: 0.75; pointer-events: none; z-index: -1;
+}
+
+.archive-panel-icon {
+  grid-area: icon; align-self: start;
+  display: grid; place-items: center;
+  width: 38px; height: 38px; border-radius: 12px;
+  color: var(--accent-soft);
+  background: var(--active-tint);
+  border: 1px solid rgba(255, 79, 174, 0.28);
+}
+.archive-panel-icon svg { width: 19px; height: 19px; display: block; }
+
+.archive-panel-text {
+  grid-area: text; min-width: 0;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.archive-panel-title {
+  margin: 0; font-size: var(--text-subtitle); font-weight: 600;
+  letter-spacing: -0.01em; color: var(--text-primary);
+}
+/* `.field-hint` da' o tamanho e a cor da dica; aqui so' o espacamento muda,
+   porque a dica ja' esta' dentro do bloco de texto (o `margin-top: 8px` dela
+   abriria um buraco entre o titulo e a frase). */
+.archive-panel .archive-panel-sub { margin: 0; max-width: 58ch; }
+.archive-panel-sub code {
+  font-family: ui-monospace, monospace; font-size: 0.94em;
+  color: var(--text-secondary); background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle); border-radius: 5px; padding: 1px 5px;
+}
+
+.archive-panel-cta { grid-area: cta; justify-self: end; align-self: center; white-space: nowrap; }
+.archive-cta-icon { display: inline-flex; }
+.archive-cta-icon svg { width: 16px; height: 16px; display: block; }
+/* O giro do estado ocupado substitui o icone de seta em vez de somar a ele:
+   dois glifos no mesmo botao, um girando, leem como dois controles. As cores
+   sao as do `.btn-primary` (magenta cheio, tinta escura por cima). */
+.archive-cta-spin {
+  display: none; flex: none;
+  width: 13px; height: 13px; border-radius: 999px;
+  border: 2px solid rgba(28, 16, 36, 0.3);
+  border-top-color: var(--grad-ink);
+  animation: arqSpin 0.9s linear infinite;
+}
+.archive-panel-cta.is-busy .archive-cta-icon { display: none; }
+.archive-panel-cta.is-busy .archive-cta-spin { display: block; }
+/* `.btn:disabled` deixa o botao em 0,5 de opacidade -- o sinal de "nao da' para
+   usar". Ocupado e' outro estado: da' para ver que ele esta' TRABALHANDO, e o
+   giro so' aparece se a placa continuar legivel. O seletor tem o `:disabled`
+   junto de proposito: empata em especificidade com `.btn:disabled` e vence so'
+   por ordem de folha -- e ordem nao e' um argumento que se le' no arquivo. */
+.archive-panel-cta.is-busy:disabled { opacity: 0.82; }
+
+/* Fatos: rotulo + chips. O rotulo e' texto, nao chip -- ele nomeia a linha
+   inteira, e um chip nele sugeriria um terceiro destino. */
+.archive-panel-facts {
+  grid-area: facts;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+  font-size: var(--text-2xs); color: var(--text-muted);
+}
+.archive-facts-label {
+  font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  opacity: 0.8; margin-right: 2px;
+}
+.archive-fact {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+}
+.archive-fact code {
+  font-family: ui-monospace, monospace; font-size: 0.95em;
+  color: var(--text-primary); background: none; border: 0; padding: 0;
+}
+.archive-fact-ico { display: inline-flex; color: var(--text-muted); }
+.archive-fact-ico svg { width: 12px; height: 12px; display: block; }
+/* O link e' o unico item acionavel da linha, entao ele tem estado proprio --
+   e 24px de altura minima, o piso da WCAG 2.2 para alvo de ponteiro. */
+.archive-fact-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  min-height: 24px; padding: 3px 9px; border-radius: 999px;
+  color: var(--accent-soft); font-weight: 600; text-decoration: none;
+  border: 1px solid transparent;
+  transition: background-color var(--motion-fast) ease, border-color var(--motion-fast) ease;
+}
+.archive-fact-link:hover { background: var(--active-tint); border-color: rgba(255, 79, 174, 0.28); }
+.archive-fact-link:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+.archive-fact-link svg { width: 12px; height: 12px; display: block; flex: none; }
+
+/* O progresso herda a superficie do painel: o cartao dentro do cartao (fundo
+   + borda proprios) lia como um segundo componente, e nao como o andamento
+   DESTA acao. Fica so' o fio que separa. */
+.archive-panel .arq-progress {
+  grid-area: prog; margin: 0; padding: 12px 0 0;
+  background: none; border: 0; border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+}
+/* A linha do progresso tem QUATRO filhos (fase, dois passos, porcentagem). Com
+   o `space-between` do `.arq-progress-head`, os passos flutuavam no meio de uma
+   linha de 714px, longe da fase a que pertencem. Aqui eles andam juntos e a
+   porcentagem e' o que vai para a direita -- ela e' o numero que se procura. */
+.archive-panel .arq-progress-head { justify-content: flex-start; gap: 14px; }
+.archive-panel .arq-percent { margin-left: auto; }
+
+/* Em 640 o CTA desce para a linha inteira: `justify-self: end` num grid de
+   tres colunas espremeria o texto da dica a' esquerda. O icone continua ao
+   lado do titulo -- empilhar tudo gastaria 38px de altura por nada. */
+@media (max-width: 640px) {
+  .archive-panel {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "icon text"
+      "cta cta"
+      "facts facts"
+      "prog prog";
+    gap: 12px;
+    padding: 14px;
+  }
+  /* 44px e' o piso de alvo de toque: o CTA ocupa a linha inteira no celular,
+     entao ele e' o alvo mais facil de errar por ser baixo. */
+  .archive-panel-cta { justify-self: stretch; width: 100%; justify-content: center; min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .archive-cta-spin { animation: none; border-top-color: rgba(28, 16, 36, 0.55); }
 }
 
 /* ---------- BARRA DE PROGRESSO DO ARQUIVAMENTO ----------
@@ -783,10 +959,18 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
    11px, entao "1h 02m" com o padding do selo ocupa 48px e NAO CABIA nos 7ch
    (43px) da primeira versao -- ele quebrava em duas linhas e aquele card
    ficava com 34px de meta contra 21px dos outros. Dai o `nowrap` nos dois e os
-   8ch. A coluna de views para em "1000mi views" (12ch) no pior caso absoluto. */
+   8ch. A coluna de views para em "999,9 milhões views" (16ch) no pior caso
+   absoluto -- ver a medicao dentro da regra. */
 .result-meta {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 11ch 8ch;
+  /* A coluna de views subiu de 11ch para 16ch junto com a unidade escrita
+     ("mil"/"milhões" no lugar de "k"/"mi"). Medido a 11px de Inter (1ch = 7px):
+     o pior caso e' "999,9 milhões views" = 109px, e 11ch (77px) ja' nao cabia
+     nem em "999,9 mil views" (83px) -- a string transbordaria a celula e
+     encostaria no selo de duracao. 16ch = 112px cobre o pior caso com 3px de
+     folga; o que encolhe para pagar isso e' o nome do canal, que ja' tem
+     reticencias. */
+  grid-template-columns: minmax(0, 1fr) 16ch 8ch;
   gap: 10px; align-items: center;
   font-size: var(--text-2xs); color: var(--text-muted);
   line-height: var(--text-2xs-lh); margin: 0;
@@ -827,6 +1011,25 @@ a.result-title:hover { color: var(--accent-soft); text-decoration: underline; te
   .result-thumb { width: 72px; }
   .result-actions { grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; align-self: stretch; }
   .result-actions .btn { flex: 1 1 auto; }
+}
+
+/* Abaixo de 440px nao ha' largura para as tres colunas da linha de metadados.
+   Medido: o `1fr` do canal vale (viewport - 240px) -- em 390 sobram 144px --
+   e a celula de views passou a precisar de 112px (16ch) mais os 56px do selo.
+   Sem isto a linha transborda o card. O canal e o selo ficam na primeira
+   linha e as views descem inteiras para a segunda; a coluna continua FIXA
+   entre os cards, entao os numeros seguem alinhados de cima a baixo. */
+@media (max-width: 440px) {
+  .result-meta {
+    grid-template-columns: minmax(0, 1fr) 8ch;
+    grid-template-areas:
+      "up bd"
+      "vw vw";
+    row-gap: 2px;
+  }
+  .result-uploader { grid-area: up; }
+  .result-badge { grid-area: bd; }
+  .result-views { grid-area: vw; justify-self: start; }
 }
 
 .empty {

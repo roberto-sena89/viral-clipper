@@ -5202,6 +5202,11 @@ class PublicarPageTests(unittest.TestCase):
         `copiar` de mentira que registra os argumentos: ler o codigo nao
         provaria o que chega na chamada, e e' exatamente la que o defeito
         morava.
+
+        `transcricao` e' o terceiro botao, do dia em que o curador morreu
+        (HTTP 404 nos 24 julgamentos) e o cartao ficou sem saida para o
+        texto: ele copia o trecho, e a asserção aqui e' o que impede o
+        dispatch de trata-lo como legenda -- que colaria a headline VAZIA.
         """
         import subprocess
 
@@ -5213,6 +5218,13 @@ class PublicarPageTests(unittest.TestCase):
             r"document\.addEventListener\('click', \(ev\) => \{[\s\S]*?\n  \}\);",
             self.fonte(self.JS))
         self.assertIsNotNone(achado, "o listener de copia sumiu do publicar.js")
+        # O listener delega a decisao para `textoDoBotao`. Sem ela no escopo
+        # o clique estoura com ReferenceError -- foi assim que este teste
+        # reprovou quando a funcao nasceu e ela nao entrou aqui.
+        funcao = re.search(
+            r"function textoDoBotao\(clip, tipo\) \{[\s\S]*?\n  \}",
+            self.fonte(self.JS))
+        self.assertIsNotNone(funcao, "textoDoBotao sumiu do publicar.js")
 
         script = (
             "const chamadas = [];\n"
@@ -5221,13 +5233,15 @@ class PublicarPageTests(unittest.TestCase):
             "const document = {\n"
             "  addEventListener: (tipo, fn) => { if (tipo === 'click') globalThis.__clique = fn; },\n"
             "};\n"
+            + funcao.group(0) + "\n"
             + achado.group(0) + "\n"
-            "clipsLidos = [{ headline: 'So a legenda', hashtags: '#tag1 #tag2' }];\n"
+            "clipsLidos = [{ headline: 'So a legenda', hashtags: '#tag1 #tag2', text: 'trecho' }];\n"
             "const botao = (indice, acao) => ({\n"
             "  getAttribute: (k) => (k === 'data-indice' ? indice : acao),\n"
             "});\n"
             "__clique({ target: { closest: () => botao('0', 'legenda') } });\n"
             "__clique({ target: { closest: () => botao('0', 'hashtags') } });\n"
+            "__clique({ target: { closest: () => botao('0', 'transcricao') } });\n"
             "console.log(JSON.stringify(chamadas));\n"
         )
         # encoding explicito: o default no Windows e' cp1252, e a fonte tem
@@ -5240,6 +5254,7 @@ class PublicarPageTests(unittest.TestCase):
         self.assertEqual(chamadas, [
             {"texto": "So a legenda", "tipo": "legenda"},
             {"texto": "#tag1 #tag2", "tipo": "hashtags"},
+            {"texto": "trecho", "tipo": "transcricao"},
         ])
 
     def test_the_page_has_its_own_sheet_and_only_its_own_selectors(self):
@@ -5513,6 +5528,7 @@ class PublicarCardTests(unittest.TestCase):
         r"function legendaDe\(clip\) \{[\s\S]*?\n  \}",
         r"function fichaHtml\(data\) \{[\s\S]*?\n  \}",
         r"function cartaoHtml\(clip, indice\) \{[\s\S]*?\n  \}",
+        r"function textoDoBotao\(clip, tipo\) \{[\s\S]*?\n  \}",
         r"function mostrarOrigem\(visivel\) \{[\s\S]*?\n  \}",
         r"function assinatura\(data\) \{[\s\S]*?\n  \}",
         r"async function sondar\(\) \{[\s\S]*?\n  \}",
@@ -5647,6 +5663,86 @@ class PublicarCardTests(unittest.TestCase):
                 index=2, rel="clip-02.mp4", error="RuntimeError: qualquer")) + ", 1)")
         self.assertIn("<video", html)
         self.assertNotIn("não foi renderizado", html)
+
+    # ---------- o copiar ----------
+
+    def test_a_clip_without_curator_text_offers_the_transcript(self):
+        """Curador morreu: o botao Some com a headline -- e o texto? some com ela?
+
+        Medido no painel: os 24 julgamentos do modelo deram HTTP 404, a
+        execucao caiu na heuristica e os cinco clips ficaram SEM headline e
+        SEM hashtags. Os dois botoes de copiar nasciam desses dois campos,
+        entao o cartao do clip renderado e transcrito nao tinha saida nenhuma
+        para o texto -- so' o aviso. A transcricao existe e esta' na tela:
+        o botao dela e' o que sobra para a pessoa postar.
+        """
+        html = self._executa(
+            "cartaoHtml(" + json.dumps(self.clip(
+                index=1, rel="clip-01.mp4", text="Isso acaba que vem quebrando")) + ", 0)")
+        self.assertIn('data-copiar="transcricao"', html)
+        self.assertIn("Copiar transcrição", html)
+        self.assertNotIn('data-copiar="legenda"', html)
+        self.assertNotIn('data-copiar="hashtags"', html)
+        # O video e o aviso continuam: o botao e' saida, nao substituto.
+        self.assertIn("<video", html)
+        self.assertIn("O curador não escreveu headline", html)
+
+    def test_the_transcript_button_yields_to_the_curator_text(self):
+        """Com headline e hashtags, o texto do POST e' o que se copia.
+
+        O controle negativo do teste acima: se o botao de transcricao
+        aparecesse tambem aqui, a linha de acoes ofereceria duas coisas
+        diferentes para colar no mesmo campo -- e a pessoa escolheria a
+        errada. Transcrição e' reserva para quando nao ha' texto de post.
+        """
+        html = self._executa(
+            "cartaoHtml(" + json.dumps(self.clip(
+                index=1, rel="clip-01.mp4", headline="GANCHO",
+                hashtags="#viral", text="Isso acaba que vem quebrando")) + ", 0)")
+        self.assertIn('data-copiar="legenda"', html)
+        self.assertIn('data-copiar="hashtags"', html)
+        self.assertNotIn('data-copiar="transcricao"', html)
+
+    def test_a_clip_with_nothing_to_copy_has_no_copy_button(self):
+        """Sem transcricao tambem (plan-only), nao ha' o que oferecer.
+
+        Um botao que nao copia nada e' pior que a ausencia dele: o clique
+        vira aviso de erro no meio da tela.
+        """
+        html = self._executa(
+            "cartaoHtml(" + json.dumps(self.clip(index=1, text="")) + ", 0)")
+        self.assertNotIn("data-copiar", html)
+        self.assertIn("parou na análise", html)
+
+    def test_each_button_copies_what_its_label_says(self):
+        """O dispatch do clique: tres tipos, tres textos diferentes.
+
+        O defeito que este teste segura: o listener tratava TUDO que nao
+        era `hashtags` como `legenda`. Um botao `transcricao` nesse dispatch
+        colava a headline -- vazia no dia do defeito -- e o aviso dizia
+        "nao ha legenda neste clip" com a transcricao inteira na tela.
+        """
+        clip = self.clip(headline="GANCHO FORTE",
+                         hashtags="#viral #corte", text="trecho transcrito")
+        self.assertEqual(self._executa(
+            "textoDoBotao(" + json.dumps(clip) + ", 'legenda')"), "GANCHO FORTE")
+        self.assertEqual(self._executa(
+            "textoDoBotao(" + json.dumps(clip) + ", 'hashtags')"), "#viral #corte")
+        self.assertEqual(self._executa(
+            "textoDoBotao(" + json.dumps(clip) + ", 'transcricao')"), "trecho transcrito")
+
+    def test_a_dead_curator_button_copies_the_transcript(self):
+        """No estado do defeito, o botao que existe copia a transcricao.
+
+        A volta do teste acima pelo caminho do DOM: com headline vazia, e' o
+        texto do trecho que tem de chegar ao clipboard -- nao a headline
+        vazia, que o dispatch antigo teria escolhido.
+        """
+        clip = self.clip(headline="", hashtags="", text="trecho transcrito")
+        self.assertEqual(self._executa(
+            "textoDoBotao(" + json.dumps(clip) + ", 'transcricao')"), "trecho transcrito")
+        self.assertEqual(self._executa(
+            "textoDoBotao(" + json.dumps(clip) + ", 'legenda')"), "")
 
     # ---------- o resumo ----------
 

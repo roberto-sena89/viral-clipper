@@ -227,6 +227,17 @@
       acoes.push('<button class="btn pressable" type="button"'
         + ' data-copiar="hashtags" data-indice="' + esc(indice) + '">Copiar hashtags</button>');
     }
+    // O curador pode nao ter escrito nada -- foi medida a rodada em que os 24
+    // julgamentos do modelo morreram (HTTP 404) e a execucao caiu na heuristica:
+    // headline e hashtags ficaram vazios nos cinco clips. Sem os dois botoes
+    // acima, o cartao nao tinha saida NENHUMA para o texto, mas a transcricao
+    // existe -- esta' no <details> abaixo -- e e' ela que a pessoa tem para
+    // postar enquanto o curador nao volta. O rotulo diz o que copia: a licao
+    // do "Copiar legenda" que so copiava tags.
+    if (!acoes.length && String(clip.text || '').trim()) {
+      acoes.push('<button class="btn btn-primary pressable" type="button"'
+        + ' data-copiar="transcricao" data-indice="' + esc(indice) + '">Copiar transcrição</button>');
+    }
     // Sem arquivo nao ha player: o aviso fica no lugar do botao que existia,
     // para o cartao dizer POR QUE a caixa 9:16 esta' vazia em vez de so' estar.
     if (!temArquivo && !falhou) {
@@ -415,7 +426,8 @@
   //: A frase que o usuario le depois de copiar. Concordancia pronta em vez de
   //: montada: "Hashtags copiada" seria o resultado de colar o rotulo num molde
   //: unico, e hashtag e' feminino plural.
-  const COPIOU = { legenda: 'Legenda copiada.', hashtags: 'Hashtags copiadas.' };
+  const COPIOU = { legenda: 'Legenda copiada.', hashtags: 'Hashtags copiadas.',
+    transcricao: 'Transcrição copiada.' };
 
   async function copiar(texto, tipo, botao) {
     if (!texto) {
@@ -443,6 +455,22 @@
     }
   }
 
+  // O texto que cada botao copia, por tipo. Funcao de propósito unico tambem
+  // para o teste: a decisao "o que esta cola" e' a parte que erra sem aparecer
+  // no cartao -- um `transcricao` caindo no `else` da legenda colava headline
+  // (vazio, no dia do defeito) e o aviso dizia "nao ha legenda" com a
+  // transcricao inteira na tela.
+  function textoDoBotao(clip, tipo) {
+    if (tipo === 'hashtags') return String(clip.hashtags || '').trim();
+    if (tipo === 'transcricao') return String(clip.text || '').trim();
+    // Legenda copiada e' SO a headline. O `legendaDe` (headline + linha
+    // vazia + hashtags) e' o texto do CAMPO -- o preview do post inteiro --
+    // e nao o clipboard: quem aperta "Copiar legenda" quer colar o texto sem
+    // as tags, que tem botao proprio. Vieram juntas, o segundo botao nao
+    // servia para nada nesse caminho e a pessoa tinha que apagar a cola.
+    return String(clip.headline || '').trim();
+  }
+
   // Delegacao: um listener cobre todos os cartoes. Sem um id por botao, a
   // lista pode crescer sem que este arquivo ganhe mais uma linha por clip.
   document.addEventListener('click', (ev) => {
@@ -450,16 +478,8 @@
     if (!botao) return;
     const clip = clipsLidos[Number(botao.getAttribute('data-indice'))];
     if (!clip) return;
-    const tipo = botao.getAttribute('data-copiar') === 'hashtags' ? 'hashtags' : 'legenda';
-    // Legenda copiada e' SO a headline. O `legendaDe` (headline + linha
-    // vazia + hashtags) e' o texto do CAMPO -- o preview do post inteiro --
-    // e nao o clipboard: quem aperta "Copiar legenda" quer colar o texto sem
-    // as tags, que tem botao proprio. Vieram juntas, o segundo botao nao
-    // servia para nada nesse caminho e a pessoa tinha que apagar a cola.
-    const texto = tipo === 'hashtags'
-      ? String(clip.hashtags || '').trim()
-      : String(clip.headline || '').trim();
-    copiar(texto, tipo, botao);
+    const tipo = botao.getAttribute('data-copiar');
+    copiar(textoDoBotao(clip, tipo), tipo, botao);
   });
 
   const recarregar = $('#btn-recarregar');

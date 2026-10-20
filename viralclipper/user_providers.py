@@ -51,6 +51,19 @@ _ALLOWED_NAME = set("abcdefghijklmnopqrstuvwxyz0123456789-_")
 #: has no way to guess the scheme, and a wrong guess is a confusing failure.
 _ALLOWED_SCHEMES = ("http://", "https://")
 
+#: Chave de TOPO (não uma entrada ``[[provider]]``) do mesmo arquivo: o
+#: provedor que esta máquina pré-seleciona no Curador. Morar aqui, e não em
+#: ``providers.DEFAULT_PROVIDER``, é o que permite trocar o padrão do painel
+#: sem commit -- o arquivo é gitignored e já é o lugar dos endpoints do
+#: usuário. ``providers.default_provider_name`` é quem a honra, e só quando
+#: ela resolve na tabela fundida.
+PREFERRED_KEY = "default_provider"
+
+#: ``save`` sem ``default_name`` PRESERVA a preferência que está no arquivo.
+#: O painel reescreve o arquivo inteiro a cada save, então um default de
+#: "apagar" perderia a linha no primeiro save do card -- silenciosamente.
+_UNSET = object()
+
 
 def validate(entry: dict) -> tuple[Provider | None, str]:
     """Turn one panel payload into a :class:`Provider`, or explain the refusal.
@@ -172,23 +185,32 @@ def _escape(text: str) -> str:
     )
 
 
-def load(path: Path | None = None) -> list[Provider]:
-    """The providers saved by the panel, in file order.
+def _document(path: Path | None = None) -> dict:
+    """The store's TOML as a dict, or ``{}`` when it cannot be read.
 
     A missing file is the first run and a malformed one is a file the user can
     edit back into shape; neither is worth taking the panel down for, so both
-    yield an empty list. This mirrors ``_read_ajustes``: the panel reports
-    "nothing saved yet" instead of the endpoint failing.
+    yield empty. One reader for the two things this module takes out of the
+    file -- the ``provider`` rows and the top-level preference: two parsers of
+    the same bytes would eventually be two answers.
     """
     target = Path(path) if path is not None else USERS_PATH
     if not target.is_file():
-        return []
+        return {}
     try:
         with target.open("rb") as handle:
-            document = tomllib.load(handle)
+            return tomllib.load(handle)
     except (OSError, tomllib.TOMLDecodeError):
-        return []
-    rows = document.get("provider")
+        return {}
+
+
+def load(path: Path | None = None) -> list[Provider]:
+    """The providers saved by the panel, in file order.
+
+    The rows come from the shared reader; see :func:`_document` for the
+    missing/malformed contract (empty, not an error).
+    """
+    rows = _document(path).get("provider")
     if not isinstance(rows, list):
         return []
     found: list[Provider] = []
@@ -201,11 +223,29 @@ def load(path: Path | None = None) -> list[Provider]:
     return found
 
 
-def dump(entries: list[Provider]) -> str:
+def preferred_name(path: Path | None = None) -> str:
+    """The provider this machine preselects, or ``""`` when there is none.
+
+    Read from the top level of the same gitignored store, trimmed. It is only
+    honoured by ``providers.default_provider_name``, and only when it resolves
+    against the merged table: a line naming a provider that was removed or
+    mistyped falls back to the project's recommendation instead of breaking
+    the panel's dropdown.
+    """
+    name = _document(path).get(PREFERRED_KEY)
+    return name.strip() if isinstance(name, str) else ""
+
+
+def dump(entries: list[Provider], default_name: str = "") -> str:
     """Serialise the user's providers as TOML, one ``[[provider]]`` per entry.
 
     Iterating the dataclass fields instead of a dict keeps the key order stable
     between saves, so the diff of a hand-edit is one line and not the file.
+
+    ``default_name``, when given, is written as the top-level
+    ``default_provider`` key BEFORE the first table: in TOML a key that follows
+    a table header belongs to that table, so at the end of the file it would be
+    swallowed by the first entry and read back as nothing at all.
     """
     lines = [
         "# Provedores que voce adicionou pela pagina Cortes (o card",
@@ -214,6 +254,9 @@ def dump(entries: list[Provider]) -> str:
         "# viralclipper/providers.py e nao aparecem aqui.",
         "",
     ]
+    if default_name:
+        lines.append(f'default_provider = "{_escape(default_name)}"')
+        lines.append("")
     for provider in entries:
         lines.append("[[provider]]")
         lines.append(f'name = "{_escape(provider.name)}"')
@@ -240,15 +283,24 @@ def dump(entries: list[Provider]) -> str:
     return "\n".join(lines)
 
 
-def save(entries: list[Provider], path: Path | None = None) -> Path:
+def save(entries: list[Provider], path: Path | None = None, *,
+         default_name=_UNSET) -> Path:
     """Write ``entries`` to the store, returning the path written.
+
+    ``default_name`` is this machine's provider preference (the top-level
+    ``default_provider`` key). Left unset, whatever the file already holds is
+    PRESERVED: the panel rewrites the file whole on each save, so a key it did
+    not know about would vanish at the next save of the card -- and nobody
+    would see why the curator's default went back. Pass ``""`` to clear it.
 
     Bytes, not ``write_text``: on Windows ``write_text`` turns every ``\\n`` into
     ``\\r\\n``, and a file the panel rewrites on each save would then churn its
     own separators. The project's convention for panel-written text is LF.
     """
     target = Path(path) if path is not None else USERS_PATH
-    data = dump(entries).encode("utf-8")
+    if default_name is _UNSET:
+        default_name = preferred_name(target)
+    data = dump(entries, default_name=default_name).encode("utf-8")
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
@@ -277,9 +329,11 @@ def remove(name: str, path: Path | None = None) -> list[Provider]:
 
 
 __all__ = [
+    "PREFERRED_KEY",
     "USERS_PATH",
     "dump",
     "load",
+    "preferred_name",
     "remove",
     "save",
     "upsert",

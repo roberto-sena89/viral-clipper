@@ -230,6 +230,30 @@ def list_providers() -> list[Provider]:
     return [table[key] for key in sorted(table)]
 
 
+def default_provider_name() -> str:
+    """The provider the panel preselects: this machine's choice, or the project's.
+
+    ``DEFAULT_PROVIDER`` is one recommendation for every machine. This adds
+    the one thing a single-user panel needs -- a per-machine choice, kept in
+    the user's own (gitignored) ``provedores-usuario.toml``, the same file
+    that already holds the endpoints they pasted. Editing the constant instead
+    would point the public repository at a provider that only exists where it
+    was configured: on a fresh clone the default would not resolve and the run
+    would fail validation before downloading anything.
+
+    The preference counts only when it RESOLVES against the merged table
+    (built-ins plus user entries). A line naming a provider that was removed
+    or mistyped falls back to the recommendation, so the dropdown never opens
+    on a name the run cannot use.
+    """
+    from . import user_providers
+
+    preferred = user_providers.preferred_name()
+    if preferred and preferred in _table():
+        return preferred
+    return DEFAULT_PROVIDER
+
+
 def apply_to_config(config: ClipConfig, name: str) -> ClipConfig:
     """Return a copy of ``config`` with the provider's three knobs filled in.
 
@@ -270,6 +294,7 @@ __all__ = [
     "PROVIDERS",
     "Provider",
     "apply_to_config",
+    "default_provider_name",
     "get_provider",
     "list_providers",
     "provider_for_config",

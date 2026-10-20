@@ -211,6 +211,122 @@ class MergeTests(_TempStore):
         self.assertEqual(config.ranker_model, provider.model)
 
 
+class PreferredProviderTests(_TempStore):
+    """A linha ``default_provider``: o padrao do curador por maquina.
+
+    Mora no mesmo arquivo gitignored dos endpoints do usuario -- nao ha
+    commit para esperar para trocar o provedor do painel. O que estes testes
+    seguram sao as duas pontas que quebram EM SILENCIO: o save do painel
+    apagando a linha (ele reescreve o arquivo inteiro) e a linha nascendo no
+    lugar errado do TOML, onde ela pertence a tabela e nao ao arquivo.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        # ``preferred_name`` e ``default_provider_name`` leem sem argumento,
+        # entao leem a global do modulo.
+        patcher = mock.patch.object(user_providers, "USERS_PATH", self.path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    # ---------------------------------------------------------- a leitura
+
+    def test_no_file_means_no_preference(self):
+        self.assertEqual(user_providers.preferred_name(), "")
+
+    def test_a_malformed_file_means_no_preference(self):
+        self.path.write_bytes(b"isto nao e toml {{{")
+        self.assertEqual(user_providers.preferred_name(), "")
+
+    def test_a_file_without_the_key_means_no_preference(self):
+        provider, _ = user_providers.validate(_valid())
+        user_providers.save([provider], self.path)
+        self.assertEqual(user_providers.preferred_name(), "")
+
+    def test_the_name_comes_back_trimmed(self):
+        self.path.write_bytes(b'default_provider = "  meu-provedor  "\n')
+        self.assertEqual(user_providers.preferred_name(), "meu-provedor")
+
+    def test_a_non_string_value_means_no_preference(self):
+        self.path.write_bytes(b'default_provider = ["meu-provedor"]\n')
+        self.assertEqual(user_providers.preferred_name(), "")
+
+    # ---------------------------------------------------------- a escrita
+
+    def test_dump_puts_the_key_before_the_first_table(self):
+        """No TOML, chave depois de um [[provider]] pertence a TABELA.
+
+        Escrita no fim do arquivo, ela seria engolida pela primeira entrada:
+        o arquivo pareceria certo na tela e a leitura devolveria "" -- o
+        padrao do curador perdido sem nenhum erro.
+        """
+        provider, _ = user_providers.validate(_valid())
+        texto = user_providers.dump([provider], default_name="meu-provedor")
+        self.assertLess(
+            texto.index("default_provider"), texto.index("[[provider]]"))
+        self.path.write_bytes(texto.encode("utf-8"))
+        self.assertEqual(user_providers.preferred_name(), "meu-provedor")
+
+    def test_a_save_keeps_the_preference_it_was_not_told_about(self):
+        """O card 'Meus provedores' reescreve o arquivo por inteiro.
+
+        Sem preservar, o proximo save daquele card apagaria a linha de topo --
+        e o curador voltaria ao nemotron morto sem ninguem ver o motivo.
+        """
+        self.path.write_bytes(b'default_provider = "meu-provedor"\n')
+        provider, _ = user_providers.validate(_valid())
+        user_providers.save([provider], self.path)
+        self.assertEqual(user_providers.preferred_name(), "meu-provedor")
+        self.assertEqual(
+            [p.name for p in user_providers.load(self.path)], ["meu-provedor"])
+
+    def test_a_save_sets_the_preference_it_was_told(self):
+        provider, _ = user_providers.validate(_valid())
+        user_providers.save([provider], self.path, default_name="outro-nome")
+        self.assertEqual(user_providers.preferred_name(), "outro-nome")
+
+    def test_a_save_clears_the_preference_when_told_empty(self):
+        self.path.write_bytes(b'default_provider = "meu-provedor"\n')
+        provider, _ = user_providers.validate(_valid())
+        user_providers.save([provider], self.path, default_name="")
+        self.assertEqual(user_providers.preferred_name(), "")
+
+
+class DefaultProviderResolutionTests(_TempStore):
+    """``providers.default_provider_name``: a preferencia da maquina, ou o
+    padrao do projeto -- e NUNCA um nome que o run nao consiga usar."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        patcher = mock.patch.object(user_providers, "USERS_PATH", self.path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_without_a_preference_it_is_the_project_recommendation(self):
+        self.assertEqual(
+            providers.default_provider_name(), providers.DEFAULT_PROVIDER)
+
+    def test_a_user_entry_can_be_the_default(self):
+        provider, _ = user_providers.validate(_valid())
+        user_providers.save([provider], self.path,
+                            default_name="meu-provedor")
+        self.assertEqual(
+            providers.default_provider_name(), "meu-provedor")
+
+    def test_a_built_in_can_be_the_default(self):
+        user_providers.save([], self.path, default_name="openai")
+        self.assertEqual(providers.default_provider_name(), "openai")
+
+    def test_an_unresolvable_preference_falls_back_to_the_recommendation(self):
+        """Linha apontando para provedor que nao existe (tirado do arquivo ou
+        erro de digitacao): o dropdown abriria num nome que o run nao
+        resolveria, e a falha so apareceria depois do download.
+        """
+        user_providers.save([], self.path, default_name="sumiu-do-arquivo")
+        self.assertEqual(
+            providers.default_provider_name(), providers.DEFAULT_PROVIDER)
+
+
 class ProbePayloadTests(unittest.TestCase):
     def test_the_probe_payload_matches_the_real_client(self):
         # The two have to agree, and the property that matters is invisible

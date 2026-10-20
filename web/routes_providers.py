@@ -56,7 +56,10 @@ def _providers_payload() -> dict:
 
     builtin = set(providers.PROVIDERS)
     return {
-        "default": providers.DEFAULT_PROVIDER,
+        #: The machine's own choice lives in the user's (gitignored) store;
+        #: ``default_provider_name`` falls back to the project recommendation
+        #: when there is none or it no longer resolves.
+        "default": providers.default_provider_name(),
         "providers": [
             {
                 "name": provider.name,

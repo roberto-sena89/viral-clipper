@@ -8363,6 +8363,28 @@ class ManualApiKeyTests(unittest.TestCase):
         self.assertNotIn("sk-secreta", json.dumps(payload),
                          "o literal da chave apareceu em algum campo do payload")
 
+    def test_the_payload_default_follows_the_machines_preference(self):
+        """O dropdown do Curador nasce do ``default`` do payload.
+
+        A pagina le esse campo, seleciona o provedor e preenche endpoint,
+        modelo e variavel da chave dele; a rodada manda o nome do select. A
+        preferencia no arquivo do usuario e' o que troca o curador desta
+        maquina sem commit -- sem ela o payload continuaria oferecendo o
+        nemotron, que responde 404 em todos os julgamentos aqui.
+        """
+        from viralclipper import providers
+
+        prov, _ = self.user_providers.validate(self._entrada(api_key="sk-x"))
+        self.user_providers.save([prov], self.tmp,
+                                 default_name="meu-endpoint")
+        self.assertEqual(routes_providers._providers_payload()["default"],
+                         "meu-endpoint")
+        # Sem a linha, volta o do projeto -- a maquina sem preferencia nao
+        # pode ficar sem default.
+        self.user_providers.save([prov], self.tmp, default_name="")
+        self.assertEqual(routes_providers._providers_payload()["default"],
+                         providers.DEFAULT_PROVIDER)
+
     def test_an_edit_that_does_not_retype_the_key_keeps_it(self):
         """Abrir o provedor para corrigir a nota nao pode apagar o segredo.
 

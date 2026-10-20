@@ -1217,6 +1217,12 @@ def _publicacao_payload() -> dict:
             "index": clip.get("index"),
             "rel": rel,
             "poster": poster,
+            # Why there is no video, when the render itself failed. The
+            # worker's exception never reaches the panel's log (a pool worker
+            # prints to the server's console, not to the collecting logger),
+            # so this field is the only copy that travels: without it the
+            # card invents a reason for the empty 9:16 box.
+            "error": str(clip.get("error") or ""),
             "headline": str(clip.get("headline") or ""),
             "hashtags": str(clip.get("hashtags") or ""),
             "duration": clip.get("duration") or 0,

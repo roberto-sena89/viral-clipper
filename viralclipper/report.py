@@ -33,6 +33,13 @@ class ClipRecord:
     # and Reels take them as post metadata, and a hashtag drawn on the frame is
     # a hashtag the platform ignores.
     hashtags: str = ""
+    # Why this clip has no ``file``, when it has none. The render worker
+    # catches every exception so one broken clip cannot poison the pool; before
+    # this field the reason existed only in the worker's stdout, which the
+    # panel never sees -- the run concluded and the card stayed an empty 9:16
+    # box with no explanation. Empty means "never tried" (plan-only) or "old
+    # report", not "fine".
+    error: str = ""
 
     @property
     def start_label(self) -> str:

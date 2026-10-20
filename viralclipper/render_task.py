@@ -123,7 +123,10 @@ def _render_task(task: _RenderTask) -> _RenderTask:
 
     # Built after the cleanup on purpose: the destination lives in output_dir,
     # not in clip_dir, so removing the work directory cannot invalidate it.
-    task.record = _record(task.position, task.window, task.finish, task.rendered, task.config)
+    task.record = _record(
+        task.position, task.window, task.finish, task.rendered, task.config,
+        error=task.error or "",
+    )
     return task
 
 
@@ -199,6 +202,7 @@ def _record(
     finish: float,
     rendered,
     config: ClipConfig,
+    error: str = "",
 ):
     return report.ClipRecord(
         index=position,
@@ -217,4 +221,9 @@ def _record(
         # there is one, otherwise the run-wide one typed by hand.
         headline=(getattr(window, "headline", "") or "") or (config.headline_text or ""),
         hashtags=getattr(window, "hashtags", "") or "",
+        # Why there is no file, when the worker failed. The exception itself
+        # dies with the worker: without carrying it out here the report says
+        # only ``file = ""`` and nobody can tell a clip that was never
+        # attempted from one whose render broke.
+        error=error,
     )

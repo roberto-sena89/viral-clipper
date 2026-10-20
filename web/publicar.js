@@ -79,6 +79,9 @@
   //: reconstruir a legenda a partir dele seria uma segunda montagem do mesmo
   //: texto -- exatamente o que sai de sincronia quando o layout muda.
   let clipsLidos = [];
+  //: A ultima resposta da sondagem. A assinatura dela e' o que decide um
+  //: re-render: sem guardar a leitura, nao ha como saber se mudou.
+  let ultimaLeitura = null;
 
   function fichaHtml(data) {
     // A duracao da FONTE e' leitura de minutos, nao medida de clipe: 713 s
@@ -148,6 +151,12 @@
     const id = 'publicar-legenda-' + indice;
     const legenda = legendaDe(clip);
     const temArquivo = !!clip.rel;
+    // Por que a caixa 9:16 esta' vazia, quando esta'. O motor guarda, por
+    // clip, a excecao que o worker do render capturou -- antes esse motivo
+    // existia so' no stdout do worker, que o painel nunca le, e o cartao
+    // respondia "a execucao parou na analise" ate' para um clip que a
+    // execucao tentou renderizar e nao conseguiu.
+    const falhou = String(clip.error || '').trim();
 
     // Resto de pontuacao sozinho ("?" solto em hook_terms) nao e' gancho:
     // filtra token menor que 2 chars para nao virar chip.
@@ -193,6 +202,18 @@
         + 'texto — veja o <a href="/ajustes">Prompt do curador</a>.</p>'
         + '</div>';
 
+    // Sem arquivo nao ha player: o cartao diz POR QUE a caixa 9:16 esta'
+    // vazia em vez de so' estar. A excecao do worker, quando existe, vira
+    // aviso na coluna do post -- e' a informacao que explica a falta, e nao
+    // cabe na linha pequena de acoes. Sem excecao, o caso normal de uma
+    // execucao plan-only continua no hint.
+    const avisoRender = !temArquivo && falhou
+      ? '<div class="publicar-aviso" role="note">'
+        + '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="8" r="1" fill="currentColor"/></svg>'
+        + '<p>O vídeo deste clip não foi renderizado: '
+        + esc(falhou) + '.</p></div>'
+      : '';
+
     const acoes = [];
     // O botao de legenda nasce da HEADLINE e nao do `legendaDe`: o campo
     // mostra o texto do post inteiro (legenda, linha vazia, hashtags), mas o
@@ -208,7 +229,7 @@
     }
     // Sem arquivo nao ha player: o aviso fica no lugar do botao que existia,
     // para o cartao dizer POR QUE a caixa 9:16 esta' vazia em vez de so' estar.
-    if (!temArquivo) {
+    if (!temArquivo && !falhou) {
       acoes.push('<span class="hint">Sem arquivo: a execução parou na análise.</span>');
     }
 
@@ -239,6 +260,7 @@
               ? '<ul class="publicar-tags" aria-label="Ganchos do clip ' + esc(clip.index) + '">'
                 + ganchos.map((g) => '<li>' + esc(g) + '</li>').join('') + '</ul>'
               : '')
+      +     avisoRender
       +     campo
       // A linha de acoes so' existe se houver acao. Antes ela vinha sempre, e o
       // botao "Abrir o video" garantia que nunca estivesse vazia; sem ele, o
@@ -296,6 +318,7 @@
     }
 
     const semArquivo = clips.filter((c) => !c.rel).length;
+    const falhas = clips.filter((c) => !c.rel && String(c.error || '').trim()).length;
 
     if (!clips.length) {
       lista.innerHTML = '';
@@ -309,7 +332,10 @@
     vazio.hidden = true;
     resumo.textContent = clips.length + (clips.length === 1 ? ' clip' : ' clips')
       + ' no relatório'
-      + (semArquivo ? ' (' + semArquivo + ' sem arquivo renderizado)' : '')
+      + (semArquivo
+        ? ' (' + semArquivo + ' sem arquivo renderizado'
+          + (falhas ? ', ' + falhas + ' com falha no render' : '') + ')'
+        : '')
       + '. Copie a legenda e cole no campo de descrição da plataforma.';
     lista.innerHTML = clips.map((clip, i) => cartaoHtml(clip, i)).join('');
   }
@@ -334,7 +360,9 @@
     try {
       const r = await fetch(API_BASE + '/publicacao', { cache: 'no-store' });
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      render(await r.json());
+      const data = await r.json();
+      ultimaLeitura = data;
+      render(data);
     } catch (err) {
       // Sem servidor nao ha o que ler: esta pagina e' so a leitura de um
       // arquivo que ele conhece. O aviso diz o que fazer em vez de acusar.
@@ -344,6 +372,42 @@
     } finally {
       botao.disabled = false;
     }
+  }
+
+  // ---------- leitura viva ----------
+
+  // A pagina nascia como retrato: uma leitura na carga, e o que foi
+  // renderizado DEPOIS nao aparecia nunca mais -- o cartao do clip pronto
+  // continuava mostrando a caixa 9:16 vazia ate' alguem apertar
+  // "Recarregar". Uma execucao leva minutos e escreve o relatorio so' no
+  // fim; a pagina fica aberta o tempo todo. A sondagem re-le o servidor e
+  // re-renderiza APENAS quando a assinatura muda -- resposta igual, DOM
+  // intacto, a lista nao pisca a cada sondagem.
+  function assinatura(data) {
+    const clips = (data && data.clips) || [];
+    return (data && data.exists ? '1' : '0')
+      + '|' + ((data && data.title) || '')
+      + '|' + clips
+        .map((c) => (c.rel || '-')
+          + (String(c.error || '').trim() ? '!' + c.error : ''))
+        .join(';');
+  }
+
+  async function sondar() {
+    let data;
+    try {
+      const r = await fetch(API_BASE + '/publicacao', { cache: 'no-store' });
+      if (!r.ok) return;
+      data = await r.json();
+    } catch (err) {
+      // Sondagem nao derruba a pagina: se o servidor morrer, os cartoes ja'
+      // na tela seguem sendo a ultima verdade. O aviso de "servidor fora do
+      // ar" pertence a primeira carga e ao botao -- nao a um poll.
+      return;
+    }
+    if (assinatura(data) === assinatura(ultimaLeitura)) return;
+    ultimaLeitura = data;
+    render(data);
   }
 
   // ---------- copiar ----------
@@ -402,4 +466,8 @@
   if (recarregar) recarregar.addEventListener('click', carregar);
 
   carregar();
+  // 4s: um clip que termina aparece sem a pessoa perceber a espera, e a aba
+  // nao vira um cliente de polling barulhento. Se a pagina fecha, o navegador
+  // cuida do intervalo.
+  setInterval(sondar, 4000);
 })();

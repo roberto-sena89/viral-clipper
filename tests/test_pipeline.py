@@ -220,6 +220,10 @@ class SequentialRenderTests(PipelineTestCase):
         self.assertEqual(len(records), 3)
         self.assertEqual([record.file for record in records], ["", "", ""])
         self.assertFalse(any(record.meets_minimum for record in records))
+        # Plan-only nunca tentou renderizar: `error` vazio quer dizer "nao
+        # houve falha", nao "houve falha sem motivo". E' o que separa esse
+        # estado do clip que o worker tentou e nao conseguiu.
+        self.assertEqual([record.error for record in records], ["", "", ""])
         download_section.assert_not_called()
         download_full.assert_not_called()
         render_clip.assert_not_called()
@@ -401,6 +405,29 @@ class ParallelRenderTests(PipelineTestCase):
         self.assertFalse(records[1].meets_minimum)
         self.assertTrue(records[2].file)
         self.assertEqual(records[2].index, 3)
+        # O motivo da falha viaja com o registro: antes ele existia so' no
+        # stdout do worker, que o painel nunca le, e o cartao do clip ficava
+        # com a caixa 9:16 vazia sem explicacao nenhuma.
+        self.assertIn("ffmpeg boom", records[1].error)
+        self.assertEqual(records[0].error, "")
+        self.assertEqual(records[2].error, "")
+
+    def test_the_failure_reason_survives_the_process_boundary(self):
+        """O erro do worker volta pelo future -- como o `rendered` volta.
+
+        O worker roda numa copia destacada da tarefa: o que ele gravar no
+        objeto local nao chega ao pai. O teste usa o executor que faz o
+        pickle de proposito, que e' o unico que reproduz esse limite.
+        """
+        records, _, _, _, _ = self.render(
+            self.windows,
+            self.config(workers=2),
+            executor=_OutOfProcessExecutor,
+            render_side_effect=[_rendered(), RuntimeError("codec perdido"), _rendered()],
+        )
+        self.assertEqual([bool(r.file) for r in records], [True, False, True])
+        self.assertIn("codec perdido", records[1].error)
+        self.assertTrue(records[1].error.startswith("RuntimeError:"))
 
 
 class ProcessBoundaryTests(PipelineTestCase):
@@ -445,6 +472,9 @@ class ProcessBoundaryTests(PipelineTestCase):
         self.assertEqual(len(payload["clips"]), 3)
         self.assertEqual(payload["clips"][0]["start_label"], "00:00")
         self.assertIn("clip", payload["clips"][0]["file"])
+        # O ``error`` entra no dicionario do relatorio: e' por ele que o
+        # painel fica sabendo por que um clip nao tem arquivo.
+        self.assertIn("error", payload["clips"][0])
 
     def test_a_worker_failure_still_yields_a_record(self):
         records, _, _, _, _ = self.render(
@@ -457,6 +487,7 @@ class ProcessBoundaryTests(PipelineTestCase):
         self.assertTrue(records[0].file)
         self.assertEqual(records[1].file, "")
         self.assertTrue(records[2].file)
+        self.assertIn("ffmpeg boom", records[1].error)
 
 
 class EngineFallbackTests(PipelineTestCase):

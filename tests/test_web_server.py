@@ -4951,8 +4951,8 @@ class PublicacaoPayloadTests(unittest.TestCase):
             "index": indice, "start": 12.4, "end": 40.8, "duration": 28.4,
             "score": 8.4, "meets_minimum": True, "file": "", "hook_terms": [],
             "text": "", "components": {}, "width": 0, "height": 0,
-            "headline": "", "hashtags": "", "start_label": "00:12",
-            "end_label": "00:40",
+            "headline": "", "hashtags": "", "error": "",
+            "start_label": "00:12", "end_label": "00:40",
         }
         base.update(extra)
         return base
@@ -5043,10 +5043,27 @@ class PublicacaoPayloadTests(unittest.TestCase):
         """
         self.escrever({"clips": [self.clip()]})
         clip = server._publicacao_payload()["clips"][0]
-        for campo in ("headline", "hashtags", "text", "rel", "poster"):
+        for campo in ("headline", "hashtags", "text", "rel", "poster", "error"):
             with self.subTest(campo=campo):
                 self.assertEqual(clip[campo], "")
         self.assertEqual(clip["hook_terms"], [])
+
+    def test_a_failed_render_says_why_the_card_is_empty(self):
+        """O erro do worker viaja ate' a pagina -- e' o que ela mostra no cartao.
+
+        Sem esse campo, o clip que o render tentou e nao conseguiu chega ao
+        cartao como ``rel: ""`` puro: a caixa 9:16 vazia ficava sem explicacao
+        nenhuma, porque a excecao do worker so' existia no stdout do processo
+        do pool, que o painel nunca le. Relatorio antigo, sem o campo, nao
+        quebra: a chave ausente vira ``""``.
+        """
+        self.escrever({"clips": [
+            self.clip(index=1, file="", error="RuntimeError: codec perdido"),
+            self.clip(index=2, file=""),
+        ]})
+        clips = server._publicacao_payload()["clips"]
+        self.assertEqual(clips[0]["error"], "RuntimeError: codec perdido")
+        self.assertEqual(clips[1]["error"], "")
 
     def test_junk_entries_do_not_break_the_list(self):
         """Uma entrada que nao e' objeto e' pulada, nao derruba as outras."""
@@ -5470,6 +5487,312 @@ class PublicarOrigemVisibilityTests(unittest.TestCase):
         desligado = self._executa("(mostrarOrigem(false), " + self.ESTADO + ")")
         self.assertEqual(ligado, {"card": False, "atalho": False})
         self.assertEqual(desligado, {"card": True, "atalho": True})
+
+
+class PublicarCardTests(unittest.TestCase):
+    """O cartao do clip: video quando ha' video, e a razao quando nao ha'.
+
+    O teste de comportamento roda o `publicar.js` de verdade, com um DOM
+    falso, via node -- mesma aposta da classe da Origem: uma copia da logica
+    passaria com a copia certa e o produto quebrado.
+
+    O que esta' em julgamento e' o defeito medido no painel: o cartao de um
+    clip renderado mostrava a caixa 9:16 vazia, e o cartao de um clip que
+    FALHOU no render dizia "a execucao parou na analise" -- explicacao para
+    um estado que nao era o real, porque a excecao do worker morria no
+    stdout do processo do pool.
+    """
+
+    HTML = server.WEB_DIR / "publicar.html"
+    JS = server.WEB_DIR / "publicar.js"
+
+    ANCHORAS = [
+        r"function clipsPath\(rel\) \{[\s\S]*?\n  \}",
+        r"function segundos\(valor\) \{[\s\S]*?\n  \}",
+        r"function nota\(valor\) \{[\s\S]*?\n  \}",
+        r"function legendaDe\(clip\) \{[\s\S]*?\n  \}",
+        r"function fichaHtml\(data\) \{[\s\S]*?\n  \}",
+        r"function cartaoHtml\(clip, indice\) \{[\s\S]*?\n  \}",
+        r"function mostrarOrigem\(visivel\) \{[\s\S]*?\n  \}",
+        r"function assinatura\(data\) \{[\s\S]*?\n  \}",
+        r"async function sondar\(\) \{[\s\S]*?\n  \}",
+        r"function render\(data\) \{[\s\S]*?\n  \}",
+    ]
+
+    @staticmethod
+    def clip(**extra) -> dict:
+        base = {
+            "index": 1, "rel": "", "poster": "", "error": "",
+            "headline": "", "hashtags": "", "duration": 30.0,
+            "start_label": "00:00", "end_label": "00:30", "score": 10.0,
+            "hook_terms": [], "text": "trecho transcrito",
+        }
+        base.update(extra)
+        return base
+
+    def _executa(self, expressao: str, fetch_src: str = "") -> object:
+        """Roda `expressao` no escopo do `publicar.js`, com DOM e fetch falsos.
+
+        `fetch_src` entra ANTES das funcoes extraidas: a sondagem o usa, e um
+        teste que nao o passa tem um fetch que nao existe -- o que provaria
+        apenas que a funcao quebrou, nao o que ela decide.
+        """
+        import subprocess
+
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node nao esta no PATH")
+
+        fonte = self.JS.read_text(encoding="utf-8")
+        corpo = []
+        for padrao in self.ANCHORAS:
+            achado = re.search(padrao, fonte)
+            if achado is None:
+                raise AssertionError(f"ancora ausente em publicar.js: {padrao}")
+            corpo.append(achado.group(0))
+
+        script = (
+            "const els = {};\n"
+            "const novo = () => ({ hidden: null, innerHTML: '', textContent: '' });\n"
+            "const document = {\n"
+            "  querySelector: (s) => (s in els ? els[s] : (els[s] = novo())),\n"
+            "  addEventListener: () => {},\n"
+            "  createElement: () => novo(),\n"
+            "};\n"
+            "const $ = (s) => document.querySelector(s);\n"
+            "const window = { esc: (v) => String(v == null ? '' : v) };\n"
+            "const esc = window.esc;\n"
+            # A sondagem monta a URL com o prefixo: sem ele, a funcao
+            # extraida estouraria com ReferenceError antes de testar seja o
+            # que for. O `CLIP_URL_BASE` e' o mesmo caso, pelo `clipsPath`.
+            "const API_BASE = '/api';\n"
+            "const CLIP_URL_BASE = '/api/clips/';\n"
+            "let clipsLidos = [];\n"
+            "let ultimaLeitura = null;\n"
+            + fetch_src + "\n"
+            + "\n".join(corpo) + "\n"
+            # A expressao pode ser assincrona (a sondagem e'): o await dentro
+            # do IIFE espera o resultado antes de imprimir.
+            + "(async () => {\n"
+            + "  const saida = await (" + expressao + ");\n"
+            + "  console.log(JSON.stringify(saida));\n"
+            + "})().catch((e) => { console.error('ESTOROU: ' + e.message); process.exit(1); });\n"
+        )
+        proc = subprocess.run([node, "-e", script], capture_output=True,
+                              text=True, timeout=30)
+        if proc.returncode != 0:
+            linhas = [l.strip() for l in proc.stderr.splitlines() if l.strip()]
+            erro = next((l for l in linhas if re.match(r"^[A-Za-z]*Error\b", l)),
+                        linhas[0] if linhas else "sem stderr")
+            raise AssertionError("publicar.js estourou: " + erro)
+        return json.loads(proc.stdout.strip())
+
+    # ---------- o cartao do clip renderizado ----------
+
+    def test_a_rendered_clip_shows_the_video(self):
+        """Clip COM arquivo: <video>, nunca a caixa 9:16.
+
+        E' o contrato inteiro da pagina -- conferir o corte para publicar.
+        A caixa vazia no lugar do video foi o defeito: o cartao do clip
+        renderado nao mostrava o que foi renderado.
+        """
+        html = self._executa(
+            "cartaoHtml(" + json.dumps(self.clip(
+                index=5, rel="lnb_05.mp4", poster="lnb_05.jpg",
+                headline="Gancho", hashtags="#vendas")) + ", 4)")
+        self.assertIn("<video", html)
+        self.assertIn("/api/clips/lnb_05.mp4", html)
+        self.assertIn('poster="/api/clips/lnb_05.jpg"', html)
+        self.assertIn("controls", html)
+        self.assertNotIn("publicar-player-vazio", html)
+
+    def test_a_failed_render_explains_the_empty_box(self):
+        """Clip SEM arquivo e COM erro: o cartao diz o motivo.
+
+        Antes a explicacao era "a execucao parou na analise" -- mentira para
+        um clip que a execucao tentou renderizar e nao conseguiu. O worker
+        captura a excecao para nao derrubar o pool; sem carrega-la no
+        registro, ninguem ficava sabendo dela.
+        """
+        html = self._executa(
+            "cartaoHtml(" + json.dumps(self.clip(
+                index=1, error="RuntimeError: codec perdido")) + ", 0)")
+        self.assertIn("RuntimeError: codec perdido", html)
+        self.assertIn("não foi renderizado", html)
+        self.assertNotIn("parou na análise", html)
+        # A caixa continua no lugar -- o cartao nao muda de forma --, so' que
+        # agora com uma razao ao lado.
+        self.assertIn("publicar-player-vazio", html)
+
+    def test_a_never_rendered_clip_keeps_the_plan_only_reason(self):
+        """Clip SEM arquivo e SEM erro: execucao plan-only, o motivo antigo.
+
+        O controle negativo do teste acima: sem excecao registrada, a
+        explicacao de sempre continua valendo -- nao ha' o que inventar.
+        """
+        html = self._executa(
+            "cartaoHtml(" + json.dumps(self.clip(index=1)) + ", 0)")
+        self.assertIn("parou na análise", html)
+        self.assertNotIn("não foi renderizado", html)
+
+    def test_a_rendered_clip_never_carries_the_failure_note(self):
+        """Tem video, tem player: o aviso de falha nao aparece por engano.
+
+        Estado que nao deveria existir (rel e erro no mesmo clip), mas se
+        existir, o video ganha -- mostrar o aviso aqui seria esconder o
+        arquivo que existe.
+        """
+        html = self._executa(
+            "cartaoHtml(" + json.dumps(self.clip(
+                index=2, rel="clip-02.mp4", error="RuntimeError: qualquer")) + ", 1)")
+        self.assertIn("<video", html)
+        self.assertNotIn("não foi renderizado", html)
+
+    # ---------- o resumo ----------
+
+    def test_the_summary_counts_the_failed_renders(self):
+        dados = {"exists": True, "title": "T", "clips": [
+            self.clip(index=1, error="RuntimeError: boom"),
+            self.clip(index=2, rel="clip-02.mp4"),
+        ]}
+        resumo = self._executa(
+            "(render(" + json.dumps(dados) + "), els['#publicar-resumo'].textContent)")
+        self.assertIn("2 clips no relatório", resumo)
+        self.assertIn("1 sem arquivo renderizado", resumo)
+        self.assertIn("1 com falha no render", resumo)
+
+    def test_the_summary_is_silent_when_every_clip_has_a_file(self):
+        dados = {"exists": True, "title": "T", "clips": [
+            self.clip(index=1, rel="clip-01.mp4"),
+            self.clip(index=2, rel="clip-02.mp4"),
+        ]}
+        resumo = self._executa(
+            "(render(" + json.dumps(dados) + "), els['#publicar-resumo'].textContent)")
+        self.assertEqual(resumo, "2 clips no relatório. Copie a legenda e cole "
+                                 "no campo de descrição da plataforma.")
+
+    # ---------- a sondagem ----------
+
+    FETCH_FIXO = (
+        "let __respostas = %s;\n"
+        "let __chamadas = 0;\n"
+        "const fetch = async () => ({\n"
+        "  ok: true,\n"
+        "  json: async () => __respostas[Math.min(__chamadas++, __respostas.length - 1)],\n"
+        "});\n"
+    )
+    FETCH_MORTO_DEPOIS = (
+        "let __respostas = %s;\n"
+        "let __chamadas = 0;\n"
+        "const fetch = async () => {\n"
+        "  if (__chamadas >= __respostas.length) throw new Error('conexao recusada');\n"
+        "  return { ok: true, json: async () => __respostas[__chamadas++] };\n"
+        "};\n"
+    )
+
+    def test_the_poll_renders_a_clip_that_finished_after_the_page_opened(self):
+        """A pagina era retrato: o clip renderizado depois nao aparecia.
+
+        Sem a sondagem, a caixa 9:16 vazia ficava na tela ate alguem apertar
+        "Recarregar" -- e uma execucao leva minutos com a pagina aberta.
+        """
+        A = {"exists": True, "title": "T", "clips": [self.clip(index=1)]}
+        B = {"exists": True, "title": "T",
+             "clips": [self.clip(index=1, rel="clip-01.mp4")]}
+        fetch_src = self.FETCH_FIXO % json.dumps([A, B])
+        saida = self._executa(
+            "(async () => { await sondar(); await sondar(); "
+            "return els['#publicar-lista'].innerHTML.includes('<video'); })()",
+            fetch_src)
+        self.assertTrue(saida, "a sondagem nao trouxe o video do clip renderizado")
+
+    def test_the_poll_does_not_rerender_an_unchanged_answer(self):
+        """Assinatura igual, DOM intacto: a lista nao pisca a cada 4 segundos.
+
+        O marcador que o teste escreve na lista e' apagado por um re-render:
+        se ele sobrevive, a sondagem acertou a mao.
+        """
+        A = {"exists": True, "title": "T", "clips": [self.clip(index=1)]}
+        fetch_src = self.FETCH_FIXO % json.dumps([A, A, A])
+        saida = self._executa(
+            "(async () => {"
+            "  await sondar();"
+            "  els['#publicar-lista'].innerHTML = 'MARCADOR';"
+            "  await sondar();"
+            "  return els['#publicar-lista'].innerHTML === 'MARCADOR';"
+            "})()",
+            fetch_src)
+        self.assertTrue(saida, "a sondagem re-renderizou uma resposta igual")
+
+    def test_the_poll_rerenders_when_the_signature_changes(self):
+        """A volta do teste anterior: uma resposta DIFERENTE re-renderiza.
+
+        Sem este, o teste do marcador passaria tambem com uma sondagem que
+        nunca re-renderiza nada -- que e' o defeito de volta.
+        """
+        A = {"exists": True, "title": "T", "clips": [self.clip(index=1)]}
+        B = {"exists": True, "title": "T", "clips": [self.clip(index=2, rel="c2.mp4")]}
+        fetch_src = self.FETCH_FIXO % json.dumps([A, A, B])
+        saida = self._executa(
+            "(async () => {"
+            "  await sondar();"
+            "  els['#publicar-lista'].innerHTML = 'MARCADOR';"
+            "  await sondar();"
+            "  await sondar();"
+            "  return els['#publicar-lista'].innerHTML !== 'MARCADOR';"
+            "})()",
+            fetch_src)
+        self.assertTrue(saida, "a sondagem ignorou uma resposta diferente")
+
+    def test_a_dead_server_during_the_poll_keeps_the_cards(self):
+        """Sondagem nao derruba a pagina: os cartoes ja' na tela ficam.
+
+        O aviso de "servidor fora do ar" e' da primeira carga e do botao. Um
+        poll que chamasse `mostrarFalha` apagaria os cartões por uma queda
+        temporaria -- e a pagina ficaria inutil sem ninguem ter pedido.
+        """
+        A = {"exists": True, "title": "T", "clips": [self.clip(index=1)]}
+        fetch_src = self.FETCH_MORTO_DEPOIS % json.dumps([A])
+        saida = self._executa(
+            "(async () => {"
+            "  await sondar();"
+            "  els['#publicar-lista'].innerHTML = 'MARCADOR';"
+            "  await sondar();"
+            "  return els['#publicar-lista'].innerHTML === 'MARCADOR';"
+            "})()",
+            fetch_src)
+        self.assertTrue(saida, "a sondagem apagou os cartoes com o servidor fora")
+
+    def test_the_signature_ignores_what_does_not_change_the_cards(self):
+        """So o que muda o cartao entra na assinatura.
+
+        `score` diferente nao re-renderiza: a assinatura e' rel + erro de cada
+        clip, mais o titulo. Uma assinatura feita do JSON inteiro faria a
+        lista piscar por qualquer campo que ninguem ve.
+        """
+        A = {"exists": True, "title": "T",
+             "clips": [self.clip(index=1, score=10.0)]}
+        B = {"exists": True, "title": "T",
+             "clips": [self.clip(index=1, score=99.0)]}
+        saida = self._executa(
+            "[assinatura(" + json.dumps(A) + "), assinatura(" + json.dumps(B) + ")]")
+        self.assertEqual(saida[0], saida[1])
+
+    def test_the_signature_sees_a_file_appear(self):
+        C = {"exists": True, "title": "T", "clips": [self.clip(index=1)]}
+        D = {"exists": True, "title": "T",
+             "clips": [self.clip(index=1, rel="clip-01.mp4")]}
+        saida = self._executa(
+            "[assinatura(" + json.dumps(C) + "), assinatura(" + json.dumps(D) + ")]")
+        self.assertNotEqual(saida[0], saida[1])
+
+    def test_the_signature_sees_a_failure_appear(self):
+        C = {"exists": True, "title": "T", "clips": [self.clip(index=1)]}
+        D = {"exists": True, "title": "T",
+             "clips": [self.clip(index=1, error="RuntimeError: boom")]}
+        saida = self._executa(
+            "[assinatura(" + json.dumps(C) + "), assinatura(" + json.dumps(D) + ")]")
+        self.assertNotEqual(saida[0], saida[1])
 
 
 class DocsTests(unittest.TestCase):

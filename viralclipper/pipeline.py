@@ -5,7 +5,7 @@ from __future__ import annotations
 import gc
 import os
 import shutil
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from . import audio as audio_mod
@@ -453,44 +453,74 @@ def render_windows(
         # only exists to re-encode.
         downloaded: dict[int, tuple[Path, float]] = {}
         logger.step("Baixando as secoes dos clips")
+
+        # One submit per unique position: variants never re-download.
+        unique_tasks = {}
+        for task in tasks:
+            if task.position not in unique_tasks:
+                unique_tasks[task.position] = task
+
+        def download_one(task):
+            media = download.download_section(
+                config.url,
+                task.window.start,
+                task.finish,
+                task.clip_dir / f"section_{task.position:02d}",
+                config,
+                logger,
+            )
+            origin = download.resolve_origin(
+                config.ffprobe,
+                media,
+                max(0.0, task.window.start - download.SECTION_PADDING),
+                logger,
+            )
+            downloaded[task.position] = (media, origin)
+
+        # TODAS as futures sao observadas antes de qualquer decisao. O laco
+        # anterior dava `break` no primeiro erro do ffmpeg: as futures que
+        # sobravam nunca tinham `.result()` lido, entao um erro de rede de
+        # outra secao era ENGOLIDO em silencio -- e o desfecho dependia de
+        # qual future terminasse primeiro (as mesmas duas falhas completavam a
+        # rodada numa ordem e a matavam na outra).
+        ffmpeg_failed = False
+        other_error: Exception | None = None
+        with ThreadPoolExecutor(max_workers=config.download_workers) as pool:
+            futures = [pool.submit(download_one, task) for task in unique_tasks.values()]
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as exc:
+                    if "yt-dlp failed to cut a section with ffmpeg" in str(exc).lower():
+                        ffmpeg_failed = True
+                    else:
+                        # A primeira que nao e do ffmpeg e a que sera levantada,
+                        # mas so depois de todas terem sido observadas.
+                        other_error = other_error or exc
+        if other_error is not None:
+            raise other_error
+        fallback = ffmpeg_failed
+        if fallback:
+            logger.warn(
+                "O FFmpeg falhou ao baixar um trecho; baixando o vídeo "
+                "completo uma vez e cortando os clips localmente."
+            )
+            full_source = download.download_full(
+                config.url, work / "source_video", config, logger
+            )
+            for fallback_task in tasks:
+                fallback_task.media = full_source
+                fallback_task.media_origin = 0.0
+
         for task in tasks:
             key = task.position
-            if key not in downloaded:
-                try:
-                    media = download.download_section(
-                        config.url,
-                        task.window.start,
-                        task.finish,
-                        task.clip_dir / f"section_{task.position:02d}",
-                        config,
-                        logger,
-                    )
-                except ClipperError as exc:
-                    if "yt-dlp failed to cut a section with ffmpeg" not in str(exc).lower():
-                        raise
-                    logger.warn(
-                        "O FFmpeg falhou ao baixar um trecho; baixando o vídeo "
-                        "completo uma vez e cortando os clips localmente."
-                    )
-                    full_source = download.download_full(
-                        config.url, work / "source_video", config, logger
-                    )
-                    for fallback_task in tasks:
-                        fallback_task.media = full_source
-                        fallback_task.media_origin = 0.0
-                    break
-                origin = download.resolve_origin(
-                    config.ffprobe,
-                    media,
-                    max(0.0, task.window.start - download.SECTION_PADDING),
-                    logger,
-                )
-                downloaded[key] = (media, origin)
-            media, origin = downloaded[key]
-            # The renderer seeks into this file, so it has to know whether the
-            # section kept the source timestamps or was reset to zero.
-            task.media = media
-            task.media_origin = origin
+            # Com o fallback todos ja apontam para o video completo: a midia
+            # de uma secao que funcionou NAO pode sobrescrever essa escolha --
+            # era o que acontecia quando a secao boa terminava antes do erro.
+            if not fallback and key in downloaded:
+                media, origin = downloaded[key]
+                task.media = media
+                task.media_origin = origin
 
     if config.parallel and len(tasks) > 1:
         workers = config.workers or min(os.cpu_count() or 1, len(tasks))

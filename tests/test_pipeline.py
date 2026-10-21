@@ -294,10 +294,19 @@ class FullDownloadModeTests(PipelineTestCase):
             "yt-dlp failed to cut a section with ffmpeg. Retry, or use "
             "--download-mode full to download the whole video at once."
         )
+
+        def download_section(url, start, finish, dest, config, logger):
+            # O download e' paralelo: as tres secoes sao pedidas juntas e a
+            # falha e' da secao 01, nao da ordem das chamadas. Uma fixture de
+            # lista (dois itens) estourava com StopIteration na terceira.
+            if Path(dest).name.endswith("_01"):
+                raise section_error
+            return Path("section-02.mp4")
+
         with patch.object(
             pipeline.download,
             "download_section",
-            side_effect=[Path("section-01.mp4"), section_error],
+            side_effect=download_section,
         ) as download_section, patch.object(
             pipeline.download, "download_full", return_value=Path("full.mp4")
         ) as download_full, patch.object(
@@ -309,7 +318,9 @@ class FullDownloadModeTests(PipelineTestCase):
             )
 
         self.assertEqual(len(records), 3)
-        self.assertEqual(download_section.call_count, 2)
+        # Uma por secao unica, nao uma por clip: as variantes da mesma janela
+        # compartilham o download.
+        self.assertEqual(download_section.call_count, 3)
         download_full.assert_called_once_with(
             config.url, WORK / "source_video", config, ANY
         )

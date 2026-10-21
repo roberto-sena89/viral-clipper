@@ -248,6 +248,110 @@ def build_messages(config: ClipConfig, window: Window) -> tuple[str, str]:
     return SYSTEM_PROMPT, f"{user}\n\n{RESPONSE_CONTRACT}"
 
 
+def build_batch_messages(config: ClipConfig, windows: list[Window]) -> tuple[str, str]:
+    """Return the ``(system, user)`` pair for a batch of windows.
+
+    The system prompt is the same as single-window. The user message contains
+    multiple numbered windows, and the response contract is modified to expect
+    a JSON array.
+    """
+    path = getattr(config, "curator_prompt_file", None)
+    if path:
+        system = f"{load_curator_prompt(path)}\n\n{RESPONSE_CONTRACT_BATCH}"
+        parts = []
+        for i, w in enumerate(windows, 1):
+            parts.append(f"Janela {i} ({w.duration:.0f} segundos):\n\n\"\"\"\n{w.text}\n\"\"\"")
+        user = "\n\n---\n\n".join(parts)
+        return system, user
+    parts = []
+    for i, w in enumerate(windows, 1):
+        parts.append(f"Janela {i} ({w.duration:.0f} segundos):\n\n\"\"\"\n{w.text}\n\"\"\"")
+    user = "\n\n---\n\n".join(parts)
+    return SYSTEM_PROMPT, f"{user}\n\n{RESPONSE_CONTRACT_BATCH}"
+
+
+#: Response contract for batch mode - expects a JSON array.
+RESPONSE_CONTRACT_BATCH = f"""Responda EXATAMENTE com um ARRAY JSON contendo um objeto por janela, sem texto em volta, sem cercas de codigo e sem comentarios:
+
+[
+  {{"autocontido": 0, "gancho": 0, "payoff": 0, "compartilhavel": 0, "final_completo": 0, "retencao": 0, "comentarios": 0, "compartilhamentos": 0, "polemica": 0, "{HEADLINE_KEY}": "", "{ALTERNATE_HEADLINE_KEY}": "", "{HASHTAGS_KEY}": "", "motivo": ""}},
+  {{"autocontido": 0, "gancho": 0, "payoff": 0, "compartilhavel": 0, "final_completo": 0, "retencao": 0, "comentarios": 0, "compartilhamentos": 0, "polemica": 0, "{HEADLINE_KEY}": "", "{ALTERNATE_HEADLINE_KEY}": "", "{HASHTAGS_KEY}": "", "motivo": ""}}
+]
+
+- O array deve ter exatamente um objeto por janela, na mesma ordem.
+- As cinco notas autocontido/gancho/payoff/compartilhavel/final_completo sao inteiros de 0 a 10.
+- retencao, comentarios, compartilhamentos e polemica sao inteiros de 0 a 100.
+- {HEADLINE_KEY}: no maximo 10 palavras e no maximo {HEADLINE_TARGET_CHARS} caracteres, em caixa alta, sem aspas, sem ponto final e sem emoji.
+- {ALTERNATE_HEADLINE_KEY}: uma segunda headline, mesmo limite, por um angulo diferente.
+- {HASHTAGS_KEY}: de 5 a {MAX_HASHTAGS} hashtags numa unica string, separadas por espaco.
+- motivo: uma frase curta explicando a nota.
+"""
+
+
+def parse_batch_verdicts(text: str, expected_count: int) -> list[Verdict | None]:
+    """Parse a batch response into a list of Verdicts.
+
+    Returns exactly ``expected_count`` verdicts (fills missing with None).
+    """
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("```")[1] if "```" in cleaned[3:] else cleaned[3:]
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:]
+    cleaned = cleaned.strip()
+
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        # Try to find array bounds
+        start = cleaned.find("[")
+        end = cleaned.rfind("]")
+        if start != -1 and end != -1:
+            try:
+                parsed = json.loads(cleaned[start:end+1])
+            except json.JSONDecodeError:
+                raise ClipperError(f"No JSON array in the ranker batch response: {text[:160]}")
+        else:
+            raise ClipperError(f"No JSON array in the ranker batch response: {text[:160]}")
+
+    if not isinstance(parsed, list):
+        raise ClipperError(f"Expected JSON array, got {type(parsed).__name__}: {text[:160]}")
+
+    verdicts: list[Verdict | None] = []
+    for i, document in enumerate(parsed):
+        if i >= expected_count:
+            break
+        if not isinstance(document, dict):
+            verdicts.append(None)
+            continue
+        scores: dict[str, float] = {}
+        for dimension in DIMENSIONS:
+            if dimension not in document:
+                continue
+            try:
+                value = float(document[dimension])
+            except (TypeError, ValueError):
+                continue
+            scores[dimension] = max(0.0, min(10.0, value))
+        if not scores:
+            verdicts.append(None)
+            continue
+        reason = str(document.get("motivo") or "").strip()
+        verdicts.append(Verdict(
+            scores=scores,
+            reason=reason[:200],
+            headline=clean_headline(document.get(HEADLINE_KEY)),
+            headline_alternate=clean_headline(document.get(ALTERNATE_HEADLINE_KEY)),
+            hashtags=clean_hashtags(document.get(HASHTAGS_KEY)),
+            metrics=clean_metrics(document),
+        ))
+
+    # Pad or trim to expected_count
+    while len(verdicts) < expected_count:
+        verdicts.append(None)
+    return verdicts[:expected_count]
+
+
 def prompt_cache_salt(config: ClipConfig) -> str:
     """The prompt fingerprint to fold into the cache key, or ``""``.
 
@@ -619,14 +723,7 @@ def _judge(
 ) -> tuple[Verdict | None, str]:
     """One model call, off the main thread.
 
-    Returns ``(verdict, "")`` on success and ``(None, reason)`` on failure. The
-    reason is *formatted* here but *logged* by the caller: a worker that printed
-    would interleave with its siblings and with the progress counter, and the
-    log box is the only place the user can see this stage at all.
-
-    Nothing here touches ``window``. The verdict travels back as a value and the
-    caller applies it, so no two threads ever write to the same object -- which
-    is also why this can be threads and not processes.
+    Returns (verdict, "") on success and (None, reason) on failure.
     """
     try:
         system, user = build_messages(config, window)
@@ -634,8 +731,34 @@ def _judge(
         verdict = parse_verdict(response)
         _save_cached(cache_dir, key, verdict)
         return verdict, ""
-    except Exception as exc:  # noqa: BLE001 - a dead ranker must not be fatal
+    except Exception as exc:
         return None, f"{type(exc).__name__}: {exc}"
+
+
+def _judge_batch(
+    provider: RankProvider,
+    config: ClipConfig,
+    batch: list[tuple[int, Window, str]],
+) -> tuple[list[Verdict | None], str]:
+    """One model call for a batch of windows.
+
+    Returns ``(verdicts, "")`` on success and ``([None]*n, reason)`` on failure.
+    Like ``_judge``, nothing here logs: the reason travels back as a value and
+    the caller prints it, so a worker never interleaves with its siblings or
+    with the progress counter -- and the caller can print the batch reason once
+    instead of once per window.
+    """
+    if not batch:
+        return [], ""
+
+    try:
+        windows = [item[1] for item in batch]
+        system, user = build_batch_messages(config, windows)
+        response = provider.complete(system, user)
+        verdicts = parse_batch_verdicts(response, len(windows))
+        return verdicts, ""
+    except Exception as exc:  # noqa: BLE001 - a dead ranker must not be fatal
+        return [None] * len(batch), f"{type(exc).__name__}: {exc}"
 
 
 def apply(
@@ -700,36 +823,86 @@ def apply(
     # Pass 2 -- the misses, concurrently. The calls share nothing: a separate
     # cache key and a separate verdict each. So this changes how long the stage
     # takes and not what it decides.
+    batch_size = getattr(config, "ranker_batch_size", 1)
     if pending:
-        workers = max(1, min(config.ranker_concurrency, len(pending)))
-        if logger and len(pending) > 1:
-            logger.info(
-                f"Curador: {len(pending)} janelas a julgar, {workers} em paralelo"
-            )
-        done = 0
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {
-                pool.submit(_judge, provider, config, window, key, cache_dir): position
-                for position, window, key in pending
-            }
-            for future in as_completed(futures):
-                position = futures[future]
-                done += 1
-                try:
-                    verdict, error = future.result()
-                except Exception as exc:  # pragma: no cover - _judge does not raise
-                    verdict, error = None, f"{type(exc).__name__}: {exc}"
-                if verdict is None:
-                    failures += 1
-                    if logger:
-                        logger.warn(f"Ranker skipped one window ({error})")
-                else:
-                    verdicts[position] = verdict
-                # Progress is published from THIS thread, never from a worker:
-                # the run record is shared, and lines printed in parallel
-                # interleave into unreadable soup.
-                if logger and len(pending) > 1:
-                    logger.info(f"Curador: {done}/{len(pending)} janelas julgadas")
+        if batch_size > 1:
+            # Batch mode: group pending windows into batches and send them together
+            batch_workers = max(1, min(config.ranker_concurrency, (len(pending) + batch_size - 1) // batch_size))
+            if logger and len(pending) > 1:
+                logger.info(
+                    f"Curador: {len(pending)} janelas a julgar em lotes de {batch_size}, "
+                    f"{batch_workers} lotes em paralelo"
+                )
+            done = 0
+            # Create batches
+            batches: list[list[tuple[int, Window, str]]] = []
+            for i in range(0, len(pending), batch_size):
+                batches.append(pending[i:i + batch_size])
+            
+            with ThreadPoolExecutor(max_workers=batch_workers) as pool:
+                futures = {}
+                for batch in batches:
+                    futures[pool.submit(_judge_batch, provider, config, batch)] = batch
+                
+                for future in as_completed(futures):
+                    batch = futures[future]
+                    try:
+                        batch_results, batch_error = future.result()
+                    except Exception as exc:  # pragma: no cover - _judge_batch does not raise
+                        batch_results = [None] * len(batch)
+                        batch_error = f"{type(exc).__name__}: {exc}"
+                    if batch_error and logger:
+                        # Uma linha para o lote inteiro: a causa e' uma so, e
+                        # repeti-la por janela esconderia a origem.
+                        logger.warn(f"Ranker skipped batch ({batch_error})")
+                    
+                    for idx, (position, window, key) in enumerate(batch):
+                        done += 1
+                        verdict = batch_results[idx] if idx < len(batch_results) else None
+                        if verdict is None:
+                            failures += 1
+                            if logger:
+                                logger.warn(f"Ranker skipped window at position {position}")
+                        else:
+                            verdicts[position] = verdict
+                            # ``_save_cached`` grava e nao loga: o ``logger`` aqui
+                            # era um quarto argumento que a funcao nao aceita, e
+                            # cada veredito bom lotava o run com TypeError.
+                            _save_cached(cache_dir, key, verdict)
+                    
+                    if logger and len(pending) > 1:
+                        logger.info(f"Curador: {done}/{len(pending)} janelas julgadas")
+        else:
+            # Original single-window mode
+            workers = max(1, min(config.ranker_concurrency, len(pending)))
+            if logger and len(pending) > 1:
+                logger.info(
+                    f"Curador: {len(pending)} janelas a julgar, {workers} em paralelo"
+                )
+            done = 0
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {
+                    pool.submit(_judge, provider, config, window, key, cache_dir): position
+                    for position, window, key in pending
+                }
+                for future in as_completed(futures):
+                    position = futures[future]
+                    done += 1
+                    try:
+                        verdict, error = future.result()
+                    except Exception as exc:  # pragma: no cover - _judge does not raise
+                        verdict, error = None, f"{type(exc).__name__}: {exc}"
+                    if verdict is None:
+                        failures += 1
+                        if logger:
+                            logger.warn(f"Ranker skipped one window ({error})")
+                    else:
+                        verdicts[position] = verdict
+                    # Progress is published from THIS thread, never from a worker:
+                    # the run record is shared, and lines printed in parallel
+                    # interleave into unreadable soup.
+                    if logger and len(pending) > 1:
+                        logger.info(f"Curador: {done}/{len(pending)} janelas julgadas")
 
     # Pass 3 -- apply in the shortlist's own order, so the result never depends
     # on which call happened to answer first.

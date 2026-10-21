@@ -9,6 +9,7 @@ softly when the model or the transport misbehaves.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import tempfile
 import threading
@@ -27,9 +28,20 @@ FULL_JSON = (
     '"compartilhavel": 8, "final_completo": 6, "motivo": "historia completa"}'
 )
 
+#: Cabeçalho de cada janela no prompt de lote: "Janela 3 (42 segundos):". O
+#: modo unico diz "Trecho (...)", entao esta regex so casa no lote -- e' o
+#: discriminador entre os dois contratos de resposta.
+BATCH_WINDOW_HEADER = re.compile(r"^Janela \d+ \(", re.MULTILINE)
+
 
 class FakeProvider:
-    """Provider whose response (or failure) is dictated by the test."""
+    """Provider whose response (or failure) is dictated by the test.
+
+    A forma da resposta depende do modo pedido no ``system``: lote exige ARRAY,
+    um-por-vez exige objeto. Sem isso o fake responderia objeto sob o contrato
+    de lote e todo lote falharia no parse — que é exatamente o defeito que os
+    testes do caminho padrão precisam pegar.
+    """
 
     name = "fake"
 
@@ -44,7 +56,24 @@ class FakeProvider:
         self.prompts.append((system, user))
         if self.error is not None:
             raise self.error
+        # O modo se revela no prompt do usuario: o lote numera as janelas, o
+        # modo unico escreve so "Trecho (...)". Sob o lote, a resposta e' ARRAY.
+        if BATCH_WINDOW_HEADER.search(user):
+            return self._as_array(user)
         return self.response
+
+    def _as_array(self, user: str) -> str:
+        """Um objeto por janela do prompt, na mesma ordem."""
+        try:
+            document = json.loads(self.response)
+        except json.JSONDecodeError:
+            # Resposta que não é JSON continua chegando como veio: o teste que
+            # a passa quer o parse quebrado, não um array em volta.
+            return self.response
+        if not isinstance(document, dict):
+            return self.response
+        count = len(BATCH_WINDOW_HEADER.findall(user))
+        return json.dumps([document] * count)
 
 
 def _window(text: str, score: float, start: float = 0.0) -> Window:
@@ -269,7 +298,10 @@ class ApplyTests(RankerTestCase):
         windows = [_window("a", 50.0), _window("b", 40.0)]
         judged = ranker.apply(windows, self.config(), self.log, provider=provider)
         self.assertEqual(judged, 2)
-        self.assertEqual(provider.calls, 2)
+        # Lote e' o padrao: as duas janelas vao num UNICO pedido. O que se
+        # afirma e' que as duas foram julgadas -- o numero de pedidos e' detalhe
+        # de implementacao do lote, nao do contrato do curador.
+        self.assertEqual(provider.calls, 1)
         expected = 50.0 * 0.4 + 7.6 * 10.0 * 0.6
         self.assertAlmostEqual(windows[0].score, round(expected, 2), places=2)
 
@@ -306,10 +338,17 @@ class ApplyTests(RankerTestCase):
             windows, self.config(ranker_top_n=3), self.log, provider=provider
         )
         self.assertEqual(judged, 3)
-        self.assertEqual(provider.calls, 3)
         # The three highest scoring windows were the ones judged.
         judged_texts = {window.text for window in windows if "llm_overall" in window.components}
         self.assertEqual(judged_texts, {"w9", "w8", "w7"})
+        # Com lote, as tres viajam num unico pedido: o que se afirma e' QUAIS
+        # janelas chegaram ao modelo, nao quantos pedidos ele recebeu.
+        self.assertEqual(provider.calls, 1)
+        _, user = provider.prompts[0]
+        for texto in ("w9", "w8", "w7"):
+            self.assertIn(texto, user)
+        for texto in ("w6", "w5", "w0"):
+            self.assertNotIn(texto, user)
 
     def test_unjudged_candidates_are_pushed_below_every_judged_one(self):
         windows = [_window(f"w{index}", float(index)) for index in range(10)]
@@ -342,15 +381,23 @@ class ApplyTests(RankerTestCase):
         self.assertEqual([w.score for w in windows], [50.0, 40.0])
 
     def test_a_bad_response_for_one_window_does_not_stop_the_others(self):
-        class FlakyProvider(FakeProvider):
+        """No lote a unidade de falha e' a ENTRADA do array, nao a chamada.
+
+        Um item que nao e objeto -- ou que nao tem nenhuma dimensao conhecida
+        -- vira None e so aquela janela perde o veredito; as companheiras do
+        mesmo pedido sao julgadas normalmente.
+        """
+
+        class HoleProvider(FakeProvider):
             def complete(self, system: str, user: str) -> str:
                 self.calls += 1
-                if "quebrado" in user:
-                    return "nao vou responder json"
+                self.prompts.append((system, user))
+                if BATCH_WINDOW_HEADER.search(user):
+                    return '[null, {"gancho": 9}]'
                 return FULL_JSON
 
         windows = [_window("quebrado", 50.0), _window("ok", 40.0)]
-        judged = ranker.apply(windows, self.config(), self.log, provider=FlakyProvider())
+        judged = ranker.apply(windows, self.config(), self.log, provider=HoleProvider())
         self.assertEqual(judged, 1)
         self.assertEqual(windows[0].score, 50.0)
         self.assertGreater(windows[1].score, 0.0)
@@ -478,13 +525,17 @@ class RankerConcurrencyTests(RankerTestCase):
     Estes testes travam a CONCORRENCIA, nao o tempo: um teste de relogio seria
     flaky numa maquina carregada. O que importa e que as chamadas se sobreponham
     e que o resultado nao mude por causa disso.
+
+    ``ranker_batch_size=1`` em todos: a unidade medida aqui e' a chamada de UMA
+    janela. No lote o pedido carrega N janelas e a contagem muda de sentido --
+    esse caminho tem turma propria (``BatchJudgeTests``).
     """
 
     def test_the_calls_overlap_instead_of_queueing(self):
         provider = _TimedProvider(delay=0.05)
         windows = [_window(f"w{index}", float(index)) for index in range(24)]
         ranker.apply(
-            windows, self.config(ranker_concurrency=6), self.log, provider=provider
+            windows, self.config(ranker_concurrency=6, ranker_batch_size=1), self.log, provider=provider
         )
         self.assertEqual(provider.calls, 24)
         self.assertGreater(
@@ -496,7 +547,7 @@ class RankerConcurrencyTests(RankerTestCase):
         provider = _TimedProvider(delay=0.02)
         windows = [_window(f"w{index}", float(index)) for index in range(6)]
         ranker.apply(
-            windows, self.config(ranker_concurrency=1), self.log, provider=provider
+            windows, self.config(ranker_concurrency=1, ranker_batch_size=1), self.log, provider=provider
         )
         self.assertEqual(provider.calls, 6)
         self.assertEqual(_peak_concurrency(provider.spans), 1)
@@ -505,7 +556,7 @@ class RankerConcurrencyTests(RankerTestCase):
         provider = _TimedProvider(delay=0.05)
         windows = [_window(f"w{index}", float(index)) for index in range(24)]
         ranker.apply(
-            windows, self.config(ranker_concurrency=3), self.log, provider=provider
+            windows, self.config(ranker_concurrency=3, ranker_batch_size=1), self.log, provider=provider
         )
         pico = _peak_concurrency(provider.spans)
         # Duas direcoes no mesmo teste: acima de 1 prova que o pool esta em uso
@@ -518,7 +569,7 @@ class RankerConcurrencyTests(RankerTestCase):
             windows = [_window(f"w{index}", float(index)) for index in range(8)]
             ranker.apply(
                 windows,
-                self.config(ranker_concurrency=concurrency),
+                self.config(ranker_concurrency=concurrency, ranker_batch_size=1),
                 self.log,
                 provider=FakeProvider(),
             )
@@ -530,7 +581,7 @@ class RankerConcurrencyTests(RankerTestCase):
         provider = _TimedProvider(delay=0.01)
         windows = [_window(f"w{index}", float(index)) for index in range(24)]
         judged = ranker.apply(
-            windows, self.config(ranker_concurrency=6), self.log, provider=provider
+            windows, self.config(ranker_concurrency=6, ranker_batch_size=1), self.log, provider=provider
         )
         self.assertEqual(judged, 24)
         self.assertEqual(provider.calls, 24)
@@ -540,7 +591,7 @@ class RankerConcurrencyTests(RankerTestCase):
         provider = _TimedProvider(delay=0.01, fail_when_text_contains="w3")
         windows = [_window(f"w{index}", float(index)) for index in range(8)]
         judged = ranker.apply(
-            windows, self.config(ranker_concurrency=4), self.log, provider=provider
+            windows, self.config(ranker_concurrency=4, ranker_batch_size=1), self.log, provider=provider
         )
         self.assertEqual(judged, 7)
         perdida = next(window for window in windows if window.text == "w3")
@@ -550,7 +601,7 @@ class RankerConcurrencyTests(RankerTestCase):
 
     def test_a_cached_window_never_reaches_the_pool(self):
         provider = FakeProvider()
-        config = self.config(ranker_concurrency=6)
+        config = self.config(ranker_concurrency=6, ranker_batch_size=1)
         ranker.apply([_window("texto cacheado", 50.0)], config, self.log, provider=provider)
         segundo = _TimedProvider(delay=0.01)
         ranker.apply([_window("texto cacheado", 50.0)], config, self.log, provider=segundo)
@@ -566,7 +617,7 @@ class RankerProgressTests(RankerTestCase):
         windows = [_window(f"w{index}", float(index)) for index in range(8)]
         ranker.apply(
             windows,
-            self.config(ranker_concurrency=4),
+            self.config(ranker_concurrency=4, ranker_batch_size=1),
             log,
             provider=_TimedProvider(delay=0.01),
         )
@@ -580,11 +631,105 @@ class RankerProgressTests(RankerTestCase):
         log = _CapturingLogger()
         ranker.apply(
             [_window("so uma", 50.0)],
-            self.config(ranker_concurrency=6),
+            self.config(ranker_concurrency=6, ranker_batch_size=1),
             log,
             provider=_TimedProvider(delay=0.01),
         )
         self.assertFalse([line for line in log.lines if "/1" in line], log.lines)
+
+
+class BatchJudgeTests(RankerTestCase):
+    """O lote e' o PADRAO (`ranker_batch_size = 3`), e o painel nao manda o
+    campo: a rodada comum passa por aqui.
+
+    O defeito que motiva esta turma: o consumidor do lote chamava
+    ``_save_cached(cache_dir, key, verdict, logger)`` com quatro argumentos
+    numa funcao de tres. Com o contrato ANTIGO (objeto unico) o parse do lote
+    falhava e ninguem chegava na chamada; com o NOVO (array), o primeiro
+    veredito BOM levantava ``TypeError`` e matava o run no meio do curador.
+    Nao existia configuracao funcional -- so estas duas saidas.
+    """
+
+    def test_the_default_batch_path_judges_every_window(self):
+        config = self.config()
+        provider = FakeProvider()
+        windows = [_window(f"w{index}", float(index)) for index in range(8)]
+        judged = ranker.apply(windows, config, self.log, provider=provider)
+        # O run sobrevive E as oito janelas sao julgadas -- a regressao exata
+        # do TypeError: antes desta linha o run morria.
+        self.assertEqual(judged, 8)
+        self.assertTrue(all("llm_overall" in w.components for w in windows))
+        # 8 janelas em lotes de 3 = tres pedidos.
+        self.assertEqual(provider.calls, 3)
+        # E o veredito de cada uma chega ao cache -- foi a gravacao que quebrou.
+        directory = ranker.resolve_cache_dir(config)
+        for window in windows:
+            key = ranker.cache_key(window, config.ranker_model)
+            self.assertTrue((directory / f"{key}.json").exists(), key)
+
+    def test_the_verdicts_survive_the_cache_round_trip(self):
+        """O formato gravado pelo lote e' o mesmo que o modo unico le."""
+        config = self.config()
+        windows = [_window(f"w{index}", float(index)) for index in range(5)]
+        ranker.apply(windows, config, self.log, provider=FakeProvider())
+        novas = [_window(f"w{index}", float(index)) for index in range(5)]
+        second = FakeProvider()
+        judged = ranker.apply(novas, config, self.log, provider=second)
+        self.assertEqual(judged, 5)
+        self.assertEqual(second.calls, 0)
+
+    def test_a_wrong_shape_response_skips_the_batch_without_killing_the_run(self):
+        """Modelo que ignora o contrato e devolve objeto unico: o lote inteiro
+        e perdido, mas a rodada continua -- falhar macio e' o contrato do
+        curador, e a heuristica manda enquanto ele nao volta a acertar.
+        """
+
+        class ObjectProvider(FakeProvider):
+            def complete(self, system: str, user: str) -> str:
+                self.calls += 1
+                self.prompts.append((system, user))
+                return FULL_JSON  # contrato antigo, sob prompt de lote
+
+        windows = [_window("a", 50.0), _window("b", 40.0)]
+        judged = ranker.apply(
+            windows, self.config(), self.log, provider=ObjectProvider()
+        )
+        self.assertEqual(judged, 0)
+        self.assertEqual([w.score for w in windows], [50.0, 40.0])
+
+    def test_a_failing_batch_reports_the_reason_once_per_batch(self):
+        log = _CapturingLogger()
+        windows = [_window(f"w{index}", float(index)) for index in range(4)]
+        ranker.apply(
+            windows,
+            self.config(),
+            log,
+            provider=FakeProvider(error=ClipperError("boom")),
+        )
+        # 4 janelas em lotes de 3 = dois lotes. A causa aparece uma vez por
+        # LOTE, nao uma vez por janela -- e antes tambem nao era uma vez por
+        # lote: a excecao do lote somava `failures` e o laco interno somava de
+        # novo, contando cada janela duas vezes.
+        skipped = [line for line in log.lines if "Ranker skipped batch" in line]
+        self.assertEqual(len(skipped), 2, log.lines)
+        self.assertTrue(all("boom" in line for line in skipped))
+
+    def test_batch_and_single_mode_agree(self):
+        """O veredito de uma janela nao pode depender de quem a acompanhou no
+        pedido: o sorteio das lotadas e' interno, o blend e' por janela.
+        """
+
+        def run(batch_size: int) -> list[float]:
+            windows = [_window(f"w{index}", float(index)) for index in range(7)]
+            ranker.apply(
+                windows,
+                self.config(ranker_batch_size=batch_size),
+                self.log,
+                provider=FakeProvider(),
+            )
+            return [window.score for window in windows]
+
+        self.assertEqual(run(3), run(1))
 
 
 class RankerConcurrencyConfigTests(unittest.TestCase):

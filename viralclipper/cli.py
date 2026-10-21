@@ -213,6 +213,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--download-mode", choices=["sections", "full"], default="sections"
     )
     source.add_argument("--max-height", dest="max_height", type=int, default=1080)
+    source.add_argument(
+        "--render-quality",
+        dest="render_quality",
+        choices=["standard", "draft"],
+        default="standard",
+        help="Rápido (draft 720p) ou padrão (1080p)",
+    )
+    source.add_argument(
+        "--download-workers",
+        dest="download_workers",
+        type=int,
+        default=3,
+        help="Workers paralelos para download de seções",
+    )
     source.add_argument("--cookies-from-browser", dest="cookies_from_browser", default=None)
     source.add_argument(
         "--metadata-language",
@@ -475,6 +489,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=6,
         help="Chamadas simultaneas ao modelo (1 = uma por vez, o comportamento antigo)",
+    )
+    semantic.add_argument(
+        "--ranker-batch-size",
+        dest="ranker_batch_size",
+        type=int,
+        default=3,
+        help="Janelas por pedido LLM (1 = um pedido por janela, >1 agrupa janelas)",
     )
     semantic.add_argument(
         "--ranker-weight",

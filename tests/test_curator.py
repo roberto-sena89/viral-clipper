@@ -34,11 +34,20 @@ FULL_JSON = (
     '"hashtags": "#viral #fyp #cortes", "motivo": "historia completa"}'
 )
 
+#: Cabeçalho de cada janela no prompt de lote: "Janela 2 (30 segundos):".
+_BATCH_WINDOW_HEADER = re.compile(r"^Janela \d+ \(", re.MULTILINE)
+
 PROMPT = "Voce e um curador de cortes virais. Seja rigoroso."
 
 
 class FakeProvider:
-    """Provider whose response is dictated by the test."""
+    """Provider whose response is dictated by the test.
+
+    A forma depende do modo: sob o contrato de lote (o prompt de lote se
+    anuncia com "ARRAY JSON" no system) a resposta e' um array com um objeto
+    por janela; no modo um-por-vez, o objeto unico. Um fake que ignorasse a
+    diferenca faria o lote falhar no parse -- que e' o caminho padrao.
+    """
 
     name = "fake"
 
@@ -50,7 +59,18 @@ class FakeProvider:
     def complete(self, system: str, user: str) -> str:
         self.calls += 1
         self.prompts.append((system, user))
-        return self.response
+        # O modo se revela no prompt do usuario: o lote numera as janelas
+        # ("Janela 1 (...)"), o modo unico escreve so "Trecho (...)".
+        if not _BATCH_WINDOW_HEADER.search(user):
+            return self.response
+        try:
+            document = json.loads(self.response)
+        except json.JSONDecodeError:
+            return self.response
+        if not isinstance(document, dict):
+            return self.response
+        count = len(_BATCH_WINDOW_HEADER.findall(user))
+        return json.dumps([document] * count)
 
 
 def _window(text: str, score: float = 50.0) -> Window:

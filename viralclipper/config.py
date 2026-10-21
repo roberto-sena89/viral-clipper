@@ -125,6 +125,10 @@ class ClipConfig:
     # virar 429 -- que nao e fatal, mas degrada a selecao em silencio. 1
     # reproduz o comportamento antigo.
     ranker_concurrency: int = 6
+    # Janelas por pedido LLM: 1 = modo antigo (um pedido por janela), >1
+    # agrupa varias janelas em um unico pedido para reduzir latencia de rede.
+    # 3 e um bom equilibrio entre economia de pedidos e limite de contexto.
+    ranker_batch_size: int = 3
     # 0 = pure heuristic, 1 = pure model. The middle keeps the cheap signals
     # (loudness, boundary, length) as a tie-breaker.
     ranker_weight: float = 0.6
@@ -138,6 +142,8 @@ class ClipConfig:
     # --- download --------------------------------------------------------
     download_mode: str = "sections"  # sections | full
     max_height: int = 1080
+    render_quality: str = "standard"  # standard | draft
+    download_workers: int = 3  # Parallel downloads for sections
     cookies_from_browser: str | None = None
     extra_ytdlp_args: list[str] = field(default_factory=list)
     # Language every yt-dlp metadata call asks the site for. YouTube localizes
@@ -346,8 +352,19 @@ class ClipConfig:
             raise ValueError("ranker_top_n must not be negative")
         if self.ranker_concurrency < 1:
             raise ValueError("ranker_concurrency must be at least 1")
+        if self.ranker_batch_size < 1:
+            raise ValueError("ranker_batch_size must be at least 1")
         if self.ranker_timeout <= 0:
             raise ValueError("ranker_timeout must be greater than zero")
+        if self.render_quality not in {"standard", "draft"}:
+            raise ValueError("render_quality must be standard or draft")
+        if self.max_height < 240:
+            raise ValueError("max_height must be at least 240")
+        if self.download_workers < 1:
+            raise ValueError("download_workers must be at least 1")
+        # Apply render quality to max_height if not explicitly set
+        if self.render_quality == "draft" and self.max_height == 1080:
+            object.__setattr__(self, "max_height", 720)
         if self.ranker_provider:
             # Validated here so a typo fails before the download, not after it.
             # Imported lazily: ``providers`` imports this module, and a
